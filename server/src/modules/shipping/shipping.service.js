@@ -196,9 +196,12 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
   return txResult;
 }
 
-async function fetchWbSupplyQr({ tenantId, shipmentCode, client }) {
+// NB: эти две функции намеренно используют пуловый `query()`, а не `client.query()` —
+// они вызываются ПОСЛЕ commit транзакции confirmShipment(), чтобы не держать
+// DB-соединение открытым во время похода в WB API по сети.
+async function fetchWbSupplyQrAfterCommit({ tenantId, shipmentCode }) {
   // Ищем WB-аккаунт для этого tenant/supply
-  const accRes = await client.query(
+  const accRes = await query(
     `SELECT ma.api_token FROM wms.mp_accounts ma
      JOIN wms.wb_supplies ws ON ws.mp_account_id=ma.id
      WHERE ws.tenant_id=$1 AND ws.supply_code=$2 AND ma.is_active=TRUE
@@ -221,8 +224,8 @@ async function fetchWbSupplyQr({ tenantId, shipmentCode, client }) {
   return data?.file || null;
 }
 
-async function createQrPrintJob({ tenantId, shipmentId, qrBase64, userId, client }) {
-  const routeRes = await client.query(
+async function createQrPrintJobDirect({ tenantId, shipmentId, qrBase64, userId }) {
+  const routeRes = await query(
     `SELECT pr.printer_id FROM wms.printer_routes pr
      JOIN wms.printers p ON p.id=pr.printer_id
      WHERE pr.tenant_id=$1 AND pr.doc_type='shipping_qr' AND pr.is_active=TRUE AND p.is_active=TRUE
@@ -231,7 +234,7 @@ async function createQrPrintJob({ tenantId, shipmentId, qrBase64, userId, client
   );
   if (routeRes.rowCount === 0) return;
   const jobCode = `SHIPQR-${shipmentId}-${Date.now()}`;
-  await client.query(
+  await query(
     `INSERT INTO wms.print_jobs
        (tenant_id,job_code,printer_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
      VALUES($1,$2,$3,'shipping_qr','shipment',$4,1,$5::jsonb,'new',$6)`,

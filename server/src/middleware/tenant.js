@@ -126,6 +126,9 @@ function requireModule(moduleCode) {
  * Защита от IDOR атак
  */
 function validateTenantParam(req, res, next) {
+  if (!req.user) {
+    return next(new AuthError('User not authenticated'));
+  }
   const paramTenantId = Number(req.params.tenantId);
   if (paramTenantId && paramTenantId !== req.user.tenantId) {
     return next(new ForbiddenError('Access to this tenant is not allowed'));

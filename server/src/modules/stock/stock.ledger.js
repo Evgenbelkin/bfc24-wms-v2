@@ -239,7 +239,11 @@ async function consumeStock({
     const onHand    = stockCheck.rowCount > 0 ? Number(stockCheck.rows[0].qty_on_hand) : 0;
     const available = stockCheck.rowCount > 0 ? Number(stockCheck.rows[0].qty_available) : 0;
 
-    if (onHand < q) throw new InsufficientStockError(onHand, q, iid, locId);
+    // Важно: сверяем именно qty_available (on_hand - reserved), а не qty_on_hand.
+    // Если/когда в picking-флоу будет подключено резервирование (wms.reserve_stock),
+    // это не даст списать физически присутствующий, но уже зарезервированный под
+    // другой заказ товар. Сегодня qty_reserved везде 0, так что поведение не меняется.
+    if (available < q) throw new InsufficientStockError(available, q, iid, locId);
 
     const balance = await _writeLedgerEntry(client, {
       tenantId, warehouseId, clientId, itemId: iid, barcode: b,

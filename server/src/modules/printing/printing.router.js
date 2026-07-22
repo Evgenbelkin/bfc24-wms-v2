@@ -88,7 +88,7 @@ router.post('/routes', requireRole('tenant_admin','supervisor'), async (req,res,
 // Polling endpoint для printer-agent
 
 /** GET /printing/jobs — jobs для printer-agent (по printer_id или zone_code) */
-router.get('/jobs', async (req,res,next)=>{
+router.get('/jobs', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     // Printer-agent аутентифицируется через tenant JWT с ролью tenant_admin или системным токеном
     const { printer_id, status='new', limit=20 } = req.query;
@@ -107,7 +107,7 @@ router.get('/jobs', async (req,res,next)=>{
 });
 
 /** PATCH /printing/jobs/:id — обновить статус job (printer-agent) */
-router.patch('/jobs/:id', async (req,res,next)=>{
+router.patch('/jobs/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const id = validatePositiveInt(req.params.id,'id');
     const { status, error_text } = req.body;
