@@ -1,0 +1,271 @@
+'use strict';
+
+const axios = require('axios');
+const logger = require('../../utils/logger');
+
+// =============================================================================
+// Единый WB API Client
+// - Принимает token как параметр (не из глобального env)
+// - Retry + exponential backoff при 429/5xx
+// - Логирует все запросы
+// - Не хранит токены — только исполняет запросы
+// =============================================================================
+
+const WB_BASE = 'https://marketplace-api.wildberries.ru';
+const WB_STATISTICS_BASE = 'https://statistics-api.wildberries.ru';
+const WB_CONTENT_BASE = 'https://content-api.wildberries.ru';
+
+const DEFAULT_TIMEOUT = 30_000;
+const MAX_RETRIES = 5;
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Выполнить запрос к WB API с retry/backoff
+ */
+async function wbRequest({ token, method = 'GET', baseUrl = WB_BASE, path, params = null, data = null, retries = MAX_RETRIES }) {
+  const url = `${baseUrl}${path}`;
+  let attempt = 0;
+  let lastError;
+
+  while (attempt <= retries) {
+    try {
+      const response = await axios({
+        method,
+        url,
+        params:  params || undefined,
+        data:    data   || undefined,
+        timeout: DEFAULT_TIMEOUT,
+        headers: {
+          'Authorization':  token,
+          'Content-Type':   'application/json',
+          'Accept':         'application/json',
+        },
+        validateStatus: () => true, // обрабатываем все статусы сами
+      });
+
+      // 429 Rate Limit — backoff
+      if (response.status === 429) {
+        const retryAfter = Number(response.headers['retry-after'] || 5);
+        const waitMs = Math.max(retryAfter * 1000, 1000) * (attempt + 1);
+        logger.warn({ path, attempt, waitMs }, 'WB rate limit 429, retrying...');
+        await sleep(waitMs);
+        attempt++;
+        continue;
+      }
+
+      // 5xx Server errors — retry с backoff
+      if (response.status >= 500) {
+        const waitMs = Math.pow(2, attempt) * 1000;
+        logger.warn({ path, status: response.status, attempt, waitMs }, 'WB 5xx error, retrying...');
+        await sleep(waitMs);
+        attempt++;
+        lastError = new Error(`WB API ${response.status}: ${JSON.stringify(response.data)}`);
+        continue;
+      }
+
+      // 401 — не ретраим
+      if (response.status === 401) {
+        throw new Error(`WB API 401 Unauthorized for path=${path}. Check api_token.`);
+      }
+
+      // 404 — не ретраим
+      if (response.status === 404) {
+        throw new Error(`WB API 404 Not Found: ${path}`);
+      }
+
+      // Другие ошибки (400, 409, etc.)
+      if (response.status >= 400) {
+        throw new Error(`WB API ${response.status}: ${JSON.stringify(response.data)}`);
+      }
+
+      // Успех
+      logger.debug({ path, method, status: response.status }, 'WB API request OK');
+      return response.data;
+
+    } catch (err) {
+      if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+        const waitMs = Math.pow(2, attempt) * 1000;
+        logger.warn({ path, attempt, err: err.message }, 'WB API timeout, retrying...');
+        await sleep(waitMs);
+        attempt++;
+        lastError = err;
+        continue;
+      }
+      throw err; // Прокидываем не-сетевые ошибки сразу
+    }
+  }
+
+  throw lastError || new Error(`WB API request failed after ${retries} retries: ${path}`);
+}
+
+// =============================================================================
+// API методы
+// =============================================================================
+
+/** Получить карточки товаров (Content API) с пагинацией */
+async function fetchItems(token, { limit = 100, maxPages = 50 } = {}) {
+  const allCards = [];
+  let cursor = null;
+  let page = 0;
+
+  while (page < maxPages) {
+    const body = {
+      settings: {
+        cursor:  cursor ? { updatedAt: cursor.updatedAt, nmID: cursor.nmID, limit } : { limit },
+        filter:  { withPhoto: -1 },
+      },
+    };
+
+    const data = await wbRequest({
+      token, method: 'POST',
+      baseUrl: WB_CONTENT_BASE,
+      path: '/content/v2/get/cards/list',
+      data: body,
+    });
+
+    const cards = data?.cards || [];
+    if (!cards.length) break;
+
+    allCards.push(...cards);
+
+    const newCursor = data?.cursor;
+    if (!newCursor || newCursor.total === 0 || cards.length < limit) break;
+
+    cursor = newCursor;
+    page++;
+  }
+
+  return allCards;
+}
+
+/** Извлечь штрихкоды из карточки */
+function extractCardBarcodes(card) {
+  const barcodes = [];
+  const nmID = card.nmID || card.id;
+  if (!nmID) return barcodes;
+
+  const sizes = card.sizes || card.addin?.find?.(a => a.type === 'Размер')?.params || [];
+  for (const size of sizes) {
+    const chrtID = size.chrtID || size.id;
+    const skus = size.skus || size.barcode ? [size.barcode] : [];
+    for (const sku of skus) {
+      if (sku) barcodes.push({ nm_id: nmID, chrt_id: chrtID, barcode: String(sku) });
+    }
+  }
+  return barcodes;
+}
+
+/** Получить заказы нового FBS */
+async function fetchOrders(token, { dateFrom = null, limit = 1000 } = {}) {
+  const params = { limit };
+  if (dateFrom) params.dateFrom = dateFrom;
+  const data = await wbRequest({ token, path: '/api/v3/orders', params });
+  return Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : []);
+}
+
+/** Получить склады продавца */
+async function fetchSellerWarehouses(token) {
+  const data = await wbRequest({ token, path: '/api/v3/warehouses' });
+  return Array.isArray(data) ? data : [];
+}
+
+/** Создать поставку */
+async function createSupply(token, name) {
+  const data = await wbRequest({ token, method: 'POST', path: '/api/v3/supplies', data: { name } });
+  return data;
+}
+
+/** Добавить заказы в поставку */
+async function addOrdersToSupply(token, supplyId, orderIds) {
+  await wbRequest({
+    token, method: 'PATCH',
+    path: `/api/v3/supplies/${encodeURIComponent(supplyId)}/orders`,
+    data: { orders: orderIds },
+  });
+}
+
+/** Получить стикеры для заказов */
+async function fetchOrderStickers(token, orderIds, { type = 'svg', width = 58, height = 40 } = {}) {
+  const data = await wbRequest({
+    token, method: 'POST',
+    path: `/api/v3/orders/stickers?type=${type}&width=${width}&height=${height}`,
+    data: { orders: orderIds },
+  });
+  return data?.stickers || [];
+}
+
+/** Получить QR-код поставки */
+async function fetchSupplyBarcode(token, supplyId) {
+  const rawId = String(supplyId).replace(/^WB-GI-/i, '');
+  const data = await wbRequest({
+    token,
+    path: `/api/v3/supplies/${encodeURIComponent(rawId)}/barcode?type=svg`,
+  });
+  return data; // { barcode, file }
+}
+
+/** Подтвердить поставку к отгрузке */
+async function deliverSupply(token, supplyId) {
+  const rawId = String(supplyId).replace(/^WB-GI-/i, '');
+  await wbRequest({
+    token, method: 'PATCH',
+    path: `/api/v3/supplies/${encodeURIComponent(rawId)}/deliver`,
+  });
+}
+
+/** Получить остатки FBS по складу */
+async function fetchFbsStocks(token, warehouseId) {
+  const data = await wbRequest({
+    token,
+    path: `/api/v3/stocks/${encodeURIComponent(warehouseId)}`,
+  });
+  return Array.isArray(data?.stocks) ? data.stocks : [];
+}
+
+/** Установить остатки FBS */
+async function updateFbsStocks(token, warehouseId, stocks) {
+  await wbRequest({
+    token, method: 'PUT',
+    path: `/api/v3/stocks/${encodeURIComponent(warehouseId)}`,
+    data: { stocks },
+  });
+}
+
+/** Нормализовать shipment code в формат WB-GI-XXXXX */
+function normalizeShipmentCode(rawId) {
+  const s = String(rawId || '').trim();
+  if (!s) return null;
+  if (/^WB-GI-/i.test(s)) return s;
+  if (/^\d+$/.test(s)) return `WB-GI-${s}`;
+  return s;
+}
+
+/** Извлечь sticker code из base64 SVG */
+function extractStickerCode(base64) {
+  if (!base64 || typeof base64 !== 'string') return null;
+  try {
+    const svg = Buffer.from(base64, 'base64').toString('utf8');
+    const nums = [];
+    const re = /<text[^>]*>\s*([0-9]{4,})\s*<\/text>/gim;
+    let m;
+    while ((m = re.exec(svg)) !== null) nums.push(m[1]);
+    if (nums.length >= 2) return `${nums[0]} ${nums[1]}`;
+    if (nums.length === 1) return nums[0];
+    return null;
+  } catch { return null; }
+}
+
+module.exports = {
+  wbRequest,
+  fetchItems, extractCardBarcodes,
+  fetchOrders,
+  fetchSellerWarehouses,
+  createSupply, addOrdersToSupply,
+  fetchOrderStickers, fetchSupplyBarcode,
+  deliverSupply,
+  fetchFbsStocks, updateFbsStocks,
+  normalizeShipmentCode, extractStickerCode,
+};

@@ -1,0 +1,24 @@
+# env
+.env
+server/.env
+*.env.local
+
+# node
+node_modules/
+**/node_modules/
+.package-lock.json
+
+# logs
+*.log
+npm-debug.log*
+
+# temp / os
+tmp/
+temp/
+*.tmp
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/

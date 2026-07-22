@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Сборка — BFC24 WMS v2</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh;padding:12px;}
+    .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+    .header h1{font-size:20px;font-weight:700;color:#38bdf8;}
+    .btn-sm{padding:8px 14px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+    .btn-back{background:#1e293b;color:#94a3b8;}
+    .btn-logout{background:#7f1d1d;color:#fca5a5;}
+    .card{background:#1e293b;border-radius:14px;padding:20px;margin-bottom:12px;}
+    .card-title{font-size:13px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
+    .wave-info{display:flex;gap:12px;flex-wrap:wrap;}
+    .badge{background:#0f172a;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;}
+    .badge span{color:#64748b;font-size:12px;display:block;}
+    /* Progress bar */
+    .progress-bar{height:8px;background:#0f172a;border-radius:4px;overflow:hidden;margin:12px 0;}
+    .progress-fill{height:100%;background:#22c55e;border-radius:4px;transition:width .3s;}
+    /* Task card */
+    .task-card{background:#0f172a;border-radius:14px;padding:20px;}
+    .task-barcode{font-size:26px;font-weight:800;color:#38bdf8;margin-bottom:4px;word-break:break-all;}
+    .task-name{font-size:16px;color:#f1f5f9;margin-bottom:16px;}
+    .task-location{display:flex;align-items:center;gap:10px;background:#1e293b;border-radius:10px;padding:14px;margin-bottom:16px;}
+    .location-icon{font-size:28px;}
+    .location-code{font-size:24px;font-weight:800;color:#fbbf24;}
+    .location-label{font-size:12px;color:#64748b;}
+    .task-qty{font-size:40px;font-weight:800;color:#22c55e;text-align:center;margin:16px 0;}
+    .task-preview{width:80px;height:80px;object-fit:cover;border-radius:8px;float:right;margin-left:12px;}
+    /* Scan input */
+    .scan-section{margin-top:16px;}
+    .scan-label{font-size:14px;color:#94a3b8;margin-bottom:8px;font-weight:600;}
+    .scan-input{width:100%;padding:18px;background:#0f172a;border:3px solid #334155;border-radius:12px;color:#f1f5f9;font-size:18px;outline:none;}
+    .scan-input.awaiting-location{border-color:#fbbf24;}
+    .scan-input.awaiting-item{border-color:#38bdf8;}
+    .scan-input:focus{border-color:#7dd3fc;}
+    /* Buttons */
+    .btn-row{display:flex;gap:10px;margin-top:12px;}
+    .btn-big{flex:1;padding:18px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;}
+    .btn-green{background:#16a34a;color:#fff;}
+    .btn-yellow{background:#d97706;color:#fff;}
+    .btn-red{background:#dc2626;color:#fff;}
+    .btn-blue{background:#2563eb;color:#fff;}
+    /* No wave */
+    .no-wave{text-align:center;padding:40px 20px;}
+    .no-wave p{color:#64748b;font-size:16px;margin-bottom:20px;}
+    /* Step indicator */
+    .step-indicator{display:flex;gap:6px;justify-content:center;margin-bottom:16px;}
+    .step{width:12px;height:12px;border-radius:50%;background:#334155;}
+    .step.active{background:#38bdf8;}
+    .step.done{background:#22c55e;}
+    #status-msg{text-align:center;color:#64748b;font-size:14px;min-height:20px;margin-top:8px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🏃 Сборка</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <!-- Wave info -->
+  <div class="card" id="wave-card" style="display:none">
+    <div class="card-title">Волна сборки</div>
+    <div class="wave-info">
+      <div class="badge"><span>Поставка</span><div id="shipment-code">—</div></div>
+      <div class="badge"><span>Прогресс</span><div id="wave-progress">0/0</div></div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  </div>
+
+  <!-- No wave -->
+  <div class="card no-wave" id="no-wave-card">
+    <div style="font-size:48px;margin-bottom:16px;">📦</div>
+    <p>Нет активной волны сборки</p>
+    <button class="btn-big btn-blue" onclick="takeWave()">Взять волну</button>
+  </div>
+
+  <!-- Task card -->
+  <div id="task-section" style="display:none">
+    <div class="task-card">
+      <div class="step-indicator">
+        <div class="step" id="step-loc"></div>
+        <div class="step" id="step-item"></div>
+      </div>
+
+      <div style="overflow:hidden">
+        <img id="task-preview" class="task-preview" src="" onerror="this.style.display='none'"/>
+        <div class="task-barcode" id="task-barcode">—</div>
+        <div class="task-name" id="task-name">—</div>
+      </div>
+
+      <div class="task-location">
+        <div class="location-icon">📍</div>
+        <div>
+          <div class="location-label">Ячейка</div>
+          <div class="location-code" id="task-location">—</div>
+        </div>
+      </div>
+
+      <div class="task-qty" id="task-qty">0</div>
+
+      <div class="scan-section">
+        <div class="scan-label" id="scan-label">Отсканируйте ячейку</div>
+        <input type="text" id="scan-input" class="scan-input awaiting-location"
+               placeholder="Сканировать..." inputmode="none" autocomplete="off"/>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-big btn-yellow" onclick="skipTask()">Пропустить</button>
+        <button class="btn-big btn-red" onclick="closeWave()">Закрыть волну</button>
+      </div>
+
+      <div id="status-msg"></div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['picker','packer','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    let currentTask = null;
+    let waveStatus = null;
+
+    async function logout() {
+      await window.API.auth.logout();
+      window.location.href = '/app/login.html';
+    }
+
+    function updateStepIndicator(scanStep) {
+      const locStep  = document.getElementById('step-loc');
+      const itemStep = document.getElementById('step-item');
+      const scanInput = document.getElementById('scan-input');
+      const scanLabel = document.getElementById('scan-label');
+
+      if (scanStep === 'await_location') {
+        locStep.className  = 'step active';
+        itemStep.className = 'step';
+        scanInput.className = 'scan-input awaiting-location';
+        scanLabel.textContent = '📍 Отсканируйте ЯЧЕЙКУ';
+        scanInput.placeholder = 'Скан ячейки...';
+      } else {
+        locStep.className  = 'step done';
+        itemStep.className = 'step active';
+        scanInput.className = 'scan-input awaiting-item';
+        scanLabel.textContent = '📦 Отсканируйте ТОВАР';
+        scanInput.placeholder = 'Скан товара...';
+      }
+    }
+
+    function renderTask(task) {
+      if (!task) { document.getElementById('task-section').style.display='none'; return; }
+      document.getElementById('task-section').style.display='block';
+      document.getElementById('no-wave-card').style.display='none';
+      document.getElementById('wave-card').style.display='block';
+
+      currentTask = task;
+      document.getElementById('task-barcode').textContent = task.barcode || '—';
+      document.getElementById('task-name').textContent    = task.item_name || task.barcode || '—';
+      document.getElementById('task-location').textContent= task.location_code || '—';
+      document.getElementById('task-qty').textContent     = task.qty || 0;
+      document.getElementById('shipment-code').textContent= task.shipment_code || '—';
+
+      const preview = document.getElementById('task-preview');
+      if (task.preview_url) { preview.src = task.preview_url; preview.style.display='block'; }
+      else preview.style.display='none';
+
+      updateStepIndicator(task.scan_step || 'await_location');
+      document.getElementById('status-msg').textContent = '';
+      setTimeout(() => document.getElementById('scan-input').focus(), 100);
+    }
+
+    async function loadWaveStatus() {
+      try {
+        const s = await window.API.picking.waveStatus();
+        waveStatus = s;
+        if (s.has_wave) {
+          document.getElementById('no-wave-card').style.display='none';
+          document.getElementById('wave-card').style.display='block';
+          document.getElementById('shipment-code').textContent = s.shipment_code || '—';
+          document.getElementById('wave-progress').textContent = `${s.done||0}/${s.total||0}`;
+          const pct = s.total > 0 ? Math.round((s.done / s.total)*100) : 0;
+          document.getElementById('progress-fill').style.width = pct + '%';
+        } else {
+          document.getElementById('no-wave-card').style.display='block';
+          document.getElementById('wave-card').style.display='none';
+          document.getElementById('task-section').style.display='none';
+        }
+      } catch(e) { UI.notify.err(e.message); }
+    }
+
+    async function takeWave() {
+      try {
+        const res = await window.API.picking.takeWave();
+        if (res.has_wave) {
+          UI.notify.ok('Волна взята!');
+          await loadNextTask();
+        } else {
+          UI.notify.warn('Нет доступных волн');
+        }
+        await loadWaveStatus();
+      } catch(e) { UI.notify.err(e.message); }
+    }
+
+    async function loadNextTask() {
+      try {
+        const res = await window.API.picking.next();
+        if (res.task) {
+          renderTask(res.task);
+        } else {
+          document.getElementById('task-section').style.display='none';
+          UI.notify.ok('Все задачи выполнены! Закройте волну.');
+        }
+      } catch(e) { UI.notify.err(e.message); }
+    }
+
+    async function handleScan(scanned) {
+      if (!currentTask) return;
+      const step = currentTask.scan_step || 'await_location';
+      const statusEl = document.getElementById('status-msg');
+
+      try {
+        if (step === 'await_location') {
+          const res = await window.API.picking.scanLocation({
+            picking_task_id:     currentTask.id,
+            scanned_location_code: scanned,
+          });
+          if (res.result === 'ok') {
+            currentTask.scan_step = 'await_item';
+            updateStepIndicator('await_item');
+            statusEl.textContent = '✅ Ячейка подтверждена';
+          } else {
+            UI.notify.err(`Неверная ячейка! Ожидалась: ${res.expected}`);
+            statusEl.textContent = `Ожидается: ${res.expected}`;
+          }
+        } else {
+          const res = await window.API.picking.scanItem({
+            picking_task_id: currentTask.id,
+            scanned_barcode: scanned,
+          });
+          if (res.result === 'ok') {
+            if (res.done) {
+              UI.notify.ok(`✅ Готово! (${res.qty_picked}/${res.qty_total})`);
+              await loadWaveStatus();
+              await loadNextTask();
+            } else {
+              statusEl.textContent = `Собрано: ${res.qty_picked}/${res.qty_total}`;
+            }
+          } else {
+            UI.notify.err(`Неверный товар! Ожидается: ${res.expected}`);
+          }
+        }
+      } catch(e) {
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function skipTask() {
+      if (!currentTask) return;
+      if (!confirm('Пропустить задачу? Будет создана инвентаризация.')) return;
+      try {
+        await window.API.picking.skip({ picking_task_id: currentTask.id, reason: 'not_found' });
+        UI.notify.warn('Задача пропущена');
+        await loadNextTask();
+        await loadWaveStatus();
+      } catch(e) { UI.notify.err(e.message); }
+    }
+
+    async function closeWave() {
+      if (!waveStatus?.has_wave) return;
+      const bufLoc = prompt('Введите код МХ упаковки (PAK-XX):');
+      if (!bufLoc) return;
+      try {
+        await window.API.picking.closeWave({
+          shipment_code:       waveStatus.shipment_code,
+          buffer_location_code: bufLoc.trim().toUpperCase(),
+        });
+        UI.notify.ok('Волна закрыта!');
+        currentTask = null;
+        waveStatus  = null;
+        await loadWaveStatus();
+      } catch(e) { UI.notify.err(e.message); }
+    }
+
+    // Сканер
+    document.getElementById('scan-input').addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        const v = e.target.value.trim();
+        e.target.value = '';
+        if (v) await handleScan(v);
+        setTimeout(() => e.target.focus(), 100);
+      }
+    });
+
+    // Инициализация
+    (async () => {
+      await loadWaveStatus();
+      if (waveStatus?.has_wave) await loadNextTask();
+    })();
+  </script>
+</body>
+</html>
