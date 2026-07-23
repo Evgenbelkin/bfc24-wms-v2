@@ -35,7 +35,7 @@
     const overlay = document.createElement('div');
     overlay.id = 'scanner-overlay';
     overlay.style.cssText =
-      'position:fixed;inset:0;background:rgba(2,6,23,.96);z-index:10000;' +
+      'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(2,6,23,.96);z-index:10000;' +
       'display:flex;justify-content:center;padding:14px;overflow-y:auto;';
     overlay.innerHTML = `
       <div style="width:100%;max-width:480px;display:flex;flex-direction:column;">
@@ -72,6 +72,18 @@
    * @param {()=>void} [opts.onCancel]
    */
   async function open(opts) {
+    try {
+      await openInternal(opts);
+    } catch (err) {
+      // Что угодно неожиданное (querySelector вернул null, DOM ещё не готов и т.п.) —
+      // не проглатываем молча, иначе снаружи выглядит как "кнопка ничего не делает".
+      console.error('[Scanner.open] failed:', err);
+      if (window.UI && UI.notify) UI.notify.err('Не удалось открыть камеру: ' + (err.message || err));
+      else alert('Не удалось открыть камеру: ' + (err.message || err));
+    }
+  }
+
+  async function openInternal(opts) {
     const { title = 'Сканирование', formats = DEFAULT_FORMATS, onResult, onCancel } = opts || {};
 
     const overlay = buildOverlay();
