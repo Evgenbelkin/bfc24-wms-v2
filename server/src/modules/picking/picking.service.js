@@ -197,10 +197,12 @@ async function scanLocation({ tenantId, pickerId, taskId, scannedLocationCode })
       return { ok: false, result: 'mismatch', expected: task.location_code, scanned: scannedLocationCode };
     }
 
-    // Если ячейка не была задана — фиксируем
+    // Если ячейка не была задана — фиксируем канонический (uppercase) код,
+    // а не сырой ввод — иначе следующий SELECT по location_code (например,
+    // при списании остатка в scanItem) не найдёт ячейку из-за регистра.
     await client.query(
       `UPDATE wms.picking_tasks SET scan_step='await_item', location_code=COALESCE($1,location_code), updated_at=NOW() WHERE id=$2`,
-      [scannedLocationCode, taskId]
+      [scanned || null, taskId]
     );
     await client.query(
       `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result) VALUES($1,$2,'location',$3,$4,'ok')`,
@@ -400,7 +402,7 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
 
     const bufLoc = await client.query(
       `SELECT id, location_type FROM wms.locations
-       WHERE tenant_id=$1 AND warehouse_id=$2 AND location_code=$3 AND is_active=TRUE LIMIT 1`,
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND UPPER(location_code)=$3 AND is_active=TRUE LIMIT 1`,
       [tenantId, wave.warehouse_id, code]
     );
     if (bufLoc.rowCount === 0) {

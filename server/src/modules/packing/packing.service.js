@@ -303,7 +303,7 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
 
     const locRes = await client.query(
       `SELECT id, location_type FROM wms.locations
-       WHERE tenant_id=$1 AND warehouse_id=$2 AND location_code=$3 AND is_active=TRUE LIMIT 1`,
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND UPPER(location_code)=$3 AND is_active=TRUE LIMIT 1`,
       [tenantId, shipment.warehouse_id, code]
     );
     if (locRes.rowCount === 0) {

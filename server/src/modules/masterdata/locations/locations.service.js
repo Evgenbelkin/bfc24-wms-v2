@@ -76,7 +76,11 @@ async function getLocationByCode({ tenantId, warehouseId, locationCode }) {
 }
 
 async function createLocation({ tenantId, warehouseId, createdById, data }) {
-  const code = validateNonEmptyString(data.location_code, 'location_code', 100);
+  // Нормализуем к верхнему регистру — иначе одна и та же ячейка, введённая
+  // один раз как "bufer", а отсканированная как "BUFER" (сканеры/камеры и
+  // ручной ввод в верхнем регистре — обычное дело), не будет находиться по
+  // точному совпадению в местах, где код ячейки сверяется со сканом.
+  const code = validateNonEmptyString(data.location_code, 'location_code', 100).trim().toUpperCase();
   const wid  = warehouseId || validatePositiveInt(data.warehouse_id, 'warehouse_id');
   const type = data.location_type || 'rack';
 
