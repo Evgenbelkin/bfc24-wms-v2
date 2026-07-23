@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Клиенты — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;}
+    .filters-row input{flex:1;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .client-row{cursor:pointer;}
+    .client-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🏢 Клиенты</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Поиск</div>
+    <div class="filters-row">
+      <input id="f-search" placeholder="Название или код клиента"/>
+    </div>
+    <button class="btn-big btn-blue btn-full" onclick="loadClients()">🔍 Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиенты (<span id="client-count">0</span>)</div>
+    <div id="client-list"></div>
+  </div>
+
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новый клиент</button>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    const user = window.API.getUser();
+    const canEdit = user?.role === 'tenant_admin'; // create/patch — только tenant_admin на бэкенде
+    if (canEdit) document.getElementById('add-btn').style.display = 'block';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let clientCache = [];
+
+    async function loadClients() {
+      try {
+        const params = {};
+        const search = UI.val('#f-search'); if (search) params.search = search;
+        const res = await window.API.clients.list(params);
+        clientCache = res.clients || [];
+        document.getElementById('client-count').textContent = clientCache.length;
+
+        const list = document.getElementById('client-list');
+        if (!clientCache.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🏢</div>Клиентов нет</div>`;
+          return;
+        }
+        list.innerHTML = clientCache.map((c, idx) => `
+          <div class="list-row client-row" onclick="openModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(c.client_name)}</div>
+              <div class="sub">${UI.escHtml(c.client_code)} · ${UI.escHtml(c.contact_name||'без контакта')} ${c.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
+            </div>
+            <div class="badge"><span>Продавцов</span><div>${c.seller_count||0}</div></div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function openModal(idx) {
+      const c = idx !== null ? clientCache[idx] : null;
+      let full = c;
+      if (c) {
+        try { full = (await window.API.clients.get(c.id)).client; } catch (e) { UI.notify.err(e.message); return; }
+      }
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${full ? UI.escHtml(full.client_name) : 'Новый клиент'}</div>
+            <div class="field"><label>Код клиента</label><input id="m-code" value="${full ? UI.escHtml(full.client_code) : ''}" ${full?'disabled':''}/></div>
+            <div class="field"><label>Название</label><input id="m-name" value="${full ? UI.escHtml(full.client_name) : ''}"/></div>
+            <div class="field"><label>Контактное лицо</label><input id="m-contact" value="${full && full.contact_name ? UI.escHtml(full.contact_name):''}"/></div>
+            <div class="field"><label>Email</label><input id="m-email" value="${full && full.contact_email ? UI.escHtml(full.contact_email):''}"/></div>
+            <div class="field"><label>Телефон</label><input id="m-phone" value="${full && full.contact_phone ? UI.escHtml(full.contact_phone):''}"/></div>
+            <div class="field"><label>Telegram chat id</label><input id="m-tg" value="${full && full.telegram_chat_id ? UI.escHtml(full.telegram_chat_id):''}"/></div>
+            <div class="field"><label>Заметки</label><textarea id="m-notes" rows="3">${full && full.notes ? UI.escHtml(full.notes):''}</textarea></div>
+            <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!full || full.is_active ? 'checked':''}/></div>
+            <div class="btn-row">
+              ${canEdit ? `<button class="btn-big btn-green" onclick="saveClient(${idx})">💾 Сохранить</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function saveClient(idx) {
+      const c = idx !== null ? clientCache[idx] : null;
+      const data = {
+        client_name: UI.val('#m-name'),
+        contact_name: UI.val('#m-contact'),
+        contact_email: UI.val('#m-email'),
+        contact_phone: UI.val('#m-phone'),
+        telegram_chat_id: UI.val('#m-tg'),
+        notes: UI.val('#m-notes'),
+        is_active: document.getElementById('m-active').checked,
+      };
+      try {
+        if (c) {
+          await window.API.clients.update(c.id, data);
+          UI.notify.ok('Клиент обновлён');
+        } else {
+          data.client_code = UI.val('#m-code');
+          if (!data.client_code) { UI.notify.err('Укажите код клиента'); return; }
+          if (!data.client_name) { UI.notify.err('Укажите название'); return; }
+          await window.API.clients.create(data);
+          UI.notify.ok('Клиент создан');
+        }
+        closeModal();
+        await loadClients();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadClients();
+  </script>
+</body>
+</html>

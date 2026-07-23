@@ -60,6 +60,10 @@
       { href:'movement.html',         icon:'🔀', label:'Перемещение',     roles:['tenant_admin','supervisor','inventory_manager'] },
       { href:'inventory.html',        icon:'🔍', label:'Инвентаризация',  roles:['tenant_admin','supervisor','inventory_manager'] },
       { href:'admin-dashboard.html',  icon:'📊', label:'Диспетчерская',   roles:['tenant_admin','supervisor'] },
+      { href:'stock-overview.html',   icon:'📊', label:'Обзор склада',    roles:['tenant_admin','supervisor','inventory_manager'] },
+      { href:'locations.html',        icon:'🗄️', label:'Места хранения',  roles:['tenant_admin','supervisor','receiver','picker','inventory_manager'] },
+      { href:'items.html',            icon:'🏷️', label:'Справочник товаров', roles:['tenant_admin','supervisor','receiver','picker','packer'] },
+      { href:'clients.html',          icon:'🏢', label:'Клиенты',         roles:['tenant_admin','supervisor'] },
     ];
 
     const role = user?.role;

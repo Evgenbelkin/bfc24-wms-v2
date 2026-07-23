@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Места хранения — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;}
+    .filters-row select, .filters-row input{flex:1;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .loc-row{cursor:pointer;}
+    .loc-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🗄️ Места хранения</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Поиск</div>
+    <div class="filters-row">
+      <input id="f-search" placeholder="Код ячейки"/>
+      <select id="f-type">
+        <option value="">Все типы</option>
+        <option value="rack">Стеллаж</option>
+        <option value="floor">Пол</option>
+        <option value="buffer">Буфер</option>
+        <option value="receiving">Приёмка</option>
+        <option value="shipping">Отгрузка</option>
+        <option value="quarantine">Карантин</option>
+        <option value="virtual">Виртуальная</option>
+      </select>
+    </div>
+    <button class="btn-big btn-blue btn-full" onclick="loadLocations()">🔍 Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Ячейки (<span id="loc-count">0</span> из <span id="loc-total">0</span>)</div>
+    <div id="loc-list"></div>
+    <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadMore()">↓ Ещё</button>
+  </div>
+
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новая ячейка</button>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin','receiver','picker','inventory_manager'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    const user = window.API.getUser();
+    const canEdit = user?.role === 'tenant_admin' || user?.role === 'supervisor';
+    if (canEdit) document.getElementById('add-btn').style.display = 'block';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    const TYPE_LABELS = {
+      rack:'Стеллаж', floor:'Пол', buffer:'Буфер',
+      receiving:'Приёмка', shipping:'Отгрузка', quarantine:'Карантин', virtual:'Виртуальная',
+    };
+
+    let warehouses = [];
+    let locOffset = 0;
+    const PAGE_SIZE = 100;
+    let locCache = [];
+
+    async function loadWarehouses() {
+      try {
+        const res = await window.API.warehouses.list();
+        warehouses = res.warehouses || [];
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadLocations(append=false) {
+      try {
+        if (!append) locOffset = 0;
+        const params = { limit: PAGE_SIZE, offset: locOffset };
+        const search = UI.val('#f-search'); if (search) params.search = search;
+        const type = UI.val('#f-type'); if (type) params.location_type = type;
+
+        const res = await window.API.locations.list(params);
+        locCache = append ? locCache.concat(res.locations) : res.locations;
+        document.getElementById('loc-total').textContent = res.total;
+        document.getElementById('loc-count').textContent = locCache.length;
+
+        const list = document.getElementById('loc-list');
+        if (!locCache.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🗄️</div>Ничего не найдено</div>`;
+          return;
+        }
+        list.innerHTML = locCache.map((l, idx) => `
+          <div class="list-row loc-row" onclick="openModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(l.location_code)}</div>
+              <div class="sub">${UI.escHtml(TYPE_LABELS[l.location_type]||l.location_type)} · ${UI.escHtml(l.warehouse_name)} ${l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>'}</div>
+            </div>
+            <div class="badge"><span>На руках</span><div>${UI.fmtQty(l.qty_on_hand)}</div></div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function loadMore() { locOffset += PAGE_SIZE; loadLocations(true); }
+
+    function openModal(idx) {
+      const loc = idx !== null ? locCache[idx] : null;
+      const readonly = !canEdit;
+      const whOptions = warehouses.map(w => `<option value="${w.id}" ${loc && loc.warehouse_id===w.id ? 'selected':''}>${UI.escHtml(w.warehouse_name)}</option>`).join('');
+      const typeOptions = Object.entries(TYPE_LABELS).map(([k,v]) => `<option value="${k}" ${loc && loc.location_type===k ? 'selected':''}>${v}</option>`).join('');
+
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${loc ? 'Ячейка '+UI.escHtml(loc.location_code) : 'Новая ячейка'}</div>
+            <div class="field"><label>Код ячейки</label><input id="m-code" value="${loc ? UI.escHtml(loc.location_code) : ''}" ${loc?'disabled':''} placeholder="A-01-02-3"/></div>
+            <div class="field"><label>Склад</label><select id="m-warehouse" ${loc?'disabled':''}>${whOptions}</select></div>
+            <div class="field"><label>Тип</label><select id="m-type">${typeOptions}</select></div>
+            <div class="field"><label>Описание</label><input id="m-desc" value="${loc && loc.description ? UI.escHtml(loc.description) : ''}"/></div>
+            <div class="field"><label>Зона</label><input id="m-zone" value="${loc && loc.zone_code ? UI.escHtml(loc.zone_code) : ''}"/></div>
+            <div class="field"><label style="display:inline;">Активна</label> <input type="checkbox" id="m-active" ${!loc || loc.is_active ? 'checked':''}/></div>
+            <div class="field"><label style="display:inline;">Ячейка сборки (pick location)</label> <input type="checkbox" id="m-pick" ${!loc || loc.is_pick_location ? 'checked':''}/></div>
+            <div class="btn-row">
+              ${canEdit ? `<button class="btn-big btn-green" onclick="saveLocation(${idx})">💾 Сохранить</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function saveLocation(idx) {
+      const loc = idx !== null ? locCache[idx] : null;
+      const data = {
+        location_type: UI.val('#m-type'),
+        description: UI.val('#m-desc'),
+        zone_code: UI.val('#m-zone'),
+        is_active: document.getElementById('m-active').checked,
+        is_pick_location: document.getElementById('m-pick').checked,
+      };
+      try {
+        if (loc) {
+          await window.API.locations.update(loc.id, data);
+          UI.notify.ok('Ячейка обновлена');
+        } else {
+          data.location_code = UI.val('#m-code');
+          data.warehouse_id = UI.val('#m-warehouse');
+          if (!data.location_code) { UI.notify.err('Укажите код ячейки'); return; }
+          await window.API.locations.create(data);
+          UI.notify.ok('Ячейка создана');
+        }
+        closeModal();
+        await loadLocations();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadWarehouses(); await loadLocations(); })();
+  </script>
+</body>
+</html>

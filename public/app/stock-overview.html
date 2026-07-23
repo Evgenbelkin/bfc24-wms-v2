@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Обзор склада — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters{display:flex;flex-direction:column;gap:10px;}
+    .filters-row{display:flex;gap:8px;}
+    .filters-row select, .filters-row input{flex:1;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .check-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted2);}
+    .total-row{display:flex;justify-content:space-between;align-items:center;margin-top:10px;color:var(--muted);font-size:12px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>📊 Обзор склада</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="balances" onclick="switchTab('balances')">Остатки</button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">Движения</button>
+  </div>
+
+  <!-- ============ Остатки ============ -->
+  <div id="tab-balances">
+    <div class="card">
+      <div class="card-title">Фильтры</div>
+      <div class="filters">
+        <div class="filters-row">
+          <select id="f-client">
+            <option value="">Все клиенты</option>
+          </select>
+          <select id="f-warehouse">
+            <option value="">Все склады</option>
+          </select>
+        </div>
+        <div class="filters-row">
+          <input id="f-barcode" placeholder="Штрихкод"/>
+          <input id="f-location" placeholder="Код ячейки"/>
+        </div>
+        <label class="check-row">
+          <input type="checkbox" id="f-only-stock" checked/> Только с остатком &gt; 0
+        </label>
+        <button class="btn-big btn-blue btn-full" onclick="loadStock()">🔍 Показать</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Остатки (<span id="stock-count">0</span> из <span id="stock-total">0</span>)</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Товар</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+      <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadMore()">↓ Ещё</button>
+    </div>
+  </div>
+
+  <!-- ============ Движения ============ -->
+  <div id="tab-history" style="display:none">
+    <div class="card">
+      <div class="card-title">Фильтры</div>
+      <div class="filters">
+        <div class="filters-row">
+          <input id="h-barcode" placeholder="Штрихкод"/>
+          <input id="h-location" placeholder="Код ячейки"/>
+        </div>
+        <div class="filters-row">
+          <select id="h-type">
+            <option value="">Все типы</option>
+            <option value="receive">Приёмка</option>
+            <option value="place">Размещение</option>
+            <option value="move">Перемещение</option>
+            <option value="pick">Сборка</option>
+            <option value="ship">Отгрузка</option>
+            <option value="adjust">Корректировка</option>
+          </select>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadMovements()">🔍 Показать</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Тип</th><th>Товар</th><th>Кол-во</th><th>Откуда</th><th>Куда</th><th>Кто</th></tr></thead>
+          <tbody id="movements-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin','inventory_manager'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function switchTab(name) {
+      ['balances','history'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'history' && !movementsLoaded) loadMovements();
+    }
+
+    const MOVEMENT_TYPE_LABELS = {
+      receive:'Приёмка', place:'Размещение', move:'Перемещение',
+      pick:'Сборка', ship:'Отгрузка', adjust:'Корректировка',
+    };
+
+    async function loadFilters() {
+      try {
+        const [clientsRes, whRes] = await Promise.all([
+          window.API.clients.short(),
+          window.API.warehouses.list(),
+        ]);
+        UI.populateSelect('#f-client', clientsRes.clients || [], { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
+        UI.populateSelect('#f-warehouse', whRes.warehouses || [], { valueKey:'id', labelKey:'warehouse_name', emptyLabel:'Все склады' });
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    let stockOffset = 0;
+    const PAGE_SIZE = 200;
+    let stockRowsCache = [];
+
+    async function loadStock(append=false) {
+      try {
+        if (!append) stockOffset = 0;
+        const params = {
+          limit: PAGE_SIZE, offset: stockOffset,
+          only_with_stock: document.getElementById('f-only-stock').checked,
+        };
+        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
+        const warehouseId = UI.val('#f-warehouse'); if (warehouseId) params.warehouse_id = warehouseId;
+        const barcode = UI.val('#f-barcode'); if (barcode) params.barcode = barcode;
+        const location = UI.val('#f-location'); if (location) params.location_code = location;
+
+        const res = await window.API.stock.list(params);
+        stockRowsCache = append ? stockRowsCache.concat(res.stock) : res.stock;
+        document.getElementById('stock-total').textContent = res.total;
+        document.getElementById('stock-count').textContent = stockRowsCache.length;
+
+        UI.renderTable('#stock-body', stockRowsCache, (r) => `
+          <tr>
+            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${UI.escHtml(r.barcode)}</div></td>
+            <td>${UI.escHtml(r.location_code)}</td>
+            <td>${UI.escHtml(r.client_name||'—')}</td>
+            <td>${UI.fmtQty(r.qty_on_hand)}</td>
+            <td>${UI.fmtQty(r.qty_reserved)}</td>
+            <td><strong>${UI.fmtQty(r.qty_available)}</strong></td>
+          </tr>
+        `);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function loadMore() {
+      stockOffset += PAGE_SIZE;
+      loadStock(true);
+    }
+
+    let movementsLoaded = false;
+    async function loadMovements() {
+      try {
+        movementsLoaded = true;
+        const params = { limit: 300 };
+        const barcode = UI.val('#h-barcode'); if (barcode) params.barcode = barcode;
+        const location = UI.val('#h-location'); if (location) params.location_code = location;
+        const type = UI.val('#h-type'); if (type) params.movement_type = type;
+
+        const res = await window.API.stock.movements(params);
+        UI.renderTable('#movements-body', res.movements, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.created_at)}</td>
+            <td><span class="pill pill-blue">${MOVEMENT_TYPE_LABELS[r.movement_type] || UI.escHtml(r.movement_type)}</span></td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.fmtQty(r.qty)}</td>
+            <td>${UI.escHtml(r.from_location_code||'—')}</td>
+            <td>${UI.escHtml(r.to_location_code||'—')}</td>
+            <td>${UI.escHtml(r.username||'—')}</td>
+          </tr>
+        `);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadFilters(); await loadStock(); })();
+  </script>
+</body>
+</html>

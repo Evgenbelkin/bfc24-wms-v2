@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Справочник товаров — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;}
+    .filters-row select, .filters-row input{flex:1;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .item-row{cursor:pointer;}
+    .item-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:560px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .field-row2{display:flex;gap:10px;}
+    .field-row2 .field{flex:1;}
+    .scan-row{display:flex;gap:8px;}
+    .scan-input{flex:1;width:100%;padding:16px;background:var(--card2);border:3px solid var(--border);border-radius:12px;color:var(--text);font-size:17px;outline:none;}
+    .scan-camera-btn{padding:0 18px;border:none;border-radius:12px;background:#334155;color:var(--accent);font-size:22px;cursor:pointer;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🏷️ Справочник товаров</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиент</div>
+    <select id="f-client" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+      <option value="">Все клиенты</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Поиск</div>
+    <div class="scan-row">
+      <input id="f-search" class="scan-input" placeholder="Штрихкод, название или артикул" inputmode="none" autocomplete="off"/>
+      <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#f-search','Скан товара')">📷</button>
+    </div>
+    <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadItems()">🔍 Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Товары (<span id="item-count">0</span> из <span id="item-total">0</span>)</div>
+    <div id="item-list"></div>
+    <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadMore()">↓ Ещё</button>
+  </div>
+
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новый товар</button>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin','receiver','picker','packer'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    const user = window.API.getUser();
+    const canEdit = user?.role === 'tenant_admin' || user?.role === 'supervisor';
+    if (canEdit) document.getElementById('add-btn').style.display = 'block';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    const UNITS = ['шт','л','кг','м','компл','пара','упак'];
+
+    let clientsList = [];
+    let itemOffset = 0;
+    const PAGE_SIZE = 100;
+    let itemCache = [];
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        clientsList = res.clients || [];
+        UI.populateSelect('#f-client', clientsList, { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
+        document.getElementById('f-client').addEventListener('change', () => loadItems());
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadItems(append=false) {
+      try {
+        if (!append) itemOffset = 0;
+        const params = { limit: PAGE_SIZE, offset: itemOffset };
+        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
+        const search = UI.val('#f-search'); if (search) params.search = search;
+
+        const res = await window.API.items.list(params);
+        itemCache = append ? itemCache.concat(res.items) : res.items;
+        document.getElementById('item-total').textContent = res.total;
+        document.getElementById('item-count').textContent = itemCache.length;
+
+        const list = document.getElementById('item-list');
+        if (!itemCache.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🏷️</div>Ничего не найдено</div>`;
+          return;
+        }
+        list.innerHTML = itemCache.map((it, idx) => `
+          <div class="list-row item-row" onclick="openModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(it.item_name)}</div>
+              <div class="sub">${UI.escHtml(it.barcode)} · ${UI.escHtml(it.client_name||'')} ${it.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
+            </div>
+            <div class="badge"><span>Ед.</span><div>${UI.escHtml(it.unit)}</div></div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function loadMore() { itemOffset += PAGE_SIZE; loadItems(true); }
+
+    UI.onScan('#f-search', (v) => { UI.setVal('#f-search', v); loadItems(); });
+
+    function openModal(idx) {
+      const it = idx !== null ? itemCache[idx] : null;
+      const clientOptions = clientsList.map(c => `<option value="${c.id}" ${it && it.client_id===c.id ? 'selected':''}>${UI.escHtml(c.client_name)}</option>`).join('');
+      const unitOptions = UNITS.map(u => `<option value="${u}" ${it && it.unit===u ? 'selected':''}>${u}</option>`).join('');
+
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${it ? UI.escHtml(it.item_name) : 'Новый товар'}</div>
+            ${!it ? `<div class="field"><label>Клиент</label><select id="m-client">${clientOptions}</select></div>` : ''}
+            <div class="field"><label>Штрихкод</label><input id="m-barcode" value="${it ? UI.escHtml(it.barcode) : ''}" ${it?'disabled':''}/></div>
+            <div class="field"><label>Название</label><input id="m-name" value="${it ? UI.escHtml(it.item_name) : ''}"/></div>
+            <div class="field-row2">
+              <div class="field"><label>Артикул</label><input id="m-vendor" value="${it && it.vendor_code ? UI.escHtml(it.vendor_code):''}"/></div>
+              <div class="field"><label>Артикул WB</label><input id="m-wbvendor" value="${it && it.wb_vendor_code ? UI.escHtml(it.wb_vendor_code):''}"/></div>
+            </div>
+            <div class="field-row2">
+              <div class="field"><label>Бренд</label><input id="m-brand" value="${it && it.brand ? UI.escHtml(it.brand):''}"/></div>
+              <div class="field"><label>Ед. изм.</label><select id="m-unit">${unitOptions}</select></div>
+            </div>
+            <div class="field-row2">
+              <div class="field"><label>Вес, г</label><input id="m-weight" type="number" value="${it && it.weight_grams!=null ? it.weight_grams:''}"/></div>
+              <div class="field"><label>Объём, л</label><input id="m-volume" type="number" value="${it && it.volume_liters!=null ? it.volume_liters:''}"/></div>
+            </div>
+            <div class="field"><label style="display:inline;">Требует упаковки</label> <input type="checkbox" id="m-needspkg" ${it && it.needs_packaging ? 'checked':''}/></div>
+            <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!it || it.is_active ? 'checked':''}/></div>
+            <div class="btn-row">
+              ${canEdit ? `<button class="btn-big btn-green" onclick="saveItem(${idx})">💾 Сохранить</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function saveItem(idx) {
+      const it = idx !== null ? itemCache[idx] : null;
+      const data = {
+        item_name: UI.val('#m-name'),
+        vendor_code: UI.val('#m-vendor'),
+        wb_vendor_code: UI.val('#m-wbvendor'),
+        brand: UI.val('#m-brand'),
+        unit: UI.val('#m-unit'),
+        weight_grams: UI.val('#m-weight') || null,
+        volume_liters: UI.val('#m-volume') || null,
+        needs_packaging: document.getElementById('m-needspkg').checked,
+        is_active: document.getElementById('m-active').checked,
+      };
+      try {
+        if (it) {
+          await window.API.items.update(it.id, data);
+          UI.notify.ok('Товар обновлён');
+        } else {
+          data.barcode = UI.val('#m-barcode');
+          data.client_id = UI.val('#m-client');
+          if (!data.barcode) { UI.notify.err('Укажите штрихкод'); return; }
+          if (!data.item_name) { UI.notify.err('Укажите название'); return; }
+          await window.API.items.create(data);
+          UI.notify.ok('Товар создан');
+        }
+        closeModal();
+        await loadItems();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadClients(); await loadItems(); })();
+  </script>
+</body>
+</html>
