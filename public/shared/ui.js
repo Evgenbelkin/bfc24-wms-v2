@@ -133,6 +133,23 @@
     setTimeout(() => { input.focus(); }, 100);
   }
 
+  // ─────────────── Camera scan → same code path as TSD/keyboard scan ───────────────
+  // Открывает Scanner (камера), кладёт результат в поле и симулирует Enter —
+  // так один и тот же onScan()-обработчик работает и для ТСД, и для камеры, и для руками введённого кода.
+
+  function scanInto(inputSelector, title) {
+    if (!window.Scanner) { notify.err('Модуль камеры-сканера не загружен'); return; }
+    Scanner.open({
+      title: title || 'Сканирование',
+      onResult: (code) => {
+        const input = el(inputSelector);
+        if (!input) return;
+        input.value = code;
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      },
+    });
+  }
+
   // ─────────────── Select population ───────────────
 
   function populateSelect(selector, items, { valueKey = 'id', labelKey = 'client_name', emptyLabel = '— Выберите —' } = {}) {
@@ -163,7 +180,7 @@
     renderTable,
     requireAuth, requireRole,
     fmtDate, fmtDateTime, fmtMoney, fmtQty,
-    onScan, populateSelect, confirm,
+    onScan, scanInto, populateSelect, confirm,
   };
 
 })(window);

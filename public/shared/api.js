@@ -172,6 +172,39 @@
     history:         (p) => get('/receiving/history', p),
   };
 
+  // ─────────────── Placement ───────────────
+
+  const placement = {
+    pending:        (p) => get('/placement/pending', p),
+    pendingByBarcode: (barcode, p) => get('/placement/pending/barcode', { barcode, ...p }),
+    place:          (d) => post('/placement/place', d),
+    batch:          (d) => post('/placement/batch', d),
+    history:        (p) => get('/placement/history', p),
+    suggest:        (p) => get('/placement/suggest', p),
+  };
+
+  // ─────────────── Movement ───────────────
+
+  const movement = {
+    move:     (d) => post('/movement/move', d),
+    batch:    (d) => post('/movement/batch', d),
+    history:  (p) => get('/movement/history', p),
+    location: (p) => get('/movement/location', p),
+  };
+
+  // ─────────────── Inventory ───────────────
+
+  const inventory = {
+    tasks:        (p)      => get('/inventory/tasks', p),
+    task:         (id)     => get(`/inventory/tasks/${id}`),
+    createTask:   (d)      => post('/inventory/tasks', d),
+    createBatch:  (d)      => post('/inventory/tasks/batch', d),
+    assign:       (id, d)  => post(`/inventory/tasks/${id}/assign`, d),
+    count:        (id, d)  => post(`/inventory/tasks/${id}/count`, d),
+    close:        (id, d)  => post(`/inventory/tasks/${id}/close`, d),
+    discrepancies:(p)      => get('/inventory/discrepancies', p),
+  };
+
   // ─────────────── Picking ───────────────
 
   const picking = {
@@ -291,6 +324,7 @@
     // Modules
     users, clients, warehouses, items, locations,
     stock, inbound, receiving,
+    placement, movement, inventory,
     picking, packing, shipping,
     wb, printing,
     seller, platform,

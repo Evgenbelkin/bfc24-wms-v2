@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Инвентаризация — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .task-row{cursor:pointer;}
+    .task-row:active{opacity:.7;}
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .delta-pos{color:var(--green2);font-weight:700;}
+    .delta-neg{color:#fca5a5;font-weight:700;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🔍 Инвентаризация</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиент</div>
+    <select id="client-select" class="field" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+      <option value="">Все клиенты</option>
+    </select>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">Задачи</button>
+    <button class="tab" data-tab="new" onclick="switchTab('new')">Новая проверка</button>
+    <button class="tab" data-tab="discrepancies" onclick="switchTab('discrepancies')">Расхождения</button>
+  </div>
+
+  <!-- ============ Список задач ============ -->
+  <div id="tab-tasks">
+    <div class="card" id="count-card" style="display:none">
+      <div class="card-title">Пересчёт: <span id="count-barcode"></span></div>
+      <div style="margin-bottom:10px;">
+        <div style="font-weight:700;font-size:15px;" id="count-item-name">—</div>
+        <div class="refresh-note">Ячейка: <b id="count-location">—</b> · По системе: <b id="count-system">0</b></div>
+      </div>
+      <div class="card-title">Фактическое количество</div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="stepActual(-1)">−</button>
+        <div class="qty-val" id="actual-val">0</div>
+        <button class="qty-btn" onclick="stepActual(1)">+</button>
+      </div>
+      <input id="count-comment" class="scan-input" style="font-size:14px;padding:10px;margin-top:12px;" placeholder="Комментарий (необязательно)"/>
+      <div class="btn-row">
+        <button class="btn-big btn-green" onclick="submitCount()">✅ Внести счёт</button>
+        <button class="btn-big btn-red" onclick="cancelTask()">Отменить задачу</button>
+      </div>
+      <button class="btn-sm btn-back" style="margin-top:10px;" onclick="closeCountCard()">← К списку</button>
+    </div>
+
+    <div class="card" id="tasks-list-card">
+      <div class="card-title">Открытые задачи (<span id="tasks-count">0</span>)</div>
+      <div id="tasks-list"></div>
+      <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadTasks()">↻ Обновить</button>
+    </div>
+  </div>
+
+  <!-- ============ Новая проверка ============ -->
+  <div id="tab-new" style="display:none">
+    <div class="card">
+      <div class="card-title">Ячейка</div>
+      <div class="scan-row">
+        <input id="new-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#new-location','Скан ячейки')">📷</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Штрихкод товара (необязательно — если пусто, проверяется вся ячейка)</div>
+      <div class="scan-row">
+        <input id="new-barcode" class="scan-input" placeholder="Штрихкод (необязательно)" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#new-barcode','Скан товара')">📷</button>
+      </div>
+    </div>
+    <button class="btn-big btn-blue btn-full" onclick="createCheck()">➕ Создать проверку</button>
+    <div id="new-status" class="refresh-note"></div>
+  </div>
+
+  <!-- ============ Расхождения ============ -->
+  <div id="tab-discrepancies" style="display:none">
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Ячейка</th><th>Система</th><th>Факт</th><th>Δ</th></tr></thead>
+          <tbody id="discrepancies-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn-sm btn-back" onclick="loadDiscrepancies()">↻ Обновить</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['inventory_manager','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function switchTab(name) {
+      ['tasks','new','discrepancies'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'discrepancies') loadDiscrepancies();
+      if (name === 'tasks') loadTasks();
+    }
+
+    const LAST_CLIENT_KEY = 'wms2_last_client_id';
+    async function loadClients() {
+      const sel = document.getElementById('client-select');
+      try {
+        const res = await window.API.clients.short();
+        const list = res.clients || [];
+        sel.innerHTML = `<option value="">Все клиенты</option>` +
+          list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        const saved = localStorage.getItem(LAST_CLIENT_KEY);
+        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
+        sel.addEventListener('change', () => { localStorage.setItem(LAST_CLIENT_KEY, sel.value); loadTasks(); });
+      } catch (e) { UI.notify.err(e.message); }
+    }
+    function getClientId() {
+      const v = UI.val('#client-select');
+      return v ? Number(v) : null;
+    }
+
+    // ---------- Задачи ----------
+    let tasks = [];
+    let currentTask = null;
+    let actualQty = 0;
+
+    async function loadTasks() {
+      try {
+        const clientId = getClientId();
+        const params = { limit: 100 };
+        // показываем и открытые, и уже взятые в работу
+        const [openRes, progRes] = await Promise.all([
+          window.API.inventory.tasks({ ...params, status: 'open', ...(clientId?{client_id:clientId}:{}) }),
+          window.API.inventory.tasks({ ...params, status: 'in_progress', ...(clientId?{client_id:clientId}:{}) }),
+        ]);
+        tasks = [...(progRes.tasks||[]), ...(openRes.tasks||[])];
+        document.getElementById('tasks-count').textContent = tasks.length;
+        const list = document.getElementById('tasks-list');
+        if (!tasks.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">✅</div>Нет открытых задач инвентаризации</div>`;
+          return;
+        }
+        list.innerHTML = tasks.map((t, idx) => `
+          <div class="list-row task-row" onclick="openTask(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(t.item_name || t.barcode || 'Проверка ячейки')}</div>
+              <div class="sub">${UI.escHtml(t.location_code)} · ${UI.escHtml(t.client_name||'')} ${t.reason ? '· '+UI.escHtml(t.reason) : ''}</div>
+            </div>
+            <span class="pill ${t.status==='in_progress'?'pill-blue':'pill-gray'}">${t.status==='in_progress'?'в работе':'открыта'}</span>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function openTask(idx) {
+      const t = tasks[idx];
+      try {
+        if (t.status === 'open') {
+          const me = window.API.getUser();
+          await window.API.inventory.assign(t.id, { assignee_id: me.id });
+        }
+        currentTask = t;
+        actualQty = Number(t.qty_system || 0);
+        document.getElementById('count-barcode').textContent = t.barcode || '(вся ячейка)';
+        document.getElementById('count-item-name').textContent = t.item_name || t.barcode || 'Проверка ячейки';
+        document.getElementById('count-location').textContent = t.location_code;
+        document.getElementById('count-system').textContent = t.qty_system ?? '—';
+        document.getElementById('actual-val').textContent = actualQty;
+        UI.setVal('#count-comment','');
+        document.getElementById('tasks-list-card').style.display = 'none';
+        document.getElementById('count-card').style.display = 'block';
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function closeCountCard() {
+      currentTask = null;
+      document.getElementById('count-card').style.display = 'none';
+      document.getElementById('tasks-list-card').style.display = 'block';
+      loadTasks();
+    }
+
+    function stepActual(delta) { actualQty = Math.max(0, actualQty + delta); document.getElementById('actual-val').textContent = actualQty; }
+
+    async function submitCount() {
+      if (!currentTask) return;
+      try {
+        const res = await window.API.inventory.count(currentTask.id, {
+          qty_actual: actualQty, comment: UI.val('#count-comment') || undefined,
+        });
+        const delta = res.task?.qty_delta ?? (actualQty - Number(currentTask.qty_system||0));
+        UI.notify.ok(`Счёт внесён. Расхождение: ${delta > 0 ? '+' : ''}${delta}`);
+        closeCountCard();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function cancelTask() {
+      if (!currentTask) return;
+      if (!UI.confirm('Отменить эту задачу инвентаризации без пересчёта?')) return;
+      try {
+        await window.API.inventory.close(currentTask.id, { status: 'cancelled' });
+        UI.notify.warn('Задача отменена');
+        closeCountCard();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Новая проверка ----------
+    async function createCheck() {
+      const location = UI.val('#new-location');
+      const barcode  = UI.val('#new-barcode');
+      const clientId = getClientId();
+      if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      if (!clientId) { UI.notify.err('Выберите клиента вверху страницы'); return; }
+      const statusEl = document.getElementById('new-status');
+      try {
+        if (barcode) {
+          await window.API.inventory.createTask({ barcode, location_code: location, client_id: clientId });
+          statusEl.textContent = `Создана задача: ${barcode} в ${location}`;
+        } else {
+          const res = await window.API.inventory.createBatch({ location_code: location, client_id: clientId });
+          statusEl.textContent = `Создано задач: ${res.created}, пропущено (уже есть): ${res.skipped}`;
+        }
+        UI.notify.ok('Готово');
+        UI.setVal('#new-location',''); UI.setVal('#new-barcode','');
+        switchTab('tasks');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+    UI.onScan('#new-location', () => document.getElementById('new-barcode').focus());
+    UI.onScan('#new-barcode', () => {});
+
+    // ---------- Расхождения ----------
+    async function loadDiscrepancies() {
+      try {
+        const clientId = getClientId();
+        const rows = await window.API.inventory.discrepancies(clientId ? { client_id: clientId, limit: 200 } : { limit: 200 });
+        UI.renderTable('#discrepancies-body', rows, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.closed_at)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode || '—')}</td>
+            <td>${UI.escHtml(r.location_code)}</td>
+            <td>${UI.fmtQty(r.qty_system)}</td>
+            <td>${UI.fmtQty(r.qty_actual)}</td>
+            <td class="${r.qty_delta > 0 ? 'delta-pos' : 'delta-neg'}">${r.qty_delta > 0 ? '+' : ''}${r.qty_delta}</td>
+          </tr>
+        `);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadClients(); await loadTasks(); })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Размещение — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .pending-row{cursor:pointer;}
+    .pending-row:active{opacity:.7;}
+    .selected-card{border:2px solid var(--accent);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🧭 Размещение</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиент</div>
+    <select id="client-select" class="field" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+      <option value="">Загрузка...</option>
+    </select>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="pending" onclick="switchTab('pending')">Ожидают размещения</button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">История</button>
+  </div>
+
+  <!-- ============ Ожидают размещения ============ -->
+  <div id="tab-pending">
+    <div class="card">
+      <div class="card-title">Или сразу отсканируйте товар</div>
+      <div class="scan-row">
+        <input id="scan-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-barcode','Скан товара')">📷</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Список к размещению (<span id="pending-count">0</span>)</div>
+      <div id="pending-list"></div>
+      <button class="btn-sm btn-back" onclick="loadPending()">↻ Обновить список</button>
+    </div>
+
+    <div class="card selected-card" id="selected-card" style="display:none">
+      <div class="card-title">Размещаем</div>
+      <div style="overflow:hidden;margin-bottom:12px;">
+        <img id="sel-preview" style="width:64px;height:64px;object-fit:cover;border-radius:8px;float:right;margin-left:10px;" onerror="this.style.display='none'"/>
+        <div style="font-size:16px;font-weight:700;" id="sel-name">—</div>
+        <div style="color:var(--muted);font-size:13px;" id="sel-barcode">—</div>
+      </div>
+
+      <div class="badge-row" style="margin-bottom:14px;">
+        <div class="badge"><span>Откуда</span><div id="sel-from">—</div></div>
+        <div class="badge"><span>Доступно</span><div id="sel-available">0</div></div>
+      </div>
+
+      <div class="card-title">Количество к размещению</div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="stepQty(-1)">−</button>
+        <div class="qty-val" id="qty-val">1</div>
+        <button class="qty-btn" onclick="stepQty(1)">+</button>
+      </div>
+
+      <div class="card-title" style="margin-top:16px;">Куда (целевая ячейка)</div>
+      <div class="scan-row">
+        <input id="to-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#to-location','Скан ячейки')">📷</button>
+      </div>
+      <button class="btn-sm btn-back" style="margin-top:8px;" onclick="suggestLocation()">💡 Предложить ячейку</button>
+      <div id="suggest-note" class="refresh-note"></div>
+
+      <div class="btn-row">
+        <button class="btn-big btn-green" onclick="confirmPlacement()">✅ Разместить</button>
+        <button class="btn-big btn-yellow" onclick="clearSelection()">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ История ============ -->
+  <div id="tab-history" style="display:none">
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Откуда</th><th>Куда</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn-sm btn-back" onclick="loadHistory()">↻ Обновить</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['receiver','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function switchTab(name) {
+      ['pending','history'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'history') loadHistory();
+    }
+
+    // ---------- Клиент ----------
+    const LAST_CLIENT_KEY = 'wms2_last_client_id';
+    async function loadClients() {
+      const sel = document.getElementById('client-select');
+      try {
+        const res = await window.API.clients.short();
+        const list = res.clients || [];
+        if (!list.length) { sel.innerHTML = `<option value="">Нет клиентов</option>`; return; }
+        sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        const saved = localStorage.getItem(LAST_CLIENT_KEY);
+        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
+        sel.addEventListener('change', () => { localStorage.setItem(LAST_CLIENT_KEY, sel.value); loadPending(); });
+      } catch (e) { sel.innerHTML = `<option value="">Ошибка</option>`; UI.notify.err(e.message); }
+    }
+    function getClientId() {
+      const v = UI.val('#client-select');
+      return v ? Number(v) : null;
+    }
+
+    // ---------- Список ожидающих размещения ----------
+    let pendingItems = [];
+    let selected = null;
+    let qty = 1;
+
+    async function loadPending() {
+      try {
+        const clientId = getClientId();
+        const res = await window.API.placement.pending(clientId ? { client_id: clientId } : {});
+        pendingItems = res.items || [];
+        document.getElementById('pending-count').textContent = pendingItems.length;
+        const list = document.getElementById('pending-list');
+        if (!pendingItems.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">✅</div>Нечего размещать</div>`;
+          return;
+        }
+        list.innerHTML = pendingItems.map((it, idx) => `
+          <div class="list-row pending-row" onclick="selectPending(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(it.item_name || it.barcode)}</div>
+              <div class="sub">${UI.escHtml(it.barcode)} · из ${UI.escHtml(it.location_code)} · ${UI.escHtml(it.client_name||'')}</div>
+            </div>
+            <div class="badge"><span>Кол-во</span><div>${UI.fmtQty(it.qty_available)}</div></div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function selectPending(idx) {
+      const it = pendingItems[idx];
+      applySelection({
+        barcode: it.barcode, item_name: it.item_name, preview_url: it.preview_url,
+        from_location_code: it.location_code, qty_available: it.qty_available,
+        item_id: it.item_id, client_id: it.client_id,
+      });
+    }
+
+    async function scanBarcodeDirect(barcode) {
+      try {
+        const clientId = getClientId();
+        const rows = await window.API.placement.pendingByBarcode(barcode, clientId ? { client_id: clientId } : {});
+        if (!rows.length) { UI.notify.warn('Этот штрихкод не ожидает размещения'); return; }
+        const it = rows[0];
+        applySelection({
+          barcode: it.barcode, item_name: it.item_name, preview_url: null,
+          from_location_code: it.location_code, qty_available: it.qty_available,
+          item_id: null, client_id: it.client_id,
+        });
+      } catch (e) { UI.notify.err(e.message); }
+    }
+    UI.onScan('#scan-barcode', scanBarcodeDirect);
+
+    function applySelection(sel) {
+      selected = sel;
+      qty = Math.max(1, Number(sel.qty_available) || 1);
+      document.getElementById('selected-card').style.display = 'block';
+      document.getElementById('sel-name').textContent = sel.item_name || sel.barcode;
+      document.getElementById('sel-barcode').textContent = sel.barcode;
+      document.getElementById('sel-from').textContent = sel.from_location_code;
+      document.getElementById('sel-available').textContent = sel.qty_available;
+      document.getElementById('qty-val').textContent = qty;
+      const preview = document.getElementById('sel-preview');
+      if (sel.preview_url) { preview.src = sel.preview_url; preview.style.display='block'; } else preview.style.display='none';
+      UI.setVal('#to-location','');
+      document.getElementById('suggest-note').textContent = '';
+      setTimeout(() => document.getElementById('to-location').focus(), 150);
+    }
+
+    function clearSelection() {
+      selected = null;
+      document.getElementById('selected-card').style.display = 'none';
+    }
+
+    function stepQty(delta) {
+      if (!selected) return;
+      qty = Math.min(Math.max(1, qty + delta), Number(selected.qty_available) || 1);
+      document.getElementById('qty-val').textContent = qty;
+    }
+
+    async function suggestLocation() {
+      if (!selected) return;
+      if (!selected.item_id) { UI.notify.warn('Нет данных для подсказки — введите ячейку вручную'); return; }
+      try {
+        const res = await window.API.placement.suggest({ item_id: selected.item_id, client_id: selected.client_id });
+        if (!res.suggestion) { document.getElementById('suggest-note').textContent = 'Нет предложений — введите ячейку вручную'; return; }
+        UI.setVal('#to-location', res.suggestion.location_code);
+        document.getElementById('suggest-note').textContent =
+          res.suggestion.reason === 'consolidation' ? '💡 Есть остаток этого товара в этой ячейке' : '💡 Свободная ячейка';
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    UI.onScan('#to-location', () => {});
+
+    async function confirmPlacement() {
+      if (!selected) return;
+      const toLocation = UI.val('#to-location');
+      if (!toLocation) { UI.notify.err('Отсканируйте или введите целевую ячейку'); return; }
+      try {
+        await window.API.placement.place({
+          barcode: selected.barcode,
+          from_location_code: selected.from_location_code,
+          to_location_code: toLocation,
+          qty, client_id: selected.client_id,
+        });
+        UI.notify.ok(`Размещено: ${selected.barcode} × ${qty} → ${toLocation}`);
+        clearSelection();
+        await loadPending();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- История ----------
+    async function loadHistory() {
+      try {
+        const clientId = getClientId();
+        const rows = await window.API.placement.history(clientId ? { client_id: clientId, limit: 100 } : { limit: 100 });
+        UI.renderTable('#history-body', rows, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.created_at)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.fmtQty(r.qty)}</td>
+            <td>${UI.escHtml(r.from_location_code||'—')}</td>
+            <td>${UI.escHtml(r.to_location_code||'—')}</td>
+          </tr>
+        `);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadClients(); await loadPending(); })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Диспетчерская — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;}
+    @media (min-width:600px){ .kpi-grid{grid-template-columns:repeat(4,1fr);} }
+    .kpi{background:var(--card);border-radius:14px;padding:16px;text-align:center;}
+    .kpi .num{font-size:28px;font-weight:800;}
+    .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    .kpi.warn .num{color:var(--amber);}
+    .kpi.danger .num{color:#f87171;}
+    .kpi.ok .num{color:var(--green2);}
+    .wave-card{border-left:4px solid #334155;}
+    .wave-card.idle{border-left-color:#dc2626;background:#2a1414;}
+    .wave-card.active{border-left-color:var(--accent);}
+    .wave-card.ready{border-left-color:var(--green2);}
+    .wave-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+    .wave-title{font-weight:700;font-size:15px;}
+    .wave-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+    .idle-tag{background:#7f1d1d;color:#fca5a5;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;}
+    .mini-progress{height:6px;background:var(--card2);border-radius:3px;overflow:hidden;margin-top:8px;}
+    .mini-progress-fill{height:100%;background:var(--green2);}
+    .auto-refresh{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>📊 Диспетчерская</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <div class="auto-refresh">🔄 Автообновление каждые 15 сек</div>
+    <button class="btn-sm btn-back" onclick="loadAll()">↻ Сейчас</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Волны сборки</div>
+    <div id="waves-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Отгрузки в работе</div>
+    <div id="shipments-list"></div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    const IDLE_THRESHOLD_MS = 10 * 60 * 1000; // 10 минут без прогресса по волне — считаем что сборщик простаивает
+
+    const WAVE_STATUS_LABELS = { open:'ожидает', active:'в работе', ready:'собрана', done:'закрыта' };
+    const SHIP_STATUS_LABELS = {
+      new:'новая', picking:'сборка', ready_to_ship:'готова к отгрузке',
+      shipping:'отгружается', in_transit:'в пути', done:'выполнена', cancelled:'отменена',
+    };
+    const SHIP_STATUS_PILL = {
+      new:'pill-gray', picking:'pill-blue', ready_to_ship:'pill-green',
+      shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
+    };
+
+    function minutesAgo(dateStr) {
+      if (!dateStr) return null;
+      return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+    }
+
+    async function loadWaves() {
+      const [openRes, activeRes, readyRes] = await Promise.all([
+        window.API.picking.waves({ status: 'open', limit: 100 }),
+        window.API.picking.waves({ status: 'active', limit: 100 }),
+        window.API.picking.waves({ status: 'ready', limit: 100 }),
+      ]);
+      // GET /picking/waves отвечает { ok, waves: [...] }
+      return { open: openRes.waves || [], active: activeRes.waves || [], ready: readyRes.waves || [] };
+    }
+
+    function renderWaves({ open, active, ready }) {
+      const list = document.getElementById('waves-list');
+      const rows = [];
+
+      active.forEach(w => {
+        const idleMin = minutesAgo(w.updated_at);
+        const isIdle = idleMin !== null && idleMin >= (IDLE_THRESHOLD_MS/60000);
+        rows.push(`
+          <div class="card wave-card ${isIdle ? 'idle' : 'active'}">
+            <div class="wave-top">
+              <div>
+                <div class="wave-title">${UI.escHtml(w.shipment_code)}</div>
+                <div class="wave-sub">Сборщик: ${UI.escHtml(w.picker_name || '—')} · ${w.done_count||0}/${w.task_count||0} собрано</div>
+              </div>
+              ${isIdle ? `<span class="idle-tag">⏸ простой ${idleMin} мин</span>` : `<span class="pill pill-blue">в работе</span>`}
+            </div>
+            <div class="mini-progress"><div class="mini-progress-fill" style="width:${w.task_count?Math.round(w.done_count/w.task_count*100):0}%"></div></div>
+          </div>
+        `);
+      });
+
+      ready.forEach(w => {
+        rows.push(`
+          <div class="card wave-card ready">
+            <div class="wave-top">
+              <div>
+                <div class="wave-title">${UI.escHtml(w.shipment_code)}</div>
+                <div class="wave-sub">Сборщик: ${UI.escHtml(w.picker_name || '—')} · собрана, ждёт закрытия (короб → ${UI.escHtml(w.buffer_location_code || 'не указано')})</div>
+              </div>
+              <span class="pill pill-green">готова</span>
+            </div>
+          </div>
+        `);
+      });
+
+      if (open.length) {
+        rows.push(`
+          <div class="card wave-card">
+            <div class="wave-top">
+              <div>
+                <div class="wave-title">В очереди на сборку</div>
+                <div class="wave-sub">${open.length} волн(ы) ожидают, когда сборщик возьмёт их в работу</div>
+              </div>
+              <span class="pill pill-gray">${open.length}</span>
+            </div>
+          </div>
+        `);
+      }
+
+      list.innerHTML = rows.join('') || `<div class="empty-state"><div class="icon">😴</div>Нет активных волн сборки</div>`;
+
+      return { activeCount: active.length, idleCount: active.filter(w => { const m = minutesAgo(w.updated_at); return m !== null && m >= IDLE_THRESHOLD_MS/60000; }).length, readyCount: ready.length, openCount: open.length };
+    }
+
+    async function loadShipments() {
+      const res = await window.API.shipping.board({ limit: 100 });
+      const shipments = (res.shipments || []).filter(s => !['done','cancelled'].includes(s.status));
+      const list = document.getElementById('shipments-list');
+      if (!shipments.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет активных отгрузок</div>`;
+        return { total: 0, readyToShip: 0 };
+      }
+      list.innerHTML = shipments.map(s => `
+        <div class="list-row">
+          <div class="main">
+            <div class="title">${UI.escHtml(s.external_id)}</div>
+            <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · сборка ${s.tasks_done||0}/${s.tasks_total||0} · упаковано ${s.total_packed_qty||0}</div>
+          </div>
+          <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
+        </div>
+      `).join('');
+      return { total: shipments.length, readyToShip: shipments.filter(s=>s.status==='ready_to_ship').length };
+    }
+
+    function renderKpis({ activeCount, idleCount, readyCount, openCount }, shipStats) {
+      const kpis = [
+        { num: activeCount, label:'Волн в работе', cls:'' },
+        { num: idleCount,   label:'Простаивают >10 мин', cls: idleCount>0 ? 'danger':'ok' },
+        { num: readyCount,  label:'Собраны, ждут упаковки', cls: readyCount>0 ? 'warn':'' },
+        { num: shipStats.readyToShip, label:'Готовы к отгрузке', cls: shipStats.readyToShip>0 ? 'ok':'' },
+      ];
+      document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+        <div class="kpi ${k.cls}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>
+      `).join('');
+    }
+
+    async function loadAll() {
+      try {
+        const [waveStats, shipStats] = await Promise.all([
+          loadWaves().then(renderWaves),
+          loadShipments(),
+        ]);
+        renderKpis(waveStats, shipStats);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadAll();
+    setInterval(loadAll, 15000);
+  </script>
+</body>
+</html>

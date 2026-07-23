@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Перемещение — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .content-row{cursor:pointer;}
+    .content-row:active{opacity:.7;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🔀 Перемещение</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиент</div>
+    <select id="client-select" class="field" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+      <option value="">Загрузка...</option>
+    </select>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="move" onclick="switchTab('move')">Переместить</button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">История</button>
+  </div>
+
+  <div id="tab-move">
+    <div class="card">
+      <div class="card-title">Откуда</div>
+      <div class="scan-row">
+        <input id="from-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#from-location','Скан ячейки-источника')">📷</button>
+      </div>
+      <div id="from-content" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Товар</div>
+      <div class="scan-row">
+        <input id="move-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#move-barcode','Скан товара')">📷</button>
+      </div>
+      <div class="refresh-note" id="barcode-note"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Количество</div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="stepQty(-1)">−</button>
+        <div class="qty-val" id="qty-val">1</div>
+        <button class="qty-btn" onclick="stepQty(1)">+</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Куда</div>
+      <div class="scan-row">
+        <input id="to-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#to-location','Скан ячейки-назначения')">📷</button>
+      </div>
+    </div>
+
+    <button class="btn-big btn-green btn-full" onclick="submitMove()">✅ Переместить</button>
+    <div id="move-status" class="refresh-note"></div>
+  </div>
+
+  <div id="tab-history" style="display:none">
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Откуда</th><th>Куда</th><th>Кто</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn-sm btn-back" onclick="loadHistory()">↻ Обновить</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['inventory_manager','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function switchTab(name) {
+      ['move','history'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'history') loadHistory();
+    }
+
+    const LAST_CLIENT_KEY = 'wms2_last_client_id';
+    async function loadClients() {
+      const sel = document.getElementById('client-select');
+      try {
+        const res = await window.API.clients.short();
+        const list = res.clients || [];
+        if (!list.length) { sel.innerHTML = `<option value="">Нет клиентов</option>`; return; }
+        sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        const saved = localStorage.getItem(LAST_CLIENT_KEY);
+        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
+        sel.addEventListener('change', () => localStorage.setItem(LAST_CLIENT_KEY, sel.value));
+      } catch (e) { sel.innerHTML = `<option value="">Ошибка</option>`; UI.notify.err(e.message); }
+    }
+    function getClientId() {
+      const v = UI.val('#client-select');
+      if (!v) { UI.notify.err('Выберите клиента вверху страницы'); return null; }
+      return Number(v);
+    }
+
+    let fromContentRows = [];
+    let qty = 1;
+    function stepQty(delta) { qty = Math.max(1, qty + delta); document.getElementById('qty-val').textContent = qty; }
+
+    async function loadFromContent(locationCode) {
+      const clientId = getClientId();
+      if (!clientId) return;
+      try {
+        const res = await window.API.movement.location({ location_code: locationCode, client_id: clientId });
+        fromContentRows = res.rows || [];
+        const box = document.getElementById('from-content');
+        if (!fromContentRows.length) {
+          box.innerHTML = `<div class="refresh-note">Ячейка пуста (для этого клиента)</div>`;
+          return;
+        }
+        box.innerHTML = `<div class="card-title" style="margin-top:8px;">Содержимое ячейки — нажмите чтобы выбрать товар</div>` +
+          fromContentRows.map(r => `
+            <div class="list-row content-row" onclick="pickBarcode('${UI.escHtml(r.barcode)}')">
+              <div class="main">
+                <div class="title">${UI.escHtml(r.item_name || r.barcode)}</div>
+                <div class="sub">${UI.escHtml(r.barcode)}</div>
+              </div>
+              <div class="badge"><span>Доступно</span><div>${UI.fmtQty(r.qty_available)}</div></div>
+            </div>
+          `).join('');
+      } catch (e) {
+        document.getElementById('from-content').innerHTML = '';
+        UI.notify.err(e.message);
+      }
+    }
+    UI.onScan('#from-location', loadFromContent);
+
+    function pickBarcode(barcode) {
+      UI.setVal('#move-barcode', barcode);
+      checkBarcodeAvailability(barcode);
+      document.getElementById('to-location').focus();
+    }
+
+    function checkBarcodeAvailability(barcode) {
+      const row = fromContentRows.find(r => r.barcode === barcode);
+      const note = document.getElementById('barcode-note');
+      if (row) {
+        note.textContent = `Доступно в этой ячейке: ${row.qty_available}`;
+        qty = 1; document.getElementById('qty-val').textContent = qty;
+      } else {
+        note.textContent = '';
+      }
+    }
+    UI.onScan('#move-barcode', (v) => { checkBarcodeAvailability(v); document.getElementById('to-location').focus(); });
+    UI.onScan('#to-location', () => {});
+
+    async function submitMove() {
+      const clientId = getClientId();
+      if (!clientId) return;
+      const fromLoc = UI.val('#from-location');
+      const toLoc   = UI.val('#to-location');
+      const barcode = UI.val('#move-barcode');
+      if (!fromLoc)  { UI.notify.err('Отсканируйте ячейку-источник'); return; }
+      if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
+      if (!toLoc)    { UI.notify.err('Отсканируйте ячейку назначения'); return; }
+      try {
+        await window.API.movement.move({
+          barcode, from_location_code: fromLoc, to_location_code: toLoc,
+          qty, client_id: clientId,
+        });
+        UI.notify.ok(`Перемещено: ${barcode} × ${qty}: ${fromLoc} → ${toLoc}`);
+        UI.setVal('#move-barcode','');
+        qty = 1; document.getElementById('qty-val').textContent = 1;
+        document.getElementById('barcode-note').textContent = '';
+        await loadFromContent(fromLoc); // обновить остаток ячейки-источника
+        document.getElementById('move-barcode').focus();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadHistory() {
+      try {
+        const clientId = getClientId();
+        const rows = await window.API.movement.history(clientId ? { client_id: clientId, limit: 100 } : { limit: 100 });
+        UI.renderTable('#history-body', rows, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.created_at)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.fmtQty(r.qty)}</td>
+            <td>${UI.escHtml(r.from_location_code||'—')}</td>
+            <td>${UI.escHtml(r.to_location_code||'—')}</td>
+            <td>${UI.escHtml(r.operator_name||'—')}</td>
+          </tr>
+        `);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadClients();
+  </script>
+</body>
+</html>

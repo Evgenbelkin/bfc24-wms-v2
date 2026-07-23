@@ -37,6 +37,8 @@
     .scan-input.awaiting-location{border-color:#fbbf24;}
     .scan-input.awaiting-item{border-color:#38bdf8;}
     .scan-input:focus{border-color:#7dd3fc;}
+    .scan-row{display:flex;gap:8px;}
+    .scan-camera-btn{padding:0 18px;border:none;border-radius:12px;background:#334155;color:#38bdf8;font-size:22px;cursor:pointer;}
     /* Buttons */
     .btn-row{display:flex;gap:10px;margin-top:12px;}
     .btn-big{flex:1;padding:18px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;}
@@ -105,8 +107,11 @@
 
       <div class="scan-section">
         <div class="scan-label" id="scan-label">Отсканируйте ячейку</div>
-        <input type="text" id="scan-input" class="scan-input awaiting-location"
-               placeholder="Сканировать..." inputmode="none" autocomplete="off"/>
+        <div class="scan-row">
+          <input type="text" id="scan-input" class="scan-input awaiting-location"
+                 placeholder="Сканировать..." inputmode="none" autocomplete="off"/>
+          <button type="button" class="scan-camera-btn" onclick="openCameraScan()">📷</button>
+        </div>
       </div>
 
       <div class="btn-row">
@@ -120,9 +125,10 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
   <script>
     if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['picker','packer','supervisor','tenant_admin'])) {
+    if (!UI.requireRole(['picker','supervisor','tenant_admin'])) {
       window.location.href = '/app/menu.html';
     }
 
@@ -287,6 +293,12 @@
         waveStatus  = null;
         await loadWaveStatus();
       } catch(e) { UI.notify.err(e.message); }
+    }
+
+    function openCameraScan() {
+      if (!currentTask) { UI.notify.warn('Нет активной задачи'); return; }
+      const step = currentTask.scan_step || 'await_location';
+      UI.scanInto('#scan-input', step === 'await_location' ? 'Скан ячейки' : 'Скан товара');
     }
 
     // Сканер

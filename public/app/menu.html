@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Меню — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+    @media (min-width:520px){ .grid{grid-template-columns:repeat(3,1fr);} }
+    .tile{background:var(--card);border-radius:16px;padding:22px 14px;text-align:center;text-decoration:none;color:var(--text);
+      display:flex;flex-direction:column;align-items:center;gap:8px;transition:transform .1s;}
+    .tile:active{transform:scale(.97);}
+    .tile .icon{font-size:32px;}
+    .tile .label{font-size:13px;font-weight:700;}
+    .user-card{display:flex;justify-content:space-between;align-items:center;}
+    .user-name{font-weight:700;font-size:16px;}
+    .user-role{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px;margin-top:2px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📋 BFC24 WMS</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card user-card">
+    <div>
+      <div class="user-name" id="user-name">—</div>
+      <div class="user-role" id="user-role">—</div>
+    </div>
+    <div class="badge"><span>Тенант</span><div id="tenant-name">—</div></div>
+  </div>
+
+  <div class="grid" id="tiles"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    const user = window.API.getUser();
+    if (user?.role === 'seller') window.location.href = '/seller/menu.html';
+
+    document.getElementById('user-name').textContent = user?.username || '—';
+    document.getElementById('user-role').textContent = user?.role || '—';
+    document.getElementById('tenant-name').textContent = user?.companyName || '—';
+
+    async function logout() {
+      await window.API.auth.logout();
+      window.location.href = '/app/login.html';
+    }
+
+    // Все возможные разделы. roles=null означает "доступно всем ролям склада" (кроме seller).
+    const ALL_TILES = [
+      { href:'receiving.html',        icon:'📥', label:'Приёмка',        roles:['tenant_admin','supervisor','receiver'] },
+      { href:'placement.html',        icon:'🧭', label:'Размещение',      roles:['tenant_admin','supervisor','receiver'] },
+      { href:'picking.html',          icon:'🏃', label:'Сборка',          roles:['tenant_admin','supervisor','picker'] },
+      { href:'packing.html',          icon:'📦', label:'Упаковка',        roles:['tenant_admin','supervisor','packer'] },
+      { href:'shipping.html',         icon:'🚚', label:'Отгрузка',        roles:['tenant_admin','supervisor','shipper','packer'] },
+      { href:'movement.html',         icon:'🔀', label:'Перемещение',     roles:['tenant_admin','supervisor','inventory_manager'] },
+      { href:'inventory.html',        icon:'🔍', label:'Инвентаризация',  roles:['tenant_admin','supervisor','inventory_manager'] },
+      { href:'admin-dashboard.html',  icon:'📊', label:'Диспетчерская',   roles:['tenant_admin','supervisor'] },
+    ];
+
+    const role = user?.role;
+    const tiles = ALL_TILES.filter(t => role === 'tenant_admin' || t.roles.includes(role));
+
+    document.getElementById('tiles').innerHTML = tiles.map(t => `
+      <a class="tile" href="/app/${t.href}">
+        <div class="icon">${t.icon}</div>
+        <div class="label">${UI.escHtml(t.label)}</div>
+      </a>
+    `).join('') || `<div class="empty-state" style="grid-column:1/-1"><div class="icon">🤷</div>Для вашей роли пока нет доступных разделов</div>`;
+  </script>
+</body>
+</html>

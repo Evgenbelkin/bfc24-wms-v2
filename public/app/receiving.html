@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Приёмка — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .mode-note{font-size:12px;color:var(--muted);margin-bottom:10px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>📥 Приёмка</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиент</div>
+    <select id="client-select" class="field" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+      <option value="">Загрузка...</option>
+    </select>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="free" onclick="switchTab('free')">Свободная</button>
+    <button class="tab" data-tab="inbound" onclick="switchTab('inbound')">По заявке</button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">История</button>
+  </div>
+
+  <!-- ============ Свободная приёмка ============ -->
+  <div id="tab-free">
+    <div class="card">
+      <div class="card-title">Товар</div>
+      <div class="scan-row">
+        <input id="free-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-barcode','Скан товара')">📷</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Ячейка приёмки</div>
+      <div class="scan-row">
+        <input id="free-location" class="scan-input" placeholder="Код ячейки (например PRM-01)" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-location','Скан ячейки')">📷</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Количество</div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="stepQty(-1)">−</button>
+        <div class="qty-val" id="free-qty-val">1</div>
+        <button class="qty-btn" onclick="stepQty(1)">+</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Комментарий (необязательно)</div>
+      <input id="free-comment" class="scan-input" style="font-size:15px;padding:12px;" placeholder="Например: пересорт, повреждена упаковка..."/>
+    </div>
+
+    <button class="btn-big btn-green btn-full" onclick="submitFree()">✅ Оприходовать</button>
+    <div id="free-status" class="refresh-note"></div>
+  </div>
+
+  <!-- ============ Приёмка по заявке ============ -->
+  <div id="tab-inbound" style="display:none">
+    <div class="card">
+      <div class="mode-note">Сначала отсканируйте штрихкод/номер заявки на поставку — подтянутся её строки.</div>
+      <div class="card-title">Заявка на поставку</div>
+      <div class="scan-row">
+        <input id="inb-order-barcode" class="scan-input" placeholder="Штрихкод заявки" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-order-barcode','Скан заявки')">📷</button>
+      </div>
+    </div>
+
+    <div id="inbound-order-card" style="display:none">
+      <div class="card">
+        <div class="card-title">Заявка <span id="inb-order-code"></span></div>
+        <div class="badge-row">
+          <div class="badge"><span>Статус</span><div id="inb-order-status">—</div></div>
+          <div class="badge"><span>Строк</span><div id="inb-order-lines-count">0</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Товар</div>
+        <div class="scan-row">
+          <input id="inb-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-barcode','Скан товара')">📷</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Ячейка приёмки</div>
+        <div class="scan-row">
+          <input id="inb-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-location','Скан ячейки')">📷</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Количество</div>
+        <div class="qty-row">
+          <button class="qty-btn" onclick="stepQtyInbound(-1)">−</button>
+          <div class="qty-val" id="inb-qty-val">1</div>
+          <button class="qty-btn" onclick="stepQtyInbound(1)">+</button>
+        </div>
+      </div>
+
+      <button class="btn-big btn-green btn-full" onclick="submitInbound()">✅ Принять строку</button>
+      <div id="inbound-status" class="refresh-note"></div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="card-title">Строки заявки (план / принято)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Товар</th><th>Штрихкод</th><th>План</th></tr></thead>
+            <tbody id="inb-lines-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ История ============ -->
+  <div id="tab-history" style="display:none">
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Ячейка</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn-sm btn-back" onclick="loadHistory()">↻ Обновить</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['receiver','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    // ---------- Клиент (обязателен — товар всегда принадлежит конкретному клиенту) ----------
+    const LAST_CLIENT_KEY = 'wms2_last_client_id';
+    async function loadClients() {
+      const sel = document.getElementById('client-select');
+      try {
+        const res = await window.API.clients.short();
+        const list = res.clients || [];
+        if (!list.length) {
+          sel.innerHTML = `<option value="">Нет клиентов — сначала заведите клиента в админке</option>`;
+          return;
+        }
+        sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        const saved = localStorage.getItem(LAST_CLIENT_KEY);
+        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
+        sel.addEventListener('change', () => localStorage.setItem(LAST_CLIENT_KEY, sel.value));
+      } catch (e) {
+        sel.innerHTML = `<option value="">Ошибка загрузки клиентов</option>`;
+        UI.notify.err(e.message);
+      }
+    }
+    function getClientId() {
+      const v = UI.val('#client-select');
+      if (!v) { UI.notify.err('Выберите клиента вверху страницы'); return null; }
+      return Number(v);
+    }
+    loadClients();
+
+    function switchTab(name) {
+      ['free','inbound','history'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'history') loadHistory();
+    }
+
+    // ---------- Свободная приёмка ----------
+    let freeQty = 1;
+    function stepQty(delta) {
+      freeQty = Math.max(1, freeQty + delta);
+      document.getElementById('free-qty-val').textContent = freeQty;
+    }
+
+    async function submitFree() {
+      const barcode  = UI.val('#free-barcode');
+      const location = UI.val('#free-location');
+      const comment  = UI.val('#free-comment');
+      const statusEl = document.getElementById('free-status');
+      if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
+      if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      const clientId = getClientId();
+      if (!clientId) return;
+      try {
+        const res = await window.API.receiving.accept({
+          barcode, location_code: location, qty: freeQty, comment: comment || undefined,
+          client_id: clientId,
+        });
+        UI.notify.ok(`Принято: ${barcode} × ${freeQty} → ${location}`);
+        statusEl.textContent = `Остаток в ячейке: ${res.balance?.qty_on_hand ?? '—'}`;
+        UI.setVal('#free-barcode',''); UI.setVal('#free-comment','');
+        freeQty = 1; document.getElementById('free-qty-val').textContent = 1;
+        document.getElementById('free-barcode').focus();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    UI.onScan('#free-barcode', () => document.getElementById('free-location').focus());
+    UI.onScan('#free-location', () => {});
+
+    // ---------- По заявке ----------
+    let currentOrder = null;
+
+    async function loadOrderByBarcode(barcode) {
+      try {
+        const res = await window.API.inbound.byBarcode(barcode);
+        currentOrder = res.order;
+        document.getElementById('inbound-order-card').style.display = 'block';
+        document.getElementById('inb-order-code').textContent = currentOrder.order_code || currentOrder.id;
+        document.getElementById('inb-order-status').textContent = currentOrder.status || '—';
+        document.getElementById('inb-order-lines-count').textContent = (res.lines||[]).length;
+        UI.renderTable('#inb-lines-body', res.lines, (l) => `
+          <tr><td>${UI.escHtml(l.item_name||'—')}</td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_plan ?? l.qty)}</td></tr>
+        `);
+        setTimeout(() => document.getElementById('inb-barcode').focus(), 150);
+      } catch (e) {
+        UI.notify.err(e.message);
+        document.getElementById('inbound-order-card').style.display = 'none';
+      }
+    }
+    UI.onScan('#inb-order-barcode', loadOrderByBarcode);
+
+    let inbQty = 1;
+    function stepQtyInbound(delta) {
+      inbQty = Math.max(1, inbQty + delta);
+      document.getElementById('inb-qty-val').textContent = inbQty;
+    }
+
+    async function submitInbound() {
+      if (!currentOrder) { UI.notify.err('Сначала отсканируйте заявку'); return; }
+      const barcode  = UI.val('#inb-barcode');
+      const location = UI.val('#inb-location');
+      if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
+      if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      try {
+        // client_id берём из самой заявки (currentOrder.client_id), а не из верхнего селектора —
+        // заявка однозначно привязана к клиенту, так надёжнее чем полагаться что оператор
+        // не забудет переключить клиента наверху перед сканированием.
+        await window.API.receiving.acceptByInbound({
+          inbound_order_barcode: UI.val('#inb-order-barcode') || currentOrder.order_code,
+          barcode, location_code: location, qty: inbQty,
+          client_id: currentOrder.client_id,
+        });
+        UI.notify.ok(`Принято: ${barcode} × ${inbQty}`);
+        UI.setVal('#inb-barcode','');
+        inbQty = 1; document.getElementById('inb-qty-val').textContent = 1;
+        document.getElementById('inb-barcode').focus();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+    UI.onScan('#inb-barcode', () => document.getElementById('inb-location').focus());
+    UI.onScan('#inb-location', () => {});
+
+    // ---------- История ----------
+    async function loadHistory() {
+      try {
+        const rows = await window.API.receiving.history({ limit: 100 });
+        UI.renderTable('#history-body', rows, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.completed_at || r.created_at)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.fmtQty(r.qty_received)}</td>
+            <td>${UI.escHtml(r.location_code || '—')}</td>
+          </tr>
+        `);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    document.getElementById('free-barcode').focus();
+  </script>
+</body>
+</html>

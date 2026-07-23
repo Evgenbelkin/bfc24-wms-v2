@@ -97,7 +97,7 @@ router.post('/tasks/batch', requireRole('tenant_admin','supervisor','inventory_m
   } catch (e) { next(e); }
 });
 
-router.post('/tasks/:id/assign', requireRole('tenant_admin','supervisor'), async (req, res, next) => {
+router.post('/tasks/:id/assign', requireRole('tenant_admin','supervisor','inventory_manager'), async (req, res, next) => {
   try {
     const task = await svc.assignTask({
       tenantId:   req.user.tenantId,
@@ -122,7 +122,7 @@ router.post('/tasks/:id/count', requireRole('tenant_admin','supervisor','invento
   } catch (e) { next(e); }
 });
 
-router.post('/tasks/:id/close', requireRole('tenant_admin','supervisor'), async (req, res, next) => {
+router.post('/tasks/:id/close', requireRole('tenant_admin','supervisor','inventory_manager'), async (req, res, next) => {
   try {
     const { status, comment } = req.body;
     const result = await svc.closeTask({

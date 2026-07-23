@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Упаковка — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .line-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;}
+    .line-row:last-child{border-bottom:none;}
+    .line-name{font-size:14px;font-weight:600;}
+    .line-barcode{font-size:12px;color:var(--muted);}
+    .line-progress{font-size:15px;font-weight:800;white-space:nowrap;}
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>📦 Упаковка</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card empty-state" id="no-task-card">
+    <div class="icon">📭</div>
+    <p style="margin-bottom:16px;color:var(--muted);">Нет активной задачи на упаковку</p>
+    <button class="btn-big btn-blue" onclick="takeNext()">Взять задачу</button>
+  </div>
+
+  <div id="task-section" style="display:none">
+    <div class="card">
+      <div class="card-title">Отгрузка</div>
+      <div class="badge-row">
+        <div class="badge"><span>Поставка</span><div id="ship-code">—</div></div>
+        <div class="badge"><span>Клиент</span><div id="ship-client">—</div></div>
+        <div class="badge"><span>Упаковано</span><div id="ship-progress">0/0</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Скан товара</div>
+      <div class="scan-row">
+        <input id="scan-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-barcode','Скан товара')">📷</button>
+      </div>
+      <div id="scan-status" class="refresh-note"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Состав отгрузки</div>
+      <div id="lines-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Завершить упаковку</div>
+      <div class="card-title" style="margin-top:0;">Коробок</div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="stepBoxes(-1)">−</button>
+        <div class="qty-val" id="boxes-val">1</div>
+        <button class="qty-btn" onclick="stepBoxes(1)">+</button>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="display:block;color:var(--muted2);font-size:12px;font-weight:600;margin-bottom:6px;text-transform:uppercase;">Ячейка паллетизации (необязательно)</label>
+        <input id="pack-location" class="scan-input" style="font-size:15px;padding:12px;" placeholder="Код ячейки"/>
+      </div>
+      <button class="btn-big btn-green btn-full" style="margin-top:14px;" onclick="confirmPacking()">✅ Подтвердить упаковку</button>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['packer','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let currentTask = null;
+    let currentShipment = null;
+    let currentLines = [];
+    let boxes = 1;
+
+    function renderTaskUI() {
+      if (!currentTask) {
+        document.getElementById('no-task-card').style.display = 'block';
+        document.getElementById('task-section').style.display = 'none';
+        return;
+      }
+      document.getElementById('no-task-card').style.display = 'none';
+      document.getElementById('task-section').style.display = 'block';
+
+      document.getElementById('ship-code').textContent = currentShipment?.external_id || currentTask.shipment_code || '—';
+      document.getElementById('ship-client').textContent = currentShipment?.client_name || '—';
+
+      renderLines();
+      setTimeout(() => document.getElementById('scan-barcode').focus(), 150);
+    }
+
+    function renderLines() {
+      const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
+      const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
+      document.getElementById('ship-progress').textContent = `${totalPacked}/${totalPlan}`;
+      const pct = totalPlan > 0 ? Math.round((totalPacked/totalPlan)*100) : 0;
+      document.getElementById('progress-fill').style.width = pct + '%';
+
+      document.getElementById('lines-list').innerHTML = currentLines.map(l => {
+        const done = Number(l.qty_packed||0) >= Number(l.qty_plan||0);
+        return `
+          <div class="line-row">
+            <div class="main" style="flex:1;min-width:0;">
+              <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}</div>
+              <div class="line-barcode">${UI.escHtml(l.barcode)}</div>
+            </div>
+            <div class="line-progress" style="color:${done ? 'var(--green2)' : 'var(--amber)'}">
+              ${done ? '✅' : ''} ${l.qty_packed||0}/${l.qty_plan||0}
+            </div>
+          </div>
+        `;
+      }).join('') || `<div class="empty-state">Нет строк</div>`;
+    }
+
+    async function loadTaskDetails(res) {
+      currentTask = res.task;
+      currentShipment = res.shipment;
+      currentLines = res.lines || [];
+      renderTaskUI();
+    }
+
+    async function takeNext() {
+      try {
+        const res = await window.API.packing.next();
+        if (!res.task) { UI.notify.warn('Нет задач на упаковку'); return; }
+        await loadTaskDetails(res);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadCurrent() {
+      try {
+        const res = await window.API.packing.current();
+        if (res.task) await loadTaskDetails(res);
+        else { currentTask = null; renderTaskUI(); }
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function handleScan(barcode) {
+      if (!currentTask) return;
+      const shipmentCode = currentShipment?.external_id || currentTask.shipment_code;
+      const statusEl = document.getElementById('scan-status');
+      try {
+        const res = await window.API.packing.scanItem({ shipment_code: shipmentCode, scan_code: barcode });
+        const line = currentLines.find(l => l.barcode === res.barcode);
+        if (line) line.qty_packed = res.qty_packed;
+        renderLines();
+        statusEl.textContent = `✅ ${res.barcode}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · 🖨️ отправлено на печать' : '');
+        UI.notify.ok(`Упаковано: ${res.qty_packed}/${res.qty_plan}`);
+      } catch (e) {
+        statusEl.textContent = '';
+        UI.notify.err(e.message);
+      }
+    }
+    UI.onScan('#scan-barcode', handleScan);
+
+    function stepBoxes(delta) { boxes = Math.max(1, boxes + delta); document.getElementById('boxes-val').textContent = boxes; }
+
+    async function confirmPacking() {
+      if (!currentShipment) return;
+      const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
+      const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
+      if (totalPacked < totalPlan) {
+        if (!UI.confirm(`Упаковано не всё (${totalPacked}/${totalPlan}). Всё равно попробовать завершить?`)) return;
+      }
+      try {
+        await window.API.packing.confirm({
+          shipment_id: currentShipment.id,
+          boxes_count: boxes,
+          location_code: UI.val('#pack-location') || undefined,
+        });
+        UI.notify.ok('Упаковка подтверждена! Отгрузка готова к отправке.');
+        currentTask = null; currentShipment = null; currentLines = [];
+        boxes = 1; document.getElementById('boxes-val').textContent = 1;
+        UI.setVal('#pack-location','');
+        await loadCurrent();
+        if (!currentTask) await takeNext();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadCurrent();
+  </script>
+</body>
+</html>

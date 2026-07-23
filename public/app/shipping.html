@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Отгрузка — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .ship-row{cursor:pointer;}
+    .ship-row:active{opacity:.7;}
+    .qr-box{text-align:center;background:#fff;border-radius:12px;padding:16px;margin-top:12px;}
+    .qr-box img{max-width:220px;width:100%;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🚚 Отгрузка</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="list-view">
+    <div class="tabs">
+      <button class="tab active" data-status="ready_to_ship" onclick="switchStatus('ready_to_ship')">Готовы</button>
+      <button class="tab" data-status="in_transit" onclick="switchStatus('in_transit')">Отгружены</button>
+      <button class="tab" data-status="" onclick="switchStatus('')">Все</button>
+    </div>
+    <div id="ship-list"></div>
+    <button class="btn-sm btn-back" onclick="loadBoard()">↻ Обновить</button>
+  </div>
+
+  <div id="detail-view" style="display:none">
+    <button class="btn-sm btn-back" onclick="backToList()" style="margin-bottom:12px;">← К списку</button>
+
+    <div class="card">
+      <div class="card-title">Отгрузка <span id="d-code"></span></div>
+      <div class="badge-row">
+        <div class="badge"><span>Статус</span><div id="d-status">—</div></div>
+        <div class="badge"><span>Клиент</span><div id="d-client">—</div></div>
+        <div class="badge"><span>Собрано</span><div id="d-picked">0/0</div></div>
+      </div>
+    </div>
+
+    <div class="card" id="confirm-card">
+      <div class="card-title">Подтверждение отгрузки</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)</div>
+      <div class="scan-row">
+        <input id="scan-code" class="scan-input" placeholder="Код поставки" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-code','Скан кода поставки')">📷</button>
+      </div>
+      <div id="confirm-status" class="refresh-note"></div>
+      <div id="qr-result" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Состав</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Товар</th><th>План</th><th>Собрано</th><th>Упаковано</th></tr></thead>
+          <tbody id="lines-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['shipper','packer','picker','supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let currentStatus = 'ready_to_ship';
+    let shipments = [];
+    let currentShipment = null;
+
+    function switchStatus(status) {
+      currentStatus = status;
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.status === status));
+      loadBoard();
+    }
+
+    const STATUS_LABELS = {
+      new:'новая', picking:'сборка', ready_to_ship:'готова', shipping:'отгружается',
+      in_transit:'в пути', done:'выполнена', cancelled:'отменена',
+    };
+    const STATUS_PILL = {
+      new:'pill-gray', picking:'pill-blue', ready_to_ship:'pill-green',
+      shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
+    };
+
+    async function loadBoard() {
+      try {
+        const params = { limit: 100 };
+        if (currentStatus) params.status = currentStatus;
+        const res = await window.API.shipping.board(params);
+        shipments = res.shipments || [];
+        const list = document.getElementById('ship-list');
+        if (!shipments.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет отгрузок</div>`;
+          return;
+        }
+        list.innerHTML = shipments.map((s, idx) => `
+          <div class="list-row ship-row" onclick="openShipment(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(s.external_id)}</div>
+              <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · сборка ${s.tasks_done||0}/${s.tasks_total||0}</div>
+            </div>
+            <span class="pill ${STATUS_PILL[s.status]||'pill-gray'}">${STATUS_LABELS[s.status]||s.status}</span>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function openShipment(idx) {
+      const s = shipments[idx];
+      try {
+        const res = await window.API.shipping.details(s.external_id);
+        currentShipment = res.shipment;
+        document.getElementById('list-view').style.display = 'none';
+        document.getElementById('detail-view').style.display = 'block';
+        document.getElementById('d-code').textContent = currentShipment.external_id;
+        document.getElementById('d-status').textContent = STATUS_LABELS[currentShipment.status] || currentShipment.status;
+        document.getElementById('d-client').textContent = s.client_name || '—';
+        const totalPlan = (res.lines||[]).reduce((a,l)=>a+Number(l.qty||0),0);
+        const totalPicked = (res.lines||[]).reduce((a,l)=>a+Number(l.qty_picked||0),0);
+        document.getElementById('d-picked').textContent = `${totalPicked}/${totalPlan}`;
+        UI.renderTable('#lines-body', res.lines, (l) => `
+          <tr>
+            <td>${UI.escHtml(l.item_name || l.barcode)}</td>
+            <td>${UI.fmtQty(l.qty)}</td>
+            <td>${UI.fmtQty(l.qty_picked)}</td>
+            <td>${UI.fmtQty(l.qty_packed)}</td>
+          </tr>
+        `);
+        document.getElementById('qr-result').style.display = 'none';
+        document.getElementById('confirm-status').textContent = '';
+        const alreadyShipped = ['in_transit','done'].includes(currentShipment.status);
+        document.getElementById('confirm-card').style.display = alreadyShipped ? 'none' : 'block';
+        setTimeout(() => document.getElementById('scan-code')?.focus(), 150);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function backToList() {
+      document.getElementById('detail-view').style.display = 'none';
+      document.getElementById('list-view').style.display = 'block';
+      currentShipment = null;
+    }
+
+    async function confirmShipment(scannedCode) {
+      if (!currentShipment) return;
+      const statusEl = document.getElementById('confirm-status');
+      try {
+        const res = await window.API.shipping.confirm({
+          shipment_code: currentShipment.external_id,
+          scanned_code: scannedCode,
+        });
+        UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped ?? '—'} шт.`);
+        statusEl.textContent = '✅ Подтверждено';
+        if (res.qr_base64) {
+          document.getElementById('qr-result').style.display = 'block';
+          document.getElementById('qr-result').innerHTML = `
+            <div class="qr-box">
+              <div style="color:#0f172a;font-weight:700;margin-bottom:8px;">QR поставки WB</div>
+              <img src="data:image/svg+xml;base64,${res.qr_base64}" alt="QR"/>
+            </div>`;
+        }
+        document.getElementById('confirm-card').style.display = 'none';
+        await loadBoard();
+      } catch (e) {
+        UI.notify.err(e.message);
+        statusEl.textContent = '❌ ' + e.message;
+      }
+    }
+    UI.onScan('#scan-code', confirmShipment);
+
+    loadBoard();
+  </script>
+</body>
+</html>
