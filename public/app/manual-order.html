@@ -13,6 +13,11 @@
     .btn-remove{background:var(--red2);color:#fca5a5;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;}
     .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
     .result-box strong{color:var(--text);}
+    .suggest-list{margin-top:8px;max-height:260px;overflow-y:auto;}
+    .suggest-row{cursor:pointer;}
+    .suggest-row:active{opacity:.7;}
+    .or-divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+    .or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--border);}
   </style>
 </head>
 <body>
@@ -36,6 +41,15 @@
 
   <div class="card">
     <div class="card-title">Добавить товар</div>
+
+    <div class="field" style="margin-bottom:0;">
+      <label>Поиск по названию или штрихкоду</label>
+      <input id="search-item" placeholder="Начните вводить..." autocomplete="off"/>
+    </div>
+    <div id="suggest-list" class="suggest-list"></div>
+
+    <div class="or-divider">или отсканируйте</div>
+
     <div class="scan-row">
       <input id="add-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
       <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#add-barcode','Скан товара')">📷</button>
@@ -105,6 +119,49 @@
     }
     UI.onScan('#add-barcode', (v) => { UI.setVal('#add-barcode', v); lookupBarcode(v); });
     document.getElementById('add-barcode').addEventListener('blur', () => lookupBarcode(UI.val('#add-barcode')));
+
+    // ---------- Поиск по справочнику (название/штрихкод) ----------
+    let searchTimer = null;
+
+    function selectSuggestion(item) {
+      UI.setVal('#add-barcode', item.barcode);
+      pendingItemName = item.item_name;
+      document.getElementById('add-item-name').textContent = `✓ ${item.item_name}`;
+      UI.setVal('#search-item', '');
+      document.getElementById('suggest-list').innerHTML = '';
+    }
+
+    async function runItemSearch(term) {
+      const box = document.getElementById('suggest-list');
+      const clientId = getClientIdSilent();
+      if (!clientId) { box.innerHTML = `<div class="refresh-note">Сначала выберите клиента вверху страницы</div>`; return; }
+      if (!term || term.length < 2) { box.innerHTML = ''; return; }
+      try {
+        const res = await window.API.items.list({ client_id: clientId, search: term, limit: 15 });
+        const items = res.items || [];
+        if (!items.length) { box.innerHTML = `<div class="refresh-note">Ничего не найдено</div>`; return; }
+        box.innerHTML = items.map((it, idx) => `
+          <div class="list-row suggest-row" onclick="selectSuggestion(window.__suggestCache[${idx}])">
+            <div class="main">
+              <div class="title">${UI.escHtml(it.item_name)}</div>
+              <div class="sub">${UI.escHtml(it.barcode)}</div>
+            </div>
+          </div>
+        `).join('');
+        window.__suggestCache = items;
+      } catch (e) { box.innerHTML = `<div class="refresh-note">Ошибка поиска</div>`; }
+    }
+
+    function getClientIdSilent() {
+      const v = UI.val('#client-select');
+      return v ? Number(v) : null;
+    }
+
+    document.getElementById('search-item').addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      const term = e.target.value.trim();
+      searchTimer = setTimeout(() => runItemSearch(term), 300);
+    });
 
     function addLine() {
       const barcode = UI.val('#add-barcode');
