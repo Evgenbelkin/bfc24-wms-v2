@@ -44,23 +44,33 @@ const app = express();
 // ---------------------------------------------------------------------------
 // Security headers
 // ---------------------------------------------------------------------------
-// NB: все страницы в public/app/*.html — однофайловые, со встроенными <script> и <style>
-// (без сборщика/бандлера). Дефолтный CSP хелмета блокирует inline-скрипты и inline-стили
-// (script-src/style-src 'self' без 'unsafe-inline'), из-за чего в проде не отрабатывал вообще
-// ни один <script> на странице — форма логина, например, просто не реагировала на клик.
-// Явно разрешаем inline для script/style; img-src отдельно расширен под превью товаров
-// (произвольные https-хосты, например CDN Wildberries) и под data: URI (QR-код поставки).
+// NB: все страницы в public/app/*.html — однофайловые, со встроенными <script>/<style>
+// И с onclick="..."/style="..." атрибутами прямо в разметке (без сборщика/бандлера).
+// Дефолтный CSP хелмета блокирует это в трёх РАЗНЫХ директивах:
+//   script-src / style-src       — инлайновые <script> и <style> блоки
+//   script-src-attr / style-src-attr — онклики и style="" атрибуты (отдельная директива!)
+// Мы уже словили баг с первыми двумя (форма логина не реагировала на клик), а затем
+// с *-attr (ни один onclick вообще не срабатывал, включая +/- и кнопку камеры) —
+// helmet подставляет свои дефолты для необъявленных ключей, даже если explicitly
+// передан объект directives. Поэтому здесь useDefaults:false и полный явный список,
+// чтобы больше никакой скрытый дефолт не прилетел незаметно.
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: config.isProd ? {
+    useDefaults: false,
     directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'", "'unsafe-inline'"],
-      styleSrc:   ["'self'", "'unsafe-inline'"],
-      imgSrc:     ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'"],
-      mediaSrc:   ["'self'", 'blob:'],
-      objectSrc:  ["'none'"],
+      defaultSrc:     ["'self'"],
+      scriptSrc:      ["'self'", "'unsafe-inline'"],
+      scriptSrcAttr:  ["'unsafe-inline'"],
+      styleSrc:       ["'self'", "'unsafe-inline'"],
+      styleSrcAttr:   ["'unsafe-inline'"],
+      imgSrc:         ["'self'", 'data:', 'https:'],
+      connectSrc:     ["'self'"],
+      mediaSrc:       ["'self'", 'blob:'],
+      objectSrc:      ["'none'"],
+      baseUri:        ["'self'"],
+      formAction:     ["'self'"],
+      frameAncestors: ["'self'"],
     },
   } : false,
 }));
