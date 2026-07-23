@@ -3,6 +3,7 @@
 const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
+const wbClient = require('../wb/wb.client');
 
 // =============================================================================
 // Shipping Service
@@ -88,13 +89,18 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     if (shipRes.rowCount === 0) throw new NotFoundError(`Shipment '${shipmentCode}'`);
     const shipment = shipRes.rows[0];
 
-    // Идемпотентность: если уже in_transit — возвращаем успех
+    // Идемпотентность: если уже in_transit — возвращаем успех. Но если ВБ
+    // так и не был уведомлён об этом раньше (wb_delivered_at ещё NULL — баг
+    // до этого фикса, когда deliverSupply вообще не вызывался) — даём
+    // возможность повторной попытки прямо через повторный скан.
     if (shipment.status === 'in_transit') {
+      shipmentId = shipment.id;
       return {
         ok: true, shipmentId: shipment.id,
         shipmentCode: shipment.external_id,
         status: 'in_transit', alreadyShipped: true,
         qr_base64: shipment.wb_supply_qr_base64 || null,
+        needsWbDeliver: !shipment.wb_delivered_at,
       };
     }
 
@@ -189,6 +195,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
       shipmentCode: shipment.external_id,
       status:       'in_transit',
       totalShipped,
+      needsWbDeliver: true,
     };
   });
 
@@ -217,7 +224,55 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     txResult.qr_base64 = qrBase64;
   }
 
+  // Сообщаем ВБ, что поставка передана перевозчику (PATCH .../deliver) —
+  // ТОЖЕ после commit, той же логикой soft-fail, что и QR выше: локальный
+  // склад уже сделал своё дело (списание/статус), поэтому проблема с внешним
+  // API ВБ не должна откатывать или ломать уже свершившуюся физическую отгрузку.
+  // needsWbDeliver=true и в первом подтверждении, и при повторном скане уже
+  // отгруженной поставки, если раньше это не получилось (см. миграцию 012).
+  if (shipmentId && txResult.needsWbDeliver) {
+    const deliverResult = await notifyWbSupplyDelivered({ tenantId, shipmentId, shipmentCode });
+    txResult.wbDelivered      = deliverResult.ok;
+    txResult.wbDeliverSkipped = deliverResult.reason === 'no_wb_account';
+    if (!deliverResult.ok && deliverResult.reason !== 'no_wb_account') {
+      txResult.wbDeliverError = deliverResult.message || 'Не удалось передать статус в WB';
+    }
+  }
+
   return txResult;
+}
+
+/** Сообщить ВБ, что поставка передана перевозчику. Soft-fail: ошибка
+ *  здесь не должна ломать уже подтверждённую локально отгрузку — просто
+ *  сообщаем о результате наверх, чтобы отгрузчик мог решить, что делать
+ *  (например, продублировать вручную в кабинете ВБ). */
+async function notifyWbSupplyDelivered({ tenantId, shipmentId, shipmentCode }) {
+  const accRes = await query(
+    `SELECT ma.api_token FROM wms.mp_accounts ma
+     JOIN wms.wb_supplies ws ON ws.mp_account_id=ma.id
+     WHERE ws.tenant_id=$1 AND ws.supply_code=$2 AND ma.is_active=TRUE
+     LIMIT 1`,
+    [tenantId, shipmentCode]
+  );
+  if (accRes.rowCount === 0 || !accRes.rows[0].api_token) {
+    return { ok: false, reason: 'no_wb_account' };
+  }
+  const token = accRes.rows[0].api_token;
+
+  try {
+    await wbClient.deliverSupply(token, shipmentCode);
+  } catch (e) {
+    logger.warn({ err: e, shipmentCode }, 'WB deliverSupply failed (soft-fail)');
+    return { ok: false, reason: 'wb_api_error', message: e.message };
+  }
+
+  try {
+    await query(`UPDATE wms.shipments SET wb_delivered_at=NOW() WHERE id=$1`, [shipmentId]);
+  } catch (e) {
+    logger.warn({ err: e, shipmentId }, 'Failed to persist wb_delivered_at (soft-fail)');
+  }
+
+  return { ok: true };
 }
 
 // NB: эти две функции намеренно используют пуловый `query()`, а не `client.query()` —

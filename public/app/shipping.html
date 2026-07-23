@@ -43,7 +43,7 @@
 
     <div class="card" id="confirm-card">
       <div class="card-title">Подтверждение отгрузки</div>
-      <div class="refresh-note" style="margin-bottom:8px;">Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)</div>
+      <div class="refresh-note" id="confirm-hint" style="margin-bottom:8px;">Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)</div>
       <div class="scan-row">
         <input id="scan-code" class="scan-input" placeholder="Код поставки" inputmode="none" autocomplete="off"/>
         <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-code','Скан кода поставки')">📷</button>
@@ -140,7 +140,14 @@
         document.getElementById('qr-result').style.display = 'none';
         document.getElementById('confirm-status').textContent = '';
         const alreadyShipped = ['in_transit','done'].includes(currentShipment.status);
-        document.getElementById('confirm-card').style.display = alreadyShipped ? 'none' : 'block';
+        // Если локально уже "Отгружена", но ВБ так и не был уведомлён (старый баг —
+        // deliverSupply вообще не вызывался) — не прячем карточку, а даём
+        // отгрузчику повторно отсканировать код, чтобы попытаться ещё раз.
+        const needsWbRetry = currentShipment.status === 'in_transit' && !currentShipment.wb_delivered_at;
+        document.getElementById('confirm-card').style.display = (alreadyShipped && !needsWbRetry) ? 'none' : 'block';
+        document.getElementById('confirm-hint').textContent = needsWbRetry
+          ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.'
+          : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
         setTimeout(() => document.getElementById('scan-code')?.focus(), 150);
       } catch (e) { UI.notify.err(e.message); }
     }
@@ -161,6 +168,12 @@
         });
         UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped ?? '—'} шт.`);
         statusEl.textContent = '✅ Подтверждено';
+        if (res.wbDelivered) {
+          statusEl.textContent += ' · ВБ уведомлён';
+        } else if (res.wbDeliverError) {
+          UI.notify.warn('Локально отгружено, но ВБ не подтвердил статус: ' + res.wbDeliverError + '. В кабинете ВБ поставка может ещё висеть «На сборке» — попробуйте отсканировать код ещё раз чуть позже.');
+          statusEl.textContent += ' · ⚠️ ВБ не подтвердил, повторите скан позже';
+        }
         if (res.qr_base64) {
           document.getElementById('qr-result').style.display = 'block';
           document.getElementById('qr-result').innerHTML = `
