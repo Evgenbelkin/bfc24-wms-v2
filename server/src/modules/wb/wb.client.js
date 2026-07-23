@@ -198,22 +198,26 @@ async function createSupply(token, name) {
 }
 
 /** Добавить заказы в поставку.
- *  Два отдельных бага здесь были:
+ *  Три отдельных бага здесь были по очереди:
  *  1) id поставки приходит от WB уже с префиксом WB-GI-, а путь
  *     /api/v3/supplies/{id}/... ожидает голый числовой id (как и в
  *     fetchSupplyBarcode/deliverSupply ниже) — префикс не срезался.
- *  2) WB добавляет заказы в поставку ПО ОДНОМУ: PATCH .../orders/{orderId}
- *     без тела запроса, а не одним пакетным PATCH .../orders со списком —
- *     такого пути без orderId в конце у WB попросту не существует, отсюда 404.
+ *  2) Пробовали одним пакетным PATCH /api/v3/supplies/{id}/orders со
+ *     списком — такого пути в этом префиксе у WB нет, 404.
+ *  3) Пробовали по одному заказу PATCH /api/v3/supplies/{id}/orders/{orderId} —
+ *     этот путь тоже не существует (это устаревший GET-only маршрут, см.
+ *     "Get the Supply Orders" в доке, помечен Deprecated). Актуальный метод
+ *     "Add Assembly Orders to the Supply" живёт под ДРУГИМ префиксом:
+ *     PATCH /api/marketplace/v3/supplies/{id}/orders, тело {orders:[...]},
+ *     одним запросом до 100 заказов сразу (см. dev.wildberries.ru/en/openapi/orders-fbs).
  */
 async function addOrdersToSupply(token, supplyId, orderIds) {
   const rawId = String(supplyId).replace(/^WB-GI-/i, '');
-  for (const orderId of orderIds) {
-    await wbRequest({
-      token, method: 'PATCH',
-      path: `/api/v3/supplies/${encodeURIComponent(rawId)}/orders/${encodeURIComponent(orderId)}`,
-    });
-  }
+  await wbRequest({
+    token, method: 'PATCH',
+    path: `/api/marketplace/v3/supplies/${encodeURIComponent(rawId)}/orders`,
+    data: { orders: orderIds.map(Number) },
+  });
 }
 
 /** Получить стикеры для заказов */
