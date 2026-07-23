@@ -55,6 +55,11 @@
     .step.active{background:#38bdf8;}
     .step.done{background:#22c55e;}
     #status-msg{text-align:center;color:#64748b;font-size:14px;min-height:20px;margin-top:8px;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:#1e293b;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .modal-card .field-label{font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px;}
+    .modal-card .hint{font-size:12px;color:#64748b;margin-top:10px;line-height:1.5;}
   </style>
 </head>
 <body>
@@ -122,6 +127,8 @@
       <div id="status-msg"></div>
     </div>
   </div>
+
+  <div id="modal-root"></div>
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
@@ -279,16 +286,44 @@
       } catch(e) { UI.notify.err(e.message); }
     }
 
-    async function closeWave() {
+    function closeWave() {
       if (!waveStatus?.has_wave) return;
-      const bufLoc = prompt('Введите код МХ упаковки (PAK-XX):');
-      if (!bufLoc) return;
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeWaveModalClose()">
+          <div class="modal-card">
+            <div class="card-title">Закрыть волну ${UI.escHtml(waveStatus.shipment_code||'')}</div>
+            <div class="field-label">Ячейка (МХ), куда поставили короб</div>
+            <div class="scan-row">
+              <input id="close-wave-loc" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+              <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#close-wave-loc','Скан ячейки МХ')">📷</button>
+            </div>
+            <div class="hint">После подтверждения на принтер упаковки уйдёт внутренняя наклейка с кодом этой отгрузки — упаковщик найдёт короб по этой ячейке и отсканирует наклейку, чтобы взять задание в работу.</div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="confirmCloseWave()">✅ Подтвердить</button>
+              <button class="btn-big btn-yellow" onclick="closeWaveModalClose()">Отмена</button>
+            </div>
+          </div>
+        </div>
+      `;
+      setTimeout(() => document.getElementById('close-wave-loc')?.focus(), 100);
+      const input = document.getElementById('close-wave-loc');
+      input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmCloseWave(); } });
+    }
+
+    function closeWaveModalClose() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function confirmCloseWave() {
+      const bufLoc = document.getElementById('close-wave-loc')?.value.trim().toUpperCase();
+      if (!bufLoc) { UI.notify.err('Отсканируйте или введите ячейку'); return; }
       try {
-        await window.API.picking.closeWave({
-          shipment_code:       waveStatus.shipment_code,
-          buffer_location_code: bufLoc.trim().toUpperCase(),
+        const res = await window.API.picking.closeWave({
+          shipment_code:        waveStatus.shipment_code,
+          buffer_location_code: bufLoc,
         });
-        UI.notify.ok('Волна закрыта!');
+        closeWaveModalClose();
+        UI.notify.ok(res.printJobCreated
+          ? 'Волна закрыта! Наклейка отправлена на печать.'
+          : 'Волна закрыта! (Печать наклейки не настроена — маршрут pick_list_label не задан в панели принтеров)');
         currentTask = null;
         waveStatus  = null;
         await loadWaveStatus();

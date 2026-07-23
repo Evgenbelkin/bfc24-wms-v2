@@ -114,6 +114,15 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
     wb_sticker_code:  stickerMap[row.barcode]?.wb_sticker_code || null,
   }));
 
+  // Откуда забрать сборочный лист — МХ, на который сборщик поставил короб при
+  // закрытии волны (picking.closeWave). Без этого упаковщик не понимает,
+  // куда физически идти за коробкой.
+  const waveRes = await query(
+    `SELECT buffer_location_code FROM wms.pick_waves WHERE tenant_id=$1 AND shipment_code=$2 LIMIT 1`,
+    [tenantId, shipment.external_id]
+  );
+  shipment.buffer_location_code = waveRes.rows[0]?.buffer_location_code || null;
+
   return { shipment, lines };
 }
 

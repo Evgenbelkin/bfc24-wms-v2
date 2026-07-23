@@ -107,7 +107,8 @@ async function processJob(job) {
     if (!svgText) throw new Error('No SVG/sticker in payload_json');
 
     // Размер по типу документа
-    const dims = job.doc_type === 'shipping_qr' ? { widthMm: 58, heightMm: 58 } : { widthMm: 58, heightMm: 40 };
+    const SQUARE_DOC_TYPES = ['shipping_qr', 'pick_list_label'];
+    const dims = SQUARE_DOC_TYPES.includes(job.doc_type) ? { widthMm: 58, heightMm: 58 } : { widthMm: 58, heightMm: 40 };
 
     await buildPdf(svgText, pdfPath, dims);
 

@@ -6,6 +6,7 @@ const { resolveOrCreateItem } = require('../masterdata/items/items.service');
 const { findBestPickLocation, getLocationByCode } = require('../masterdata/locations/locations.service');
 const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
+const { generateQrSvg } = require('../../utils/qrcode');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -380,7 +381,56 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
       [bufLocId, bufferLocationCode||null, wave.id]
     );
 
-    return { ok: true, shipmentCode, status: 'done' };
+    // Передаём волну на упаковку — раньше на этом моменте всё и заканчивалось,
+    // wms.packing_tasks нигде не заполнялся, и упаковщик никогда не видел эту
+    // отгрузку. Теперь создаём задание на упаковку прямо здесь.
+    const shipRes = await client.query(
+      `SELECT id, warehouse_id, client_id FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 LIMIT 1`,
+      [tenantId, shipmentCode]
+    );
+    let printJobCreated = false;
+    if (shipRes.rowCount > 0) {
+      const shipment = shipRes.rows[0];
+
+      await client.query(
+        `INSERT INTO wms.packing_tasks(tenant_id,warehouse_id,client_id,shipment_code,status,priority,comment,created_by,updated_by)
+         VALUES($1,$2,$3,$4,'new',100,$5,$6,$6)`,
+        [tenantId, shipment.warehouse_id, shipment.client_id, shipmentCode,
+         bufferLocationCode ? `Забрать с МХ ${bufferLocationCode}` : null, pickerId]
+      );
+
+      // Внутренняя наклейка с кодом отгрузки — soft-fail, как и печать WB-стикеров:
+      // ошибка печати не должна блокировать закрытие волны.
+      try {
+        const routeRes = await client.query(
+          `SELECT pr.id, pr.printer_id FROM wms.printer_routes pr
+           JOIN wms.printers p ON p.id=pr.printer_id
+           WHERE pr.tenant_id=$1 AND pr.doc_type='pick_list_label' AND pr.is_active=TRUE AND p.is_active=TRUE
+           ORDER BY pr.is_default DESC, pr.id LIMIT 1`,
+          [tenantId]
+        );
+        if (routeRes.rowCount > 0) {
+          const route = routeRes.rows[0];
+          const svg = await generateQrSvg(shipmentCode);
+          const jobCode = `PICKLIST-${shipment.id}-${Date.now()}`;
+          await client.query(
+            `INSERT INTO wms.print_jobs
+               (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
+             VALUES($1,$2,$3,$4,'pick_list_label','shipment',$5,1,$6::jsonb,'new',$7)`,
+            [
+              tenantId, jobCode, route.printer_id, route.id, shipment.id,
+              JSON.stringify({ sticker: svg, shipment_code: shipmentCode, buffer_location_code: bufferLocationCode || null }),
+              pickerId,
+            ]
+          );
+          printJobCreated = true;
+        }
+      } catch (err) {
+        logger.warn({ err: err.message, shipmentCode }, 'Failed to create pick_list_label print job (non-fatal)');
+      }
+    }
+
+    return { ok: true, shipmentCode, status: 'done', printJobCreated };
   });
 }
 
