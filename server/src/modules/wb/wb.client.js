@@ -197,11 +197,16 @@ async function createSupply(token, name) {
   return data;
 }
 
-/** Добавить заказы в поставку */
+/** Добавить заказы в поставку
+ *  WB возвращает id новой поставки уже с префиксом WB-GI-, но сам путь
+ *  /api/v3/supplies/{id}/... ожидает голый числовой id без префикса — как и
+ *  в fetchSupplyBarcode/deliverSupply ниже. Раньше префикс тут не срезался,
+ *  из-за чего WB отвечал 404 Not Found и волна не формировалась вообще. */
 async function addOrdersToSupply(token, supplyId, orderIds) {
+  const rawId = String(supplyId).replace(/^WB-GI-/i, '');
   await wbRequest({
     token, method: 'PATCH',
-    path: `/api/v3/supplies/${encodeURIComponent(supplyId)}/orders`,
+    path: `/api/v3/supplies/${encodeURIComponent(rawId)}/orders`,
     data: { orders: orderIds },
   });
 }
