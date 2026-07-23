@@ -68,6 +68,7 @@
       new:'новая', picking:'сборка', ready_to_ship:'готова к отгрузке',
       shipping:'отгружается', in_transit:'в пути', done:'выполнена', cancelled:'отменена',
     };
+    const PACKING_STATUS_LABELS = { new:'в очереди на упаковку', in_progress:'упаковывается', done:'упаковано', cancelled:'отменено' };
     const SHIP_STATUS_PILL = {
       new:'pill-gray', picking:'pill-blue', ready_to_ship:'pill-green',
       shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
@@ -150,15 +151,21 @@
         list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет активных отгрузок</div>`;
         return { total: 0, readyToShip: 0 };
       }
-      list.innerHTML = shipments.map(s => `
+      list.innerHTML = shipments.map(s => {
+        const packingNote = s.packing_status
+          ? `${PACKING_STATUS_LABELS[s.packing_status]||s.packing_status}${s.packer_name ? ' · упаковщик: '+UI.escHtml(s.packer_name) : ''}`
+          : 'ещё не в очереди на упаковку';
+        return `
         <div class="list-row">
           <div class="main">
             <div class="title">${UI.escHtml(s.external_id)}</div>
             <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · сборка ${s.tasks_done||0}/${s.tasks_total||0} · упаковано ${s.total_packed_qty||0}</div>
+            <div class="sub">📦 ${packingNote}</div>
           </div>
           <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
         </div>
-      `).join('');
+      `;
+      }).join('');
       return { total: shipments.length, readyToShip: shipments.filter(s=>s.status==='ready_to_ship').length };
     }
 

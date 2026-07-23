@@ -20,7 +20,14 @@ async function listShipments({ tenantId, clientId = null, status = null, marketp
   const r = await query(
     `SELECT s.*, c.client_name, w.warehouse_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
-       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
+       (SELECT pt.status FROM wms.packing_tasks pt
+        WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
+        ORDER BY pt.id DESC LIMIT 1) AS packing_status,
+       (SELECT u.username FROM wms.packing_tasks pt
+        LEFT JOIN wms.users u ON u.id=pt.packer_id
+        WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
+        ORDER BY pt.id DESC LIMIT 1) AS packer_name
      FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
      JOIN wms.warehouses w ON w.id=s.warehouse_id
