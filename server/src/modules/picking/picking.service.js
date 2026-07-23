@@ -392,14 +392,26 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
     );
     if (remaining.rows[0].n > 0) throw new ValidationError(`Cannot close wave: ${remaining.rows[0].n} tasks are not done`);
 
-    let bufLocId = null;
-    if (bufferLocationCode) {
-      const bufLoc = await client.query(
-        `SELECT id FROM wms.locations WHERE tenant_id=$1 AND location_code=$2 AND is_active=TRUE LIMIT 1`,
-        [tenantId, bufferLocationCode.trim().toUpperCase()]
-      );
-      if (bufLoc.rowCount > 0) bufLocId = bufLoc.rows[0].id;
+    // Короб можно парковать только в ячейку буферной зоны (МХ) — иначе сборщик
+    // может отсканировать/вбить любую ячейку, какую увидит, и упаковщик потом
+    // не найдёт короб там, где реально ищет (в буферной зоне).
+    const code = String(bufferLocationCode || '').trim().toUpperCase();
+    if (!code) throw new ValidationError('buffer_location_code is required');
+
+    const bufLoc = await client.query(
+      `SELECT id, location_type FROM wms.locations
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND location_code=$3 AND is_active=TRUE LIMIT 1`,
+      [tenantId, wave.warehouse_id, code]
+    );
+    if (bufLoc.rowCount === 0) {
+      throw new ValidationError(`Ячейка '${code}' не найдена на этом складе`);
     }
+    if (bufLoc.rows[0].location_type !== 'buffer') {
+      throw new ValidationError(
+        `Ячейка '${code}' не является буферной зоной (МХ). Поставьте короб в ячейку с типом "МХ/буфер" и отсканируйте её.`
+      );
+    }
+    const bufLocId = bufLoc.rows[0].id;
 
     await client.query(
       `UPDATE wms.pick_waves
