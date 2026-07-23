@@ -160,10 +160,19 @@ function extractCardBarcodes(card) {
   return barcodes;
 }
 
-/** Получить заказы нового FBS */
-async function fetchOrders(token, { dateFrom = null, limit = 1000 } = {}) {
-  const params = { limit };
-  if (dateFrom) params.dateFrom = dateFrom;
+/** Получить заказы нового FBS
+ *  ВАЖНО: WB требует параметр next (курсор пагинации) даже на первый запрос —
+ *  без него отдаёт 400 IncorrectParameter. dateFrom у этого метода — Unix-время
+ *  в секундах, а не строка даты; если передали строку/Date — конвертируем сами,
+ *  чтобы вызывающий код не должен был об этом помнить. */
+async function fetchOrders(token, { dateFrom = null, limit = 1000, next = 0 } = {}) {
+  const params = { limit, next };
+  if (dateFrom) {
+    const n = Number(dateFrom);
+    params.dateFrom = Number.isFinite(n) && String(dateFrom).trim() === String(n)
+      ? n
+      : Math.floor(new Date(dateFrom).getTime() / 1000);
+  }
   const data = await wbRequest({ token, path: '/api/v3/orders', params });
   return Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : []);
 }
