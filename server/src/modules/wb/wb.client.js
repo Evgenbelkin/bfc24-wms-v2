@@ -198,24 +198,26 @@ async function createSupply(token, name) {
 }
 
 /** Добавить заказы в поставку.
- *  Три отдельных бага здесь были по очереди:
- *  1) id поставки приходит от WB уже с префиксом WB-GI-, а путь
- *     /api/v3/supplies/{id}/... ожидает голый числовой id (как и в
- *     fetchSupplyBarcode/deliverSupply ниже) — префикс не срезался.
- *  2) Пробовали одним пакетным PATCH /api/v3/supplies/{id}/orders со
- *     списком — такого пути в этом префиксе у WB нет, 404.
+ *  Четыре бага здесь были по очереди:
+ *  1) префикс WB-GI- не срезался при походе на устаревший /api/v3 путь.
+ *  2) Пробовали одним пакетным PATCH /api/v3/supplies/{id}/orders —
+ *     такого пути в этом префиксе у WB нет, 404.
  *  3) Пробовали по одному заказу PATCH /api/v3/supplies/{id}/orders/{orderId} —
- *     этот путь тоже не существует (это устаревший GET-only маршрут, см.
- *     "Get the Supply Orders" в доке, помечен Deprecated). Актуальный метод
- *     "Add Assembly Orders to the Supply" живёт под ДРУГИМ префиксом:
- *     PATCH /api/marketplace/v3/supplies/{id}/orders, тело {orders:[...]},
- *     одним запросом до 100 заказов сразу (см. dev.wildberries.ru/en/openapi/orders-fbs).
+ *     тоже не существует (устаревший GET-only маршрут, Deprecated).
+ *     Актуальный метод "Add Assembly Orders to the Supply" живёт под
+ *     ДРУГИМ префиксом: PATCH /api/marketplace/v3/supplies/{id}/orders,
+ *     тело {orders:[...]}, одним запросом до 100 заказов сразу.
+ *  4) На этом верном пути WB вернул 400 IncorrectParameter — потому что
+ *     в path-параметре {supplyId} мы срезали префикс WB-GI-. В доке
+ *     dev.wildberries.ru пример path-параметра для ВСЕХ supply-эндпоинтов
+ *     показан именно как "WB-GI-1234567" (с префиксом) — значит срезать
+ *     его не нужно нигде, это был неверный фикс с самого начала.
  */
 async function addOrdersToSupply(token, supplyId, orderIds) {
-  const rawId = String(supplyId).replace(/^WB-GI-/i, '');
+  const fullId = normalizeShipmentCode(supplyId);
   await wbRequest({
     token, method: 'PATCH',
-    path: `/api/marketplace/v3/supplies/${encodeURIComponent(rawId)}/orders`,
+    path: `/api/marketplace/v3/supplies/${encodeURIComponent(fullId)}/orders`,
     data: { orders: orderIds.map(Number) },
   });
 }
@@ -232,20 +234,20 @@ async function fetchOrderStickers(token, orderIds, { type = 'svg', width = 58, h
 
 /** Получить QR-код поставки */
 async function fetchSupplyBarcode(token, supplyId) {
-  const rawId = String(supplyId).replace(/^WB-GI-/i, '');
+  const fullId = normalizeShipmentCode(supplyId);
   const data = await wbRequest({
     token,
-    path: `/api/v3/supplies/${encodeURIComponent(rawId)}/barcode?type=svg`,
+    path: `/api/v3/supplies/${encodeURIComponent(fullId)}/barcode?type=svg`,
   });
   return data; // { barcode, file }
 }
 
 /** Подтвердить поставку к отгрузке */
 async function deliverSupply(token, supplyId) {
-  const rawId = String(supplyId).replace(/^WB-GI-/i, '');
+  const fullId = normalizeShipmentCode(supplyId);
   await wbRequest({
     token, method: 'PATCH',
-    path: `/api/v3/supplies/${encodeURIComponent(rawId)}/deliver`,
+    path: `/api/v3/supplies/${encodeURIComponent(fullId)}/deliver`,
   });
 }
 

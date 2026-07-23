@@ -219,8 +219,9 @@ async function fetchWbSupplyQrAfterCommit({ tenantId, shipmentCode }) {
   const token = accRes.rows[0].api_token;
   if (!token) return null;
 
-  // Нормализуем: WB ждёт raw supply_id (без WB-GI- префикса)
-  const supplyId = shipmentCode.replace(/^WB-GI-/i, '');
+  // WB ждёт полный id поставки вида WB-GI-XXXXXXX в path — срезать префикс не нужно
+  // (см. правку в wb.client.js: пример path-параметра в доке WB всегда с префиксом).
+  const supplyId = /^WB-GI-/i.test(shipmentCode) ? shipmentCode : `WB-GI-${shipmentCode}`;
 
   const resp = await fetch(
     `https://marketplace-api.wildberries.ru/api/v3/supplies/${encodeURIComponent(supplyId)}/barcode?type=svg`,
