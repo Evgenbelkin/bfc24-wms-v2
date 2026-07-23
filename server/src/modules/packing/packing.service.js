@@ -294,6 +294,28 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
       );
     }
 
+    // Короб после упаковки нужно поставить в конкретную зону ожидания отгрузки —
+    // проверяем это так же строго, как ячейку МХ при закрытии волны сборки,
+    // иначе отгрузчик потом не найдёт короб (или упаковщик "разместит" его
+    // где попало, просто вписав любой текст в поле).
+    const code = String(locationCode || '').trim().toUpperCase();
+    if (!code) throw new ValidationError('location_code is required — укажите ячейку зоны отгрузки');
+
+    const locRes = await client.query(
+      `SELECT id, location_type FROM wms.locations
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND location_code=$3 AND is_active=TRUE LIMIT 1`,
+      [tenantId, shipment.warehouse_id, code]
+    );
+    if (locRes.rowCount === 0) {
+      throw new ValidationError(`Ячейка '${code}' не найдена на этом складе`);
+    }
+    if (locRes.rows[0].location_type !== 'shipping') {
+      throw new ValidationError(
+        `Ячейка '${code}' не является зоной отгрузки. Поставьте короб в ячейку с типом "Отгрузка" (в справочнике мест хранения) и отсканируйте её.`
+      );
+    }
+    const packingLocationId = locRes.rows[0].id;
+
     // Закрываем packing_tasks
     await client.query(
       `UPDATE wms.packing_tasks
@@ -306,13 +328,13 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
     await client.query(
       `UPDATE wms.shipments
        SET status='ready_to_ship', total_packed_qty=$1,
-           packing_location_code=COALESCE($2,packing_location_code),
-           packing_finished_at=NOW(), packer_id=$3, updated_at=NOW()
-       WHERE id=$4`,
-      [totalPacked, locationCode||null, packerId, shipmentId]
+           packing_location_id=$2, packing_location_code=$3,
+           packing_finished_at=NOW(), packer_id=$4, updated_at=NOW()
+       WHERE id=$5`,
+      [totalPacked, packingLocationId, code, packerId, shipmentId]
     );
 
-    return { ok: true, shipmentId, status: 'ready_to_ship', totalPlan, totalPacked };
+    return { ok: true, shipmentId, status: 'ready_to_ship', totalPlan, totalPacked, packingLocationCode: code };
   });
 }
 

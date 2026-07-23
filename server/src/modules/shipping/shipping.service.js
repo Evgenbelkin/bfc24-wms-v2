@@ -136,9 +136,11 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     const totalShipped = shippedQtyRes.rows[0].shipped_qty;
 
     // Записываем документальное движение shipping (без ячейки — это факт отгрузки)
-    // Используем виртуальную ячейку типа shipping если есть, иначе пропускаем movement
-    // NB: constraint movement_has_location не позволяет NULL location → пишем только в аудит
-    // Реальное списание со склада уже произошло в picking через consumeStock
+    // Реальное списание со склада уже произошло в picking через consumeStock.
+    // FROM берём КОНКРЕТНУЮ ячейку зоны отгрузки, куда упаковщик реально поставил
+    // короб (shipment.packing_location_id) — если она есть; для старых отгрузок
+    // (до этого исправления, где ячейка после упаковки не была обязательной)
+    // откатываемся на первую активную ячейку типа shipping, как и раньше.
     await client.query(
       `INSERT INTO wms.stock_movements
          (tenant_id, warehouse_id, client_id, item_id, barcode,
@@ -147,13 +149,19 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
        SELECT
          $1, $2, $3, NULL, NULL,
          'shipping', $4,
-         l.id, NULL,
+         COALESCE(
+           (SELECT l.id FROM wms.locations l WHERE l.id=$7 AND l.tenant_id=$1 AND l.is_active=TRUE),
+           (SELECT l.id FROM wms.locations l WHERE l.tenant_id=$1 AND l.location_type='shipping' AND l.is_active=TRUE LIMIT 1)
+         ),
+         NULL,
          'shipment', $5, $6, 'Документальная отгрузка перевозчику'
-       FROM wms.locations l
-       WHERE l.tenant_id=$1 AND l.location_type='shipping' AND l.is_active=TRUE
-       LIMIT 1
+       WHERE EXISTS (
+         SELECT 1 FROM wms.locations l
+         WHERE l.tenant_id=$1 AND l.is_active=TRUE
+           AND (l.id=$7 OR l.location_type='shipping')
+       )
        ON CONFLICT DO NOTHING`,
-      [tenantId, shipment.warehouse_id, shipment.client_id, totalShipped, shipment.id, userId]
+      [tenantId, shipment.warehouse_id, shipment.client_id, totalShipped, shipment.id, userId, shipment.packing_location_id]
     );
 
     // Обновляем статус

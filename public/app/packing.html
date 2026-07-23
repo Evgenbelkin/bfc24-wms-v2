@@ -74,8 +74,12 @@
         <button class="qty-btn" onclick="stepBoxes(1)">+</button>
       </div>
       <div style="margin-top:14px;">
-        <label style="display:block;color:var(--muted2);font-size:12px;font-weight:600;margin-bottom:6px;text-transform:uppercase;">Ячейка паллетизации (необязательно)</label>
-        <input id="pack-location" class="scan-input" style="font-size:15px;padding:12px;" placeholder="Код ячейки"/>
+        <label style="display:block;color:var(--muted2);font-size:12px;font-weight:600;margin-bottom:6px;text-transform:uppercase;">Ячейка зоны отгрузки</label>
+        <div class="scan-row">
+          <input id="pack-location" class="scan-input" style="font-size:15px;padding:12px;" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#pack-location','Скан ячейки зоны отгрузки')">📷</button>
+        </div>
+        <div class="refresh-note" style="margin-top:6px;">Поставьте упакованный короб в ячейку с типом «Отгрузка» (см. справочник мест хранения) и отсканируйте её — без этого упаковку не завершить.</div>
       </div>
       <button class="btn-big btn-green btn-full" style="margin-top:14px;" onclick="confirmPacking()">✅ Подтвердить упаковку</button>
     </div>
@@ -218,11 +222,13 @@
       if (totalPacked < totalPlan) {
         if (!UI.confirm(`Упаковано не всё (${totalPacked}/${totalPlan}). Всё равно попробовать завершить?`)) return;
       }
+      const packLocation = UI.val('#pack-location').trim();
+      if (!packLocation) { UI.notify.err('Отсканируйте ячейку зоны отгрузки'); return; }
       try {
         await window.API.packing.confirm({
           shipment_id: currentShipment.id,
           boxes_count: boxes,
-          location_code: UI.val('#pack-location') || undefined,
+          location_code: packLocation,
         });
         UI.notify.ok('Упаковка подтверждена! Отгрузка готова к отправке.');
         currentTask = null; currentShipment = null; currentLines = [];
