@@ -168,13 +168,38 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
     }
     const itemId = itemRes.rows[0].id;
 
+    // Локация для движения: CHECK-ограничение movement_has_location требует
+    // from_location_id ИЛИ to_location_id — эта запись не может быть с обеими
+    // NULL. Содержательно верно взять МХ, куда сборщик поставил короб при
+    // закрытии волны (wms.pick_waves.buffer_location_code) — упаковщик физически
+    // расходует товар именно оттуда. Если по какой-то причине волна/ячейка не
+    // резолвится — берём любую активную buffer-ячейку склада как запасной вариант,
+    // чтобы не блокировать упаковку.
+    const fromLocRes = await client.query(
+      `SELECT l.id, l.location_code
+       FROM wms.locations l
+       WHERE l.id = COALESCE(
+         (SELECT l2.id FROM wms.pick_waves pw
+            JOIN wms.locations l2 ON l2.tenant_id=pw.tenant_id AND l2.warehouse_id=$2
+              AND UPPER(l2.location_code)=UPPER(pw.buffer_location_code) AND l2.is_active=TRUE
+          WHERE pw.tenant_id=$1 AND pw.shipment_code=$3 LIMIT 1),
+         (SELECT l3.id FROM wms.locations l3
+          WHERE l3.tenant_id=$1 AND l3.warehouse_id=$2 AND l3.location_type='buffer' AND l3.is_active=TRUE
+          LIMIT 1)
+       )`,
+      [tenantId, shipment.warehouse_id, shipmentCode]
+    );
+    const fromLocationId   = fromLocRes.rows[0]?.id || null;
+    const fromLocationCode = fromLocRes.rows[0]?.location_code || null;
+
     // Пишем движение packing
     await client.query(
       `INSERT INTO wms.stock_movements
          (tenant_id,warehouse_id,client_id,item_id,barcode,movement_type,qty,
-          to_location_id,to_location_code,ref_type,ref_id,user_id)
-       VALUES($1,$2,$3,$4,$5,'packing',1,NULL,NULL,'shipment',$6,$7)`,
-      [tenantId, shipment.warehouse_id, shipment.client_id, itemId, barcode, shipment.id, packerId]
+          from_location_id,from_location_code,to_location_id,to_location_code,ref_type,ref_id,user_id)
+       VALUES($1,$2,$3,$4,$5,'packing',1,$6,$7,NULL,NULL,'shipment',$8,$9)`,
+      [tenantId, shipment.warehouse_id, shipment.client_id, itemId, barcode,
+       fromLocationId, fromLocationCode, shipment.id, packerId]
     );
 
     // Обновляем total_packed_qty
