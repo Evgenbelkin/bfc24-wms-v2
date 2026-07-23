@@ -150,7 +150,9 @@ function extractCardBarcodes(card) {
   const sizes = card.sizes || card.addin?.find?.(a => a.type === 'Размер')?.params || [];
   for (const size of sizes) {
     const chrtID = size.chrtID || size.id;
-    const skus = size.skus || size.barcode ? [size.barcode] : [];
+    const skus = Array.isArray(size.skus) && size.skus.length
+      ? size.skus
+      : (size.barcode ? [size.barcode] : []);
     for (const sku of skus) {
       if (sku) barcodes.push({ nm_id: nmID, chrt_id: chrtID, barcode: String(sku) });
     }
