@@ -185,7 +185,7 @@
         });
       } catch (e) { UI.notify.err(e.message); }
     }
-    UI.onScan('#scan-barcode', scanBarcodeDirect);
+    UI.onScan('#scan-barcode', (v) => { UI.setVal('#scan-barcode', v); scanBarcodeDirect(v); });
 
     function applySelection(sel) {
       selected = sel;
@@ -226,7 +226,7 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    UI.onScan('#to-location', () => {});
+    UI.onScan('#to-location', (v) => UI.setVal('#to-location', v));
 
     async function confirmPlacement() {
       if (!selected) return;

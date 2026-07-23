@@ -216,8 +216,11 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    UI.onScan('#free-barcode', () => document.getElementById('free-location').focus());
-    UI.onScan('#free-location', () => {});
+    // UI.onScan() чистит поле сразу после Enter (рассчитано на "скан -> тут же обработали",
+    // как в сборке) — а здесь значение должно остаться видимым в поле до кнопки "Оприходовать".
+    // Поэтому в колбэке явно возвращаем значение обратно в поле.
+    UI.onScan('#free-barcode', (v) => { UI.setVal('#free-barcode', v); document.getElementById('free-location').focus(); });
+    UI.onScan('#free-location', (v) => UI.setVal('#free-location', v));
 
     // ---------- По заявке ----------
     let currentOrder = null;
@@ -239,7 +242,7 @@
         document.getElementById('inbound-order-card').style.display = 'none';
       }
     }
-    UI.onScan('#inb-order-barcode', loadOrderByBarcode);
+    UI.onScan('#inb-order-barcode', (v) => { UI.setVal('#inb-order-barcode', v); loadOrderByBarcode(v); });
 
     let inbQty = 1;
     function stepQtyInbound(delta) {
@@ -268,8 +271,8 @@
         document.getElementById('inb-barcode').focus();
       } catch (e) { UI.notify.err(e.message); }
     }
-    UI.onScan('#inb-barcode', () => document.getElementById('inb-location').focus());
-    UI.onScan('#inb-location', () => {});
+    UI.onScan('#inb-barcode', (v) => { UI.setVal('#inb-barcode', v); document.getElementById('inb-location').focus(); });
+    UI.onScan('#inb-location', (v) => UI.setVal('#inb-location', v));
 
     // ---------- История ----------
     async function loadHistory() {

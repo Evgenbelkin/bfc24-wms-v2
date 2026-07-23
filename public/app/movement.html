@@ -152,7 +152,7 @@
         UI.notify.err(e.message);
       }
     }
-    UI.onScan('#from-location', loadFromContent);
+    UI.onScan('#from-location', (v) => { UI.setVal('#from-location', v); loadFromContent(v); });
 
     function pickBarcode(barcode) {
       UI.setVal('#move-barcode', barcode);
@@ -170,8 +170,8 @@
         note.textContent = '';
       }
     }
-    UI.onScan('#move-barcode', (v) => { checkBarcodeAvailability(v); document.getElementById('to-location').focus(); });
-    UI.onScan('#to-location', () => {});
+    UI.onScan('#move-barcode', (v) => { UI.setVal('#move-barcode', v); checkBarcodeAvailability(v); document.getElementById('to-location').focus(); });
+    UI.onScan('#to-location', (v) => UI.setVal('#to-location', v));
 
     async function submitMove() {
       const clientId = getClientId();

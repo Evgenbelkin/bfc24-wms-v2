@@ -240,8 +240,8 @@
         switchTab('tasks');
       } catch (e) { UI.notify.err(e.message); }
     }
-    UI.onScan('#new-location', () => document.getElementById('new-barcode').focus());
-    UI.onScan('#new-barcode', () => {});
+    UI.onScan('#new-location', (v) => { UI.setVal('#new-location', v); document.getElementById('new-barcode').focus(); });
+    UI.onScan('#new-barcode', (v) => UI.setVal('#new-barcode', v));
 
     // ---------- Расхождения ----------
     async function loadDiscrepancies() {
