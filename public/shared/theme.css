@@ -51,6 +51,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .field input, .field select, .field textarea{width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;outline:none;font-family:inherit;}
 .field input:focus, .field select:focus, .field textarea:focus{border-color:var(--accent);}
 
+/* Мобильные браузеры (особенно Android Chrome) рисуют выпадающий список <select>
+   в системном попапе с БЕЛЫМ фоном, но при этом наследуют цвет текста со страницы.
+   Наша тёмная тема даёт светлый текст -> светлый текст на белом фоне попапа
+   визуально выглядит как пустая полоска. Поэтому у <option> фиксируем свои
+   цвета (тёмный текст на светлом фоне) независимо от темы всей страницы —
+   сам закрытый <select> при этом остаётся тёмным, это касается только
+   выпадающего списка. */
+select { color-scheme: dark light; }
+select option { background:#ffffff; color:#0f172a; }
+
 .list-row{background:var(--card2);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
 .list-row .main{flex:1;min-width:0;}
 .list-row .title{font-weight:700;font-size:15px;word-break:break-word;}
