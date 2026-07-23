@@ -126,14 +126,20 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
       );
     }
 
-    // Фактически отгружено = сумма done picking tasks
-    const shippedQtyRes = await client.query(
-      `SELECT COALESCE(SUM(qty_picked), 0)::int AS shipped_qty
-       FROM wms.picking_tasks
-       WHERE tenant_id=$1 AND shipment_code=$2 AND status='done'`,
+    // Фактически отгружено, по каждому товару — сумма done picking tasks,
+    // сгруппированная по item_id/barcode. stock_movements.item_id и .barcode
+    // NOT NULL, поэтому одна агрегированная строка на всю поставку (как было
+    // раньше) невозможна — пишем одну документальную запись 'shipping' на
+    // каждый товар.
+    const shippedByItemRes = await client.query(
+      `SELECT pt.item_id, pt.barcode, COALESCE(SUM(pt.qty_picked), 0)::int AS shipped_qty
+       FROM wms.picking_tasks pt
+       WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.status='done'
+       GROUP BY pt.item_id, pt.barcode
+       HAVING COALESCE(SUM(pt.qty_picked), 0) > 0`,
       [tenantId, shipmentCode]
     );
-    const totalShipped = shippedQtyRes.rows[0].shipped_qty;
+    const totalShipped = shippedByItemRes.rows.reduce((s, r) => s + Number(r.shipped_qty), 0);
 
     // Записываем документальное движение shipping (без ячейки — это факт отгрузки)
     // Реальное списание со склада уже произошло в picking через consumeStock.
@@ -141,28 +147,31 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     // короб (shipment.packing_location_id) — если она есть; для старых отгрузок
     // (до этого исправления, где ячейка после упаковки не была обязательной)
     // откатываемся на первую активную ячейку типа shipping, как и раньше.
-    await client.query(
-      `INSERT INTO wms.stock_movements
-         (tenant_id, warehouse_id, client_id, item_id, barcode,
-          movement_type, qty, from_location_id, to_location_id,
-          ref_type, ref_id, user_id, comment)
-       SELECT
-         $1, $2, $3, NULL, NULL,
-         'shipping', $4,
-         COALESCE(
-           (SELECT l.id FROM wms.locations l WHERE l.id=$7 AND l.tenant_id=$1 AND l.is_active=TRUE),
-           (SELECT l.id FROM wms.locations l WHERE l.tenant_id=$1 AND l.location_type='shipping' AND l.is_active=TRUE LIMIT 1)
-         ),
-         NULL,
-         'shipment', $5, $6, 'Документальная отгрузка перевозчику'
-       WHERE EXISTS (
-         SELECT 1 FROM wms.locations l
-         WHERE l.tenant_id=$1 AND l.is_active=TRUE
-           AND (l.id=$7 OR l.location_type='shipping')
-       )
-       ON CONFLICT DO NOTHING`,
-      [tenantId, shipment.warehouse_id, shipment.client_id, totalShipped, shipment.id, userId, shipment.packing_location_id]
-    );
+    for (const row of shippedByItemRes.rows) {
+      await client.query(
+        `INSERT INTO wms.stock_movements
+           (tenant_id, warehouse_id, client_id, item_id, barcode,
+            movement_type, qty, from_location_id, to_location_id,
+            ref_type, ref_id, user_id, comment)
+         SELECT
+           $1, $2, $3, $4, $5,
+           'shipping', $6,
+           COALESCE(
+             (SELECT l.id FROM wms.locations l WHERE l.id=$9 AND l.tenant_id=$1 AND l.is_active=TRUE),
+             (SELECT l.id FROM wms.locations l WHERE l.tenant_id=$1 AND l.location_type='shipping' AND l.is_active=TRUE LIMIT 1)
+           ),
+           NULL,
+           'shipment', $7, $8, 'Документальная отгрузка перевозчику'
+         WHERE EXISTS (
+           SELECT 1 FROM wms.locations l
+           WHERE l.tenant_id=$1 AND l.is_active=TRUE
+             AND (l.id=$9 OR l.location_type='shipping')
+         )
+         ON CONFLICT DO NOTHING`,
+        [tenantId, shipment.warehouse_id, shipment.client_id, row.item_id, row.barcode,
+         row.shipped_qty, shipment.id, userId, shipment.packing_location_id]
+      );
+    }
 
     // Обновляем статус
     await client.query(
