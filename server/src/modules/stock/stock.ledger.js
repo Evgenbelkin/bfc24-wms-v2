@@ -327,4 +327,61 @@ async function adjustStock({
   return transaction(exec);
 }
 
-module.exports = { receiveStock, moveStock, consumeStock, adjustStock };
+/**
+ * РЕЗЕРВИРОВАНИЕ: закрепить остаток на конкретной ячейке под конкретный документ
+ * (обычно picking_task — в момент, когда сборщику назначена ячейка для сбора).
+ *
+ * Работает через SQL-функцию wms.reserve_stock(), которая существовала в схеме
+ * с самого начала (миграция 004), но ни один сервис её не вызывал — из-за этого
+ * qty_reserved всегда был 0, и "Обзор склада" никогда не показывал реальный резерв.
+ *
+ * Обёрнуто в SAVEPOINT: если остатка не хватает (WB-заказы часто создают волну
+ * ДО того, как товар физически принят на склад — резервировать там нечего),
+ * wms.reserve_stock бросает исключение с ERRCODE='P0002'. Без SAVEPOINT это
+ * исключение "отравило" бы всю внешнюю транзакцию (getNextTask), поэтому мы
+ * откатываемся только к точке сохранения и просто возвращаем null — вызывающий
+ * код должен трактовать это как "резерв не встал" и вести себя как раньше.
+ */
+async function reserveStock({
+  tenantId, warehouseId, clientId, itemId, locationId, barcode,
+  qty, refType, refId, dbClient,
+}) {
+  if (!dbClient) throw new ValidationError('reserveStock requires dbClient (must run inside a transaction)');
+  const client = dbClient;
+  await client.query('SAVEPOINT reserve_stock_sp');
+  try {
+    const r = await client.query(
+      `SELECT * FROM wms.reserve_stock($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [tenantId, warehouseId, clientId, itemId, locationId, barcode, qty, refType, refId]
+    );
+    await client.query('RELEASE SAVEPOINT reserve_stock_sp');
+    return r.rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK TO SAVEPOINT reserve_stock_sp');
+    if (err.code === 'P0002') {
+      logger.warn({ tenantId, itemId, locationId, qty, refType, refId }, 'reserveStock: insufficient available stock, skipping reservation');
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Снять активный резерв по ref_type/ref_id (напр. picking_task).
+ * status: 'fulfilled' — товар реально собран, 'cancelled' — задача пропущена/отменена.
+ * Если активного резерва нет (например, reserveStock раньше не смог его создать
+ * из-за нехватки остатка) — просто ничего не делает, это не ошибка.
+ */
+async function releaseReservationByRef({ refType, refId, status = 'cancelled', dbClient }) {
+  if (!dbClient) throw new ValidationError('releaseReservationByRef requires dbClient (must run inside a transaction)');
+  const client = dbClient;
+  const r = await client.query(
+    `SELECT id FROM wms.stock_reservations WHERE ref_type=$1 AND ref_id=$2 AND status='active' LIMIT 1`,
+    [refType, refId]
+  );
+  if (r.rowCount === 0) return null;
+  await client.query(`SELECT wms.release_reservation($1,$2)`, [r.rows[0].id, status]);
+  return r.rows[0].id;
+}
+
+module.exports = { receiveStock, moveStock, consumeStock, adjustStock, reserveStock, releaseReservationByRef };

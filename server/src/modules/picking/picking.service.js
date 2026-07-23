@@ -132,12 +132,31 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     const task = taskRes.rows[0];
 
     let locCode = task.location_code;
+    let locId = null;
     if (!locCode && task.item_id) {
       const best = await findBestPickLocation({
         tenantId, warehouseId: task.warehouse_id,
         itemId: task.item_id, clientId: task.client_id,
       });
-      if (best) locCode = best.location_code;
+      if (best) { locCode = best.location_code; locId = best.location_id; }
+    }
+    if (locCode && !locId) {
+      const loc = await getLocationByCode({ tenantId, warehouseId: task.warehouse_id, locationCode: locCode }).catch(() => null);
+      locId = loc?.id || null;
+    }
+
+    // Резервируем остаток на этой ячейке под эту задачу — чтобы другой сборщик
+    // не мог одновременно претендовать на тот же последний остаток. Если резерва
+    // не хватает (например, физически на ячейке меньше, чем нужно задаче) —
+    // reserveStock сама логирует и возвращает null, задачу это не блокирует.
+    if (locId && task.item_id) {
+      await ledger.reserveStock({
+        tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+        itemId: task.item_id, locationId: locId, barcode: task.barcode,
+        qty: Number(task.qty) - Number(task.qty_picked || 0),
+        refType: 'picking_task', refId: taskId,
+        dbClient: client,
+      });
     }
 
     await client.query(
@@ -243,6 +262,11 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     );
     if (locRes.rowCount === 0) throw new ValidationError(`Location '${locCode}' not found or inactive`);
 
+    // Снимаем резерв ДО списания: qty_available у ячейки учитывает qty_reserved,
+    // а резерв на эту же задачу как раз "съедал" доступность, которую сейчас
+    // будет проверять consumeStock. Снимаем как 'fulfilled' — резерв дошёл до цели.
+    await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'fulfilled', dbClient: client });
+
     await ledger.consumeStock({
       tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
       barcode: expected, itemId: task.item_id,
@@ -296,6 +320,9 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
     const task = tRes.rows[0];
     if (task.status !== 'in_progress') throw new ValidationError('Can only skip in_progress tasks');
     if (Number(task.picker_id) !== pickerId) throw new ForbiddenError('Not your task');
+
+    // Снимаем резерв — задача не будет собрана, ячейка больше не закреплена под неё
+    await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'cancelled', dbClient: client });
 
     // Отменяем задачу
     await client.query(
