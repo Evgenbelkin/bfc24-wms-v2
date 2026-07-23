@@ -191,12 +191,18 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
       ]
     );
 
-    // WB стикер для этого товара
+    // WB стикер для этого товара. Если в отгрузке несколько единиц одного и
+    // того же штрихкода (два разных заказа WB на один и тот же товар), у
+    // каждой физической единицы свой уникальный стикер — печатать один и тот
+    // же на все единицы нельзя. Берём стикер по порядку (ORDER BY id), сдвигаясь
+    // на alreadyPacked — т.е. 1-й скан этого штрихкода берёт 1-й ещё не
+    // выданный заказ, 2-й скан — 2-й, и так далее.
     const stickerRes = await client.query(
       `SELECT wb_sticker, wb_sticker_code FROM wms.wb_orders
        WHERE tenant_id=$1 AND wb_supply_id=$2 AND barcode=$3 AND wb_sticker IS NOT NULL
-       LIMIT 1`,
-      [tenantId, shipmentCode, barcode]
+       ORDER BY id
+       OFFSET $4 LIMIT 1`,
+      [tenantId, shipmentCode, barcode, alreadyPacked]
     );
 
     // Создаём print_job (soft-fail)

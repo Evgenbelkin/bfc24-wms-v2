@@ -8,6 +8,8 @@
   <style>
     .line-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;}
     .line-row:last-child{border-bottom:none;}
+    .line-photo{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#0f172a;flex-shrink:0;}
+    .line-photo-placeholder{width:44px;height:44px;border-radius:8px;background:#0f172a;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--muted);}
     .line-name{font-size:14px;font-weight:600;}
     .line-barcode{font-size:12px;color:var(--muted);}
     .line-progress{font-size:15px;font-weight:800;white-space:nowrap;}
@@ -101,6 +103,7 @@
     let currentLines = [];
     let boxes = 1;
     let pickupConfirmed = false;
+    let lastScannedBarcode = null;
 
     function renderTaskUI() {
       if (!currentTask) {
@@ -157,8 +160,13 @@
 
       document.getElementById('lines-list').innerHTML = currentLines.map(l => {
         const done = Number(l.qty_packed||0) >= Number(l.qty_plan||0);
+        const justScanned = l.barcode === lastScannedBarcode;
+        const photo = l.preview_url
+          ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'line-photo-placeholder',textContent:'📦'}))"/>`
+          : `<div class="line-photo-placeholder">📦</div>`;
         return `
-          <div class="line-row">
+          <div class="line-row" style="${justScanned ? 'background:#0f2a1e;border-radius:10px;padding-left:6px;' : ''}">
+            ${photo}
             <div class="main" style="flex:1;min-width:0;">
               <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}</div>
               <div class="line-barcode">${UI.escHtml(l.barcode)}</div>
@@ -176,6 +184,7 @@
       currentShipment = res.shipment;
       currentLines = res.lines || [];
       pickupConfirmed = false;
+      lastScannedBarcode = null;
       renderTaskUI();
     }
 
@@ -203,6 +212,7 @@
         const res = await window.API.packing.scanItem({ shipment_code: shipmentCode, scan_code: barcode });
         const line = currentLines.find(l => l.barcode === res.barcode);
         if (line) line.qty_packed = res.qty_packed;
+        lastScannedBarcode = res.barcode;
         renderLines();
         statusEl.textContent = `✅ ${res.barcode}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · 🖨️ отправлено на печать' : '');
         UI.notify.ok(`Упаковано: ${res.qty_packed}/${res.qty_plan}`);
