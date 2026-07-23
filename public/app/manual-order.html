@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Ручной заказ — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:44px;height:44px;border-radius:10px;border:none;background:#334155;color:var(--text);font-size:20px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:0 0 50px;text-align:center;font-size:20px;font-weight:800;color:var(--green2);}
+    .line-name{color:var(--muted);font-size:11px;margin-top:4px;}
+    .btn-remove{background:var(--red2);color:#fca5a5;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;}
+    .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
+    .result-box strong{color:var(--text);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>📝 Ручной заказ</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Клиент</div>
+    <select id="client-select" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+      <option value="">Загрузка...</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Номер заказа / получатель (опционально)</div>
+    <input id="external-id" class="scan-input" placeholder="Если не указать — сгенерируем автоматически" style="font-size:15px;padding:12px 14px;"/>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Добавить товар</div>
+    <div class="scan-row">
+      <input id="add-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+      <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#add-barcode','Скан товара')">📷</button>
+    </div>
+    <div id="add-item-name" class="line-name"></div>
+    <div class="qty-row" style="margin-top:12px;">
+      <button class="qty-btn" onclick="stepAddQty(-1)">−</button>
+      <div class="qty-val" id="add-qty-val">1</div>
+      <button class="qty-btn" onclick="stepAddQty(1)">+</button>
+      <button class="btn-big btn-blue" style="flex:1;" onclick="addLine()">➕ Добавить в заказ</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Строки заказа (<span id="lines-count">0</span>)</div>
+    <div id="lines-list"></div>
+  </div>
+
+  <button class="btn-big btn-green btn-full" onclick="createOrder()">🌊 Создать волну на сборку</button>
+  <div id="create-result"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let orderLines = []; // { barcode, qty, item_name }
+    let addQty = 1;
+    let pendingItemName = null;
+
+    function stepAddQty(delta) { addQty = Math.max(1, addQty + delta); document.getElementById('add-qty-val').textContent = addQty; }
+
+    function getClientId() {
+      const v = UI.val('#client-select');
+      if (!v) { UI.notify.err('Выберите клиента вверху страницы'); return null; }
+      return Number(v);
+    }
+
+    async function loadClients() {
+      const sel = document.getElementById('client-select');
+      try {
+        const res = await window.API.clients.short();
+        const list = res.clients || [];
+        if (!list.length) { sel.innerHTML = `<option value="">Нет клиентов — сначала создайте в разделе «Клиенты»</option>`; return; }
+        sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+      } catch (e) { sel.innerHTML = `<option value="">Ошибка</option>`; UI.notify.err(e.message); }
+    }
+
+    async function lookupBarcode(barcode) {
+      const clientId = getClientId();
+      const nameBox = document.getElementById('add-item-name');
+      pendingItemName = null;
+      if (!clientId || !barcode) { nameBox.textContent = ''; return; }
+      try {
+        const res = await window.API.items.byBarcode(barcode, clientId);
+        pendingItemName = res.item?.item_name || null;
+        nameBox.textContent = pendingItemName ? `✓ ${pendingItemName}` : '';
+      } catch (e) {
+        nameBox.textContent = 'Новый товар — будет создан автоматически при подтверждении заказа';
+      }
+    }
+    UI.onScan('#add-barcode', (v) => { UI.setVal('#add-barcode', v); lookupBarcode(v); });
+    document.getElementById('add-barcode').addEventListener('blur', () => lookupBarcode(UI.val('#add-barcode')));
+
+    function addLine() {
+      const barcode = UI.val('#add-barcode');
+      if (!barcode) { UI.notify.err('Отсканируйте или введите штрихкод'); return; }
+      const existing = orderLines.find(l => l.barcode === barcode);
+      if (existing) {
+        existing.qty += addQty;
+      } else {
+        orderLines.push({ barcode, qty: addQty, item_name: pendingItemName });
+      }
+      UI.setVal('#add-barcode', '');
+      document.getElementById('add-item-name').textContent = '';
+      addQty = 1; document.getElementById('add-qty-val').textContent = 1;
+      renderLines();
+      document.getElementById('add-barcode').focus();
+    }
+
+    function removeLine(idx) {
+      orderLines.splice(idx, 1);
+      renderLines();
+    }
+
+    function renderLines() {
+      document.getElementById('lines-count').textContent = orderLines.length;
+      const list = document.getElementById('lines-list');
+      if (!orderLines.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">📦</div>Пока пусто — добавьте товары выше</div>`;
+        return;
+      }
+      list.innerHTML = orderLines.map((l, idx) => `
+        <div class="list-row">
+          <div class="main">
+            <div class="title">${UI.escHtml(l.item_name || l.barcode)}</div>
+            <div class="sub">${UI.escHtml(l.barcode)}</div>
+          </div>
+          <div class="badge"><span>Кол-во</span><div>${UI.fmtQty(l.qty)}</div></div>
+          <button class="btn-remove" onclick="removeLine(${idx})">✕</button>
+        </div>
+      `).join('');
+    }
+
+    async function createOrder() {
+      const clientId = getClientId();
+      if (!clientId) return;
+      if (!orderLines.length) { UI.notify.err('Добавьте хотя бы один товар'); return; }
+      if (!UI.confirm(`Создать волну на сборку из ${orderLines.length} позиций?`)) return;
+      try {
+        const res = await window.API.picking.manualWave({
+          client_id: clientId,
+          external_id: UI.val('#external-id') || undefined,
+          lines: orderLines.map(l => ({ barcode: l.barcode, qty: l.qty })),
+        });
+        document.getElementById('create-result').innerHTML = `
+          <div class="result-box">
+            ✅ Заказ <strong>${UI.escHtml(res.shipment_code)}</strong> создан.<br/>
+            Задач на сборку: <strong>${res.tasks_created}</strong>, товаров всего: <strong>${res.total_qty}</strong><br/>
+            Волна уже видна в «Диспетчерской» и на экране «Сборка».
+          </div>
+        `;
+        UI.notify.ok('Волна создана');
+        orderLines = [];
+        UI.setVal('#external-id', '');
+        renderLines();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadClients(); renderLines(); })();
+  </script>
+</body>
+</html>

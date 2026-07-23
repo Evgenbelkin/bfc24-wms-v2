@@ -216,6 +216,7 @@
     scanLocation: (d) => post('/picking/scan/location', d),
     scanItem:     (d) => post('/picking/scan/item', d),
     skip:         (d) => post('/picking/skip', d),
+    manualWave:   (d) => post('/picking/manual-wave', d),
   };
 
   // ─────────────── Packing ───────────────

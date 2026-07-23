@@ -4,7 +4,7 @@ const { query, transaction } = require('../../config/database');
 const ledger = require('../stock/stock.ledger');
 const { resolveOrCreateItem } = require('../masterdata/items/items.service');
 const { findBestPickLocation, getLocationByCode } = require('../masterdata/locations/locations.service');
-const { NotFoundError, ValidationError, ForbiddenError, InsufficientStockError } = require('../../utils/errors');
+const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
 const logger = require('../../utils/logger');
 
@@ -401,8 +401,78 @@ async function getWaveStatus({ tenantId, pickerId }) {
   return { has_wave: true, ...r.rows[0] };
 }
 
+// ===== РУЧНОЙ ЗАКАЗ (без маркетплейса) =====
+// Ровно та же цель, что и wb.generateWave — отгрузка + волна + задачи на сборку,
+// только без похода в WB API: заказ вводится вручную (свой магазин, звонок,
+// клиент без WB и т.п.). Дальше по цепочке (сборка/упаковка/отгрузка) не
+// отличается никак — эти экраны не знают и не спрашивают, откуда взялась волна.
+
+/**
+ * @param lines [{ barcode, qty }]
+ */
+async function createManualWave({ tenantId, warehouseId, clientId, externalId, lines, comment, createdById }) {
+  if (!Array.isArray(lines) || !lines.length) {
+    throw new ValidationError('lines is required and must be a non-empty array of {barcode, qty}');
+  }
+
+  const shipmentCode = (externalId && String(externalId).trim()) || `MANUAL-${Date.now()}`;
+
+  return transaction(async (client) => {
+    const dup = await client.query(
+      `SELECT id FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2`,
+      [tenantId, shipmentCode]
+    );
+    if (dup.rowCount > 0) throw new ConflictError(`Shipment '${shipmentCode}' already exists`);
+
+    let totalQty = 0;
+    const resolvedLines = [];
+    for (const line of lines) {
+      const barcode = validateBarcode(line.barcode);
+      const qty = validateQty(line.qty);
+      const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode, dbClient: client });
+      resolvedLines.push({ barcode, qty, itemId });
+      totalQty += qty;
+    }
+
+    await client.query(
+      `INSERT INTO wms.shipments(tenant_id,warehouse_id,client_id,external_id,marketplace,status,total_planned_qty,created_by)
+       VALUES($1,$2,$3,$4,'manual','new',$5,$6)`,
+      [tenantId, warehouseId, clientId, shipmentCode, totalQty, createdById]
+    );
+
+    await client.query(
+      `INSERT INTO wms.pick_waves(tenant_id,warehouse_id,client_id,shipment_code,status,total_tasks,notes,created_by)
+       VALUES($1,$2,$3,$4,'open',$5,$6,$7)`,
+      [tenantId, warehouseId, clientId, shipmentCode, resolvedLines.length, comment || null, createdById]
+    );
+
+    const waveRes = await client.query(
+      `SELECT id FROM wms.pick_waves WHERE tenant_id=$1 AND shipment_code=$2`,
+      [tenantId, shipmentCode]
+    );
+    const waveId = waveRes.rows[0].id;
+
+    for (const line of resolvedLines) {
+      await client.query(
+        `INSERT INTO wms.picking_tasks
+           (tenant_id,warehouse_id,client_id,wave_id,item_id,barcode,qty,status,priority,shipment_code,order_ref,created_by,updated_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7,'new',3,$8,$9,$10,$10)`,
+        [tenantId, warehouseId, clientId, waveId, line.itemId, line.barcode, line.qty, shipmentCode, externalId || null, createdById]
+      );
+    }
+
+    return {
+      shipment_code: shipmentCode,
+      wave_id: waveId,
+      tasks_created: resolvedLines.length,
+      total_qty: totalQty,
+    };
+  });
+}
+
 module.exports = {
   listWaves, getWaveByShipmentCode, takeWave,
   getNextTask, scanLocation, scanItem, skipTask,
   closeWave, getWaveStatus,
+  createManualWave,
 };

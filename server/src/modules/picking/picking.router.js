@@ -3,9 +3,10 @@ const express = require('express');
 const router = express.Router();
 const svc = require('./picking.service');
 const { authRequired } = require('../../middleware/auth');
-const { tenantMiddleware } = require('../../middleware/tenant');
+const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
+const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -105,6 +106,29 @@ router.post('/skip', requireRole('tenant_admin','supervisor','picker'), async (r
       reason, comment,
     });
     res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** POST /picking/manual-wave — создать отгрузку+волну вручную (без маркетплейса) */
+router.post('/manual-wave', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { client_id, external_id, lines, comment, warehouse_id } = req.body;
+    if (!client_id) return res.status(400).json({ ok:false, error:{ code:'VALIDATION_ERROR', message:'client_id is required' } });
+    const clientId = resolveClientScope(req, client_id);
+    const wh = warehouse_id
+      ? { id: Number(warehouse_id) }
+      : await getDefaultWarehouse(req.user.tenantId);
+
+    const result = await svc.createManualWave({
+      tenantId:    req.user.tenantId,
+      warehouseId: wh.id,
+      clientId,
+      externalId:  external_id || null,
+      lines:       lines || [],
+      comment:     comment || null,
+      createdById: req.user.id,
+    });
+    res.status(201).json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
 
