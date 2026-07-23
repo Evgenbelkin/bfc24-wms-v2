@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Панель принтеров — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .row-item{cursor:pointer;}
+    .row-item:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .field-row2{display:flex;gap:10px;}
+    .field-row2 .field{flex:1;}
+    .hint-box{background:var(--card2);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted2);margin-top:8px;line-height:1.5;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🖨️ Панель принтеров</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="printers" onclick="switchTab('printers')">Принтеры</button>
+    <button class="tab" data-tab="routes" onclick="switchTab('routes')">Маршруты печати</button>
+    <button class="tab" data-tab="jobs" onclick="switchTab('jobs')">Очередь печати</button>
+  </div>
+
+  <!-- ============ Принтеры ============ -->
+  <div id="tab-printers">
+    <div class="card">
+      <div class="card-title">Принтеры (<span id="pr-count">0</span>)</div>
+      <div id="pr-list"></div>
+    </div>
+    <button class="btn-big btn-green btn-full" onclick="openPrinterModal(null)">➕ Новый принтер</button>
+  </div>
+
+  <!-- ============ Маршруты ============ -->
+  <div id="tab-routes" style="display:none">
+    <div class="card">
+      <div class="card-title">Что на какой принтер печатается (<span id="rt-count">0</span>)</div>
+      <div id="rt-list"></div>
+    </div>
+    <button class="btn-big btn-green btn-full" onclick="openRouteModal()">➕ Новый маршрут</button>
+  </div>
+
+  <!-- ============ Очередь ============ -->
+  <div id="tab-jobs" style="display:none">
+    <div class="card">
+      <div class="card-title">Фильтр</div>
+      <select id="job-status" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+        <option value="new">Новые</option>
+        <option value="error">Ошибки</option>
+        <option value="printed">Напечатанные</option>
+        <option value="processing">В процессе</option>
+        <option value="cancelled">Отменённые</option>
+      </select>
+      <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadJobs()">🔍 Показать</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Задания (<span id="job-count">0</span>)</div>
+      <div id="job-list"></div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function switchTab(name) {
+      ['printers','routes','jobs'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'routes' && !routesLoaded) loadRoutes();
+      if (name === 'jobs' && !jobsLoaded) loadJobs();
+    }
+
+    const CONN_LABELS = { agent:'Через агент (авто)', network:'По сети (IP)', usb:'Локально (браузер/USB)' };
+    const DOC_TYPES = [
+      { value:'wb_sticker',  label:'Стикер WB (упаковка)' },
+      { value:'shipping_qr', label:'QR поставки (отгрузка)' },
+      { value:'other',       label:'Другое' },
+    ];
+
+    let warehouses = [];
+    let printersList = [];
+    let routesLoaded = false, jobsLoaded = false;
+
+    async function loadWarehouses() {
+      try { warehouses = (await window.API.warehouses.list()).warehouses || []; } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Принтеры ----------
+    async function loadPrinters() {
+      try {
+        const res = await window.API.printing.printers.list();
+        printersList = res.printers || [];
+        document.getElementById('pr-count').textContent = printersList.length;
+        const list = document.getElementById('pr-list');
+        if (!printersList.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🖨️</div>Принтеров пока нет</div>`;
+          return;
+        }
+        list.innerHTML = printersList.map((p, idx) => `
+          <div class="list-row row-item" onclick="openPrinterModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(p.printer_name)} ${p.is_default ? '<span class="pill pill-blue">по умолч.</span>' : ''}</div>
+              <div class="sub">${UI.escHtml(CONN_LABELS[p.connection_type]||p.connection_type)} · ${UI.escHtml(p.warehouse_name||'без склада')} ${p.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function openPrinterModal(idx) {
+      const p = idx !== null ? printersList[idx] : null;
+      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(w => `<option value="${w.id}" ${p && p.warehouse_id===w.id ? 'selected':''}>${UI.escHtml(w.warehouse_name)}</option>`).join('');
+      const connOptions = Object.entries(CONN_LABELS).map(([k,v]) => `<option value="${k}" ${p && p.connection_type===k ? 'selected':''}>${v}</option>`).join('');
+
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${p ? UI.escHtml(p.printer_name) : 'Новый принтер'}</div>
+            ${!p ? `<div class="field"><label>Код принтера</label><input id="m-code" placeholder="printer-01"/></div>` : ''}
+            <div class="field"><label>Название</label><input id="m-name" value="${p ? UI.escHtml(p.printer_name):''}" placeholder="Принтер на упаковке"/></div>
+            <div class="field"><label>Склад (опционально)</label><select id="m-warehouse" ${p?'disabled':''}>${whOptions}</select></div>
+            <div class="field"><label>Способ подключения</label><select id="m-conn" onchange="onConnChange()" ${p?'disabled':''}>${connOptions}</select></div>
+            <div id="conn-hint"></div>
+            <div class="field"><label>Точное имя устройства</label><input id="m-device" value="${p && p.device_name ? UI.escHtml(p.device_name):''}" placeholder="Как принтер называется в Windows/CUPS"/></div>
+            <div class="field-row2" id="network-fields" style="display:none">
+              <div class="field"><label>IP-адрес</label><input id="m-ip" value="${p && p.ip_address ? UI.escHtml(p.ip_address):''}"/></div>
+              <div class="field"><label>Порт</label><input id="m-port" type="number" value="${p && p.port ? p.port:''}"/></div>
+            </div>
+            <div class="field"><label style="display:inline;">Принтер по умолчанию</label> <input type="checkbox" id="m-default" ${p && p.is_default ? 'checked':''}/></div>
+            ${p ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${p.is_active ? 'checked':''}/></div>` : ''}
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="savePrinter(${idx})">💾 Сохранить</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+      onConnChange(p ? p.connection_type : 'agent');
+    }
+
+    function onConnChange(forceVal) {
+      const val = forceVal || UI.val('#m-conn');
+      const hint = document.getElementById('conn-hint');
+      document.getElementById('network-fields').style.display = (val === 'network') ? 'flex' : 'none';
+      const hints = {
+        agent:   'Нужна небольшая программа-агент (запускается на компьютере, к которому физически подключён принтер). Она сама забирает задания на печать и отправляет на принтер по его названию в Windows — подходит для любого принтера с установленным драйвером, ничего сложного настраивать в самой WMS не нужно.',
+        network: 'Печать напрямую по IP-адресу принтера в локальной сети склада (для сетевых термопринтеров этикеток).',
+        usb:     'Печать через обычное диалоговое окно браузера на этом устройстве — просто выбирается принтер из тех, что уже подключены к компьютеру/телефону.',
+      };
+      hint.innerHTML = `<div class="hint-box">${hints[val] || ''}</div>`;
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function savePrinter(idx) {
+      const p = idx !== null ? printersList[idx] : null;
+      const data = {
+        printer_name: UI.val('#m-name'),
+        device_name:  UI.val('#m-device'),
+      };
+      try {
+        if (p) {
+          data.is_active = document.getElementById('m-active').checked;
+          data.is_default = document.getElementById('m-default').checked;
+          if (p.connection_type === 'network') {
+            data.ip_address = UI.val('#m-ip');
+          }
+          await window.API.printing.printers.update(p.id, data);
+          UI.notify.ok('Принтер обновлён');
+        } else {
+          data.printer_code = UI.val('#m-code');
+          data.connection_type = UI.val('#m-conn');
+          data.warehouse_id = UI.val('#m-warehouse') || null;
+          data.ip_address = UI.val('#m-ip');
+          data.port = UI.val('#m-port') || null;
+          data.is_default = document.getElementById('m-default').checked;
+          if (!data.printer_code) { UI.notify.err('Укажите код принтера'); return; }
+          if (!data.printer_name) { UI.notify.err('Укажите название'); return; }
+          await window.API.printing.printers.create(data);
+          UI.notify.ok('Принтер создан');
+        }
+        closeModal();
+        await loadPrinters();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Маршруты ----------
+    async function loadRoutes() {
+      try {
+        routesLoaded = true;
+        const res = await window.API.printing.routes.list();
+        const routes = res.routes || [];
+        document.getElementById('rt-count').textContent = routes.length;
+        const list = document.getElementById('rt-list');
+        if (!routes.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🔀</div>Маршрутов пока нет — без них задания создаются, но печать не назначена на конкретный принтер</div>`;
+          return;
+        }
+        list.innerHTML = routes.map(r => `
+          <div class="list-row">
+            <div class="main">
+              <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===r.doc_type)||{}).label || r.doc_type)}</div>
+              <div class="sub">→ ${UI.escHtml(r.printer_name)} ${r.is_default ? '' : '· не по умолчанию'}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function openRouteModal() {
+      if (!printersList.length) { UI.notify.err('Сначала добавьте хотя бы один принтер'); return; }
+      const printerOptions = printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
+      const docOptions = DOC_TYPES.map(d => `<option value="${d.value}">${d.label}</option>`).join('');
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Новый маршрут печати</div>
+            <div class="field"><label>Код маршрута</label><input id="rm-code" placeholder="route-wb-sticker-1"/></div>
+            <div class="field"><label>Что печатаем</label><select id="rm-doctype">${docOptions}</select></div>
+            <div class="field"><label>На каком принтере</label><select id="rm-printer">${printerOptions}</select></div>
+            <div class="field"><label style="display:inline;">По умолчанию для этого типа</label> <input type="checkbox" id="rm-default" checked/></div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="saveRoute()">💾 Сохранить</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveRoute() {
+      const data = {
+        route_code: UI.val('#rm-code'),
+        doc_type:   UI.val('#rm-doctype'),
+        printer_id: UI.val('#rm-printer'),
+        is_default: document.getElementById('rm-default').checked,
+      };
+      if (!data.route_code) { UI.notify.err('Укажите код маршрута'); return; }
+      try {
+        await window.API.printing.routes.create(data);
+        UI.notify.ok('Маршрут создан');
+        closeModal();
+        await loadRoutes();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Очередь печати ----------
+    const JOB_STATUS_LABELS = { new:'Новое', processing:'В процессе', printed:'Напечатано', error:'Ошибка', cancelled:'Отменено' };
+    const JOB_STATUS_PILL   = { new:'pill-blue', processing:'pill-yellow', printed:'pill-green', error:'pill-red', cancelled:'pill-gray' };
+
+    async function loadJobs() {
+      try {
+        jobsLoaded = true;
+        const status = UI.val('#job-status') || 'new';
+        const res = await window.API.printing.jobs({ status, limit: 100 });
+        const jobs = res.data || [];
+        document.getElementById('job-count').textContent = jobs.length;
+        const list = document.getElementById('job-list');
+        if (!jobs.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🖨️</div>Пусто</div>`;
+          return;
+        }
+        list.innerHTML = jobs.map(j => `
+          <div class="list-row">
+            <div class="main">
+              <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===j.doc_type)||{}).label || j.doc_type)} <span class="pill ${JOB_STATUS_PILL[j.status]||'pill-gray'}">${JOB_STATUS_LABELS[j.status]||j.status}</span></div>
+              <div class="sub">${UI.escHtml(j.printer_name)} · ${UI.fmtDateTime(j.created_at)} ${j.error_text ? '· <span style=\"color:var(--red)\">'+UI.escHtml(j.error_text)+'</span>' : ''}</div>
+            </div>
+            ${(j.status==='error'||j.status==='printed') ? `<button class="btn-sm btn-back" onclick="reprintJob(${j.id})">🔁 Повторить</button>` : ''}
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function reprintJob(jobId) {
+      try {
+        await window.API.printing.reprint(jobId);
+        UI.notify.ok('Задание на повторную печать создано');
+        await loadJobs();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadWarehouses(); await loadPrinters(); })();
+  </script>
+</body>
+</html>

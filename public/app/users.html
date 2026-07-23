@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Пользователи — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;}
+    .filters-row select, .filters-row input{flex:1;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .user-row{cursor:pointer;}
+    .user-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>👥 Пользователи</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Фильтры</div>
+    <div class="filters-row">
+      <input id="f-search" placeholder="Логин или имя"/>
+      <select id="f-role"><option value="">Все роли</option></select>
+    </div>
+    <button class="btn-big btn-blue btn-full" onclick="loadUsers()">🔍 Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Сотрудники (<span id="u-count">0</span>)</div>
+    <div id="u-list"></div>
+  </div>
+
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новый пользователь</button>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    const me = window.API.getUser();
+    const canManage = me?.role === 'tenant_admin'; // create/patch/delete — только tenant_admin на бэкенде
+    if (canManage) document.getElementById('add-btn').style.display = 'block';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    const ROLES = [
+      { value:'tenant_admin',      label:'Администратор' },
+      { value:'supervisor',        label:'Супервайзер' },
+      { value:'receiver',          label:'Приёмщик' },
+      { value:'picker',            label:'Сборщик' },
+      { value:'packer',            label:'Упаковщик' },
+      { value:'shipper',           label:'Отгрузчик' },
+      { value:'inventory_manager', label:'Инвентаризация' },
+      { value:'analyst',           label:'Аналитик' },
+      { value:'seller',            label:'Продавец (клиент)' },
+    ];
+    const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.value, r.label]));
+
+    document.getElementById('f-role').innerHTML += ROLES.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
+
+    let clientsList = [];
+    let usersCache = [];
+
+    async function loadClients() {
+      try { clientsList = (await window.API.clients.short()).clients || []; } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadUsers() {
+      try {
+        const params = {};
+        const search = UI.val('#f-search'); if (search) params.search = search;
+        const role = UI.val('#f-role'); if (role) params.role = role;
+        const res = await window.API.users.list(params);
+        usersCache = res.users || [];
+        document.getElementById('u-count').textContent = usersCache.length;
+
+        const list = document.getElementById('u-list');
+        if (!usersCache.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">👥</div>Никого не найдено</div>`;
+          return;
+        }
+        list.innerHTML = usersCache.map((u, idx) => `
+          <div class="list-row user-row" onclick="openModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(u.full_name || u.username)}</div>
+              <div class="sub">${UI.escHtml(u.username)} ${u.client_name ? '· '+UI.escHtml(u.client_name) : ''} ${u.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
+            </div>
+            <span class="pill pill-blue">${UI.escHtml(ROLE_LABEL[u.role]||u.role)}</span>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function openModal(idx) {
+      const u = idx !== null ? usersCache[idx] : null;
+      const roleOptions = ROLES.map(r => `<option value="${r.value}" ${u && u.role===r.value ? 'selected':''}>${r.label}</option>`).join('');
+      const clientOptions = `<option value="">— не привязан —</option>` + clientsList.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${u ? UI.escHtml(u.full_name||u.username) : 'Новый пользователь'}</div>
+            ${!u ? `<div class="field"><label>Логин</label><input id="m-username" autocomplete="off"/></div>` : `<div class="field"><label>Логин</label><input value="${UI.escHtml(u.username)}" disabled/></div>`}
+            <div class="field"><label>Полное имя</label><input id="m-fullname" value="${u && u.full_name ? UI.escHtml(u.full_name):''}" ${canManage?'':'disabled'}/></div>
+            <div class="field"><label>Роль</label><select id="m-role" onchange="onRoleChange()" ${canManage?'':'disabled'}>${roleOptions}</select></div>
+            <div class="field" id="client-field"><label>Клиент (обязательно для роли «Продавец»)</label><select id="m-client" ${canManage?'':'disabled'}>${clientOptions}</select></div>
+            ${canManage ? `<div class="field"><label>${u ? 'Новый пароль (оставьте пустым, чтобы не менять)' : 'Пароль'}</label><input id="m-password" type="password" autocomplete="new-password"/></div>` : ''}
+            ${u ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${u.is_active ? 'checked':''} ${canManage?'':'disabled'}/></div>` : ''}
+            <div class="btn-row">
+              ${canManage ? `<button class="btn-big btn-green" onclick="saveUser(${idx})">💾 Сохранить</button>` : ''}
+              ${canManage && u && u.id !== me.id ? `<button class="btn-big btn-red" onclick="deactivateUser(${idx})">Деактивировать</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+      if (u) { document.getElementById('m-client').value = u.client_id || ''; }
+      onRoleChange();
+    }
+
+    function onRoleChange() {
+      const role = UI.val('#m-role');
+      document.getElementById('client-field').style.display = (role === 'seller') ? 'block' : 'none';
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function saveUser(idx) {
+      const u = idx !== null ? usersCache[idx] : null;
+      const role = UI.val('#m-role');
+      const clientId = UI.val('#m-client');
+      if (role === 'seller' && !clientId) { UI.notify.err('Для роли «Продавец» нужно выбрать клиента'); return; }
+
+      const data = {
+        full_name: UI.val('#m-fullname'),
+        role,
+        client_id: clientId || null,
+      };
+      const password = UI.val('#m-password');
+      if (password) data.password = password;
+
+      try {
+        if (u) {
+          data.is_active = document.getElementById('m-active').checked;
+          await window.API.users.update(u.id, data);
+          UI.notify.ok('Пользователь обновлён');
+        } else {
+          data.username = UI.val('#m-username');
+          if (!data.username) { UI.notify.err('Укажите логин'); return; }
+          if (!password) { UI.notify.err('Укажите пароль'); return; }
+          await window.API.users.create(data);
+          UI.notify.ok('Пользователь создан');
+        }
+        closeModal();
+        await loadUsers();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deactivateUser(idx) {
+      const u = usersCache[idx];
+      if (!UI.confirm(`Деактивировать пользователя ${u.username}? Он не сможет войти в систему.`)) return;
+      try {
+        await window.API.users.delete(u.id);
+        UI.notify.ok('Пользователь деактивирован');
+        closeModal();
+        await loadUsers();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    (async () => { await loadClients(); await loadUsers(); })();
+  </script>
+</body>
+</html>

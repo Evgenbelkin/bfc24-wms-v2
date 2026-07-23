@@ -254,8 +254,15 @@
   // ─────────────── Printing ───────────────
 
   const printing = {
-    printers:  ()      => get('/printing/printers'),
-    routes:    ()      => get('/printing/routes'),
+    printers: {
+      list:   ()      => get('/printing/printers'),
+      create: (d)     => post('/printing/printers', d),
+      update: (id, d) => patch(`/printing/printers/${id}`, d),
+    },
+    routes: {
+      list:   ()  => get('/printing/routes'),
+      create: (d) => post('/printing/routes', d),
+    },
     jobs:      (p)     => get('/printing/jobs', p),
     updateJob: (id, d) => patch(`/printing/jobs/${id}`, d),
     reprint:   (jobId) => post('/printing/jobs/reprint', { job_id: jobId }),
