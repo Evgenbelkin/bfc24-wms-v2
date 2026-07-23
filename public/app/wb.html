@@ -74,11 +74,14 @@
           <option value="">Загрузка...</option>
         </select>
 
-        <div class="btn-row">
-          <button class="btn-big btn-blue" onclick="syncOrders()">🔄 Синхронизировать заказы</button>
-          <button class="btn-big btn-green" onclick="generateWave()">🌊 Сформировать волну</button>
-        </div>
+        <button class="btn-big btn-blue btn-full" onclick="syncOrders()">🔄 Синхронизировать заказы</button>
         <div id="sync-result"></div>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Сколько заказов включить в волну (без поставки)</label>
+          <input id="wave-limit" type="number" value="50" min="1" max="500"/>
+        </div>
+        <button class="btn-big btn-green btn-full" onclick="generateWave()">🌊 Сформировать волну</button>
         <div id="wave-result"></div>
       </div>
 
@@ -303,7 +306,8 @@
       if (!UI.confirm('Сформировать волну на сборку из заказов без поставки?')) return;
       try {
         UI.notify.info('Создаём поставку в WB и волну на сборку...');
-        const res = await window.API.wb.generateWave({ account_id: accountId });
+        const limit = Number(UI.val('#wave-limit')) || 50;
+        const res = await window.API.wb.generateWave({ account_id: accountId, limit });
         if (!res.supplies || !res.supplies.length) {
           document.getElementById('wave-result').innerHTML = `<div class="result-box">${UI.escHtml(res.message || 'Нет заказов без поставки')}</div>`;
           return;
