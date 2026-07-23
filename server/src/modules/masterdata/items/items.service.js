@@ -181,7 +181,7 @@ async function resolveOrCreateItem({ tenantId, clientId, barcode, dbClient = nul
 
   // Ищем item
   const itemRes = await db.query(
-    `SELECT i.id, i.is_active FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+    `SELECT i.id, i.is_active FROM wms.items i WHERE i.tenant_id=$1 AND i.client_id=$2 AND i.barcode=$3 LIMIT 1`,
     [tenantId, clientId, b]
   );
 
