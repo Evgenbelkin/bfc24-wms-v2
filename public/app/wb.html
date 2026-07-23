@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Wildberries — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .acc-row, .item-row, .order-row{cursor:pointer;}
+    .acc-row:active, .item-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .catalog-thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--card2);}
+    .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
+    .result-box strong{color:var(--text);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🟣 Wildberries</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">
+      <div class="icon">🔒</div>
+      Модуль интеграции с WB не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
+    </div>
+  </div>
+
+  <div id="wb-content">
+    <div class="tabs">
+      <button class="tab active" data-tab="accounts" onclick="switchTab('accounts')">МР Аккаунты</button>
+      <button class="tab" data-tab="catalog" onclick="switchTab('catalog')">Справочник WB</button>
+      <button class="tab" data-tab="orders" onclick="switchTab('orders')">WB Заказы</button>
+    </div>
+
+    <!-- ============ Аккаунты ============ -->
+    <div id="tab-accounts">
+      <div class="card">
+        <div class="card-title">Аккаунты (<span id="acc-count">0</span>)</div>
+        <div id="acc-list"></div>
+      </div>
+      <button class="btn-big btn-green btn-full" onclick="openAccModal(null)">➕ Новый аккаунт</button>
+    </div>
+
+    <!-- ============ Справочник WB (каталог) ============ -->
+    <div id="tab-catalog" style="display:none">
+      <div class="card">
+        <div class="card-title">Аккаунт</div>
+        <select id="cat-account" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+          <option value="">Загрузка...</option>
+        </select>
+        <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="importItems()">⬇️ Импортировать карточки из WB</button>
+        <div id="import-result"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Товары (<span id="cat-count">0</span> из <span id="cat-total">0</span>)</div>
+        <div id="cat-list"></div>
+        <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadCatalogMore()">↓ Ещё</button>
+      </div>
+    </div>
+
+    <!-- ============ Заказы ============ -->
+    <div id="tab-orders" style="display:none">
+      <div class="card">
+        <div class="card-title">Аккаунт</div>
+        <select id="ord-account" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+          <option value="">Загрузка...</option>
+        </select>
+
+        <div class="btn-row">
+          <button class="btn-big btn-blue" onclick="syncOrders()">🔄 Синхронизировать заказы</button>
+          <button class="btn-big btn-green" onclick="generateWave()">🌊 Сформировать волну</button>
+        </div>
+        <div id="sync-result"></div>
+        <div id="wave-result"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-row">
+          <select id="f-status">
+            <option value="">Все статусы</option>
+            <option value="new">Новый</option>
+            <option value="confirm">В поставке</option>
+            <option value="complete">Завершён</option>
+            <option value="cancel">Отменён</option>
+          </select>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadOrders()">🔍 Показать</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Заказы (<span id="ord-count">0</span>)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Заказ</th><th>Штрихкод</th><th>Склад WB</th><th>Статус</th><th>Поставка</th><th>Когда</th></tr></thead>
+            <tbody id="ord-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('wb-content').style.display = 'none';
+    }
+
+    function switchTab(name) {
+      ['accounts','catalog','orders'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'orders' && !ordersLoaded) loadOrders();
+    }
+
+    const STATUS_LABELS = { new:'Новый', confirm:'В поставке', complete:'Завершён', cancel:'Отменён' };
+
+    let clientsList = [];
+    let accountsList = [];
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        clientsList = res.clients || [];
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadAccounts() {
+      try {
+        const res = await window.API.wb.accounts.list();
+        accountsList = res.accounts || [];
+        document.getElementById('acc-count').textContent = accountsList.length;
+
+        const list = document.getElementById('acc-list');
+        if (!accountsList.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🟣</div>Аккаунтов пока нет</div>`;
+        } else {
+          list.innerHTML = accountsList.map((a, idx) => `
+            <div class="list-row acc-row" onclick="openAccModal(${idx})">
+              <div class="main">
+                <div class="title">${UI.escHtml(a.account_name)}</div>
+                <div class="sub">${UI.escHtml(a.client_name)} ${a.supplier_id ? '· supplier '+UI.escHtml(a.supplier_id) : ''} ${a.has_token ? '' : '· <span style=\"color:var(--red)\">нет токена</span>'} ${a.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
+              </div>
+              <div class="badge"><span>WB</span><div>${a.has_token ? '🔑' : '—'}</div></div>
+            </div>
+          `).join('');
+        }
+
+        UI.populateSelect('#cat-account', accountsList, { valueKey:'id', labelKey:'account_name', emptyLabel:'— Выберите аккаунт —' });
+        UI.populateSelect('#ord-account', accountsList, { valueKey:'id', labelKey:'account_name', emptyLabel:'— Выберите аккаунт —' });
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function openAccModal(idx) {
+      const a = idx !== null ? accountsList[idx] : null;
+      const clientOptions = clientsList.map(c => `<option value="${c.id}" ${a && a.client_id===c.id ? 'selected':''}>${UI.escHtml(c.client_name)}</option>`).join('');
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${a ? UI.escHtml(a.account_name) : 'Новый аккаунт WB'}</div>
+            ${!a ? `<div class="field"><label>Клиент</label><select id="m-client">${clientOptions}</select></div>` : ''}
+            <div class="field"><label>Название аккаунта</label><input id="m-name" value="${a ? UI.escHtml(a.account_name) : ''}" placeholder="Напр. Основной ЛК"/></div>
+            <div class="field"><label>Код (опционально)</label><input id="m-code" value="${a && a.account_code ? UI.escHtml(a.account_code):''}"/></div>
+            <div class="field"><label>Supplier ID (опционально)</label><input id="m-supplier" value="${a && a.supplier_id ? UI.escHtml(a.supplier_id):''}"/></div>
+            <div class="field">
+              <label>API-токен ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
+              <input id="m-token" type="password" placeholder="${a && a.has_token ? 'Токен уже сохранён' : 'Вставьте токен из ЛК WB'}"/>
+            </div>
+            ${a ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${a.is_active ? 'checked':''}/></div>` : ''}
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="saveAccount(${idx})">💾 Сохранить</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    async function saveAccount(idx) {
+      const a = idx !== null ? accountsList[idx] : null;
+      const data = { account_name: UI.val('#m-name'), account_code: UI.val('#m-code'), supplier_id: UI.val('#m-supplier') };
+      const token = UI.val('#m-token');
+      if (token) data.api_token = token;
+      try {
+        if (a) {
+          data.is_active = document.getElementById('m-active').checked;
+          await window.API.wb.accounts.update(a.id, data);
+          UI.notify.ok('Аккаунт обновлён');
+        } else {
+          data.client_id = UI.val('#m-client');
+          if (!data.account_name) { UI.notify.err('Укажите название аккаунта'); return; }
+          if (!token) { UI.notify.err('Укажите API-токен WB'); return; }
+          await window.API.wb.accounts.create(data);
+          UI.notify.ok('Аккаунт создан');
+        }
+        closeModal();
+        await loadAccounts();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Каталог ----------
+    let catOffset = 0;
+    const CAT_PAGE = 50;
+    let catCache = [];
+
+    async function importItems() {
+      const accountId = UI.val('#cat-account');
+      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
+      try {
+        UI.notify.info('Импортируем карточки из WB, это может занять время...');
+        const res = await window.API.wb.importItems({ account_id: accountId });
+        document.getElementById('import-result').innerHTML = `
+          <div class="result-box">Получено карточек: <strong>${res.fetched_cards}</strong> · сохранено товаров: <strong>${res.saved_items}</strong> · штрихкодов: <strong>${res.saved_barcodes}</strong></div>
+        `;
+        UI.notify.ok('Импорт завершён');
+        catOffset = 0;
+        await loadCatalog();
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadCatalog(append=false) {
+      const accountId = UI.val('#cat-account');
+      if (!accountId) return;
+      try {
+        if (!append) catOffset = 0;
+        const res = await window.API.wb.wbItems({ account_id: accountId, limit: CAT_PAGE, offset: catOffset });
+        catCache = append ? catCache.concat(res.items) : res.items;
+        document.getElementById('cat-total').textContent = res.total;
+        document.getElementById('cat-count').textContent = catCache.length;
+
+        const list = document.getElementById('cat-list');
+        if (!catCache.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🏷️</div>Каталог пуст — нажмите «Импортировать карточки»</div>`;
+          return;
+        }
+        list.innerHTML = catCache.map(it => `
+          <div class="list-row item-row">
+            <img class="catalog-thumb" src="${it.preview_url||''}" onerror="this.style.visibility='hidden'"/>
+            <div class="main">
+              <div class="title">${UI.escHtml(it.title || it.vendor_code || ('nm '+it.nm_id))}</div>
+              <div class="sub">nmID ${it.nm_id} · ${UI.escHtml(it.vendor_code||'—')} · ${UI.escHtml(it.brand||'')} · штрихкодов: ${it.barcode_count}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+    function loadCatalogMore() { catOffset += CAT_PAGE; loadCatalog(true); }
+    document.getElementById('cat-account').addEventListener('change', () => loadCatalog());
+
+    // ---------- Заказы ----------
+    let ordersLoaded = false;
+
+    async function syncOrders() {
+      const accountId = UI.val('#ord-account');
+      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
+      try {
+        UI.notify.info('Синхронизируем заказы с WB...');
+        const res = await window.API.wb.syncOrders({ account_id: accountId });
+        document.getElementById('sync-result').innerHTML = `<div class="result-box">Получено заказов: <strong>${res.fetched}</strong> · сохранено/обновлено: <strong>${res.saved}</strong></div>`;
+        UI.notify.ok('Синхронизация завершена');
+        await loadOrders();
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function generateWave() {
+      const accountId = UI.val('#ord-account');
+      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
+      if (!UI.confirm('Сформировать волну на сборку из заказов без поставки?')) return;
+      try {
+        UI.notify.info('Создаём поставку в WB и волну на сборку...');
+        const res = await window.API.wb.generateWave({ account_id: accountId });
+        if (!res.supplies || !res.supplies.length) {
+          document.getElementById('wave-result').innerHTML = `<div class="result-box">${UI.escHtml(res.message || 'Нет заказов без поставки')}</div>`;
+          return;
+        }
+        document.getElementById('wave-result').innerHTML = `
+          <div class="result-box">
+            Создано поставок: <strong>${res.created_supplies}</strong><br/>
+            ${res.supplies.map(s => `${UI.escHtml(s.shipment_code)} — заказов: <strong>${s.orders_count}</strong>, задач на сборку: <strong>${s.tasks_inserted}</strong>, стикеров: <strong>${s.stickers_saved}</strong>`).join('<br/>')}
+            <br/>Волна появится в «Диспетчерской» и на экране «Сборка».
+          </div>
+        `;
+        UI.notify.ok('Волна сформирована');
+        await loadOrders();
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadOrders() {
+      try {
+        ordersLoaded = true;
+        const params = { limit: 300 };
+        const accountId = UI.val('#ord-account'); if (accountId) params.account_id = accountId;
+        const status = UI.val('#f-status'); if (status) params.status = status;
+        const res = await window.API.wb.orders(params);
+        document.getElementById('ord-count').textContent = res.count;
+        UI.renderTable('#ord-body', res.orders, (o) => `
+          <tr>
+            <td>${UI.escHtml(o.article || o.wb_order_id)}</td>
+            <td>${UI.escHtml(o.barcode||'—')}</td>
+            <td>${UI.escHtml(o.warehouse_name||'—')}</td>
+            <td><span class="pill pill-blue">${STATUS_LABELS[o.status] || UI.escHtml(o.status||'—')}</span></td>
+            <td>${o.wb_supply_id ? `<span class="pill pill-green">${UI.escHtml(o.wb_supply_id)}</span>` : '—'}</td>
+            <td>${UI.fmtDateTime(o.created_at)}</td>
+          </tr>
+        `);
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+    document.getElementById('ord-account').addEventListener('change', () => loadOrders());
+
+    (async () => { await loadClients(); await loadAccounts(); })();
+  </script>
+</body>
+</html>

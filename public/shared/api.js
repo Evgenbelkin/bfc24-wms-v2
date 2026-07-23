@@ -238,7 +238,11 @@
   // ─────────────── WB ───────────────
 
   const wb = {
-    accounts:    (p) => get('/wb/accounts', p),
+    accounts: {
+      list:   (p)     => get('/wb/accounts', p),
+      create: (d)     => post('/wb/accounts', d),
+      update: (id, d) => patch(`/wb/accounts/${id}`, d),
+    },
     syncOrders:  (d) => post('/wb/sync-orders', d),
     importItems: (d) => post('/wb/import-items', d),
     generateWave:(d) => post('/wb/generate-wave', d),
