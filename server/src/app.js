@@ -44,9 +44,25 @@ const app = express();
 // ---------------------------------------------------------------------------
 // Security headers
 // ---------------------------------------------------------------------------
+// NB: все страницы в public/app/*.html — однофайловые, со встроенными <script> и <style>
+// (без сборщика/бандлера). Дефолтный CSP хелмета блокирует inline-скрипты и inline-стили
+// (script-src/style-src 'self' без 'unsafe-inline'), из-за чего в проде не отрабатывал вообще
+// ни один <script> на странице — форма логина, например, просто не реагировала на клик.
+// Явно разрешаем inline для script/style; img-src отдельно расширен под превью товаров
+// (произвольные https-хосты, например CDN Wildberries) и под data: URI (QR-код поставки).
 app.use(helmet({
   crossOriginEmbedderPolicy: false,
-  contentSecurityPolicy: config.isProd ? undefined : false,
+  contentSecurityPolicy: config.isProd ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc:  ["'self'", "'unsafe-inline'"],
+      styleSrc:   ["'self'", "'unsafe-inline'"],
+      imgSrc:     ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      mediaSrc:   ["'self'", 'blob:'],
+      objectSrc:  ["'none'"],
+    },
+  } : false,
 }));
 
 // ---------------------------------------------------------------------------
