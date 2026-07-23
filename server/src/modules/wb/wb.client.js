@@ -160,7 +160,7 @@ function extractCardBarcodes(card) {
   return barcodes;
 }
 
-/** Получить заказы нового FBS
+/** Получить ВСЕ заказы (историю, любой статус/дата) — для отчётов, не для сборки.
  *  ВАЖНО: WB требует параметр next (курсор пагинации) даже на первый запрос —
  *  без него отдаёт 400 IncorrectParameter. dateFrom у этого метода — Unix-время
  *  в секундах, а не строка даты; если передали строку/Date — конвертируем сами,
@@ -174,6 +174,14 @@ async function fetchOrders(token, { dateFrom = null, limit = 1000, next = 0 } = 
       : Math.floor(new Date(dateFrom).getTime() / 1000);
   }
   const data = await wbRequest({ token, path: '/api/v3/orders', params });
+  return Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : []);
+}
+
+/** Получить ТОЛЬКО новые заказы, ожидающие сборки — то, что реально нужно для
+ *  формирования волны. Отдельный эндпоинт WB, не пересекается с /api/v3/orders
+ *  (тот отдаёт вообще всю историю, включая отменённые и архивные). */
+async function fetchNewOrders(token) {
+  const data = await wbRequest({ token, path: '/api/v3/orders/new' });
   return Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : []);
 }
 
@@ -272,7 +280,7 @@ function extractStickerCode(base64) {
 module.exports = {
   wbRequest,
   fetchItems, extractCardBarcodes,
-  fetchOrders,
+  fetchOrders, fetchNewOrders,
   fetchSellerWarehouses,
   createSupply, addOrdersToSupply,
   fetchOrderStickers, fetchSupplyBarcode,

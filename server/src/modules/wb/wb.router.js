@@ -145,10 +145,11 @@ router.post('/sync-orders', requireRole('tenant_admin','supervisor'), async (req
   try {
     const accountId = Number(req.body.account_id);
     const acc = await getMpAccount(req.user.tenantId, accountId);
-    const orders = await wbClient.fetchOrders(acc.api_token, {
-      dateFrom: req.body.date_from || null,
-      limit:    Number(req.body.limit) || 1000,
-    });
+    // Только новые заказы, ожидающие сборки — не вся история WB. Раньше здесь
+    // дёргался /api/v3/orders (весь архив, включая отменённые за всё время) и
+    // в status писался deliveryType ('fbs' для всех подряд), из-за чего
+    // фильтр "заказы без поставки" на генерации волны не отсеивал ничего.
+    const orders = await wbClient.fetchNewOrders(acc.api_token);
 
     let saved = 0;
     for (const o of orders) {
@@ -168,7 +169,7 @@ router.post('/sync-orders', requireRole('tenant_admin','supervisor'), async (req
           o.nmId||o.nmID||null, o.chrtId||null, o.article||null, barcode,
           o.warehouseId||null, (o.offices||[]).join(',')||o.warehouseName||null,
           o.regionName||null, o.price||null, o.convertedPrice||null, o.currencyCode||null,
-          o.deliveryType||o.status||null, o.createdAt||null,
+          'new', o.createdAt||null,
           JSON.stringify(o),
         ]
       );
