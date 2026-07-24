@@ -7,14 +7,43 @@
   <link rel="stylesheet" href="/shared/theme.css"/>
   <style>
     .auto-refresh{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
-    .funnel-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #1e293b;flex-wrap:wrap;}
-    .funnel-row:last-child{border-bottom:none;}
-    .funnel-row-label{flex:0 0 170px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px;}
-    .funnel-row .badge-row{flex:1;}
-    .funnel-badge{background:var(--card2);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;white-space:nowrap;}
-    .funnel-badge span{color:var(--muted);font-size:10px;display:block;font-weight:600;text-transform:uppercase;}
-    .funnel-badge.warn{color:var(--amber);}
-    .funnel-badge.ok{color:var(--green2);}
+
+    .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+    @media (min-width:600px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} }
+    .kpi{background:var(--card);border-radius:14px;padding:16px;text-align:center;}
+    .kpi .num{font-size:30px;font-weight:800;}
+    .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    .kpi.warn .num{color:var(--amber);}
+    .kpi.danger .num{color:#f87171;}
+    .kpi.ok .num{color:var(--green2);}
+
+    .funnel-stage{
+      background:var(--card); border-radius:14px; padding:14px 16px; margin-bottom:8px;
+      border-left:4px solid #334155; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+      cursor:pointer; transition:transform .1s;
+    }
+    .funnel-stage:active{transform:scale(.99);}
+    .funnel-stage.c-receiving{border-left-color:#38bdf8;}
+    .funnel-stage.c-placement{border-left-color:#a78bfa;}
+    .funnel-stage.c-wave{border-left-color:#e879f9;}
+    .funnel-stage.c-picking{border-left-color:#2dd4bf;}
+    .funnel-stage.c-packing{border-left-color:var(--amber);}
+    .funnel-stage.c-shipping{border-left-color:var(--green2);}
+
+    .funnel-stage-head{flex:0 0 180px;}
+    .funnel-stage-icon{font-size:22px;}
+    .funnel-stage-title{font-weight:700;font-size:15px;margin-top:2px;}
+    .funnel-stage-metrics{display:flex;gap:10px;flex-wrap:wrap;flex:1;}
+
+    .fmetric{background:var(--card2);border-radius:10px;padding:8px 14px;min-width:78px;text-align:center;}
+    .fmetric .n{font-size:19px;font-weight:800;}
+    .fmetric .l{font-size:10px;color:var(--muted);text-transform:uppercase;margin-top:2px;font-weight:600;}
+    .fmetric.warn{background:rgba(245,158,11,.15);}
+    .fmetric.warn .n{color:var(--amber);}
+    .fmetric.ok{background:rgba(34,197,94,.13);}
+    .fmetric.ok .n{color:var(--green2);}
+
+    .funnel-chevron{text-align:center;color:#334155;font-size:16px;margin:-2px 0;}
   </style>
 </head>
 <body>
@@ -29,9 +58,9 @@
     <button class="btn-sm btn-back" onclick="loadAll()">↻ Сейчас</button>
   </div>
 
-  <div class="card">
-    <div id="funnel-rows"></div>
-  </div>
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <div id="funnel-rows"></div>
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
@@ -43,18 +72,20 @@
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
 
-    function badges(items) {
-      return items.map(b => `
-        <div class="funnel-badge ${b.cls||''}"><span>${b.label}</span>${b.num}</div>
-      `).join('');
+    function metric(m) {
+      return `<div class="fmetric ${m.cls||''}"><div class="n">${m.num}</div><div class="l">${m.label}</div></div>`;
     }
 
-    function row(icon, label, items) {
+    function stage(colorClass, icon, title, href, items) {
       return `
-        <div class="funnel-row">
-          <div class="funnel-row-label">${icon} ${label}</div>
-          <div class="badge-row">${badges(items)}</div>
+        <div class="funnel-stage ${colorClass}" onclick="location.href='${href}'">
+          <div class="funnel-stage-head">
+            <div class="funnel-stage-icon">${icon}</div>
+            <div class="funnel-stage-title">${title}</div>
+          </div>
+          <div class="funnel-stage-metrics">${items.map(metric).join('')}</div>
         </div>
+        <div class="funnel-chevron">⌄</div>
       `;
     }
 
@@ -68,34 +99,45 @@
         const pc = res.packing     || {};
         const sh = res.shipping    || {};
 
-        document.getElementById('funnel-rows').innerHTML = [
-          row('📥', 'Приёмка', [
-            { label:'Заявок',   num: r.active_orders||0 },
-            { label:'Ожидается', num: r.units_expected||0 },
-            { label:'Принято',  num: r.units_received||0, cls:'ok' },
-          ]),
-          row('🗄️', 'Размещение', [
-            { label:'Строк',  num: p.lines_pending||0, cls: p.lines_pending>0 ? 'warn':'' },
-            { label:'Единиц', num: p.units_pending||0, cls: p.units_pending>0 ? 'warn':'' },
-          ]),
-          row('🧩', 'Волна', [
-            { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
-          ]),
-          row('🧺', 'Сборка', [
-            { label:'Строк ждут', num: pk.tasks_pending||0, cls: pk.tasks_pending>0 ? 'warn':'' },
-            { label:'Штук ждут',  num: pk.qty_pending||0,   cls: pk.qty_pending>0 ? 'warn':'' },
-            { label:'Собрано',    num: pk.tasks_done||0,    cls:'ok' },
-          ]),
-          row('📦', 'Упаковка', [
-            { label:'Ждут',     num: pc.tasks_pending||0, cls: pc.tasks_pending>0 ? 'warn':'' },
-            { label:'Упаковано', num: pc.tasks_done||0,   cls:'ok' },
-          ]),
-          row('🚚', 'Отгрузка', [
-            { label:'Готовы',    num: sh.ready_to_ship||0, cls: sh.ready_to_ship>0 ? 'ok':'' },
-            { label:'В пути',    num: sh.in_transit||0 },
-            { label:'Доставлено', num: sh.done_total||0, cls:'ok' },
-          ]),
-        ].join('');
+        // Сводка сверху: сколько всего требует внимания прямо сейчас, по всей воронке
+        const attention = (p.lines_pending||0) + (w.backlog_orders||0) + (pk.tasks_pending||0) + (pc.tasks_pending||0);
+        document.getElementById('kpi-grid').innerHTML = [
+          { num: attention,           label:'Требует внимания', cls: attention>0 ? 'warn':'ok' },
+          { num: sh.ready_to_ship||0, label:'Готовы к отгрузке', cls: sh.ready_to_ship>0 ? 'ok':'' },
+          { num: sh.in_transit||0,    label:'В пути', cls:'' },
+        ].map(k => `<div class="kpi ${k.cls}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>`).join('');
+
+        let html = '';
+        html += stage('c-receiving', '📥', 'Приёмка', 'receiving.html', [
+          { label:'Заявок',    num: r.active_orders||0 },
+          { label:'Ожидается', num: r.units_expected||0 },
+          { label:'Принято',   num: r.units_received||0, cls:'ok' },
+        ]);
+        html += stage('c-placement', '🗄️', 'Размещение', 'placement.html', [
+          { label:'Строк',  num: p.lines_pending||0,  cls: p.lines_pending>0 ? 'warn':'' },
+          { label:'Единиц', num: p.units_pending||0,  cls: p.units_pending>0 ? 'warn':'' },
+        ]);
+        html += stage('c-wave', '🧩', 'Волна', 'wb.html', [
+          { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
+        ]);
+        html += stage('c-picking', '🧺', 'Сборка', 'admin-dashboard.html', [
+          { label:'Строк ждут', num: pk.tasks_pending||0, cls: pk.tasks_pending>0 ? 'warn':'' },
+          { label:'Штук ждут',  num: pk.qty_pending||0,   cls: pk.qty_pending>0 ? 'warn':'' },
+          { label:'Собрано',    num: pk.tasks_done||0,    cls:'ok' },
+        ]);
+        html += stage('c-packing', '📦', 'Упаковка', 'admin-dashboard.html', [
+          { label:'Ждут',      num: pc.tasks_pending||0, cls: pc.tasks_pending>0 ? 'warn':'' },
+          { label:'Упаковано', num: pc.tasks_done||0,    cls:'ok' },
+        ]);
+        html += stage('c-shipping', '🚚', 'Отгрузка', 'shipping.html', [
+          { label:'Готовы',     num: sh.ready_to_ship||0, cls: sh.ready_to_ship>0 ? 'ok':'' },
+          { label:'В пути',     num: sh.in_transit||0 },
+          { label:'Доставлено', num: sh.done_total||0,    cls:'ok' },
+        ]);
+        // убираем шеврон после последнего этапа
+        html = html.replace(/<div class="funnel-chevron">⌄<\/div>\s*$/, '');
+
+        document.getElementById('funnel-rows').innerHTML = html;
       } catch (e) { UI.notify.err(e.message); }
     }
 
