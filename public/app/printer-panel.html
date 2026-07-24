@@ -260,42 +260,47 @@
     }
 
     // ---------- Маршруты ----------
+    let routesList = [];
+
     async function loadRoutes() {
       try {
         routesLoaded = true;
         const res = await window.API.printing.routes.list();
-        const routes = res.routes || [];
-        document.getElementById('rt-count').textContent = routes.length;
+        routesList = res.routes || [];
+        document.getElementById('rt-count').textContent = routesList.length;
         const list = document.getElementById('rt-list');
-        if (!routes.length) {
+        if (!routesList.length) {
           list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M17 3h4v4"/><path d="M21 3l-6.6 6.6"/><path d="M3 21l6-6"/><path d="M3 7h3.5L15 20.5h6"/><path d="M3 3h3.5L11 9"/><path d="M17 21h4v-4"/></svg></div>Маршрутов пока нет — без них задания создаются, но печать не назначена на конкретный принтер</div>`;
           return;
         }
-        list.innerHTML = routes.map(r => `
-          <div class="list-row">
+        list.innerHTML = routesList.map((r, idx) => `
+          <div class="list-row row-item" onclick="openRouteModal(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===r.doc_type)||{}).label || r.doc_type)}</div>
-              <div class="sub">→ ${UI.escHtml(r.printer_name)} ${r.is_default ? '' : '· не по умолчанию'}</div>
+              <div class="sub">→ ${UI.escHtml(r.printer_name)} ${r.is_default ? '' : '· не по умолчанию'} ${r.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
             </div>
           </div>
         `).join('');
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    function openRouteModal() {
-      if (!printersList.length) { UI.notify.err('Сначала добавьте хотя бы один принтер'); return; }
-      const printerOptions = printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
-      const docOptions = DOC_TYPES.map(d => `<option value="${d.value}">${d.label}</option>`).join('');
+    function openRouteModal(idx) {
+      const r = (idx !== null && idx !== undefined) ? routesList[idx] : null;
+      if (!r && !printersList.length) { UI.notify.err('Сначала добавьте хотя бы один принтер'); return; }
+      const printerOptions = printersList.map(p => `<option value="${p.id}" ${r && r.printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
+      const docOptions = DOC_TYPES.map(d => `<option value="${d.value}" ${r && r.doc_type===d.value ? 'selected':''}>${d.label}</option>`).join('');
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
-            <div class="card-title">Новый маршрут печати</div>
-            <div class="field"><label>Код маршрута</label><input id="rm-code" placeholder="route-wb-sticker-1"/></div>
-            <div class="field"><label>Что печатаем</label><select id="rm-doctype">${docOptions}</select></div>
+            <div class="card-title">${r ? UI.escHtml(r.route_code) : 'Новый маршрут печати'}</div>
+            ${r ? '' : `<div class="field"><label>Код маршрута</label><input id="rm-code" placeholder="route-wb-sticker-1"/></div>`}
+            <div class="field"><label>Что печатаем</label><select id="rm-doctype" ${r?'disabled':''}>${docOptions}</select></div>
             <div class="field"><label>На каком принтере</label><select id="rm-printer">${printerOptions}</select></div>
-            <div class="field"><label style="display:inline;">По умолчанию для этого типа</label> <input type="checkbox" id="rm-default" checked/></div>
+            <div class="field"><label style="display:inline;">По умолчанию для этого типа</label> <input type="checkbox" id="rm-default" ${!r || r.is_default ? 'checked':''}/></div>
+            ${r ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="rm-active" ${r.is_active ? 'checked':''}/></div>` : ''}
             <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveRoute()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
+              <button class="btn-big btn-green" onclick="saveRoute(${idx !== null && idx !== undefined ? idx : 'null'})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
+              ${r ? `<button class="btn-big btn-red" onclick="deleteRoute(${r.id})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>
@@ -303,17 +308,38 @@
       `;
     }
 
-    async function saveRoute() {
-      const data = {
-        route_code: UI.val('#rm-code'),
-        doc_type:   UI.val('#rm-doctype'),
-        printer_id: UI.val('#rm-printer'),
-        is_default: document.getElementById('rm-default').checked,
-      };
-      if (!data.route_code) { UI.notify.err('Укажите код маршрута'); return; }
+    async function saveRoute(idx) {
+      const r = (idx !== null && idx !== undefined) ? routesList[idx] : null;
       try {
-        await window.API.printing.routes.create(data);
-        UI.notify.ok('Маршрут создан');
+        if (r) {
+          const data = {
+            printer_id: UI.val('#rm-printer'),
+            is_default: document.getElementById('rm-default').checked,
+            is_active:  document.getElementById('rm-active').checked,
+          };
+          await window.API.printing.routes.update(r.id, data);
+          UI.notify.ok('Маршрут обновлён');
+        } else {
+          const data = {
+            route_code: UI.val('#rm-code'),
+            doc_type:   UI.val('#rm-doctype'),
+            printer_id: UI.val('#rm-printer'),
+            is_default: document.getElementById('rm-default').checked,
+          };
+          if (!data.route_code) { UI.notify.err('Укажите код маршрута'); return; }
+          await window.API.printing.routes.create(data);
+          UI.notify.ok('Маршрут создан');
+        }
+        closeModal();
+        await loadRoutes();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deleteRoute(id) {
+      if (!UI.confirm('Удалить маршрут печати? Задания продолжат создаваться, но без назначенного принтера этого типа.')) return;
+      try {
+        await window.API.printing.routes.delete(id);
+        UI.notify.ok('Маршрут удалён');
         closeModal();
         await loadRoutes();
       } catch (e) { UI.notify.err(e.message); }

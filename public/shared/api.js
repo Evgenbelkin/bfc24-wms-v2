@@ -311,8 +311,10 @@
       issueAgentKey: (id) => post(`/printing/printers/${id}/agent-key`, {}),
     },
     routes: {
-      list:   ()  => get('/printing/routes'),
-      create: (d) => post('/printing/routes', d),
+      list:   ()      => get('/printing/routes'),
+      create: (d)     => post('/printing/routes', d),
+      update: (id, d) => patch(`/printing/routes/${id}`, d),
+      delete: (id)    => del(`/printing/routes/${id}`),
     },
     jobs:      (p)     => get('/printing/jobs', p),
     updateJob: (id, d) => patch(`/printing/jobs/${id}`, d),

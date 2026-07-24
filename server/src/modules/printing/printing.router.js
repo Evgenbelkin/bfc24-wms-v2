@@ -128,6 +128,31 @@ router.post('/routes', requireRole('tenant_admin','supervisor'), async (req,res,
   } catch(e){ next(e); }
 });
 
+router.patch('/routes/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const id = validatePositiveInt(req.params.id,'id');
+    const { printer_id, is_default, is_active } = req.body;
+    const fields=[]; const params=[]; let idx=1;
+    if (printer_id !== undefined) { fields.push(`printer_id=$${idx++}`); params.push(Number(printer_id)); }
+    if (is_default !== undefined) { fields.push(`is_default=$${idx++}`); params.push(!!is_default); }
+    if (is_active  !== undefined) { fields.push(`is_active=$${idx++}`);  params.push(!!is_active); }
+    if (!fields.length) throw new ValidationError('No fields');
+    fields.push(`updated_at=NOW()`); params.push(id, req.user.tenantId);
+    const r = await query(`UPDATE wms.printer_routes SET ${fields.join(',')} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`, params);
+    if (r.rowCount===0) throw new NotFoundError('PrinterRoute', id);
+    res.json({ ok:true, route:r.rows[0] });
+  } catch(e){ next(e); }
+});
+
+router.delete('/routes/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const id = validatePositiveInt(req.params.id,'id');
+    const r = await query(`DELETE FROM wms.printer_routes WHERE id=$1 AND tenant_id=$2 RETURNING id`, [id, req.user.tenantId]);
+    if (r.rowCount===0) throw new NotFoundError('PrinterRoute', id);
+    res.json({ ok:true });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Print Jobs ───────────────
 // Polling endpoint для printer-agent
 
