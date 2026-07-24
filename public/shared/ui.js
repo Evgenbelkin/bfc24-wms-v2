@@ -219,7 +219,13 @@
       document.body.prepend(bar);
       document.getElementById('impersonation-exit').addEventListener('click', async () => {
         try { await window.API.auth.logout(); } catch (_) {}
-        window.location.href = '/app/login.html';
+        // Вкладка обычно открыта скриптом из панели платформы (window.open) —
+        // после выхода её незачем оставлять открытой на экране логина чужого
+        // клиента, просто закрываем. Если браузер не даст закрыть (бывает,
+        // если вкладку успели перезагрузить руками) — тогда уже разлогиниваем
+        // на экран входа как запасной вариант.
+        window.close();
+        setTimeout(() => { window.location.href = '/app/login.html'; }, 300);
       });
     }
   } catch (_) { /* ignore */ }
