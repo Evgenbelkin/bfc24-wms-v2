@@ -32,6 +32,9 @@
     .big-photo-name{font-size:19px;font-weight:700;margin-top:14px;}
     .big-photo-barcode{font-size:22px;color:var(--green2);margin-top:6px;font-family:'SF Mono',Consolas,monospace;font-weight:800;letter-spacing:.5px;}
     .big-photo-expect-tag{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.4px;}
+    .sticker-box{text-align:center;background:#fff;border-radius:12px;padding:14px;margin-top:6px;}
+    .sticker-box img{max-width:100%;}
+    .sticker-code{font-family:'SF Mono',Consolas,monospace;font-size:13px;color:var(--muted);margin-top:8px;text-align:center;}
   </style>
 </head>
 <body>
@@ -84,6 +87,19 @@
             </div>
             <div class="big-photo-name" id="big-photo-name"></div>
             <div class="big-photo-barcode" id="big-photo-barcode"></div>
+          </div>
+
+          <!-- Именно тот стикер ВБ, который реально ушёл на печать для только
+               что отсканированной единицы товара — чтобы сверить с тем, что
+               физически выехало из принтера, до того как его наклеят. -->
+          <div class="card" id="sticker-card" style="display:none">
+            <div class="card-title">Стикер ВБ (печатается)</div>
+            <div class="sticker-box" id="sticker-box"></div>
+            <div class="sticker-code" id="sticker-code-note"></div>
+            <div class="scan-row" style="margin-top:10px;">
+              <button type="button" class="btn-sm btn-back" onclick="openScannedSticker()">Открыть</button>
+              <button type="button" class="btn-sm btn-back" onclick="printScannedSticker()">Печать ещё раз</button>
+            </div>
           </div>
         </div>
 
@@ -142,6 +158,7 @@
     let boxes = 1;
     let pickupConfirmed = false;
     let lastScannedBarcode = null;
+    let lastScanSticker = null; // { wb_sticker, wb_sticker_code } — реально ушёл на печать при последнем скане
 
     function renderTaskUI() {
       if (!currentTask) {
@@ -158,6 +175,44 @@
       renderPickupGate();
       renderLines();
       renderBigPhoto();
+      renderStickerCard();
+    }
+
+    function renderStickerCard() {
+      const card = document.getElementById('sticker-card');
+      const box  = document.getElementById('sticker-box');
+      const note = document.getElementById('sticker-code-note');
+      if (!lastScanSticker) {
+        card.style.display = 'none';
+        box.innerHTML = '';
+        note.textContent = '';
+        return;
+      }
+      card.style.display = 'block';
+      box.innerHTML = `<img src="data:image/svg+xml;base64,${lastScanSticker.wb_sticker}" alt="Стикер ВБ"/>`;
+      note.textContent = lastScanSticker.wb_sticker_code || '';
+    }
+
+    function openScannedSticker() {
+      if (!lastScanSticker) return;
+      const w = window.open('', '_blank');
+      w.document.write(`<title>Стикер ${UI.escHtml(lastScannedBarcode||'')}</title>
+        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
+          <img src="data:image/svg+xml;base64,${lastScanSticker.wb_sticker}" style="max-width:90vw;max-height:80vh;"/>
+          ${lastScanSticker.wb_sticker_code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(lastScanSticker.wb_sticker_code)}</div>` : ''}
+        </body>`);
+      w.document.close();
+    }
+
+    function printScannedSticker() {
+      if (!lastScanSticker) return;
+      const w = window.open('', '_blank');
+      w.document.write(`<title>Печать стикера ${UI.escHtml(lastScannedBarcode||'')}</title>
+        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
+          <img src="data:image/svg+xml;base64,${lastScanSticker.wb_sticker}" style="max-width:90vw;max-height:80vh;" onload="window.print()"/>
+          ${lastScanSticker.wb_sticker_code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(lastScanSticker.wb_sticker_code)}</div>` : ''}
+        </body>`);
+      w.document.close();
     }
 
     function renderPickupGate() {
@@ -270,6 +325,7 @@
       currentLines = res.lines || [];
       pickupConfirmed = false;
       lastScannedBarcode = null;
+      lastScanSticker = null;
       renderTaskUI();
     }
 
@@ -298,8 +354,10 @@
         const line = currentLines.find(l => l.barcode === res.barcode);
         if (line) line.qty_packed = res.qty_packed;
         lastScannedBarcode = res.barcode;
+        lastScanSticker = res.wb_sticker ? { wb_sticker: res.wb_sticker, wb_sticker_code: res.wb_sticker_code } : null;
         renderLines();
         renderBigPhoto();
+        renderStickerCard();
         statusEl.textContent = `✅ ${res.barcode}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · 🖨️ отправлено на печать' : '');
         UI.notify.ok(`Упаковано: ${res.qty_packed}/${res.qty_plan}`);
       } catch (e) {

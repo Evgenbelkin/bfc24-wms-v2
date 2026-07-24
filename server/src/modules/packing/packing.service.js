@@ -273,12 +273,21 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
       logger.warn({ err: printErr, tenantId, barcode }, 'Print job creation failed (soft-fail)');
     }
 
+    // Отдаём фронту именно тот стикер, который реально ушёл на печать для этой
+    // конкретной единицы (не просто "какой-то стикер по этому штрихкоду" —
+    // при нескольких заказах на один и тот же товар у каждой физической
+    // единицы свой уникальный стикер, см. комментарий выше про OFFSET).
+    // Так упаковщик может визуально сверить с тем, что реально печатает принтер.
+    const scannedSticker = stickerRes.rows[0] || null;
+
     return {
       barcode,
       qty_plan:    qtyPlan,
       qty_packed:  newPacked,
       shipment_id: shipment.id,
       print_job:   printJob,
+      wb_sticker:      scannedSticker?.wb_sticker || null,
+      wb_sticker_code: scannedSticker?.wb_sticker_code || null,
     };
   });
 }
