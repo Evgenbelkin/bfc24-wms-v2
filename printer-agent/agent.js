@@ -17,24 +17,29 @@ const { print }  = require('pdf-to-printer');
 // =============================================================================
 
 const API_BASE    = process.env.API_BASE_URL || 'http://localhost:3001/api/v2';
-const API_TOKEN   = process.env.AGENT_TOKEN  || '';
-const PRINTER_ID  = Number(process.env.PRINTER_ID || 0);
+const AGENT_KEY    = process.env.AGENT_KEY   || '';
 const POLL_MS     = Number(process.env.POLL_INTERVAL_MS || 1500);
 const TMP_DIR     = path.join(__dirname, 'tmp');
 
-if (!API_TOKEN) { console.error('AGENT_TOKEN is not set'); process.exit(1); }
-if (!PRINTER_ID){ console.error('PRINTER_ID is not set'); process.exit(1); }
+// AGENT_KEY имеет вид pk_{printerId}_{secret} — печатается один раз в панели
+// принтеров при выпуске (кнопка "Выпустить ключ агента"). Он не привязан к
+// учётке сотрудника и не истекает по времени — в отличие от старой схемы
+// с Bearer-токеном логина, здесь агент не встанет молча через пару часов.
+if (!AGENT_KEY) { console.error('AGENT_KEY is not set (см. панель принтеров → кнопка "Выпустить ключ агента")'); process.exit(1); }
+const PRINTER_ID_MATCH = /^pk_(\d+)_/.exec(AGENT_KEY);
+if (!PRINTER_ID_MATCH) { console.error('AGENT_KEY has unexpected format (expected pk_{id}_{secret})'); process.exit(1); }
+const PRINTER_ID = Number(PRINTER_ID_MATCH[1]);
 
 console.log('=== BFC24 WMS v2 Printer Agent ===');
 console.log('API:', API_BASE);
-console.log('PRINTER_ID:', PRINTER_ID);
+console.log('PRINTER_ID:', PRINTER_ID, '(из AGENT_KEY)');
 console.log('POLL_INTERVAL_MS:', POLL_MS);
 
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
 const api = axios.create({
   baseURL: API_BASE,
-  headers: { Authorization: `Bearer ${API_TOKEN}`, Accept: 'application/json' },
+  headers: { 'X-Agent-Key': AGENT_KEY, Accept: 'application/json' },
   timeout: 15_000,
 });
 
@@ -87,7 +92,7 @@ function cleanupTmp(files) {
 
 // Обновить статус job
 async function markJob(jobId, status, errorText = null) {
-  await api.patch(`/printing/jobs/${jobId}`, { status, error_text: errorText });
+  await api.patch(`/printer-agent/jobs/${jobId}`, { status, error_text: errorText });
 }
 
 // Обработать один job
@@ -130,8 +135,8 @@ async function checkJobs() {
   isProcessing = true;
 
   try {
-    const res = await api.get('/printing/jobs', {
-      params: { printer_id: PRINTER_ID, status: 'new', limit: 10 },
+    const res = await api.get('/printer-agent/jobs', {
+      params: { status: 'new', limit: 10 },
       validateStatus: () => true,
     });
 

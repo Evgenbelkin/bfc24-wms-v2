@@ -2,6 +2,8 @@
 
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { query } = require('../../config/database');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware } = require('../../middleware/tenant');
@@ -16,12 +18,39 @@ router.use(authRequired, tenantMiddleware);
 router.get('/printers', async (req,res,next)=>{
   try {
     const r = await query(
-      `SELECT p.*, w.warehouse_name FROM wms.printers p
+      `SELECT p.id, p.tenant_id, p.warehouse_id, p.printer_code, p.printer_name, p.printer_type,
+              p.connection_type, p.device_name, p.ip_address, p.port, p.zone_code,
+              p.is_default, p.is_active, p.notes, p.created_at, p.updated_at,
+              p.agent_last_seen_at, (p.agent_key_hash IS NOT NULL) AS has_agent_key,
+              w.warehouse_name
+       FROM wms.printers p
        LEFT JOIN wms.warehouses w ON w.id=p.warehouse_id
        WHERE p.tenant_id=$1 ORDER BY w.warehouse_name, p.printer_name`,
       [req.user.tenantId]
     );
     res.json({ ok:true, printers:r.rows });
+  } catch(e){ next(e); }
+});
+
+// Выпустить (или перевыпустить) постоянный ключ доступа для агента печати —
+// не JWT сотрудника, который истекает, а отдельный секрет вида pk_{printerId}_{...},
+// привязанный к конкретному принтеру. Показывается вызывающему один раз, хранится
+// только bcrypt-хэш. Перевыпуск делает предыдущий ключ недействительным.
+router.post('/printers/:id/agent-key', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const id = validatePositiveInt(req.params.id,'id');
+    const check = await query(`SELECT id FROM wms.printers WHERE id=$1 AND tenant_id=$2`, [id, req.user.tenantId]);
+    if (check.rowCount===0) throw new NotFoundError('Printer', id);
+
+    const secret = crypto.randomBytes(24).toString('hex');
+    const rawKey = `pk_${id}_${secret}`;
+    const hash = await bcrypt.hash(rawKey, 10);
+    await query(
+      `UPDATE wms.printers SET agent_key_hash=$1, agent_last_seen_at=NULL, updated_at=NOW() WHERE id=$2`,
+      [hash, id]
+    );
+    // rawKey отдаём один-единственный раз — второй раз получить его будет неоткуда
+    res.json({ ok:true, agent_key: rawKey });
   } catch(e){ next(e); }
 });
 

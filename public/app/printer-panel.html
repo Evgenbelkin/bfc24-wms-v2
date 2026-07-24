@@ -103,6 +103,22 @@
       try { warehouses = (await window.API.warehouses.list()).warehouses || []; } catch (e) { UI.notify.err(e.message); }
     }
 
+    // Статус агента печати для строки списка/модалки — показываем явно, чтобы
+    // "тихое" падение агента (истёк доступ, выключен компьютер и т.п.) было видно
+    // сразу здесь, а не обнаруживалось по зависшей очереди печати.
+    function agentStatusHtml(p) {
+      if (p.connection_type !== 'agent') return '';
+      if (!p.has_agent_key) return ' · <span class="pill pill-yellow">ключ агента не выпущен</span>';
+      if (!p.agent_last_seen_at) return ' · <span class="pill pill-gray">ключ выпущен, агент ещё не выходил на связь</span>';
+      const diffMs = Date.now() - new Date(p.agent_last_seen_at).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins <= 2) return ' · <span class="pill pill-green">агент на связи</span>';
+      if (mins < 60) return ` · <span class="pill pill-yellow">агент не выходил на связь ${mins} мин</span>`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 48) return ` · <span class="pill pill-red">агент не выходил на связь ${hours} ч</span>`;
+      return ` · <span class="pill pill-red">агент не выходил на связь давно (${UI.fmtDateTime(p.agent_last_seen_at)})</span>`;
+    }
+
     // ---------- Принтеры ----------
     async function loadPrinters() {
       try {
@@ -118,7 +134,7 @@
           <div class="list-row row-item" onclick="openPrinterModal(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml(p.printer_name)} ${p.is_default ? '<span class="pill pill-blue">по умолч.</span>' : ''}</div>
-              <div class="sub">${UI.escHtml(CONN_LABELS[p.connection_type]||p.connection_type)} · ${UI.escHtml(p.warehouse_name||'без склада')} ${p.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
+              <div class="sub">${UI.escHtml(CONN_LABELS[p.connection_type]||p.connection_type)} · ${UI.escHtml(p.warehouse_name||'без склада')} ${p.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}${agentStatusHtml(p)}</div>
             </div>
           </div>
         `).join('');
@@ -146,6 +162,14 @@
             </div>
             <div class="field"><label style="display:inline;">Принтер по умолчанию</label> <input type="checkbox" id="m-default" ${p && p.is_default ? 'checked':''}/></div>
             ${p ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${p.is_active ? 'checked':''}/></div>` : ''}
+            ${p && p.connection_type === 'agent' ? `
+              <div class="field">
+                <label>Доступ агента печати</label>
+                <div class="hint-box" style="margin-top:0;">${p.has_agent_key ? 'Ключ уже выпущен.' : 'Ключ ещё не выпущен — без него агент не сможет подключиться.'} ${agentStatusHtml(p)}</div>
+                <button class="btn-sm btn-blue" style="margin-top:8px;" onclick="issueAgentKey(${p.id})"><svg class="i" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3"/></svg> ${p.has_agent_key ? 'Перевыпустить ключ' : 'Выпустить ключ агента'}</button>
+                <div id="agent-key-reveal"></div>
+              </div>
+            ` : ''}
             <div class="btn-row">
               <button class="btn-big btn-green" onclick="savePrinter(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
@@ -154,6 +178,26 @@
         </div>
       `;
       onConnChange(p ? p.connection_type : 'agent');
+    }
+
+    async function issueAgentKey(printerId) {
+      const isReissue = printersList.find(p => p.id === printerId)?.has_agent_key;
+      if (isReissue && !UI.confirm('Перевыпустить ключ? Старый ключ сразу перестанет работать — агенту, который уже настроен, придётся вписать новый.')) return;
+      try {
+        const res = await window.API.printing.printers.issueAgentKey(printerId);
+        document.getElementById('agent-key-reveal').innerHTML = `
+          <div class="hint-box" style="border-left-color:var(--amber);margin-top:8px;">
+            <b>Скопируйте ключ сейчас — второй раз он показан не будет.</b><br/>
+            Вписывается в настройки агента (<b>AGENT_KEY</b>) на компьютере, подключённом к принтеру.
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+              <input readonly value="${UI.escHtml(res.agent_key)}" style="flex:1;font-family:monospace;font-size:12px;" onclick="this.select()"/>
+              <button class="btn-sm btn-blue" onclick="navigator.clipboard.writeText('${res.agent_key}'); UI.notify.ok('Скопировано')">Копировать</button>
+            </div>
+          </div>
+        `;
+        UI.notify.ok('Ключ выпущен');
+        await loadPrinters();
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     function onConnChange(forceVal) {

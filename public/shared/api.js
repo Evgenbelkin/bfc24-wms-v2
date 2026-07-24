@@ -305,9 +305,10 @@
 
   const printing = {
     printers: {
-      list:   ()      => get('/printing/printers'),
-      create: (d)     => post('/printing/printers', d),
-      update: (id, d) => patch(`/printing/printers/${id}`, d),
+      list:      ()   => get('/printing/printers'),
+      create:    (d)  => post('/printing/printers', d),
+      update:    (id, d) => patch(`/printing/printers/${id}`, d),
+      issueAgentKey: (id) => post(`/printing/printers/${id}/agent-key`, {}),
     },
     routes: {
       list:   ()  => get('/printing/routes'),
