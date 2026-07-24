@@ -40,8 +40,8 @@ async function loginUser({ username, password, ip, userAgent }) {
        u.role, u.is_active, u.full_name,
        t.status AS tenant_status, t.company_name,
        COALESCE(
-         (SELECT array_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
-         ARRAY[]::wms.user_role[]
+         (SELECT jsonb_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         '[]'::jsonb
        ) AS extra_roles
      FROM wms.users u
      JOIN platform.tenants t ON t.id = u.tenant_id
@@ -163,8 +163,8 @@ async function refreshAccessToken({ refreshToken, ip }) {
   const userRes = await query(
     `SELECT u.id, u.tenant_id, u.client_id, u.username, u.role, u.is_active,
        COALESCE(
-         (SELECT array_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
-         ARRAY[]::wms.user_role[]
+         (SELECT jsonb_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         '[]'::jsonb
        ) AS extra_roles
      FROM wms.users u
      WHERE u.id = $1 AND u.is_active = TRUE`,

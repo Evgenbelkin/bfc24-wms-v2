@@ -92,8 +92,8 @@ router.get('/me', authRequired, async (req, res, next) => {
          t.company_name, t.tenant_code, t.status AS tenant_status,
          t.timezone,
          COALESCE(
-           (SELECT array_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
-           ARRAY[]::wms.user_role[]
+           (SELECT jsonb_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+           '[]'::jsonb
          ) AS extra_roles
        FROM wms.users u
        JOIN platform.tenants t ON t.id = u.tenant_id

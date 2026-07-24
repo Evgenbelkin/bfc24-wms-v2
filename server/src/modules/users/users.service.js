@@ -80,8 +80,8 @@ async function listUsers({ tenantId, role = null, isActive = null, search = null
        u.last_login_at, u.created_at,
        c.client_name,
        COALESCE(
-         (SELECT array_agg(ur.role ORDER BY ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
-         ARRAY[]::wms.user_role[]
+         (SELECT jsonb_agg(ur.role ORDER BY ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         '[]'::jsonb
        ) AS extra_roles
      FROM wms.users u
      LEFT JOIN wms.clients c ON c.id = u.client_id
@@ -103,8 +103,8 @@ async function getUserById({ tenantId, userId }) {
        u.is_active, u.last_login_at, u.settings, u.created_at,
        c.client_name,
        COALESCE(
-         (SELECT array_agg(ur.role ORDER BY ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
-         ARRAY[]::wms.user_role[]
+         (SELECT jsonb_agg(ur.role ORDER BY ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         '[]'::jsonb
        ) AS extra_roles
      FROM wms.users u
      LEFT JOIN wms.clients c ON c.id = u.client_id
