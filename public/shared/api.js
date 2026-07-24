@@ -236,6 +236,12 @@
     confirm: (d) => post('/shipping/confirm', d),
   };
 
+  // ─────────────── Overview ("Табло") ───────────────
+
+  const overview = {
+    funnel: () => get('/overview/funnel'),
+  };
+
   // ─────────────── WB ───────────────
 
   const wb = {
@@ -338,7 +344,7 @@
     stock, inbound, receiving,
     placement, movement, inventory,
     picking, packing, shipping,
-    wb, printing,
+    wb, printing, overview,
     seller, platform,
   };
 
