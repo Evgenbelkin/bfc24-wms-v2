@@ -190,15 +190,29 @@
       allModules = res.modules || [];
     }
 
+    const MODULE_NAME_RU = {
+      auth:'Пользователи и доступ', masterdata:'Справочники', stock:'Остатки',
+      receiving:'Приёмка', placement:'Размещение', movement:'Перемещение',
+      picking:'Сборка', packing:'Упаковка', shipping:'Отгрузка',
+      inventory:'Инвентаризация', inbound_orders:'Заявки на поставку',
+      seller_cabinet:'Кабинет клиента', wb_integration:'Интеграция с Wildberries',
+      printing:'Печать этикеток', analytics:'Аналитика', billing:'Биллинг',
+      multi_warehouse:'Несколько складов',
+    };
+
     function renderModulesList(t) {
       const enabled = new Set(t.modules || []);
       document.getElementById('modules-list').innerHTML = allModules.map(m => {
         const checked = m.is_core || enabled.has(m.module_code);
+        const nameRu = MODULE_NAME_RU[m.module_code] || '';
         return `
-        <label class="check-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;${m.is_core?'opacity:.6;':''}">
-          <input type="checkbox" ${checked?'checked':''} ${m.is_core?'disabled':''}
+        <label class="check-row" style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;${m.is_core?'opacity:.6;':''}">
+          <input type="checkbox" style="margin-top:3px;" ${checked?'checked':''} ${m.is_core?'disabled':''}
                  onchange="toggleModule('${m.module_code}', this.checked)"/>
-          <span>${UI.escHtml(m.module_name)}${m.is_core?' <span class=\"pill pill-gray\">core</span>':''}</span>
+          <span>
+            <div>${UI.escHtml(m.module_name)}${nameRu ? ' — '+UI.escHtml(nameRu) : ''}${m.is_core?' <span class=\"pill pill-gray\">core</span>':''}</div>
+            ${m.description ? `<div style="color:var(--muted);font-size:12px;">${UI.escHtml(m.description)}</div>` : ''}
+          </span>
         </label>
       `;
       }).join('');
