@@ -188,7 +188,9 @@
         document.getElementById('agent-key-reveal').innerHTML = `
           <div class="hint-box" style="border-left-color:var(--amber);margin-top:8px;">
             <b>Скопируйте ключ сейчас — второй раз он показан не будет.</b><br/>
-            Вписывается в настройки агента (<b>AGENT_KEY</b>) на компьютере, подключённом к принтеру.
+            Вписывается в настройки агента (<b>AGENT_KEY</b>) на компьютере, подключённом к принтеру —
+            <a href="/downloads/printer-agent.zip" target="_blank">скачайте программу-агент и инструкцию (.zip)</a>,
+            распакуйте на этом компьютере и запустите install.bat, он сам попросит вставить ключ.
             <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
               <input readonly value="${UI.escHtml(res.agent_key)}" style="flex:1;font-family:monospace;font-size:12px;" onclick="this.select()"/>
               <button class="btn-sm btn-blue" onclick="navigator.clipboard.writeText('${res.agent_key}'); UI.notify.ok('Скопировано')">Копировать</button>
@@ -205,7 +207,7 @@
       const hint = document.getElementById('conn-hint');
       document.getElementById('network-fields').style.display = (val === 'network') ? 'flex' : 'none';
       const hints = {
-        agent:   'Нужна небольшая программа-агент (запускается на компьютере, к которому физически подключён принтер). Она сама забирает задания на печать и отправляет на принтер по его названию в Windows — подходит для любого принтера с установленным драйвером, ничего сложного настраивать в самой WMS не нужно.',
+        agent:   'Нужна небольшая программа-агент (устанавливается один раз на компьютер, к которому физически подключён принтер, — <a href="/downloads/printer-agent.zip" target="_blank" onclick="event.stopPropagation()">скачать установщик (.zip)</a>, внутри есть install.bat и подробная инструкция для склада). Дальше агент сам забирает задания на печать и отправляет на принтер — ничего в самой WMS донастраивать не нужно, кроме ключа доступа (появится после сохранения принтера).',
         network: 'Печать напрямую по IP-адресу принтера в локальной сети склада (для сетевых термопринтеров этикеток).',
         usb:     'Печать через обычное диалоговое окно браузера на этом устройстве — просто выбирается принтер из тех, что уже подключены к компьютеру/телефону.',
       };
