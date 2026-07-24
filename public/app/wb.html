@@ -101,6 +101,7 @@
             <option value="confirm">В поставке</option>
             <option value="complete">Завершён</option>
             <option value="cancel">Отменён</option>
+            <option value="external">Забрано в ЛК WB</option>
           </select>
         </div>
         <button class="btn-big btn-blue btn-full" onclick="loadOrders()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
@@ -144,7 +145,8 @@
       if (name === 'orders' && !ordersLoaded) loadOrders();
     }
 
-    const STATUS_LABELS = { new:'Новый', confirm:'В поставке', complete:'Завершён', cancel:'Отменён' };
+    const STATUS_LABELS = { new:'Новый', confirm:'В поставке', complete:'Завершён', cancel:'Отменён', external:'Забрано в ЛК WB' };
+    const STATUS_PILL_CLASS = { new:'pill-blue', confirm:'pill-yellow', complete:'pill-green', cancel:'pill-red', external:'pill-gray' };
 
     let clientsList = [];
     let accountsList = [];
@@ -339,14 +341,22 @@
           document.getElementById('wave-result').innerHTML = `<div class="result-box">${UI.escHtml(res.message || 'Нет заказов без поставки')}</div>`;
           return;
         }
+        const droppedWarning = res.dropped_total
+          ? `<div class="result-box" style="border-color:var(--amber);margin-top:8px;">
+               <svg class="i" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+               ${res.dropped_total} заказ(ов) исключено из волны — их уже забрали вручную в кабинете WB
+               (статус «Забрано в ЛК WB» в списке заказов).
+             </div>`
+          : '';
         document.getElementById('wave-result').innerHTML = `
           <div class="result-box">
             Создано поставок: <strong>${res.created_supplies}</strong><br/>
             ${res.supplies.map(s => `${UI.escHtml(s.shipment_code)} — заказов: <strong>${s.orders_count}</strong>, задач на сборку: <strong>${s.tasks_inserted}</strong>, стикеров: <strong>${s.stickers_saved}</strong>`).join('<br/>')}
             <br/>Волна появится в «Диспетчерской» и на экране «Сборка».
           </div>
+          ${droppedWarning}
         `;
-        UI.notify.ok('Волна сформирована');
+        UI.notify.ok(res.dropped_total ? `Волна сформирована (${res.dropped_total} заказ(ов) исключено)` : 'Волна сформирована');
         await loadOrders();
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
@@ -367,7 +377,7 @@
             <td>${UI.escHtml(o.article || o.wb_order_id)}</td>
             <td>${UI.escHtml(o.barcode||'—')}</td>
             <td>${UI.escHtml(o.warehouse_name||'—')}</td>
-            <td><span class="pill pill-blue">${STATUS_LABELS[o.status] || UI.escHtml(o.status||'—')}</span></td>
+            <td><span class="pill ${STATUS_PILL_CLASS[o.status]||'pill-blue'}">${STATUS_LABELS[o.status] || UI.escHtml(o.status||'—')}</span></td>
             <td>${o.wb_supply_id ? `<span class="pill pill-green">${UI.escHtml(o.wb_supply_id)}</span>` : '—'}</td>
             <td>${UI.fmtDateTime(o.created_at)}</td>
           </tr>

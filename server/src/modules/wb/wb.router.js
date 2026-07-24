@@ -164,12 +164,18 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     const acc = await getMpAccount(req.user.tenantId, accountId);
     const wh = await getDefaultWarehouse(req.user.tenantId);
 
+    // Сначала — свежая синхронизация с реконсиляцией прямо перед выборкой кандидатов.
+    // Это сужает окно гонки "клиент вручную забрал заказ в своём ЛК WB, пока мы не
+    // успели сформировать волну" до секунд: любой заказ, который WB уже не считает
+    // новым, будет помечен status='external' и не попадёт в выборку ниже.
+    await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token });
+
     // Заказы без поставки
     const ordersRes = await query(
       `SELECT wb_order_id, barcode, warehouse_id, warehouse_name
        FROM wms.wb_orders
        WHERE tenant_id=$1 AND mp_account_id=$2 AND wb_supply_id IS NULL
-         AND COALESCE(status,'') NOT IN ('confirm','complete','cancel')
+         AND COALESCE(status,'') NOT IN ('confirm','complete','cancel','external')
        ORDER BY created_at ASC LIMIT $3`,
       [req.user.tenantId, accountId, limitOrders]
     );
@@ -194,17 +200,43 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
       if (!rawSupplyId) throw new Error('WB did not return supply ID');
       const shipmentCode = wbClient.normalizeShipmentCode(rawSupplyId);
 
-      await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, orderIds);
+      // Даже после ресинка выше остаётся микроскопическое окно гонки (пока мы
+      // создаём поставку и готовим этот запрос, клиент теоретически успевает
+      // забрать заказ вручную в ЛК WB). Если WB отклонит пачку целиком — не
+      // теряем всю группу: перепроверяем актуальный список "новых" заказов и
+      // повторяем без тех, что уже отвалились, помечая их как 'external'.
+      let finalOrderIds = orderIds;
+      let droppedOrderIds = [];
+      try {
+        await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, orderIds);
+      } catch (e) {
+        logger.warn({ err: e, accountId, rawSupplyId, orderIds }, 'WB addOrdersToSupply failed, re-checking against fresh WB state');
+        const freshOrders = await wbClient.fetchNewOrders(acc.api_token).catch(()=>null);
+        if (!freshOrders) throw e; // не смогли даже перепроверить — пробрасываем исходную ошибку
+        const freshIdSet = new Set(freshOrders.map(o => Number(o.id||o.odid||o.orderId)).filter(Boolean));
+        finalOrderIds = orderIds.filter(id => freshIdSet.has(id));
+        droppedOrderIds = orderIds.filter(id => !freshIdSet.has(id));
+        if (!finalOrderIds.length) throw e; // ни один заказ группы не актуален — исходная ошибка честнее
+        await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, finalOrderIds);
+        await query(
+          `UPDATE wms.wb_orders SET status='external', fetched_at=NOW()
+           WHERE tenant_id=$1 AND mp_account_id=$2 AND wb_order_id=ANY($3::bigint[])`,
+          [req.user.tenantId, accountId, droppedOrderIds]
+        );
+      }
+      const keptRows = droppedOrderIds.length
+        ? group.orders.filter(o => finalOrderIds.includes(Number(o.wb_order_id)))
+        : group.orders;
 
       // Стикеры
-      const stickers = await wbClient.fetchOrderStickers(acc.api_token, orderIds).catch(()=>[]);
+      const stickers = await wbClient.fetchOrderStickers(acc.api_token, finalOrderIds).catch(()=>[]);
 
       await transaction(async (client) => {
         // Помечаем заказы поставкой
         await client.query(
           `UPDATE wms.wb_orders SET wb_supply_id=$1, status='confirm'
            WHERE tenant_id=$2 AND mp_account_id=$3 AND wb_order_id=ANY($4::bigint[])`,
-          [rawSupplyId, req.user.tenantId, accountId, orderIds]
+          [rawSupplyId, req.user.tenantId, accountId, finalOrderIds]
         );
 
         // Сохраняем стикеры
@@ -240,7 +272,7 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
 
         // Задачи на сборку (1 задача = 1 заказ)
         let insertedTasks = 0;
-        for (const row of group.orders) {
+        for (const row of keptRows) {
           const b = String(row.barcode||'').trim();
           if (!b) continue;
           const itemId = await resolveOrCreateItem({ tenantId:req.user.tenantId, clientId:acc.client_id, barcode:b, dbClient:client });
@@ -279,14 +311,17 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
         suppliesResult.push({
           supply_id:      rawSupplyId,
           shipment_code:  shipmentCode,
-          orders_count:   orderIds.length,
+          orders_count:   finalOrderIds.length,
           tasks_inserted: insertedTasks,
           stickers_saved: stickers.length,
+          dropped_count:  droppedOrderIds.length,
+          dropped_orders: droppedOrderIds,
         });
       });
     }
 
-    res.json({ ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult });
+    const totalDropped = suppliesResult.reduce((s,r)=>s+(r.dropped_count||0),0);
+    res.json({ ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult, dropped_total:totalDropped });
   } catch(e){ next(e); }
 });
 
