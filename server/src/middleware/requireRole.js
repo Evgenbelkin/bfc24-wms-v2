@@ -36,13 +36,16 @@ function requireRole(...rolesInput) {
       return next(new ForbiddenError('Authentication required'));
     }
 
-    const { role } = req.user;
+    // Мульти-роли: у пользователя может быть основная роль + доп. роли поверх
+    // неё (wms.user_roles) — сотрудник видит/может открывать сразу несколько
+    // рабочих модулей. Пропускаем, если пересекается хотя бы одна роль.
+    const userRoles = req.user.roles && req.user.roles.length ? req.user.roles : [req.user.role];
 
-    if (!effectiveRoles.includes(role)) {
+    if (!effectiveRoles.some(r => userRoles.includes(r))) {
       return next(
         new ForbiddenError(
-          `Role '${role}' is not allowed. Required: ${roles.join(' | ')}`,
-          { required: roles, actual: role }
+          `Role(s) '${userRoles.join(',')}' not allowed. Required: ${roles.join(' | ')}`,
+          { required: roles, actual: userRoles }
         )
       );
     }
@@ -55,7 +58,8 @@ function requireRole(...rolesInput) {
  * Проверить что пользователь — не seller (для WMS-операций)
  */
 function requireWarehouseRole(req, res, next) {
-  if (req.user?.role === 'seller') {
+  const userRoles = req.user?.roles && req.user.roles.length ? req.user.roles : [req.user?.role];
+  if (userRoles.includes('seller')) {
     return next(new ForbiddenError('Sellers cannot perform warehouse operations'));
   }
   next();
@@ -65,7 +69,8 @@ function requireWarehouseRole(req, res, next) {
  * Проверить что пользователь — seller
  */
 function requireSellerRole(req, res, next) {
-  if (req.user?.role !== 'seller') {
+  const userRoles = req.user?.roles && req.user.roles.length ? req.user.roles : [req.user?.role];
+  if (!userRoles.includes('seller')) {
     return next(new ForbiddenError('This endpoint is for sellers only'));
   }
   next();

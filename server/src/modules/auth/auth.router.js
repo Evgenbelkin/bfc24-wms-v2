@@ -90,7 +90,11 @@ router.get('/me', authRequired, async (req, res, next) => {
          u.id, u.tenant_id, u.client_id, u.username, u.full_name, u.role,
          u.is_active, u.last_login_at, u.settings,
          t.company_name, t.tenant_code, t.status AS tenant_status,
-         t.timezone
+         t.timezone,
+         COALESCE(
+           (SELECT array_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+           ARRAY[]::wms.user_role[]
+         ) AS extra_roles
        FROM wms.users u
        JOIN platform.tenants t ON t.id = u.tenant_id
        WHERE u.id = $1`,
@@ -102,6 +106,7 @@ router.get('/me', authRequired, async (req, res, next) => {
     }
 
     const u = userRes.rows[0];
+    const roles = [...new Set([u.role, ...(u.extra_roles || [])])];
     res.json({
       ok: true,
       user: {
@@ -111,6 +116,7 @@ router.get('/me', authRequired, async (req, res, next) => {
         username:     u.username,
         fullName:     u.full_name,
         role:         u.role,
+        roles,
         isActive:     u.is_active,
         lastLoginAt:  u.last_login_at,
         settings:     u.settings,

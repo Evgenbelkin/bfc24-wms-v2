@@ -39,10 +39,11 @@
   <script>
     if (!UI.requireAuth()) throw new Error('Not logged in');
     const user = window.API.getUser();
-    if (user?.role === 'seller') window.location.href = '/seller/menu.html';
+    const userRoles = (user?.roles && user.roles.length) ? user.roles : [user?.role];
+    if (userRoles.includes('seller')) window.location.href = '/seller/menu.html';
 
     document.getElementById('user-name').textContent = user?.username || '—';
-    document.getElementById('user-role').textContent = user?.role || '—';
+    document.getElementById('user-role').textContent = userRoles.join(' + ') || '—';
     document.getElementById('tenant-name').textContent = user?.companyName || '—';
 
     async function logout() {
@@ -71,8 +72,8 @@
       { href:'users.html',            icon:'👥', label:'Пользователи',    roles:['tenant_admin','supervisor'] },
     ];
 
-    const role = user?.role;
-    const tiles = ALL_TILES.filter(t => role === 'tenant_admin' || t.roles.includes(role));
+    // Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя
+    const tiles = ALL_TILES.filter(t => userRoles.includes('tenant_admin') || t.roles.some(r => userRoles.includes(r)));
 
     document.getElementById('tiles').innerHTML = tiles.map(t => `
       <a class="tile" href="/app/${t.href}">

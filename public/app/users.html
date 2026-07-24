@@ -66,6 +66,9 @@
       { value:'seller',            label:'Продавец (клиент)' },
     ];
     const ROLE_LABEL = Object.fromEntries(ROLES.map(r => [r.value, r.label]));
+    // "seller" — отдельный контур (клиентский кабинет), в доп. роли складского
+    // сотрудника его не предлагаем.
+    const EXTRA_ROLE_OPTIONS = ROLES.filter(r => r.value !== 'seller');
 
     document.getElementById('f-role').innerHTML += ROLES.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
 
@@ -97,6 +100,7 @@
               <div class="sub">${UI.escHtml(u.username)} ${u.client_name ? '· '+UI.escHtml(u.client_name) : ''} ${u.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
             </div>
             <span class="pill pill-blue">${UI.escHtml(ROLE_LABEL[u.role]||u.role)}</span>
+            ${(u.extra_roles||[]).map(r => `<span class="pill pill-gray">${UI.escHtml(ROLE_LABEL[r]||r)}</span>`).join('')}
           </div>
         `).join('');
       } catch (e) { UI.notify.err(e.message); }
@@ -115,6 +119,17 @@
             <div class="field"><label>Полное имя</label><input id="m-fullname" value="${u && u.full_name ? UI.escHtml(u.full_name):''}" ${canManage?'':'disabled'}/></div>
             <div class="field"><label>Роль</label><select id="m-role" onchange="onRoleChange()" ${canManage?'':'disabled'}>${roleOptions}</select></div>
             <div class="field" id="client-field"><label>Клиент (обязательно для роли «Продавец»)</label><select id="m-client" ${canManage?'':'disabled'}>${clientOptions}</select></div>
+            <div class="field" id="extra-roles-field">
+              <label>Дополнительные роли — доступ ещё к каким модулям (сотрудник сам выберет, где сейчас есть работа)</label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+                ${EXTRA_ROLE_OPTIONS.map(r => `
+                  <label style="display:flex;align-items:center;gap:6px;background:var(--card2);padding:8px 12px;border-radius:8px;font-size:13px;cursor:pointer;">
+                    <input type="checkbox" class="m-extra-role" value="${r.value}" ${u && (u.extra_roles||[]).includes(r.value) ? 'checked':''} ${canManage?'':'disabled'}/>
+                    ${r.label}
+                  </label>
+                `).join('')}
+              </div>
+            </div>
             ${canManage ? `<div class="field"><label>${u ? 'Новый пароль (оставьте пустым, чтобы не менять)' : 'Пароль'}</label><input id="m-password" type="password" autocomplete="new-password"/></div>` : ''}
             ${u ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${u.is_active ? 'checked':''} ${canManage?'':'disabled'}/></div>` : ''}
             <div class="btn-row">
@@ -132,6 +147,13 @@
     function onRoleChange() {
       const role = UI.val('#m-role');
       document.getElementById('client-field').style.display = (role === 'seller') ? 'block' : 'none';
+      document.getElementById('extra-roles-field').style.display = (role === 'seller') ? 'none' : 'block';
+      // Основную роль не дублируем в доп. ролях — снимаем и блокируем совпадающий чекбокс
+      document.querySelectorAll('.m-extra-role').forEach(cb => {
+        const isPrimary = cb.value === role;
+        cb.disabled = isPrimary || !canManage;
+        if (isPrimary) cb.checked = false;
+      });
     }
 
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
@@ -142,10 +164,13 @@
       const clientId = UI.val('#m-client');
       if (role === 'seller' && !clientId) { UI.notify.err('Для роли «Продавец» нужно выбрать клиента'); return; }
 
+      const extraRoles = [...document.querySelectorAll('.m-extra-role:checked')].map(cb => cb.value);
+
       const data = {
         full_name: UI.val('#m-fullname'),
         role,
         client_id: clientId || null,
+        extra_roles: role === 'seller' ? [] : extraRoles,
       };
       const password = UI.val('#m-password');
       if (password) data.password = password;

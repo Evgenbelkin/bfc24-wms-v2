@@ -92,7 +92,10 @@
     const user = window.API?.getUser();
     if (!user) return false;
     if (typeof allowedRoles === 'string') allowedRoles = [allowedRoles];
-    return allowedRoles.includes(user.role) || user.role === 'tenant_admin';
+    // Мульти-роли: у пользователя может быть несколько ролей одновременно
+    // (основная + доп., см. users.html) — пропускаем, если есть пересечение.
+    const userRoles = user.roles && user.roles.length ? user.roles : [user.role];
+    return userRoles.includes('tenant_admin') || allowedRoles.some(r => userRoles.includes(r));
   }
 
   // ─────────────── Formatters ───────────────

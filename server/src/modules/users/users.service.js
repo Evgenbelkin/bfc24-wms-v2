@@ -25,6 +25,34 @@ const VALID_ROLES = [
 ];
 
 /**
+ * Доп. роли поверх основной (wms.users.role) — сотрудник может работать
+ * сразу в нескольких модулях (например Сборка + Упаковка) и переключаться
+ * туда, где сейчас есть работа, без участия админа каждый раз.
+ */
+async function getExtraRoles({ tenantId, userId }) {
+  const res = await query(
+    `SELECT role FROM wms.user_roles WHERE tenant_id=$1 AND user_id=$2 ORDER BY role`,
+    [tenantId, userId]
+  );
+  return res.rows.map(r => r.role);
+}
+
+/** Полностью заменить набор доп. ролей пользователя (delete+insert в транзакции) */
+async function setExtraRoles({ tenantId, userId, roles, actorId }) {
+  const clean = [...new Set((roles || []).map(r => validateEnum(r, VALID_ROLES, 'extra_roles[]')))];
+  await transaction(async (client) => {
+    await client.query(`DELETE FROM wms.user_roles WHERE tenant_id=$1 AND user_id=$2`, [tenantId, userId]);
+    for (const role of clean) {
+      await client.query(
+        `INSERT INTO wms.user_roles (tenant_id, user_id, role, created_by) VALUES ($1,$2,$3,$4)`,
+        [tenantId, userId, role, actorId || null]
+      );
+    }
+  });
+  return clean;
+}
+
+/**
  * Список пользователей tenant'а
  */
 async function listUsers({ tenantId, role = null, isActive = null, search = null }) {
@@ -50,7 +78,11 @@ async function listUsers({ tenantId, role = null, isActive = null, search = null
     `SELECT
        u.id, u.username, u.full_name, u.role, u.is_active,
        u.last_login_at, u.created_at,
-       c.client_name
+       c.client_name,
+       COALESCE(
+         (SELECT array_agg(ur.role ORDER BY ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         ARRAY[]::wms.user_role[]
+       ) AS extra_roles
      FROM wms.users u
      LEFT JOIN wms.clients c ON c.id = u.client_id
      WHERE ${conditions.join(' AND ')}
@@ -69,7 +101,11 @@ async function getUserById({ tenantId, userId }) {
     `SELECT
        u.id, u.tenant_id, u.client_id, u.username, u.full_name, u.role,
        u.is_active, u.last_login_at, u.settings, u.created_at,
-       c.client_name
+       c.client_name,
+       COALESCE(
+         (SELECT array_agg(ur.role ORDER BY ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         ARRAY[]::wms.user_role[]
+       ) AS extra_roles
      FROM wms.users u
      LEFT JOIN wms.clients c ON c.id = u.client_id
      WHERE u.id = $1 AND u.tenant_id = $2`,
@@ -128,7 +164,19 @@ async function createUser({ tenantId, createdById, data }) {
     [tenantId, clientId, username, passwordHash, fullName, role, isActive, createdById]
   );
 
-  return res.rows[0];
+  const user = res.rows[0];
+
+  // Доп. роли (если переданы) — не блокируем создание пользователя, если тут что-то не так
+  let extraRoles = [];
+  if (Array.isArray(data.extra_roles) && data.extra_roles.length) {
+    extraRoles = await setExtraRoles({
+      tenantId, userId: user.id,
+      roles: data.extra_roles.filter(r => r !== role), // основную роль не дублируем в доп.
+      actorId: createdById,
+    });
+  }
+
+  return { ...user, extra_roles: extraRoles };
 }
 
 /**
@@ -184,19 +232,36 @@ async function updateUser({ tenantId, userId, data, updatedById }) {
     );
   }
 
-  if (fields.length === 0) throw new ValidationError('No fields to update');
+  if (fields.length === 0 && data.extra_roles === undefined) {
+    throw new ValidationError('No fields to update');
+  }
 
-  fields.push(`updated_at = NOW()`);
-  params.push(userId, tenantId);
+  let updated = current;
+  if (fields.length > 0) {
+    fields.push(`updated_at = NOW()`);
+    params.push(userId, tenantId);
 
-  const res = await query(
-    `UPDATE wms.users SET ${fields.join(', ')}
-     WHERE id = $${idx++} AND tenant_id = $${idx}
-     RETURNING id, username, full_name, role, is_active, client_id, updated_at`,
-    params
-  );
+    const res = await query(
+      `UPDATE wms.users SET ${fields.join(', ')}
+       WHERE id = $${idx++} AND tenant_id = $${idx}
+       RETURNING id, username, full_name, role, is_active, client_id, updated_at`,
+      params
+    );
+    updated = res.rows[0];
+  }
 
-  return res.rows[0];
+  // Доп. роли — заменяем набор целиком, если поле явно передано
+  let extraRoles = current.extra_roles || [];
+  if (data.extra_roles !== undefined) {
+    const primaryRole = updated.role || current.role;
+    extraRoles = await setExtraRoles({
+      tenantId, userId,
+      roles: (data.extra_roles || []).filter(r => r !== primaryRole),
+      actorId: updatedById,
+    });
+  }
+
+  return { ...updated, extra_roles: extraRoles };
 }
 
 /**

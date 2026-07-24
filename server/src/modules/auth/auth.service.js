@@ -38,7 +38,11 @@ async function loginUser({ username, password, ip, userAgent }) {
     `SELECT
        u.id, u.tenant_id, u.client_id, u.username, u.password_hash,
        u.role, u.is_active, u.full_name,
-       t.status AS tenant_status, t.company_name
+       t.status AS tenant_status, t.company_name,
+       COALESCE(
+         (SELECT array_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         ARRAY[]::wms.user_role[]
+       ) AS extra_roles
      FROM wms.users u
      JOIN platform.tenants t ON t.id = u.tenant_id
      WHERE u.username = $1
@@ -72,12 +76,18 @@ async function loginUser({ username, password, ip, userAgent }) {
     throw new AuthError('Invalid username or password');
   }
 
+  // Эффективный набор ролей = основная роль + доп. роли (wms.user_roles) —
+  // сотрудник может работать сразу в нескольких модулях (например сборка +
+  // упаковка) и сам переключаться туда, где сейчас есть работа.
+  const roles = [...new Set([user.role, ...(user.extra_roles || [])])];
+
   // Генерируем токены
   const accessToken = signUserToken({
     id:       user.id,
     tenantId: user.tenant_id,
     clientId: user.client_id,
     role:     user.role,
+    roles,
     username: user.username,
   });
 
@@ -114,6 +124,7 @@ async function loginUser({ username, password, ip, userAgent }) {
       username:    user.username,
       fullName:    user.full_name,
       role:        user.role,
+      roles,
       companyName: user.company_name,
     },
   };
@@ -150,7 +161,11 @@ async function refreshAccessToken({ refreshToken, ip }) {
 
   // Получаем пользователя
   const userRes = await query(
-    `SELECT u.id, u.tenant_id, u.client_id, u.username, u.role, u.is_active
+    `SELECT u.id, u.tenant_id, u.client_id, u.username, u.role, u.is_active,
+       COALESCE(
+         (SELECT array_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id),
+         ARRAY[]::wms.user_role[]
+       ) AS extra_roles
      FROM wms.users u
      WHERE u.id = $1 AND u.is_active = TRUE`,
     [foundToken.user_id]
@@ -183,11 +198,14 @@ async function refreshAccessToken({ refreshToken, ip }) {
     );
   });
 
+  const roles = [...new Set([user.role, ...(user.extra_roles || [])])];
+
   const accessToken = signUserToken({
     id:       user.id,
     tenantId: user.tenant_id,
     clientId: user.client_id,
     role:     user.role,
+    roles,
     username: user.username,
   });
 

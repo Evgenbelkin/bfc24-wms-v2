@@ -56,6 +56,9 @@ function authRequired(req, res, next) {
       tenantId: tenantId,
       clientId: decoded.clientId ? Number(decoded.clientId) : null,
       role:     decoded.role,
+      // roles[] — эффективный набор (основная + доп. роли). Токены, выпущенные
+      // до введения мульти-ролей, несут только role — подстраховываемся.
+      roles:    Array.isArray(decoded.roles) && decoded.roles.length ? decoded.roles : [decoded.role],
       username: decoded.username || null,
     };
 
@@ -113,6 +116,7 @@ function authOptional(req, res, next) {
       tenantId: Number(decoded.tenantId),
       clientId: decoded.clientId ? Number(decoded.clientId) : null,
       role:     decoded.role,
+      roles:    Array.isArray(decoded.roles) && decoded.roles.length ? decoded.roles : [decoded.role],
       username: decoded.username || null,
     };
   } catch (_) {
@@ -131,6 +135,7 @@ function signUserToken(user) {
       tenantId: user.tenantId,
       clientId: user.clientId || null,
       role:     user.role,
+      roles:    user.roles && user.roles.length ? user.roles : [user.role],
       username: user.username,
     },
     config.jwt.secret,
