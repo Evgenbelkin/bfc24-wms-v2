@@ -103,7 +103,7 @@ router.get('/stock/by-barcode', async (req,res,next)=>{
 router.get('/orders', requireModule('wb_integration'), async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
-    const params = [req.user.tenantId, clientId]; const conds=['o.tenant_id=$1']; let idx=3;
+    const params = [req.user.tenantId]; const conds=['o.tenant_id=$1']; let idx=2;
     // Ищем account_id через client
     const accRes = await query(`SELECT id FROM wms.mp_accounts WHERE tenant_id=$1 AND client_id=$2 AND is_active=TRUE`, [req.user.tenantId, clientId]);
     if (accRes.rowCount === 0) return res.json({ ok:true, orders:[], count:0 });
