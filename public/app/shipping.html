@@ -10,6 +10,9 @@
     .ship-row:active{opacity:.7;}
     .qr-box{text-align:center;background:#fff;border-radius:12px;padding:16px;margin-top:12px;}
     .qr-box img{max-width:220px;width:100%;}
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;}
+    .filters-row input[type=date]{flex:1;min-width:130px;padding:10px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    .filters-row label{font-size:11px;color:var(--muted);text-transform:uppercase;white-space:nowrap;}
   </style>
 </head>
 <body>
@@ -25,6 +28,17 @@
       <button class="tab" data-status="in_transit" onclick="switchStatus('in_transit')">Отгружены</button>
       <button class="tab" data-status="" onclick="switchStatus('')">Все</button>
     </div>
+    <!-- Фильтр по дате факта отгрузки (когда реально уехало), не по дате
+         создания заказа — чтобы можно было спросить "что отгрузили такого-то
+         числа" и увидеть, кто именно это отгрузил. -->
+    <div class="filters-row">
+      <label>Отгружено с</label>
+      <input type="date" id="f-shipped-from"/>
+      <label>по</label>
+      <input type="date" id="f-shipped-to"/>
+      <button class="btn-sm btn-back" onclick="applyDateFilter()">🔍 Показать</button>
+      <button class="btn-sm btn-back" onclick="resetDateFilter()">✕ Сброс</button>
+    </div>
     <div id="ship-list"></div>
     <button class="btn-sm btn-back" onclick="loadBoard()">↻ Обновить</button>
   </div>
@@ -38,6 +52,7 @@
         <div class="badge"><span>Статус</span><div id="d-status">—</div></div>
         <div class="badge"><span>Клиент</span><div id="d-client">—</div></div>
         <div class="badge"><span>Собрано</span><div id="d-picked">0/0</div></div>
+        <div class="badge" id="d-shipped-badge" style="display:none"><span>Отгружено</span><div id="d-shipped">—</div></div>
       </div>
     </div>
 
@@ -115,10 +130,21 @@
       shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
     };
 
+    function applyDateFilter() { loadBoard(); }
+    function resetDateFilter() {
+      UI.setVal('#f-shipped-from', '');
+      UI.setVal('#f-shipped-to', '');
+      loadBoard();
+    }
+
     async function loadBoard() {
       try {
         const params = { limit: 100 };
         if (currentStatus) params.status = currentStatus;
+        const shippedFrom = UI.val('#f-shipped-from');
+        const shippedTo   = UI.val('#f-shipped-to');
+        if (shippedFrom) params.shipped_from = shippedFrom;
+        if (shippedTo)   params.shipped_to   = shippedTo;
         const res = await window.API.shipping.board(params);
         shipments = res.shipments || [];
         const list = document.getElementById('ship-list');
@@ -126,15 +152,23 @@
           list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет отгрузок</div>`;
           return;
         }
-        list.innerHTML = shipments.map((s, idx) => `
+        list.innerHTML = shipments.map((s, idx) => {
+          // Факт отгрузки: когда и кто — заполняется только после реального
+          // подтверждения (shipping.confirm), для ещё не отгруженных пусто.
+          const shippedLine = s.shipped_at
+            ? `<div class="sub">🚚 ${UI.fmtDateTime(s.shipped_at)}${s.shipper_name ? ' · '+UI.escHtml(s.shipper_name) : ''}</div>`
+            : '';
+          return `
           <div class="list-row ship-row" onclick="openShipment(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml(s.external_id)}</div>
               <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · сборка ${s.tasks_done||0}/${s.tasks_total||0}</div>
+              ${shippedLine}
             </div>
             <span class="pill ${STATUS_PILL[s.status]||'pill-gray'}">${STATUS_LABELS[s.status]||s.status}</span>
           </div>
-        `).join('');
+        `;
+        }).join('');
       } catch (e) { UI.notify.err(e.message); }
     }
 
@@ -155,6 +189,14 @@
         document.getElementById('d-code').textContent = currentShipment.external_id;
         document.getElementById('d-status').textContent = STATUS_LABELS[currentShipment.status] || currentShipment.status;
         document.getElementById('d-client').textContent = currentShipment.client_name || '—';
+        const shippedBadge = document.getElementById('d-shipped-badge');
+        if (currentShipment.shipped_at) {
+          shippedBadge.style.display = 'block';
+          document.getElementById('d-shipped').textContent =
+            UI.fmtDateTime(currentShipment.shipped_at) + (currentShipment.shipper_name ? ' · ' + currentShipment.shipper_name : '');
+        } else {
+          shippedBadge.style.display = 'none';
+        }
         const totalPlan = (res.lines||[]).reduce((a,l)=>a+Number(l.qty||0),0);
         const totalPicked = (res.lines||[]).reduce((a,l)=>a+Number(l.qty_picked||0),0);
         document.getElementById('d-picked').textContent = `${totalPicked}/${totalPlan}`;

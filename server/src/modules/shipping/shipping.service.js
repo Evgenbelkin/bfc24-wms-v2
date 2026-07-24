@@ -10,16 +10,27 @@ const wbClient = require('../wb/wb.client');
 // =============================================================================
 
 /** Табло отгрузок */
-async function listShipments({ tenantId, clientId = null, status = null, marketplace = null, dateFrom = null, dateTo = null, limit = 100 }) {
+async function listShipments({
+  tenantId, clientId = null, status = null, marketplace = null,
+  dateFrom = null, dateTo = null, shippedFrom = null, shippedTo = null,
+  limit = 100,
+}) {
   const params = [tenantId]; const conds = ['s.tenant_id=$1']; let idx = 2;
   if (clientId)   { conds.push(`s.client_id=$${idx++}`); params.push(clientId); }
   if (status)     { conds.push(`s.status=$${idx++}`); params.push(status); }
   if (marketplace){ conds.push(`s.marketplace=$${idx++}`); params.push(marketplace); }
   if (dateFrom)   { conds.push(`s.created_at>=$${idx++}::date`); params.push(dateFrom); }
   if (dateTo)     { conds.push(`s.created_at<($${idx++}::date+INTERVAL '1 day')`); params.push(dateTo); }
+  // Фильтр отдельно по факту отгрузки (shipped_at), а не по дате создания —
+  // "когда реально уехало", а не "когда завели заказ". Нужен, чтобы можно
+  // было спросить "что отгрузили за такое-то число" независимо от того,
+  // когда отгрузка была создана/собрана.
+  if (shippedFrom){ conds.push(`s.shipped_at>=$${idx++}::date`); params.push(shippedFrom); }
+  if (shippedTo)  { conds.push(`s.shipped_at<($${idx++}::date+INTERVAL '1 day')`); params.push(shippedTo); }
   params.push(Math.min(limit, 500));
   const r = await query(
     `SELECT s.*, c.client_name, w.warehouse_name,
+       su.username AS shipper_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
        (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
@@ -33,7 +44,8 @@ async function listShipments({ tenantId, clientId = null, status = null, marketp
      FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
      JOIN wms.warehouses w ON w.id=s.warehouse_id
-     WHERE ${conds.join(' AND ')} ORDER BY s.created_at DESC LIMIT $${idx}`,
+     LEFT JOIN wms.users su ON su.id=s.shipper_id
+     WHERE ${conds.join(' AND ')} ORDER BY COALESCE(s.shipped_at, s.created_at) DESC LIMIT $${idx}`,
     params
   );
   return r.rows;
@@ -42,9 +54,11 @@ async function listShipments({ tenantId, clientId = null, status = null, marketp
 /** Детали отгрузки */
 async function getShipmentDetails({ tenantId, shipmentCode }) {
   const shipRes = await query(
-    `SELECT s.*, c.client_name, w.warehouse_name FROM wms.shipments s
+    `SELECT s.*, c.client_name, w.warehouse_name, su.username AS shipper_name
+     FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
      JOIN wms.warehouses w ON w.id=s.warehouse_id
+     LEFT JOIN wms.users su ON su.id=s.shipper_id
      WHERE s.tenant_id=$1 AND s.external_id=$2 ORDER BY s.id DESC LIMIT 1`,
     [tenantId, shipmentCode]
   );

@@ -18,6 +18,8 @@ router.get('/board', requireRole('tenant_admin','supervisor','picker','packer','
       marketplace: req.query.marketplace || null,
       dateFrom:    req.query.date_from   || null,
       dateTo:      req.query.date_to     || null,
+      shippedFrom: req.query.shipped_from || null,
+      shippedTo:   req.query.shipped_to   || null,
       limit:       Number(req.query.limit) || 100,
     });
     res.json({ ok: true, shipments });
