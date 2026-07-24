@@ -8,7 +8,9 @@
   <style>
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
-    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);border:2px solid var(--border);border-radius:10px;background:var(--card2);width:100%;padding:6px 4px;-moz-appearance:textfield;font-family:inherit;}
+    .qty-val::-webkit-outer-spin-button,.qty-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    .qty-val:focus{outline:none;border-color:var(--accent);}
     .pending-row{cursor:pointer;}
     .pending-row:active{opacity:.7;}
     .selected-card{border:2px solid var(--accent);}
@@ -65,7 +67,7 @@
       <div class="card-title">Количество к размещению</div>
       <div class="qty-row">
         <button class="qty-btn" onclick="stepQty(-1)">−</button>
-        <div class="qty-val" id="qty-val">1</div>
+        <input type="number" class="qty-val" id="qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQty(this.value)" onfocus="this.select()"/>
         <button class="qty-btn" onclick="stepQty(1)">+</button>
       </div>
 
@@ -195,7 +197,7 @@
       document.getElementById('sel-barcode').textContent = sel.barcode;
       document.getElementById('sel-from').textContent = sel.from_location_code;
       document.getElementById('sel-available').textContent = sel.qty_available;
-      document.getElementById('qty-val').textContent = qty;
+      document.getElementById('qty-val').value = qty;
       const preview = document.getElementById('sel-preview');
       if (sel.preview_url) { preview.src = sel.preview_url; preview.style.display='block'; } else preview.style.display='none';
       UI.setVal('#to-location','');
@@ -211,7 +213,12 @@
     function stepQty(delta) {
       if (!selected) return;
       qty = Math.min(Math.max(1, qty + delta), Number(selected.qty_available) || 1);
-      document.getElementById('qty-val').textContent = qty;
+      document.getElementById('qty-val').value = qty;
+    }
+    function setQty(val) {
+      if (!selected) return;
+      qty = Math.min(Math.max(1, Math.round(Number(val)) || 1), Number(selected.qty_available) || 1);
+      document.getElementById('qty-val').value = qty;
     }
 
     async function suggestLocation() {

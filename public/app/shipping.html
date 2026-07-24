@@ -318,7 +318,7 @@
           scanned_code: scannedCode,
         });
         UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped ?? '—'} шт.`);
-        statusEl.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтверждено';
+        statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтверждено';
         if (res.wbDelivered) {
           statusEl.textContent += ' · ВБ уведомлён';
         } else if (res.wbDeliverError) {
@@ -339,7 +339,7 @@
         await loadBoard();
       } catch (e) {
         UI.notify.err(e.message);
-        statusEl.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg> ' + e.message;
+        statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg> ' + UI.escHtml(e.message);
       }
     }
     UI.onScan('#scan-code', confirmShipment);

@@ -8,7 +8,9 @@
   <style>
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
-    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);border:2px solid var(--border);border-radius:10px;background:var(--card2);width:100%;padding:6px 4px;-moz-appearance:textfield;font-family:inherit;}
+    .qty-val::-webkit-outer-spin-button,.qty-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    .qty-val:focus{outline:none;border-color:var(--accent);}
     .content-row{cursor:pointer;}
     .content-row:active{opacity:.7;}
   </style>
@@ -55,7 +57,7 @@
       <div class="card-title">Количество</div>
       <div class="qty-row">
         <button class="qty-btn" onclick="stepQty(-1)">−</button>
-        <div class="qty-val" id="qty-val">1</div>
+        <input type="number" class="qty-val" id="qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQty(this.value)" onfocus="this.select()"/>
         <button class="qty-btn" onclick="stepQty(1)">+</button>
       </div>
     </div>
@@ -124,7 +126,8 @@
 
     let fromContentRows = [];
     let qty = 1;
-    function stepQty(delta) { qty = Math.max(1, qty + delta); document.getElementById('qty-val').textContent = qty; }
+    function stepQty(delta) { qty = Math.max(1, qty + delta); document.getElementById('qty-val').value = qty; }
+    function setQty(val) { qty = Math.max(1, Math.round(Number(val)) || 1); document.getElementById('qty-val').value = qty; }
 
     async function loadFromContent(locationCode) {
       const clientId = getClientId();
@@ -165,7 +168,7 @@
       const note = document.getElementById('barcode-note');
       if (row) {
         note.textContent = `Доступно в этой ячейке: ${row.qty_available}`;
-        qty = 1; document.getElementById('qty-val').textContent = qty;
+        qty = 1; document.getElementById('qty-val').value = qty;
       } else {
         note.textContent = '';
       }
@@ -189,7 +192,7 @@
         });
         UI.notify.ok(`Перемещено: ${barcode} × ${qty}: ${fromLoc} → ${toLoc}`);
         UI.setVal('#move-barcode','');
-        qty = 1; document.getElementById('qty-val').textContent = 1;
+        qty = 1; document.getElementById('qty-val').value = 1;
         document.getElementById('barcode-note').textContent = '';
         await loadFromContent(fromLoc); // обновить остаток ячейки-источника
         document.getElementById('move-barcode').focus();

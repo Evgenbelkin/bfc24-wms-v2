@@ -8,7 +8,9 @@
   <style>
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
-    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);border:2px solid var(--border);border-radius:10px;background:var(--card2);width:100%;padding:6px 4px;-moz-appearance:textfield;font-family:inherit;}
+    .qty-val::-webkit-outer-spin-button,.qty-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    .qty-val:focus{outline:none;border-color:var(--accent);}
     .mode-note{font-size:12px;color:var(--muted);margin-bottom:10px;}
   </style>
 </head>
@@ -54,7 +56,7 @@
       <div class="card-title">Количество</div>
       <div class="qty-row">
         <button class="qty-btn" onclick="stepQty(-1)">−</button>
-        <div class="qty-val" id="free-qty-val">1</div>
+        <input type="number" class="qty-val" id="free-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQty(this.value)" onfocus="this.select()"/>
         <button class="qty-btn" onclick="stepQty(1)">+</button>
       </div>
     </div>
@@ -108,7 +110,7 @@
         <div class="card-title">Количество</div>
         <div class="qty-row">
           <button class="qty-btn" onclick="stepQtyInbound(-1)">−</button>
-          <div class="qty-val" id="inb-qty-val">1</div>
+          <input type="number" class="qty-val" id="inb-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQtyInbound(this.value)" onfocus="this.select()"/>
           <button class="qty-btn" onclick="stepQtyInbound(1)">+</button>
         </div>
       </div>
@@ -191,7 +193,11 @@
     let freeQty = 1;
     function stepQty(delta) {
       freeQty = Math.max(1, freeQty + delta);
-      document.getElementById('free-qty-val').textContent = freeQty;
+      document.getElementById('free-qty-val').value = freeQty;
+    }
+    function setQty(val) {
+      freeQty = Math.max(1, Math.round(Number(val)) || 1);
+      document.getElementById('free-qty-val').value = freeQty;
     }
 
     async function submitFree() {
@@ -211,7 +217,7 @@
         UI.notify.ok(`Принято: ${barcode} × ${freeQty} → ${location}`);
         statusEl.textContent = `Остаток в ячейке: ${res.balance?.qty_on_hand ?? '—'}`;
         UI.setVal('#free-barcode',''); UI.setVal('#free-comment','');
-        freeQty = 1; document.getElementById('free-qty-val').textContent = 1;
+        freeQty = 1; document.getElementById('free-qty-val').value = 1;
         document.getElementById('free-barcode').focus();
       } catch (e) { UI.notify.err(e.message); }
     }
@@ -247,7 +253,11 @@
     let inbQty = 1;
     function stepQtyInbound(delta) {
       inbQty = Math.max(1, inbQty + delta);
-      document.getElementById('inb-qty-val').textContent = inbQty;
+      document.getElementById('inb-qty-val').value = inbQty;
+    }
+    function setQtyInbound(val) {
+      inbQty = Math.max(1, Math.round(Number(val)) || 1);
+      document.getElementById('inb-qty-val').value = inbQty;
     }
 
     async function submitInbound() {
@@ -267,7 +277,7 @@
         });
         UI.notify.ok(`Принято: ${barcode} × ${inbQty}`);
         UI.setVal('#inb-barcode','');
-        inbQty = 1; document.getElementById('inb-qty-val').textContent = 1;
+        inbQty = 1; document.getElementById('inb-qty-val').value = 1;
         document.getElementById('inb-barcode').focus();
       } catch (e) { UI.notify.err(e.message); }
     }

@@ -166,13 +166,13 @@
         locStep.className  = 'step active';
         itemStep.className = 'step';
         scanInput.className = 'scan-input awaiting-location';
-        scanLabel.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg> Отсканируйте ЯЧЕЙКУ';
+        scanLabel.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg> Отсканируйте ЯЧЕЙКУ';
         scanInput.placeholder = 'Скан ячейки...';
       } else {
         locStep.className  = 'step done';
         itemStep.className = 'step active';
         scanInput.className = 'scan-input awaiting-item';
-        scanLabel.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
+        scanLabel.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
         scanInput.placeholder = 'Скан товара...';
       }
     }
@@ -261,7 +261,7 @@
           if (res.result === 'ok') {
             currentTask.scan_step = 'await_item';
             updateStepIndicator('await_item');
-            statusEl.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Ячейка подтверждена';
+            statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Ячейка подтверждена';
           } else {
             UI.notify.err(`Неверная ячейка! Ожидалась: ${res.expected}`);
             statusEl.textContent = `Ожидается: ${res.expected}`;

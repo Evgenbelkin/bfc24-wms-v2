@@ -10,7 +10,9 @@
     .task-row:active{opacity:.7;}
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
-    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);}
+    .qty-val{flex:1;text-align:center;font-size:32px;font-weight:800;color:var(--green2);border:2px solid var(--border);border-radius:10px;background:var(--card2);width:100%;padding:6px 4px;-moz-appearance:textfield;font-family:inherit;}
+    .qty-val::-webkit-outer-spin-button,.qty-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    .qty-val:focus{outline:none;border-color:var(--accent);}
     .delta-pos{color:var(--green2);font-weight:700;}
     .delta-neg{color:var(--red);font-weight:700;}
   </style>
@@ -46,7 +48,7 @@
       <div class="card-title">Фактическое количество</div>
       <div class="qty-row">
         <button class="qty-btn" onclick="stepActual(-1)">−</button>
-        <div class="qty-val" id="actual-val">0</div>
+        <input type="number" class="qty-val" id="actual-val" value="0" min="0" step="1" inputmode="numeric" onchange="setActual(this.value)" onfocus="this.select()"/>
         <button class="qty-btn" onclick="stepActual(1)">+</button>
       </div>
       <input id="count-comment" class="scan-input" style="font-size:14px;padding:10px;margin-top:12px;" placeholder="Комментарий (необязательно)"/>
@@ -181,7 +183,7 @@
         document.getElementById('count-item-name').textContent = t.item_name || t.barcode || 'Проверка ячейки';
         document.getElementById('count-location').textContent = t.location_code;
         document.getElementById('count-system').textContent = t.qty_system ?? '—';
-        document.getElementById('actual-val').textContent = actualQty;
+        document.getElementById('actual-val').value = actualQty;
         UI.setVal('#count-comment','');
         document.getElementById('tasks-list-card').style.display = 'none';
         document.getElementById('count-card').style.display = 'block';
@@ -195,7 +197,8 @@
       loadTasks();
     }
 
-    function stepActual(delta) { actualQty = Math.max(0, actualQty + delta); document.getElementById('actual-val').textContent = actualQty; }
+    function stepActual(delta) { actualQty = Math.max(0, actualQty + delta); document.getElementById('actual-val').value = actualQty; }
+    function setActual(val) { actualQty = Math.max(0, Math.round(Number(val)) || 0); document.getElementById('actual-val').value = actualQty; }
 
     async function submitCount() {
       if (!currentTask) return;

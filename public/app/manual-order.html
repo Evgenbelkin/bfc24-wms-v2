@@ -8,7 +8,9 @@
   <style>
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:20px;font-weight:700;cursor:pointer;}
-    .qty-val{flex:0 0 50px;text-align:center;font-size:20px;font-weight:800;color:var(--green2);}
+    .qty-val{flex:0 0 64px;text-align:center;font-size:20px;font-weight:800;color:var(--green2);border:2px solid var(--border);border-radius:10px;background:var(--card2);padding:4px;-moz-appearance:textfield;font-family:inherit;}
+    .qty-val::-webkit-outer-spin-button,.qty-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+    .qty-val:focus{outline:none;border-color:var(--accent);}
     .line-name{color:var(--muted);font-size:11px;margin-top:4px;}
     .btn-remove{background:var(--red2);color:var(--red2-text);border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;}
     .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
@@ -57,7 +59,7 @@
     <div id="add-item-name" class="line-name"></div>
     <div class="qty-row" style="margin-top:12px;">
       <button class="qty-btn" onclick="stepAddQty(-1)">−</button>
-      <div class="qty-val" id="add-qty-val">1</div>
+      <input type="number" class="qty-val" id="add-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setAddQty(this.value)" onfocus="this.select()"/>
       <button class="qty-btn" onclick="stepAddQty(1)">+</button>
       <button class="btn-big btn-blue" style="flex:1;" onclick="addLine()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Добавить в заказ</button>
     </div>
@@ -86,7 +88,8 @@
     let addQty = 1;
     let pendingItemName = null;
 
-    function stepAddQty(delta) { addQty = Math.max(1, addQty + delta); document.getElementById('add-qty-val').textContent = addQty; }
+    function stepAddQty(delta) { addQty = Math.max(1, addQty + delta); document.getElementById('add-qty-val').value = addQty; }
+    function setAddQty(val) { addQty = Math.max(1, Math.round(Number(val)) || 1); document.getElementById('add-qty-val').value = addQty; }
 
     function getClientId() {
       const v = UI.val('#client-select');
@@ -112,7 +115,7 @@
       try {
         const res = await window.API.items.byBarcode(barcode, clientId);
         pendingItemName = res.item?.item_name || null;
-        nameBox.textContent = pendingItemName ? `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${pendingItemName}` : '';
+        nameBox.innerHTML = pendingItemName ? `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${UI.escHtml(pendingItemName)}` : '';
       } catch (e) {
         nameBox.textContent = 'Новый товар — будет создан автоматически при подтверждении заказа';
       }
@@ -126,7 +129,7 @@
     function selectSuggestion(item) {
       UI.setVal('#add-barcode', item.barcode);
       pendingItemName = item.item_name;
-      document.getElementById('add-item-name').textContent = `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${item.item_name}`;
+      document.getElementById('add-item-name').innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${UI.escHtml(item.item_name)}`;
       UI.setVal('#search-item', '');
       document.getElementById('suggest-list').innerHTML = '';
     }
@@ -174,7 +177,7 @@
       }
       UI.setVal('#add-barcode', '');
       document.getElementById('add-item-name').textContent = '';
-      addQty = 1; document.getElementById('add-qty-val').textContent = 1;
+      addQty = 1; document.getElementById('add-qty-val').value = 1;
       renderLines();
       document.getElementById('add-barcode').focus();
     }
