@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Заявки на поставку — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .qty-row{display:flex;align-items:center;gap:10px;}
+    .qty-btn{width:44px;height:44px;border-radius:10px;border:none;background:#334155;color:var(--text);font-size:20px;font-weight:700;cursor:pointer;}
+    .qty-val{flex:0 0 50px;text-align:center;font-size:20px;font-weight:800;color:var(--green2);}
+    .btn-remove{background:var(--red2);color:#fca5a5;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;}
+    .suggest-list{margin-top:8px;max-height:220px;overflow-y:auto;}
+    .suggest-row{cursor:pointer;}
+    .order-row{cursor:pointer;}
+    .order-row:active{opacity:.7;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back" id="header-back">← Меню</a>
+    <h1>🚚 Заявки на поставку</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <!-- ============ LIST ============ -->
+  <div id="list-view">
+    <button class="btn-big btn-green btn-full" onclick="openCreateForm()">➕ Новая заявка</button>
+    <div class="card" style="margin-top:12px;">
+      <div id="orders-list"></div>
+    </div>
+    <button class="btn-sm btn-back" onclick="loadOrders()">↻ Обновить</button>
+  </div>
+
+  <!-- ============ DETAIL ============ -->
+  <div id="detail-view" style="display:none">
+    <button class="btn-sm btn-back" onclick="backToList()" style="margin-bottom:12px;">← К списку</button>
+    <div class="card">
+      <div class="card-title">Заявка <span id="d-number"></span></div>
+      <div class="badge-row">
+        <div class="badge"><span>Статус</span><div id="d-status">—</div></div>
+        <div class="badge"><span>Ожидается</span><div id="d-expected">—</div></div>
+        <div class="badge"><span>Всего единиц</span><div id="d-total">0</div></div>
+      </div>
+      <div id="d-notes" class="refresh-note" style="text-align:left;margin-top:10px;"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Состав</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Товар</th><th>Штрихкод</th><th>Ожидается</th><th>Принято</th><th>Статус</th></tr></thead>
+          <tbody id="detail-lines-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn-big btn-green btn-full" id="confirm-btn" style="display:none" onclick="confirmOrder()">✅ Подтвердить заявку (отправить складу)</button>
+  </div>
+
+  <!-- ============ CREATE ============ -->
+  <div id="create-view" style="display:none">
+    <button class="btn-sm btn-back" onclick="backToList()" style="margin-bottom:12px;">← Отмена</button>
+
+    <div class="card">
+      <div class="field-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:160px;"><label>Ожидаемая дата</label><input id="c-expected-date" type="date"/></div>
+      </div>
+      <div class="field"><label>Комментарий</label><textarea id="c-notes" rows="2" placeholder="Необязательно"></textarea></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Добавить товар</div>
+      <div class="field" style="margin-bottom:0;">
+        <label>Поиск по вашему каталогу</label>
+        <input id="search-item" placeholder="Начните вводить название или штрихкод..." autocomplete="off"/>
+      </div>
+      <div id="suggest-list" class="suggest-list"></div>
+
+      <div class="scan-row" style="margin-top:12px;">
+        <input id="add-barcode" class="scan-input" placeholder="Или введите штрихкод вручную" autocomplete="off"/>
+      </div>
+      <div id="add-item-name" class="refresh-note" style="text-align:left;"></div>
+      <div class="qty-row" style="margin-top:12px;">
+        <button class="qty-btn" onclick="stepAddQty(-1)">−</button>
+        <div class="qty-val" id="add-qty-val">1</div>
+        <button class="qty-btn" onclick="stepAddQty(1)">+</button>
+        <button class="btn-big btn-blue" style="flex:1;" onclick="addLine()">➕ Добавить</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Строки заявки (<span id="lines-count">0</span>)</div>
+      <div id="lines-list"></div>
+    </div>
+
+    <button class="btn-big btn-green btn-full" onclick="submitOrder()">📝 Создать заявку</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    const STATUS_LABELS = {
+      draft:'черновик', confirmed:'отправлена складу', scheduled:'назначена дата приёмки',
+      in_progress:'приёмка началась', completed:'принята', partial:'принята частично', cancelled:'отменена',
+    };
+    const STATUS_PILL = {
+      draft:'pill-gray', confirmed:'pill-blue', scheduled:'pill-blue',
+      in_progress:'pill-yellow', completed:'pill-green', partial:'pill-yellow', cancelled:'pill-red',
+    };
+    const LINE_STATUS_LABELS = { pending:'ожидает', partial:'частично', received:'принято', excess:'больше плана', cancelled:'отменена' };
+
+    let myItems = null;      // каталог клиента, для автодополнения — грузим один раз
+    let orderLines = [];     // { barcode, qty, item_name }
+    let addQty = 1;
+    let pendingItemName = null;
+    let currentOrderId = null;
+
+    // ---------- List ----------
+    async function loadOrders() {
+      const list = document.getElementById('orders-list');
+      try {
+        const res = await window.API.seller.inbound.list({ limit: 100 });
+        const orders = res.orders || [];
+        if (!orders.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Заявок пока нет — создайте первую кнопкой выше</div>`;
+          return;
+        }
+        list.innerHTML = orders.map(o => `
+          <div class="list-row order-row" onclick="openOrder(${o.id})">
+            <div class="main">
+              <div class="title">${UI.escHtml(o.order_number)}</div>
+              <div class="sub">Ожидается: ${o.expected_date ? UI.fmtDate(o.expected_date) : 'не указано'} · Единиц: ${o.total_expected_qty||0}</div>
+            </div>
+            <span class="pill ${STATUS_PILL[o.status]||'pill-gray'}">${STATUS_LABELS[o.status]||o.status}</span>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Detail ----------
+    async function openOrder(id) {
+      try {
+        currentOrderId = id;
+        const res = await window.API.seller.inbound.get(id);
+        const o = res.order;
+        document.getElementById('list-view').style.display = 'none';
+        document.getElementById('create-view').style.display = 'none';
+        document.getElementById('detail-view').style.display = 'block';
+
+        document.getElementById('d-number').textContent = o.order_number;
+        document.getElementById('d-status').textContent = STATUS_LABELS[o.status] || o.status;
+        document.getElementById('d-expected').textContent = o.expected_date ? UI.fmtDate(o.expected_date) : '—';
+        document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
+        document.getElementById('d-notes').textContent = o.notes || '';
+
+        const lines = res.lines || [];
+        document.getElementById('detail-lines-body').innerHTML = lines.length
+          ? lines.map(l => `
+              <tr>
+                <td>${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}</td>
+                <td>${UI.escHtml(l.barcode)}</td>
+                <td>${UI.fmtQty(l.qty_expected)}</td>
+                <td>${UI.fmtQty(l.qty_received||0)}</td>
+                <td>${LINE_STATUS_LABELS[l.status]||l.status||'—'}</td>
+              </tr>
+            `).join('')
+          : `<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет строк</td></tr>`;
+
+        document.getElementById('confirm-btn').style.display = (o.status === 'draft') ? 'block' : 'none';
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function confirmOrder() {
+      if (!currentOrderId) return;
+      if (!UI.confirm('Отправить заявку складу? После этого редактировать состав будет нельзя.')) return;
+      try {
+        await window.API.seller.inbound.confirm(currentOrderId);
+        UI.notify.ok('Заявка отправлена складу');
+        await openOrder(currentOrderId);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function backToList() {
+      document.getElementById('detail-view').style.display = 'none';
+      document.getElementById('create-view').style.display = 'none';
+      document.getElementById('list-view').style.display = 'block';
+      currentOrderId = null;
+      loadOrders();
+    }
+
+    // ---------- Create ----------
+    function openCreateForm() {
+      document.getElementById('list-view').style.display = 'none';
+      document.getElementById('create-view').style.display = 'block';
+      UI.setVal('#c-expected-date', '');
+      UI.setVal('#c-notes', '');
+      orderLines = [];
+      renderLines();
+    }
+
+    function stepAddQty(delta) { addQty = Math.max(1, addQty + delta); document.getElementById('add-qty-val').textContent = addQty; }
+
+    async function ensureItemsLoaded() {
+      if (myItems) return myItems;
+      try {
+        const res = await window.API.seller.items({ limit: 500 });
+        myItems = res.items || [];
+      } catch (e) { myItems = []; }
+      return myItems;
+    }
+
+    function selectSuggestion(item) {
+      UI.setVal('#add-barcode', item.barcode);
+      pendingItemName = item.item_name;
+      document.getElementById('add-item-name').textContent = `✓ ${item.item_name}`;
+      UI.setVal('#search-item', '');
+      document.getElementById('suggest-list').innerHTML = '';
+    }
+
+    let searchTimer = null;
+    document.getElementById('search-item').addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      const term = e.target.value.trim().toLowerCase();
+      searchTimer = setTimeout(async () => {
+        const box = document.getElementById('suggest-list');
+        if (!term || term.length < 2) { box.innerHTML = ''; return; }
+        const items = await ensureItemsLoaded();
+        const matches = items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.barcode||'').includes(term)).slice(0, 15);
+        if (!matches.length) { box.innerHTML = `<div class="refresh-note">Ничего не найдено — можно ввести штрихкод вручную ниже, это будет новый товар</div>`; return; }
+        box.innerHTML = matches.map((it, idx) => `
+          <div class="list-row suggest-row" onclick="selectSuggestion(window.__suggestCache[${idx}])">
+            <div class="main">
+              <div class="title">${UI.escHtml(it.item_name)}</div>
+              <div class="sub">${UI.escHtml(it.barcode)}</div>
+            </div>
+          </div>
+        `).join('');
+        window.__suggestCache = matches;
+      }, 250);
+    });
+
+    document.getElementById('add-barcode').addEventListener('input', () => { pendingItemName = null; document.getElementById('add-item-name').textContent = ''; });
+
+    function addLine() {
+      const barcode = UI.val('#add-barcode');
+      if (!barcode) { UI.notify.err('Введите или выберите штрихкод'); return; }
+      const existing = orderLines.find(l => l.barcode === barcode);
+      if (existing) {
+        existing.qty += addQty;
+      } else {
+        orderLines.push({ barcode, qty: addQty, item_name: pendingItemName });
+      }
+      UI.setVal('#add-barcode', '');
+      document.getElementById('add-item-name').textContent = '';
+      pendingItemName = null;
+      addQty = 1; document.getElementById('add-qty-val').textContent = 1;
+      renderLines();
+    }
+
+    function removeLine(idx) {
+      orderLines.splice(idx, 1);
+      renderLines();
+    }
+
+    function renderLines() {
+      document.getElementById('lines-count').textContent = orderLines.length;
+      const list = document.getElementById('lines-list');
+      if (!orderLines.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">📦</div>Пока пусто — добавьте товары выше</div>`;
+        return;
+      }
+      list.innerHTML = orderLines.map((l, idx) => `
+        <div class="list-row">
+          <div class="main">
+            <div class="title">${UI.escHtml(l.item_name || l.barcode)}</div>
+            <div class="sub">${UI.escHtml(l.barcode)}</div>
+          </div>
+          <div class="badge"><span>Кол-во</span><div>${UI.fmtQty(l.qty)}</div></div>
+          <button class="btn-remove" onclick="removeLine(${idx})">✕</button>
+        </div>
+      `).join('');
+    }
+
+    async function submitOrder() {
+      if (!orderLines.length) { UI.notify.err('Добавьте хотя бы один товар'); return; }
+      try {
+        const res = await window.API.seller.inbound.create({
+          expected_date: UI.val('#c-expected-date') || null,
+          notes: UI.val('#c-notes') || null,
+          lines: orderLines.map(l => ({ barcode: l.barcode, qty_expected: l.qty })),
+        });
+        UI.notify.ok(`Заявка ${res.order.order_number} создана (черновик)`);
+        orderLines = [];
+        await openOrder(res.order.id);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Кабинет клиента — BFC24</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .tile-grid{display:grid;grid-template-columns:1fr;gap:12px;}
+    @media (min-width:600px){ .tile-grid{grid-template-columns:repeat(2,1fr);} }
+    .tile{background:var(--card);border-radius:16px;padding:22px;cursor:pointer;transition:background .15s;}
+    .tile:active{background:var(--card2);}
+    .tile .icon{font-size:32px;margin-bottom:10px;}
+    .tile .title{font-size:16px;font-weight:700;}
+    .tile .sub{color:var(--muted);font-size:12px;margin-top:4px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span></span>
+    <h1>🏭 Кабинет клиента</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Компания</div>
+    <div id="client-name" style="font-size:18px;font-weight:700;">—</div>
+  </div>
+
+  <div class="tile-grid">
+    <div class="tile" onclick="location.href='stock.html'">
+      <div class="icon">📦</div>
+      <div class="title">Остатки</div>
+      <div class="sub">Ваш товар на складе в реальном времени</div>
+    </div>
+    <div class="tile" onclick="location.href='orders.html'">
+      <div class="icon">🧾</div>
+      <div class="title">Заказы и отгрузки</div>
+      <div class="sub">Заказы с маркетплейса и статус отгрузок</div>
+    </div>
+    <div class="tile" onclick="location.href='inbound.html'">
+      <div class="icon">🚚</div>
+      <div class="title">Заявки на поставку</div>
+      <div class="sub">Создать заявку и следить за статусом</div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    (async () => {
+      try {
+        const res = await window.API.seller.profile();
+        document.getElementById('client-name').textContent = res.client?.client_name || '—';
+      } catch (e) { /* не критично для меню */ }
+    })();
+  </script>
+</body>
+</html>

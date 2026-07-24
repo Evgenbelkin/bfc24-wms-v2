@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Заказы и отгрузки — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>🧾 Заказы и отгрузки</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="orders" onclick="switchTab('orders')">Заказы</button>
+    <button class="tab" data-tab="shipments" onclick="switchTab('shipments')">Отгрузки</button>
+  </div>
+
+  <div id="tab-orders">
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>№ заказа</th><th>Товар</th><th>Статус</th><th>Склад</th><th>Дата</th></tr></thead>
+          <tbody id="orders-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <button class="btn-sm btn-back" onclick="loadOrders()">↻ Обновить</button>
+  </div>
+
+  <div id="tab-shipments" style="display:none">
+    <div id="shipments-list"></div>
+    <button class="btn-sm btn-back" onclick="loadShipments()">↻ Обновить</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function switchTab(name) {
+      ['orders','shipments'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'orders') loadOrders(); else loadShipments();
+    }
+
+    const ORDER_STATUS_LABELS = {
+      new:'новый', confirm:'подтверждён', complete:'выполнен', cancel:'отменён', assembling:'на сборке',
+    };
+    const SHIP_STATUS_LABELS = {
+      new:'новая', picking:'сборка', ready_to_ship:'готова', shipping:'отгружается',
+      in_transit:'в пути', done:'выполнена', cancelled:'отменена',
+    };
+    const SHIP_STATUS_PILL = {
+      new:'pill-gray', picking:'pill-blue', ready_to_ship:'pill-green',
+      shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
+    };
+
+    async function loadOrders() {
+      const body = document.getElementById('orders-body');
+      try {
+        const res = await window.API.seller.orders();
+        const orders = res.orders || [];
+        if (!orders.length) {
+          body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Заказов пока нет</td></tr>`;
+          return;
+        }
+        body.innerHTML = orders.map(o => `
+          <tr>
+            <td>${UI.escHtml(o.wb_order_id||'—')}</td>
+            <td>${UI.escHtml(o.article || o.barcode || '—')}</td>
+            <td>${UI.escHtml(ORDER_STATUS_LABELS[o.status]||o.status)}</td>
+            <td>${UI.escHtml(o.warehouse_name||'—')}</td>
+            <td>${UI.fmtDateTime(o.created_at)}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        if (e.code === 'MODULE_DISABLED') {
+          body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Интеграция с маркетплейсом пока не подключена — обратитесь к фулфилменту</td></tr>`;
+        } else {
+          body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Ошибка загрузки</td></tr>`;
+          UI.notify.err(e.message);
+        }
+      }
+    }
+
+    async function loadShipments() {
+      const list = document.getElementById('shipments-list');
+      try {
+        const res = await window.API.seller.shipments();
+        const shipments = res.shipments || [];
+        if (!shipments.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Отгрузок пока нет</div>`;
+          return;
+        }
+        list.innerHTML = shipments.map(s => {
+          const pct = s.total_planned_qty ? Math.round(Number(s.total_packed_qty||0)/Number(s.total_planned_qty)*100) : 0;
+          return `
+          <div class="card">
+            <div class="row-top" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+              <div>
+                <div class="title">${UI.escHtml(s.external_id)}</div>
+                <div class="sub">Упаковано: ${s.total_packed_qty||0}/${s.total_planned_qty||0} · Отгружено: ${s.total_shipped_qty||0}</div>
+                ${s.shipped_at ? `<div class="sub">🚚 ${UI.fmtDateTime(s.shipped_at)}</div>` : ''}
+              </div>
+              <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+          </div>
+        `;
+        }).join('');
+      } catch (e) { list.innerHTML = ''; UI.notify.err(e.message); }
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>

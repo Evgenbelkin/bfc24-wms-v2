@@ -104,6 +104,12 @@
     </div>
 
     <div class="card">
+      <div class="card-title">Модули</div>
+      <div class="refresh-note" style="margin-bottom:10px;text-align:left;">Базовые модули склада включены всегда. Остальное — доп. функции, которые можно продавать как опцию к тарифу (например «Кабинет клиента»).</div>
+      <div id="modules-list"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title">Продление доступа</div>
       <div class="refresh-note" style="margin-bottom:10px;text-align:left;">Нажмите, когда клиент оплатил — доступ продлится от текущей даты окончания (если она ещё не прошла) или от сегодня.</div>
       <div class="field-row">
@@ -166,6 +172,7 @@
     let tenants = [];
     let statusFilter = '';
     let currentTenantId = null;
+    let allModules = [];
 
     function planOptions(selectedId, includeEmpty) {
       let html = includeEmpty ? `<option value="">— не выбран —</option>` : '';
@@ -176,6 +183,36 @@
     async function loadPlans() {
       const res = await window.API.platform.plans();
       plans = res.plans || [];
+    }
+
+    async function loadModules() {
+      const res = await window.API.platform.modules();
+      allModules = res.modules || [];
+    }
+
+    function renderModulesList(t) {
+      const enabled = new Set(t.modules || []);
+      document.getElementById('modules-list').innerHTML = allModules.map(m => {
+        const checked = m.is_core || enabled.has(m.module_code);
+        return `
+        <label class="check-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;${m.is_core?'opacity:.6;':''}">
+          <input type="checkbox" ${checked?'checked':''} ${m.is_core?'disabled':''}
+                 onchange="toggleModule('${m.module_code}', this.checked)"/>
+          <span>${UI.escHtml(m.module_name)}${m.is_core?' <span class=\"pill pill-gray\">core</span>':''}</span>
+        </label>
+      `;
+      }).join('');
+    }
+
+    async function toggleModule(moduleCode, enabled) {
+      if (!currentTenantId) return;
+      try {
+        await window.API.platform.tenants.setModule(currentTenantId, { module_code: moduleCode, enabled });
+        UI.notify.ok(enabled ? `Включено: ${moduleCode}` : `Отключено: ${moduleCode}`);
+      } catch (e) {
+        UI.notify.err(e.message);
+        await openTenant(currentTenantId); // откатить чекбокс визуально при ошибке
+      }
     }
 
     async function loadStats() {
@@ -323,6 +360,8 @@
           UI.setVal('#x-price', p ? p.price_monthly : '');
         };
 
+        renderModulesList(t);
+
         const subs = hRes.subscriptions || [];
         document.getElementById('history-body').innerHTML = subs.length
           ? subs.map(s => `
@@ -412,7 +451,7 @@
     }
 
     (async () => {
-      await loadPlans();
+      await Promise.all([loadPlans(), loadModules()]);
       await loadAll();
     })();
   </script>

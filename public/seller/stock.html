@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Остатки — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .stock-row{cursor:pointer;}
+    .stock-row:active{opacity:.7;}
+    .locations-box{margin-top:6px;margin-bottom:8px;background:var(--card2);border-radius:10px;padding:10px 14px;}
+    .locations-box .loc-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #1e293b;}
+    .locations-box .loc-row:last-child{border-bottom:none;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1>📦 Остатки</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <input id="f-search" placeholder="Поиск по названию или штрихкоду..." style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" oninput="renderStock()"/>
+  </div>
+
+  <div class="card">
+    <div class="badge-row" style="margin-bottom:14px;">
+      <div class="badge"><span>Позиций</span><div id="k-lines">0</div></div>
+      <div class="badge"><span>На складе, шт</span><div id="k-onhand">0</div></div>
+      <div class="badge"><span>Доступно, шт</span><div id="k-available">0</div></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Товар</th><th>Штрихкод</th><th>На складе</th><th>Резерв</th><th>Доступно</th></tr></thead>
+        <tbody id="stock-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <button class="btn-sm btn-back" onclick="loadStock()">↻ Обновить</button>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let stock = [];
+    let expandedBarcode = null;
+    let locationsCache = {}; // barcode -> rows
+
+    async function loadStock() {
+      try {
+        const res = await window.API.seller.stock();
+        stock = res.stock || [];
+        expandedBarcode = null;
+        locationsCache = {};
+        renderStock();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function toggleLocations(barcode) {
+      if (expandedBarcode === barcode) {
+        expandedBarcode = null;
+        renderStock();
+        return;
+      }
+      expandedBarcode = barcode;
+      if (!locationsCache[barcode]) {
+        try {
+          const res = await window.API.get('/seller/stock/by-barcode', { barcode });
+          locationsCache[barcode] = res.locations || [];
+        } catch (e) {
+          locationsCache[barcode] = [];
+          UI.notify.err(e.message);
+        }
+      }
+      renderStock();
+    }
+
+    function renderStock() {
+      const term = UI.val('#f-search').toLowerCase();
+      const filtered = term
+        ? stock.filter(s => (s.item_name||'').toLowerCase().includes(term) || (s.barcode||'').includes(term) || (s.vendor_code||'').toLowerCase().includes(term))
+        : stock;
+
+      document.getElementById('k-lines').textContent = filtered.length;
+      document.getElementById('k-onhand').textContent = UI.fmtQty(filtered.reduce((a,s)=>a+Number(s.total_on_hand||0),0));
+      document.getElementById('k-available').textContent = UI.fmtQty(filtered.reduce((a,s)=>a+Number(s.total_available||0),0));
+
+      const body = document.getElementById('stock-body');
+      if (!filtered.length) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
+        return;
+      }
+      body.innerHTML = filtered.map(s => {
+        const rows = [`
+          <tr class="stock-row" onclick="toggleLocations('${UI.escHtml(s.barcode)}')">
+            <td>${UI.escHtml(s.item_name || s.vendor_code || '—')}</td>
+            <td>${UI.escHtml(s.barcode)}</td>
+            <td>${UI.fmtQty(s.total_on_hand)}</td>
+            <td>${UI.fmtQty(s.total_reserved)}</td>
+            <td><strong>${UI.fmtQty(s.total_available)}</strong></td>
+          </tr>
+        `];
+        if (expandedBarcode === s.barcode) {
+          const locs = locationsCache[s.barcode] || [];
+          rows.push(`
+            <tr><td colspan="5" style="padding:0;border-bottom:none;">
+              <div class="locations-box">
+                ${locs.length ? locs.map(l => `
+                  <div class="loc-row">
+                    <span>${UI.escHtml(l.location_code)}${l.warehouse_name ? ' · '+UI.escHtml(l.warehouse_name) : ''}</span>
+                    <span>${UI.fmtQty(l.qty_available)} доступно из ${UI.fmtQty(l.qty_on_hand)}</span>
+                  </div>
+                `).join('') : `<div style="color:var(--muted);font-size:13px;">Загрузка...</div>`}
+              </div>
+            </td></tr>
+          `);
+        }
+        return rows.join('');
+      }).join('');
+    }
+
+    loadStock();
+  </script>
+</body>
+</html>
