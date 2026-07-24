@@ -73,12 +73,14 @@
         <div class="filters-row">
           <select id="h-type">
             <option value="">Все типы</option>
-            <option value="receive">Приёмка</option>
-            <option value="place">Размещение</option>
+            <option value="receiving">Приёмка</option>
+            <option value="inbound">Приёмка (заявка)</option>
+            <option value="placement">Размещение</option>
             <option value="move">Перемещение</option>
-            <option value="pick">Сборка</option>
-            <option value="ship">Отгрузка</option>
-            <option value="adjust">Корректировка</option>
+            <option value="picking">Сборка</option>
+            <option value="packing">Упаковка</option>
+            <option value="shipping">Отгрузка</option>
+            <option value="inventory">Инвентаризация</option>
           </select>
         </div>
         <button class="btn-big btn-blue btn-full" onclick="loadMovements()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
@@ -113,9 +115,15 @@
       if (name === 'history' && !movementsLoaded) loadMovements();
     }
 
+    // Ключи должны совпадать с реальными значениями wms.stock_movements.movement_type
+    // (см. server/src/modules/stock/stock.ledger.js и вставки в packing/shipping/placement
+    // /inventory service) — раньше здесь были другие, несуществующие значения ('receive',
+    // 'place', 'pick', 'ship'), из-за чего карта никогда не срабатывала и в списке
+    // показывался сырой английский текст, плюс фильтр по типу ничего не находил.
     const MOVEMENT_TYPE_LABELS = {
-      receive:'Приёмка', place:'Размещение', move:'Перемещение',
-      pick:'Сборка', ship:'Отгрузка', adjust:'Корректировка',
+      receiving:'Приёмка', inbound:'Приёмка (заявка)', placement:'Размещение',
+      move:'Перемещение', picking:'Сборка', packing:'Упаковка', shipping:'Отгрузка',
+      inventory:'Инвентаризация', return:'Возврат', writeoff:'Списание', adjust:'Корректировка',
     };
 
     async function loadFilters() {
