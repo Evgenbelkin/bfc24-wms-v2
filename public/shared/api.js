@@ -375,6 +375,7 @@
       setModule:   (id,d)=>platformRequest('POST', `/platform/tenants/${id}/modules`, d),
       extend:      (id,d)=>platformRequest('POST', `/platform/tenants/${id}/extend`, d),
       subscriptions:(id)=>platformRequest('GET', `/platform/tenants/${id}/subscriptions`),
+      impersonate: (id)=> platformRequest('POST', `/platform/tenants/${id}/impersonate`),
     },
     plans:   () => platformRequest('GET', '/platform/plans'),
     modules: () => platformRequest('GET', '/platform/modules'),

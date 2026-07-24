@@ -20,7 +20,7 @@
     .tenant-row:active{opacity:.7;}
     .row-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
     .row-badges{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
-    .row-actions{display:flex;justify-content:flex-end;margin-top:8px;}
+    .row-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px;flex-wrap:wrap;}
     .field-row{display:flex;gap:10px;flex-wrap:wrap;}
     .field-row .field{flex:1;min-width:160px;}
   </style>
@@ -68,6 +68,7 @@
         <div class="badge"><span>Заказов (мес)</span><div id="d-orders">—</div></div>
         <div class="badge"><span>Доступ до</span><div id="d-access">—</div></div>
       </div>
+      <button class="btn-sm" style="background:var(--accent);color:#0f172a;margin-top:12px;" onclick="impersonateTenant(currentTenantId)">🔑 Войти на склад клиента</button>
     </div>
 
     <div class="card">
@@ -247,11 +248,32 @@
             </div>
           </div>
           <div class="row-actions">
+            <button class="btn-sm" style="background:var(--accent);color:#0f172a;" onclick="event.stopPropagation();impersonateTenant(${t.id})">🔑 Войти на склад</button>
             <button class="btn-sm btn-green" style="background:var(--green);color:#fff;" onclick="event.stopPropagation();quickExtend(${t.id})">+30 дней</button>
           </div>
         </div>
       `;
       }).join('');
+    }
+
+    // Вход "как клиент" — берём токен под первым активным tenant_admin этого
+    // клиента и открываем его склад в НОВОЙ вкладке (чтобы не терять сессию
+    // самой панели платформы — токены лежат под разными ключами в
+    // localStorage, так что оба входа спокойно живут одновременно).
+    async function impersonateTenant(id) {
+      if (!id) return;
+      // Открываем вкладку СРАЗУ, синхронно с кликом — если открыть её уже
+      // после await (запрос токена), браузер может посчитать это не связанным
+      // с действием пользователя и заблокировать как всплывающее окно.
+      const tab = window.open('', '_blank');
+      try {
+        const res = await window.API.platform.tenants.impersonate(id);
+        window.API.saveAuth(res.accessToken, res.user, res.refreshToken);
+        if (tab) tab.location.href = '/app/menu.html';
+      } catch (e) {
+        if (tab) tab.close();
+        UI.notify.err(e.message);
+      }
     }
 
     async function quickExtend(id) {

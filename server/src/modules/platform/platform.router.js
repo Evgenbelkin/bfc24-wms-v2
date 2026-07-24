@@ -2,13 +2,16 @@
 
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { query, transaction } = require('../../config/database');
-const { platformAuthRequired } = require('../../middleware/auth');
+const { platformAuthRequired, signUserToken } = require('../../middleware/auth');
 const { ValidationError, NotFoundError, ConflictError } = require('../../utils/errors');
 const { validateNonEmptyString, validateEmail, parseBool, validatePositiveInt } = require('../../utils/validators');
 const { invalidateTenantCache } = require('../../middleware/tenant');
 const logger = require('../../utils/logger');
+
+const REFRESH_TOKEN_BYTES = 48;
 
 router.get('/health', (req, res) => res.json({ ok: true, layer: 'platform' }));
 
@@ -73,6 +76,73 @@ router.get('/tenants/:id/subscriptions', async (req, res, next) => {
       [id]
     );
     res.json({ ok: true, subscriptions: r.rows });
+  } catch (e) { next(e); }
+});
+
+/**
+ * POST /tenants/:id/impersonate — "войти на склад к клиенту" из панели
+ * платформы, чтобы оперативно увидеть проблемы/ошибки без запроса пароля у
+ * клиента. Заходим с правами первого активного tenant_admin этого клиента —
+ * этого достаточно, чтобы видеть все модули. Выдаём полноценные access+refresh
+ * токены (как при обычном логине), чтобы сессия не отваливалась через пару
+ * часов и работал обычный silent-refresh на фронте. Действие обязательно
+ * логируем — это чувствительная операция (вход под чужим клиентом).
+ */
+router.post('/tenants/:id/impersonate', async (req, res, next) => {
+  try {
+    const id = validatePositiveInt(req.params.id, 'id');
+    const tRes = await query(`SELECT id, company_name, status FROM platform.tenants WHERE id=$1`, [id]);
+    if (tRes.rowCount === 0) throw new NotFoundError('Tenant', id);
+    const tenant = tRes.rows[0];
+
+    const uRes = await query(
+      `SELECT u.id, u.tenant_id, u.client_id, u.role, u.username,
+         COALESCE((SELECT jsonb_agg(ur.role) FROM wms.user_roles ur WHERE ur.user_id=u.id), '[]'::jsonb) AS extra_roles
+       FROM wms.users u
+       WHERE u.tenant_id=$1 AND u.role='tenant_admin' AND u.is_active=TRUE
+       ORDER BY u.id LIMIT 1`,
+      [id]
+    );
+    if (uRes.rowCount === 0) {
+      throw new ValidationError('У этого клиента нет активного администратора склада для входа');
+    }
+    const user = uRes.rows[0];
+    const roles = [...new Set([user.role, ...(user.extra_roles || [])])];
+
+    const accessToken = signUserToken({
+      id: user.id, tenantId: user.tenant_id, clientId: user.client_id,
+      role: user.role, roles, username: user.username,
+    });
+
+    // Тот же механизм refresh-токена, что и в обычном логине (auth.service.js
+    // loginUser) — сырой токен + bcrypt-хеш в wms.refresh_tokens — чтобы
+    // фронтовый silent-refresh работал одинаково для обеих сессий.
+    const rawRefreshToken = crypto.randomBytes(REFRESH_TOKEN_BYTES).toString('hex');
+    const refreshTokenHash = await bcrypt.hash(rawRefreshToken, 10);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 1); // сессия-имперсонация — короткая, 1 день достаточно
+
+    await query(
+      `INSERT INTO wms.refresh_tokens (user_id, tenant_id, token_hash, expires_at, user_agent, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [user.id, user.tenant_id, refreshTokenHash, expiresAt, 'platform-impersonation', req.ip || null]
+    );
+
+    logger.warn({
+      platformUserId: req.platformUser.id, platformUsername: req.platformUser.username,
+      tenantId: id, impersonatedUserId: user.id, impersonatedUsername: user.username,
+    }, 'Platform owner impersonated a tenant admin');
+
+    res.json({
+      ok: true,
+      accessToken,
+      refreshToken: rawRefreshToken,
+      user: {
+        id: user.id, tenantId: user.tenant_id, clientId: user.client_id,
+        username: user.username, role: user.role, roles,
+        companyName: tenant.company_name,
+      },
+    });
   } catch (e) { next(e); }
 });
 
