@@ -6,18 +6,15 @@
   <title>Табло — BFC24 WMS v2</title>
   <link rel="stylesheet" href="/shared/theme.css"/>
   <style>
-    .funnel-section{margin-bottom:14px;}
-    .funnel-section-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px;}
-    .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
-    @media (min-width:700px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} }
-    .kpi{background:var(--card);border-radius:14px;padding:16px;text-align:center;}
-    .kpi .num{font-size:26px;font-weight:800;}
-    .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
-    .kpi.warn .num{color:var(--amber);}
-    .kpi.danger .num{color:#f87171;}
-    .kpi.ok .num{color:var(--green2);}
-    .funnel-arrow{text-align:center;color:var(--muted);font-size:20px;margin:2px 0 10px;}
     .auto-refresh{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+    .funnel-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #1e293b;flex-wrap:wrap;}
+    .funnel-row:last-child{border-bottom:none;}
+    .funnel-row-label{flex:0 0 170px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px;}
+    .funnel-row .badge-row{flex:1;}
+    .funnel-badge{background:var(--card2);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;white-space:nowrap;}
+    .funnel-badge span{color:var(--muted);font-size:10px;display:block;font-weight:600;text-transform:uppercase;}
+    .funnel-badge.warn{color:var(--amber);}
+    .funnel-badge.ok{color:var(--green2);}
   </style>
 </head>
 <body>
@@ -27,44 +24,13 @@
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
     <div class="auto-refresh">🔄 Автообновление каждые 20 сек</div>
     <button class="btn-sm btn-back" onclick="loadAll()">↻ Сейчас</button>
   </div>
 
-  <div class="funnel-section">
-    <div class="funnel-section-title">📥 Приёмка</div>
-    <div class="kpi-grid" id="kpi-receiving"></div>
-  </div>
-  <div class="funnel-arrow">↓</div>
-
-  <div class="funnel-section">
-    <div class="funnel-section-title">🗄️ Размещение</div>
-    <div class="kpi-grid" id="kpi-placement"></div>
-  </div>
-  <div class="funnel-arrow">↓</div>
-
-  <div class="funnel-section">
-    <div class="funnel-section-title">🧩 Волна (WB-заказы без волны)</div>
-    <div class="kpi-grid" id="kpi-wave"></div>
-  </div>
-  <div class="funnel-arrow">↓</div>
-
-  <div class="funnel-section">
-    <div class="funnel-section-title">🧺 Сборка</div>
-    <div class="kpi-grid" id="kpi-picking"></div>
-  </div>
-  <div class="funnel-arrow">↓</div>
-
-  <div class="funnel-section">
-    <div class="funnel-section-title">📦 Упаковка</div>
-    <div class="kpi-grid" id="kpi-packing"></div>
-  </div>
-  <div class="funnel-arrow">↓</div>
-
-  <div class="funnel-section">
-    <div class="funnel-section-title">🚚 Отгрузка</div>
-    <div class="kpi-grid" id="kpi-shipping"></div>
+  <div class="card">
+    <div id="funnel-rows"></div>
   </div>
 
   <script src="/shared/api.js"></script>
@@ -77,53 +43,59 @@
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
 
-    function kpiHtml(items) {
-      return items.map(k => `
-        <div class="kpi ${k.cls||''}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>
+    function badges(items) {
+      return items.map(b => `
+        <div class="funnel-badge ${b.cls||''}"><span>${b.label}</span>${b.num}</div>
       `).join('');
+    }
+
+    function row(icon, label, items) {
+      return `
+        <div class="funnel-row">
+          <div class="funnel-row-label">${icon} ${label}</div>
+          <div class="badge-row">${badges(items)}</div>
+        </div>
+      `;
     }
 
     async function loadAll() {
       try {
         const res = await window.API.overview.funnel();
+        const r  = res.receiving   || {};
+        const p  = res.placement   || {};
+        const w  = res.waveBacklog || {};
+        const pk = res.picking     || {};
+        const pc = res.packing     || {};
+        const sh = res.shipping    || {};
 
-        const r = res.receiving || {};
-        document.getElementById('kpi-receiving').innerHTML = kpiHtml([
-          { num: r.active_orders||0,   label:'Активных заявок', cls:'' },
-          { num: r.units_expected||0,  label:'Ожидается, шт' , cls:'' },
-          { num: r.units_received||0,  label:'Принято, шт', cls:'ok' },
-        ]);
-
-        const p = res.placement || {};
-        document.getElementById('kpi-placement').innerHTML = kpiHtml([
-          { num: p.lines_pending||0, label:'Строк ждут размещения', cls: p.lines_pending>0 ? 'warn':'' },
-          { num: p.units_pending||0, label:'Единиц в зоне приёмки/буфере', cls: p.units_pending>0 ? 'warn':'' },
-        ]);
-
-        const w = res.waveBacklog || {};
-        document.getElementById('kpi-wave').innerHTML = kpiHtml([
-          { num: w.backlog_orders||0, label:'Заказов ещё не в волне', cls: w.backlog_orders>0 ? 'warn':'ok' },
-        ]);
-
-        const pk = res.picking || {};
-        document.getElementById('kpi-picking').innerHTML = kpiHtml([
-          { num: pk.tasks_pending||0, label:'Строк ждут сборки', cls: pk.tasks_pending>0 ? 'warn':'' },
-          { num: pk.qty_pending||0,   label:'Штук ждут сборки', cls: pk.qty_pending>0 ? 'warn':'' },
-          { num: pk.tasks_done||0,    label:'Строк собрано (всего)', cls:'ok' },
-        ]);
-
-        const pc = res.packing || {};
-        document.getElementById('kpi-packing').innerHTML = kpiHtml([
-          { num: pc.tasks_pending||0, label:'Отгрузок ждут упаковки', cls: pc.tasks_pending>0 ? 'warn':'' },
-          { num: pc.tasks_done||0,    label:'Упаковано (всего)', cls:'ok' },
-        ]);
-
-        const sh = res.shipping || {};
-        document.getElementById('kpi-shipping').innerHTML = kpiHtml([
-          { num: sh.ready_to_ship||0, label:'Готовы к отгрузке', cls: sh.ready_to_ship>0 ? 'ok':'' },
-          { num: sh.in_transit||0,    label:'В пути', cls:'' },
-          { num: sh.done_total||0,    label:'Доставлено (всего)', cls:'ok' },
-        ]);
+        document.getElementById('funnel-rows').innerHTML = [
+          row('📥', 'Приёмка', [
+            { label:'Заявок',   num: r.active_orders||0 },
+            { label:'Ожидается', num: r.units_expected||0 },
+            { label:'Принято',  num: r.units_received||0, cls:'ok' },
+          ]),
+          row('🗄️', 'Размещение', [
+            { label:'Строк',  num: p.lines_pending||0, cls: p.lines_pending>0 ? 'warn':'' },
+            { label:'Единиц', num: p.units_pending||0, cls: p.units_pending>0 ? 'warn':'' },
+          ]),
+          row('🧩', 'Волна', [
+            { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
+          ]),
+          row('🧺', 'Сборка', [
+            { label:'Строк ждут', num: pk.tasks_pending||0, cls: pk.tasks_pending>0 ? 'warn':'' },
+            { label:'Штук ждут',  num: pk.qty_pending||0,   cls: pk.qty_pending>0 ? 'warn':'' },
+            { label:'Собрано',    num: pk.tasks_done||0,    cls:'ok' },
+          ]),
+          row('📦', 'Упаковка', [
+            { label:'Ждут',     num: pc.tasks_pending||0, cls: pc.tasks_pending>0 ? 'warn':'' },
+            { label:'Упаковано', num: pc.tasks_done||0,   cls:'ok' },
+          ]),
+          row('🚚', 'Отгрузка', [
+            { label:'Готовы',    num: sh.ready_to_ship||0, cls: sh.ready_to_ship>0 ? 'ok':'' },
+            { label:'В пути',    num: sh.in_transit||0 },
+            { label:'Доставлено', num: sh.done_total||0, cls:'ok' },
+          ]),
+        ].join('');
       } catch (e) { UI.notify.err(e.message); }
     }
 
