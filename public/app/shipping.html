@@ -68,7 +68,7 @@
       <div class="card-title">Состав</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Стикер</th></tr></thead>
+          <thead><tr><th>Товар</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Стикер</th><th>Действие</th></tr></thead>
           <tbody id="lines-body"></tbody>
         </table>
       </div>
@@ -85,6 +85,15 @@
     }
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    // "Вернуть в сборку" прямо из состава отгрузки — сборщику помогли найти
+    // пропущенный товар, и не нужно отдельно идти в Диспетчерскую искать его
+    // там: кнопка сразу на той же строке. Бэкенд всё равно требует
+    // supervisor/tenant_admin (см. POST /picking/tasks/:id/requeue), но прячем
+    // кнопку и на фронте, чтобы сборщик/упаковщик/отгрузчик её даже не видели.
+    const _cu = window.API.getUser();
+    const _cuRoles = (_cu && _cu.roles && _cu.roles.length) ? _cu.roles : [_cu?.role];
+    const canRequeue = _cuRoles.includes('tenant_admin') || _cuRoles.includes('supervisor');
 
     let currentStatus = 'ready_to_ship';
     let shipments = [];
@@ -158,6 +167,13 @@
             <td>${UI.fmtQty(l.qty_packed)}</td>
             <td>${l.preview_url ? `<a href="#" onclick="openLinePhoto(${idx});return false;">Открыть</a>` : '—'}</td>
             <td>${l.wb_sticker ? `<a href="#" onclick="openLineSticker(${idx});return false;">Открыть</a>` : '—'}</td>
+            <td>${
+              l.picking_status === 'skipped'
+                ? (canRequeue
+                    ? `<button class="btn-sm btn-back" onclick="requeueLine(${idx});return false;">↩ Вернуть в сборку</button>`
+                    : `<span class="pill pill-red">пропущено</span>`)
+                : '—'
+            }</td>
           </tr>
         `);
         document.getElementById('qr-result').style.display = 'none';
@@ -180,6 +196,16 @@
       const l = currentLines[idx];
       if (!l?.preview_url) return;
       window.open(l.preview_url, '_blank');
+    }
+
+    async function requeueLine(idx) {
+      const l = currentLines[idx];
+      if (!l?.task_id) { UI.notify.err('Не найден id задания сборки для этой строки'); return; }
+      try {
+        await window.API.picking.requeue(l.task_id);
+        UI.notify.ok(`Возвращено в сборку: ${l.item_name || l.barcode}`);
+        await openShipmentByCode(currentShipment.external_id);
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     function openLineSticker(idx) {

@@ -54,7 +54,7 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
   // Строки
   const linesRes = await query(
     `SELECT
-       pt.barcode, pt.qty, pt.status AS picking_status,
+       pt.id AS task_id, pt.barcode, pt.qty, pt.status AS picking_status,
        pt.qty_picked, pt.location_code,
        i.item_name, i.vendor_code, i.preview_url,
        wo.wb_sticker, wo.wb_sticker_code,
