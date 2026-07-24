@@ -26,7 +26,10 @@
   <div class="header">
     <span></span>
     <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 21V10l6 4v-4l6 4V7l6 4v10z"/><path d="M3 21h18"/></svg> Кабинет клиента</h1>
-    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-sm btn-back" onclick="UI.openChangePasswordModal()">Пароль</button>
+      <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    </div>
   </div>
 
   <div class="card">

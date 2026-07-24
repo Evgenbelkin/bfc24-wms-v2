@@ -79,6 +79,15 @@ const config = {
     windowMs: intEnv('RATE_LIMIT_WINDOW_MS', 60_000),
     max:      intEnv('RATE_LIMIT_MAX', 100),
     loginMax: intEnv('LOGIN_RATE_LIMIT_MAX', 10),
+    registerMax: intEnv('REGISTER_RATE_LIMIT_MAX', 5),
+  },
+
+  // Уведомление владельцу платформы в Telegram о новых самостоятельных
+  // регистрациях клиентов (см. platform.router.js POST /register). Если не
+  // задано — регистрация всё равно работает, просто без уведомления.
+  telegram: {
+    botToken:    optionalEnv('TELEGRAM_BOT_TOKEN', ''),
+    adminChatId: optionalEnv('TELEGRAM_ADMIN_CHAT_ID', ''),
   },
 
   logging: {

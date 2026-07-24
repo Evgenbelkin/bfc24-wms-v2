@@ -4,16 +4,127 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
+const config = require('../../config');
 const { query, transaction } = require('../../config/database');
 const { platformAuthRequired, signUserToken } = require('../../middleware/auth');
 const { ValidationError, NotFoundError, ConflictError } = require('../../utils/errors');
-const { validateNonEmptyString, validateEmail, parseBool, validatePositiveInt } = require('../../utils/validators');
+const { validateNonEmptyString, validateEmail, validatePassword, parseBool, validatePositiveInt } = require('../../utils/validators');
 const { invalidateTenantCache } = require('../../middleware/tenant');
+const { sendTelegramMessage } = require('../../utils/telegram');
 const logger = require('../../utils/logger');
 
 const REFRESH_TOKEN_BYTES = 48;
 
 router.get('/health', (req, res) => res.json({ ok: true, layer: 'platform' }));
+
+// =============================================================================
+// Публичная самостоятельная регистрация тенанта (без авторизации) —
+// см. public/site/register.html. Должна стоять ДО router.use(platformAuthRequired)
+// ниже, иначе потребует токен владельца платформы, как и всё остальное здесь.
+// =============================================================================
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+const TRANSLIT_MAP = {
+  а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',
+  н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'c',ч:'ch',ш:'sh',щ:'sch',
+  ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',
+};
+function slugify(text) {
+  let out = '';
+  for (const ch of String(text || '').toLowerCase()) out += (TRANSLIT_MAP[ch] !== undefined ? TRANSLIT_MAP[ch] : ch);
+  out = out.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
+  return out.slice(0, 40) || 'tenant';
+}
+
+const registerLimiter = rateLimit({
+  windowMs: config.rateLimit.windowMs,
+  max:      config.rateLimit.registerMax,
+  message:  { ok: false, error: { code: 'RATE_LIMIT', message: 'Слишком много попыток регистрации. Попробуйте позже.' } },
+  standardHeaders: true,
+  legacyHeaders:   false,
+});
+
+router.post('/register', registerLimiter, async (req, res, next) => {
+  try {
+    const { company_name, contact_email, contact_phone, admin_username, admin_password, website } = req.body || {};
+
+    // Honeypot: скрытое поле, которое реальный человек не видит и не заполняет —
+    // боты обычно заполняют все поля формы подряд. Отвечаем "успехом", не
+    // выдавая, что это ловушка, и просто ничего не создаём.
+    if (website) { return res.status(201).json({ ok: true, tenant_code: 'ok' }); }
+
+    const name     = validateNonEmptyString(company_name, 'company_name', 200);
+    const email    = validateEmail(contact_email);
+    const adminUser = validateNonEmptyString(admin_username, 'admin_username', 100);
+    const password = validatePassword(admin_password, 8);
+    const phone    = contact_phone ? String(contact_phone).trim().slice(0, 50) : null;
+
+    const baseCode = slugify(name);
+
+    const tenant = await transaction(async (client) => {
+      // Код тенанта клиент не вводит и не видит — при коллизии просто сами
+      // подбираем следующий вариант, не заставляя человека разбираться с этим.
+      let code = baseCode;
+      for (let attempt = 0; ; attempt++) {
+        const exists = await client.query(`SELECT id FROM platform.tenants WHERE tenant_code=$1`, [code]);
+        if (exists.rowCount === 0) break;
+        if (attempt >= 10) throw new ConflictError('Could not generate a unique tenant code, try a different company name');
+        code = `${baseCode}-${crypto.randomBytes(2).toString('hex')}`;
+      }
+
+      const tRes = await client.query(
+        `INSERT INTO platform.tenants
+           (tenant_code,company_name,contact_email,contact_phone,status,plan_id,trial_ends_at,access_expires_at)
+         VALUES ($1,$2,$3,$4,'trial',NULL,NOW()+INTERVAL '3 days',NOW()+INTERVAL '3 days')
+         RETURNING id,tenant_code,company_name,status,created_at,access_expires_at`,
+        [code, name, email, phone]
+      );
+      const t = tRes.rows[0];
+
+      // Самостоятельная регистрация сразу открывает ВСЕ модули на время триала —
+      // человек ещё не знает, что ему нужно, пусть попробует полный набор за 3 дня.
+      // (Ручное создание тенанта из платформенной панели по-прежнему даёт
+      // владельцу платформы выбирать модули явно — это не трогаем.)
+      const allMods = await client.query(`SELECT module_code FROM platform.modules`);
+      for (const m of allMods.rows) {
+        await client.query(
+          `INSERT INTO platform.tenant_modules(tenant_id,module_code) VALUES($1,$2) ON CONFLICT DO NOTHING`,
+          [t.id, m.module_code]
+        );
+      }
+
+      const pwHash = await bcrypt.hash(password, 12);
+      await client.query(
+        `INSERT INTO wms.users(tenant_id,username,password_hash,role,is_active) VALUES($1,$2,$3,'tenant_admin',TRUE)`,
+        [t.id, adminUser, pwHash]
+      );
+      await client.query(
+        `INSERT INTO wms.warehouses(tenant_id,warehouse_code,warehouse_name,is_default,is_active) VALUES($1,'MAIN','Основной склад',TRUE,TRUE)`,
+        [t.id]
+      );
+
+      return t;
+    });
+
+    logger.info({ tenantId: tenant.id, code: tenant.tenant_code }, 'Tenant self-registered');
+
+    sendTelegramMessage(
+      `🆕 <b>Новая регистрация BFC24 WMS</b>\n` +
+      `Компания: ${escapeHtml(name)}\n` +
+      `Email: ${escapeHtml(email)}\n` +
+      (phone ? `Телефон: ${escapeHtml(phone)}\n` : '') +
+      `Логин администратора: ${escapeHtml(adminUser)}\n` +
+      `Код тенанта: ${escapeHtml(tenant.tenant_code)}\n` +
+      `Триал до: ${new Date(tenant.access_expires_at).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })}`
+    ).catch(() => {});
+
+    res.status(201).json({ ok: true, tenant_code: tenant.tenant_code });
+  } catch (e) { next(e); }
+});
 
 router.use(platformAuthRequired);
 

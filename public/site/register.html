@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>BFC24 WMS — Регистрация</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 0;}
+    .card{background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:40px 32px;width:100%;max-width:420px;box-shadow:0 10px 40px rgba(15,23,42,.08);}
+    .logo{text-align:center;margin-bottom:28px;}
+    .logo h1{color:#0284c7;font-size:28px;font-weight:800;letter-spacing:-0.5px;}
+    .logo p{color:#64748b;font-size:14px;margin-top:4px;}
+    label{display:block;color:#334155;font-size:13px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
+    input{width:100%;padding:14px 16px;background:#f1f5f9;border:2px solid #e2e8f0;border-radius:10px;color:#0f172a;font-size:16px;outline:none;transition:border-color .2s;}
+    input:focus{border-color:#0284c7;}
+    .field{margin-bottom:18px;}
+    .hint{color:#94a3b8;font-size:12px;margin-top:5px;}
+    .btn{width:100%;padding:16px;background:#0284c7;color:#fff;border:none;border-radius:10px;font-size:17px;font-weight:700;cursor:pointer;transition:background .2s;margin-top:8px;}
+    .btn:hover{background:#0369a1;}
+    .btn:disabled{background:#94a3b8;color:#f1f5f9;cursor:not-allowed;}
+    .error{color:#dc2626;font-size:14px;text-align:center;margin-top:12px;display:none;}
+    .spinner{display:none;text-align:center;color:#0284c7;font-size:14px;margin-top:12px;}
+    .back-link{display:block;text-align:center;margin-top:20px;color:#0284c7;font-size:14px;text-decoration:none;font-weight:600;}
+    .back-link:hover{text-decoration:underline;}
+    #version{text-align:center;color:#94a3b8;font-size:12px;margin-top:24px;}
+    /* honeypot — скрыто от людей визуально и вне табуляции, но остаётся в DOM
+       для ботов, которые заполняют все поля формы подряд */
+    .hp{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;}
+    .success{display:none;text-align:center;}
+    .success h2{color:#16a34a;font-size:20px;margin-bottom:12px;}
+    .success p{color:#334155;font-size:14px;line-height:1.6;margin-bottom:8px;}
+    .success .code{display:inline-block;background:#f1f5f9;border-radius:8px;padding:4px 10px;font-family:monospace;font-weight:700;color:#0284c7;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <h1>BFC24 WMS</h1>
+      <p>Регистрация — пробный доступ на 3 дня</p>
+    </div>
+
+    <form id="form">
+      <div class="field">
+        <label for="company">Название компании</label>
+        <input id="company" type="text" placeholder="ООО Ромашка" autocomplete="organization"/>
+      </div>
+      <div class="field">
+        <label for="email">Email для связи</label>
+        <input id="email" type="email" placeholder="you@company.ru" autocomplete="email"/>
+      </div>
+      <div class="field">
+        <label for="phone">Телефон (необязательно)</label>
+        <input id="phone" type="tel" placeholder="+7 900 000-00-00" autocomplete="tel"/>
+      </div>
+      <div class="field">
+        <label for="username">Придумайте логин</label>
+        <input id="username" type="text" placeholder="admin" autocomplete="username" autocapitalize="none"/>
+      </div>
+      <div class="field">
+        <label for="password">Придумайте пароль</label>
+        <input id="password" type="password" placeholder="не менее 8 символов" autocomplete="new-password"/>
+      </div>
+      <div class="field">
+        <label for="password2">Повторите пароль</label>
+        <input id="password2" type="password" placeholder="ещё раз" autocomplete="new-password"/>
+      </div>
+
+      <div class="field hp" aria-hidden="true">
+        <label for="website">Сайт</label>
+        <input id="website" type="text" tabindex="-1" autocomplete="off"/>
+      </div>
+
+      <button type="submit" class="btn" id="btn">Зарегистрироваться</button>
+      <div class="error" id="error"></div>
+      <div class="spinner" id="spinner">Создаём вашу учётную запись...</div>
+      <a class="back-link" href="/app/login.html">Уже есть аккаунт? Войти</a>
+    </form>
+
+    <div class="success" id="success">
+      <h2>Готово!</h2>
+      <p>Учётная запись создана, пробный доступ действует 3 дня.</p>
+      <p>Войдите с логином и паролем, которые только что придумали.</p>
+      <a class="btn" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box;" href="/app/login.html">Перейти ко входу</a>
+    </div>
+
+    <div id="version">v2.0.0</div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script>
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const company  = document.getElementById('company').value.trim();
+      const email    = document.getElementById('email').value.trim();
+      const phone    = document.getElementById('phone').value.trim();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const password2 = document.getElementById('password2').value;
+      const website  = document.getElementById('website').value; // honeypot
+      const btn = document.getElementById('btn');
+      const errEl = document.getElementById('error');
+      const spinner = document.getElementById('spinner');
+
+      errEl.style.display = 'none';
+
+      if (!company || !email || !username || !password) {
+        errEl.textContent = 'Заполните название компании, email, логин и пароль';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (password.length < 8) {
+        errEl.textContent = 'Пароль должен быть не короче 8 символов';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (password !== password2) {
+        errEl.textContent = 'Пароли не совпадают';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      spinner.style.display = 'block';
+
+      try {
+        await window.API.platform.register({
+          company_name: company,
+          contact_email: email,
+          contact_phone: phone || null,
+          admin_username: username,
+          admin_password: password,
+          website, // honeypot, обычно пустое
+        });
+        document.getElementById('form').style.display = 'none';
+        document.getElementById('success').style.display = 'block';
+      } catch (err) {
+        errEl.textContent = err.message || 'Не удалось зарегистрироваться, попробуйте позже';
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>

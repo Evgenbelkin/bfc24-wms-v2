@@ -369,6 +369,8 @@
     },
     logout() { clearPlatformAuth(); },
     isLoggedIn: isPlatformLoggedIn,
+    // Публичная самостоятельная регистрация — без авторизации, обычный post()
+    register: (data) => post('/platform/register', data),
     tenants:  {
       list:        (p) => platformRequest('GET', `/platform/tenants${p ? '?' + new URLSearchParams(p) : ''}`),
       get:         (id)=> platformRequest('GET', `/platform/tenants/${id}`),

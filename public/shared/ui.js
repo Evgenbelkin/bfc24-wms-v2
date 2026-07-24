@@ -230,6 +230,68 @@
     }
   } catch (_) { /* ignore */ }
 
+  // ─────────────── Смена пароля ───────────────
+  // Доступно любому залогиненному пользователю (сотрудник склада или seller) —
+  // самостоятельная замена пароля, без обращения к владельцу платформы.
+  // Бэкенд (POST /auth/change-password) уже существовал, но до этого нигде
+  // не было экрана, который его вызывает.
+  function openChangePasswordModal() {
+    if (document.getElementById('cp-modal-overlay')) return; // уже открыта
+    const overlay = document.createElement('div');
+    overlay.id = 'cp-modal-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const inputCss = 'width:100%;padding:12px 14px;background:var(--card2,#f1f5f9);border:2px solid var(--border,#e2e8f0);border-radius:10px;font-size:15px;outline:none;color:var(--text,#0f172a);box-sizing:border-box;';
+    const labelCss = 'display:block;font-size:12px;font-weight:600;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;';
+    overlay.innerHTML = `
+      <div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:380px;box-sizing:border-box;">
+        <div style="font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text,#0f172a);">Сменить пароль</div>
+        <div style="margin-bottom:12px;">
+          <label style="${labelCss}">Текущий пароль</label>
+          <input id="cp-current" type="password" autocomplete="current-password" style="${inputCss}"/>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="${labelCss}">Новый пароль</label>
+          <input id="cp-new" type="password" autocomplete="new-password" style="${inputCss}"/>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="${labelCss}">Повторите новый пароль</label>
+          <input id="cp-new2" type="password" autocomplete="new-password" style="${inputCss}"/>
+        </div>
+        <div id="cp-error" style="color:#dc2626;font-size:13px;margin-bottom:10px;display:none;"></div>
+        <div style="display:flex;gap:10px;">
+          <button id="cp-save" style="flex:1;padding:13px;background:var(--accent,#0284c7);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;">Сохранить</button>
+          <button id="cp-cancel" style="flex:1;padding:13px;background:var(--card2,#f1f5f9);color:var(--text,#0f172a);border:2px solid var(--border,#e2e8f0);border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;">Отмена</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    document.getElementById('cp-cancel').addEventListener('click', close);
+    document.getElementById('cp-save').addEventListener('click', async () => {
+      const cur = document.getElementById('cp-current').value;
+      const nw  = document.getElementById('cp-new').value;
+      const nw2 = document.getElementById('cp-new2').value;
+      const errEl = document.getElementById('cp-error');
+      errEl.style.display = 'none';
+      if (!cur || !nw) { errEl.textContent = 'Заполните оба пароля'; errEl.style.display = 'block'; return; }
+      if (nw.length < 8) { errEl.textContent = 'Новый пароль должен быть не короче 8 символов'; errEl.style.display = 'block'; return; }
+      if (nw !== nw2) { errEl.textContent = 'Новые пароли не совпадают'; errEl.style.display = 'block'; return; }
+      try {
+        await window.API.auth.changePassword(cur, nw);
+        notify.ok('Пароль изменён');
+        close();
+      } catch (e) {
+        const msg = /current password is incorrect/i.test(e.message || '')
+          ? 'Текущий пароль неверен'
+          : (e.message || 'Не удалось сменить пароль');
+        errEl.textContent = msg;
+        errEl.style.display = 'block';
+      }
+    });
+  }
+
   // ─────────────── Export ───────────────
 
   window.UI = {
@@ -240,6 +302,7 @@
     requireAuth, requireRole,
     fmtDate, fmtDateTime, fmtMoney, fmtQty,
     onScan, scanInto, populateSelect, confirm,
+    openChangePasswordModal,
   };
 
 })(window);
