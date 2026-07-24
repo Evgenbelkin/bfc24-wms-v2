@@ -304,7 +304,7 @@ router.get('/orders', requireRole('tenant_admin','supervisor'), async (req,res,n
     const r = await query(
       `SELECT o.*, ma.account_name FROM wms.wb_orders o
        JOIN wms.mp_accounts ma ON ma.id=o.mp_account_id
-       WHERE ${conds.join(' AND ')} ORDER BY o.fetched_at DESC LIMIT $${idx}`,
+       WHERE ${conds.join(' AND ')} ORDER BY o.created_at DESC NULLS LAST LIMIT $${idx}`,
       params
     );
     res.json({ ok:true, orders:r.rows, count:r.rowCount });
