@@ -22,6 +22,7 @@ async function listShipments({ tenantId, clientId = null, status = null, marketp
     `SELECT s.*, c.client_name, w.warehouse_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
+       (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
        (SELECT pt.status FROM wms.packing_tasks pt
         WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
         ORDER BY pt.id DESC LIMIT 1) AS packing_status,

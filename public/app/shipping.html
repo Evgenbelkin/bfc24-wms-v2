@@ -52,11 +52,23 @@
       <div id="qr-result" style="display:none"></div>
     </div>
 
+    <!-- Постоянный блок QR поставки WB — виден в любой момент, если QR уже получен
+         (не только сразу после подтверждения отгрузки), чтобы можно было открыть/
+         перепечатать позже, например если стикер зажевало принтером. -->
+    <div class="card" id="wb-qr-card" style="display:none">
+      <div class="card-title">QR поставки WB</div>
+      <div class="qr-box" id="wb-qr-box"></div>
+      <div class="scan-row" style="margin-top:10px;">
+        <button type="button" class="btn-sm btn-back" onclick="openWbQr()">Открыть QR</button>
+        <button type="button" class="btn-sm btn-back" onclick="printWbQr()">Печать QR</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-title">Состав</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>План</th><th>Собрано</th><th>Упаковано</th></tr></thead>
+          <thead><tr><th>Товар</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Стикер</th></tr></thead>
           <tbody id="lines-body"></tbody>
         </table>
       </div>
@@ -77,6 +89,7 @@
     let currentStatus = 'ready_to_ship';
     let shipments = [];
     let currentShipment = null;
+    let currentLines = [];
 
     function switchStatus(status) {
       currentStatus = status;
@@ -129,16 +142,20 @@
         const totalPlan = (res.lines||[]).reduce((a,l)=>a+Number(l.qty||0),0);
         const totalPicked = (res.lines||[]).reduce((a,l)=>a+Number(l.qty_picked||0),0);
         document.getElementById('d-picked').textContent = `${totalPicked}/${totalPlan}`;
-        UI.renderTable('#lines-body', res.lines, (l) => `
+        currentLines = res.lines || [];
+        UI.renderTable('#lines-body', currentLines, (l, idx) => `
           <tr>
             <td>${UI.escHtml(l.item_name || l.barcode)}</td>
             <td>${UI.fmtQty(l.qty)}</td>
             <td>${UI.fmtQty(l.qty_picked)}</td>
             <td>${UI.fmtQty(l.qty_packed)}</td>
+            <td>${l.preview_url ? `<a href="#" onclick="openLinePhoto(${idx});return false;">Открыть</a>` : '—'}</td>
+            <td>${l.wb_sticker ? `<a href="#" onclick="openLineSticker(${idx});return false;">Открыть</a>` : '—'}</td>
           </tr>
         `);
         document.getElementById('qr-result').style.display = 'none';
         document.getElementById('confirm-status').textContent = '';
+        renderWbQrCard();
         const alreadyShipped = ['in_transit','done'].includes(currentShipment.status);
         // Если локально уже "Отгружена", но ВБ так и не был уведомлён (старый баг —
         // deliverSupply вообще не вызывался) — не прячем карточку, а даём
@@ -150,6 +167,58 @@
           : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
         setTimeout(() => document.getElementById('scan-code')?.focus(), 150);
       } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function openLinePhoto(idx) {
+      const l = currentLines[idx];
+      if (!l?.preview_url) return;
+      window.open(l.preview_url, '_blank');
+    }
+
+    function openLineSticker(idx) {
+      const l = currentLines[idx];
+      if (!l?.wb_sticker) return;
+      const w = window.open('', '_blank');
+      w.document.write(`<title>Стикер ${UI.escHtml(l.barcode)}</title>
+        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
+          <img src="data:image/svg+xml;base64,${l.wb_sticker}" style="max-width:90vw;max-height:80vh;" onload="window.print()"/>
+          ${l.wb_sticker_code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(l.wb_sticker_code)}</div>` : ''}
+        </body>`);
+      w.document.close();
+    }
+
+    function renderWbQrCard() {
+      const card = document.getElementById('wb-qr-card');
+      const box  = document.getElementById('wb-qr-box');
+      const b64  = currentShipment?.wb_supply_qr_base64;
+      if (!b64) { card.style.display = 'none'; box.innerHTML = ''; return; }
+      card.style.display = 'block';
+      box.innerHTML = `
+        <div style="color:#0f172a;font-weight:700;margin-bottom:8px;">${UI.escHtml(currentShipment.external_id)}</div>
+        <img src="data:image/svg+xml;base64,${b64}" alt="QR"/>
+      `;
+    }
+
+    function openWbQr() {
+      const b64 = currentShipment?.wb_supply_qr_base64;
+      if (!b64) return;
+      const w = window.open('', '_blank');
+      w.document.write(`<title>QR ${currentShipment.external_id}</title>
+        <body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;">
+          <img src="data:image/svg+xml;base64,${b64}" style="max-width:90vw;max-height:90vh;"/>
+        </body>`);
+      w.document.close();
+    }
+
+    function printWbQr() {
+      const b64 = currentShipment?.wb_supply_qr_base64;
+      if (!b64) return;
+      const w = window.open('', '_blank');
+      w.document.write(`<title>Печать QR ${currentShipment.external_id}</title>
+        <body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;">
+          <img src="data:image/svg+xml;base64,${b64}" style="max-width:90vw;max-height:90vh;" onload="window.print()"/>
+        </body>`);
+      w.document.close();
     }
 
     function backToList() {
@@ -181,6 +250,8 @@
               <div style="color:#0f172a;font-weight:700;margin-bottom:8px;">QR поставки WB</div>
               <img src="data:image/svg+xml;base64,${res.qr_base64}" alt="QR"/>
             </div>`;
+          currentShipment.wb_supply_qr_base64 = res.qr_base64;
+          renderWbQrCard();
         }
         document.getElementById('confirm-card').style.display = 'none';
         await loadBoard();

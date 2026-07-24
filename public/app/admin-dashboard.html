@@ -25,6 +25,15 @@
     .mini-progress{height:6px;background:var(--card2);border-radius:3px;overflow:hidden;margin-top:8px;}
     .mini-progress-fill{height:100%;background:var(--green2);}
     .auto-refresh{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+    /* Три мини-шкалы по этапам (Сборка/Упаковка/Отгрузка), как в табло отгрузок v1 */
+    .stage-bars{display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;}
+    .stage-bar{flex:1;min-width:110px;}
+    .stage-bar-label{font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:3px;display:flex;justify-content:space-between;}
+    .stage-bar-track{height:6px;background:var(--card2);border-radius:3px;overflow:hidden;}
+    .stage-bar-fill{height:100%;border-radius:3px;}
+    .stage-bar-fill.picking{background:#38bdf8;}
+    .stage-bar-fill.packing{background:var(--amber);}
+    .stage-bar-fill.shipping{background:var(--green2);}
   </style>
 </head>
 <body>
@@ -155,14 +164,37 @@
         const packingNote = s.packing_status
           ? `${PACKING_STATUS_LABELS[s.packing_status]||s.packing_status}${s.packer_name ? ' · упаковщик: '+UI.escHtml(s.packer_name) : ''}`
           : 'ещё не в очереди на упаковку';
+
+        const qtyPlan = Number(s.qty_plan||0);
+        const packedQty = Math.min(Number(s.total_packed_qty||0), qtyPlan || Number(s.total_packed_qty||0));
+        const pickingPct = s.tasks_total ? Math.round((s.tasks_done||0) / s.tasks_total * 100) : 0;
+        const packingPct = qtyPlan ? Math.round(packedQty / qtyPlan * 100) : 0;
+        const shippingPct = ['in_transit','done'].includes(s.status) ? 100 : 0;
+
         return `
-        <div class="list-row">
-          <div class="main">
-            <div class="title">${UI.escHtml(s.external_id)}</div>
-            <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · сборка ${s.tasks_done||0}/${s.tasks_total||0} · упаковано ${s.total_packed_qty||0}</div>
-            <div class="sub">📦 ${packingNote}</div>
+        <div class="list-row" style="flex-direction:column;align-items:stretch;">
+          <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+            <div>
+              <div class="title">${UI.escHtml(s.external_id)}</div>
+              <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · строк ${s.tasks_total||0}</div>
+              <div class="sub">📦 ${packingNote}</div>
+            </div>
+            <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
           </div>
-          <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
+          <div class="stage-bars">
+            <div class="stage-bar">
+              <div class="stage-bar-label"><span>Сборка</span><span>${pickingPct}%</span></div>
+              <div class="stage-bar-track"><div class="stage-bar-fill picking" style="width:${pickingPct}%"></div></div>
+            </div>
+            <div class="stage-bar">
+              <div class="stage-bar-label"><span>Упаковка</span><span>${packingPct}%</span></div>
+              <div class="stage-bar-track"><div class="stage-bar-fill packing" style="width:${packingPct}%"></div></div>
+            </div>
+            <div class="stage-bar">
+              <div class="stage-bar-label"><span>Отгрузка</span><span>${shippingPct}%</span></div>
+              <div class="stage-bar-track"><div class="stage-bar-fill shipping" style="width:${shippingPct}%"></div></div>
+            </div>
+          </div>
         </div>
       `;
       }).join('');
