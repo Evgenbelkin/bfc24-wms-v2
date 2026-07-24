@@ -294,6 +294,7 @@
       update: (id, d) => patch(`/wb/accounts/${id}`, d),
     },
     syncOrders:  (d) => post('/wb/sync-orders', d),
+    syncOrdersAll: () => post('/wb/sync-orders-all', {}),
     importItems: (d) => post('/wb/import-items', d),
     generateWave:(d) => post('/wb/generate-wave', d),
     orders:      (p) => get('/wb/orders', p),

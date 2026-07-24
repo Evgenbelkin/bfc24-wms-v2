@@ -16,6 +16,9 @@
     .catalog-thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--card2);}
     .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
     .result-box strong{color:var(--text);}
+    .locations-box{background:var(--card2);border-radius:10px;padding:8px 14px;}
+    .locations-box .loc-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #1e293b;}
+    .locations-box .loc-row:last-child{border-bottom:none;}
   </style>
 </head>
 <body>
@@ -76,6 +79,10 @@
 
         <button class="btn-big btn-blue btn-full" onclick="syncOrders()">🔄 Синхронизировать заказы</button>
         <div id="sync-result"></div>
+
+        <button class="btn-sm btn-back btn-full" style="margin-top:8px;" onclick="syncOrdersAll()">🔄 Синхронизировать все магазины</button>
+        <div id="sync-all-result"></div>
+        <div class="refresh-note" style="text-align:left;margin-top:6px;">Заказы также подтягиваются автоматически в фоне — эта кнопка нужна только чтобы обновить прямо сейчас перед формированием волны.</div>
 
         <div class="field" style="margin-top:14px;">
           <label>Сколько заказов включить в волну (без поставки)</label>
@@ -293,6 +300,26 @@
         const res = await window.API.wb.syncOrders({ account_id: accountId });
         document.getElementById('sync-result').innerHTML = `<div class="result-box">Получено заказов: <strong>${res.fetched}</strong> · сохранено/обновлено: <strong>${res.saved}</strong></div>`;
         UI.notify.ok('Синхронизация завершена');
+        await loadOrders();
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function syncOrdersAll() {
+      if (!UI.confirm('Синхронизировать заказы по всем магазинам (всем WB-аккаунтам)?')) return;
+      try {
+        UI.notify.info('Синхронизируем все магазины с WB...');
+        const res = await window.API.wb.syncOrdersAll();
+        const rows = (res.accounts||[]).map(a =>
+          `<div class="loc-row"><span>${UI.escHtml(a.account_name||('#'+a.account_id))}</span><span>${a.ok ? `+${a.saved}/${a.fetched}` : '⚠ '+UI.escHtml(a.error||'ошибка')}</span></div>`
+        ).join('');
+        document.getElementById('sync-all-result').innerHTML = `
+          <div class="result-box">Итого получено: <strong>${res.total_fetched}</strong> · сохранено/обновлено: <strong>${res.total_saved}</strong></div>
+          <div class="locations-box" style="margin-top:6px;">${rows || '<div style="color:var(--muted);font-size:13px;">Нет активных WB-аккаунтов</div>'}</div>
+        `;
+        UI.notify.ok('Синхронизация всех магазинов завершена');
         await loadOrders();
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }

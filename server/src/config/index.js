@@ -91,6 +91,11 @@ const config = {
     chatId:   optionalEnv('TELEGRAM_ALERTS_CHAT_ID'),
   },
 
+  wb: {
+    // Автосинхронизация заказов WB в фоне (0 = выключено)
+    autoSyncIntervalMinutes: intEnv('WB_AUTO_SYNC_INTERVAL_MINUTES', 15),
+  },
+
   urls: {
     public: optionalEnv('PUBLIC_SITE_URL', 'https://bfc24.ru'),
     app:    optionalEnv('APP_URL', 'https://app.bfc24.ru'),

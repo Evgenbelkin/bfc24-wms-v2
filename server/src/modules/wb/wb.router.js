@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const { query, transaction } = require('../../config/database');
 const wbClient = require('./wb.client');
+const wbService = require('./wb.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
@@ -17,17 +18,7 @@ router.use(authRequired, tenantMiddleware, requireModule('wb_integration'));
 
 // ─────────────── Helpers ───────────────
 
-async function getMpAccount(tenantId, accountId) {
-  const r = await query(
-    `SELECT id, client_id, api_token, marketplace FROM wms.mp_accounts
-     WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE LIMIT 1`,
-    [accountId, tenantId]
-  );
-  if (r.rowCount === 0) throw new NotFoundError('MP Account', accountId);
-  const acc = r.rows[0];
-  if (!acc.api_token) throw new ValidationError(`MP account ${accountId} has no api_token`);
-  return acc;
-}
+const getMpAccount = wbService.getMpAccount;
 
 // ─────────────── MP Accounts ───────────────
 
@@ -149,33 +140,18 @@ router.post('/sync-orders', requireRole('tenant_admin','supervisor'), async (req
     // дёргался /api/v3/orders (весь архив, включая отменённые за всё время) и
     // в status писался deliveryType ('fbs' для всех подряд), из-за чего
     // фильтр "заказы без поставки" на генерации волны не отсеивал ничего.
-    const orders = await wbClient.fetchNewOrders(acc.api_token);
+    const result = await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
 
-    let saved = 0;
-    for (const o of orders) {
-      const wbOrderId = o.id || o.odid || o.orderId;
-      if (!wbOrderId) continue;
-      const barcode = Array.isArray(o.skus) ? o.skus[0] : (o.barcode || null);
-      await query(
-        `INSERT INTO wms.wb_orders
-           (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
-            warehouse_id,warehouse_name,region_name,price,converted_price,currency_code,
-            status,created_at,raw)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-         ON CONFLICT(mp_account_id,wb_order_id) DO UPDATE SET
-           status=EXCLUDED.status, fetched_at=NOW(), raw=EXCLUDED.raw`,
-        [
-          req.user.tenantId, accountId, wbOrderId,
-          o.nmId||o.nmID||null, o.chrtId||null, o.article||null, barcode,
-          o.warehouseId||null, (o.offices||[]).join(',')||o.warehouseName||null,
-          o.regionName||null, o.price||null, o.convertedPrice||null, o.currencyCode||null,
-          'new', o.createdAt||null,
-          JSON.stringify(o),
-        ]
-      );
-      saved++;
-    }
-    res.json({ ok: true, fetched: orders.length, saved });
+// Синхронизировать заказы по ВСЕМ активным WB-аккаунтам клиентов этого тенанта за один клик
+router.post('/sync-orders-all', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const results = await wbService.syncAllAccountsForTenant(req.user.tenantId);
+    const totalSaved = results.reduce((s,r)=>s+(r.saved||0),0);
+    const totalFetched = results.reduce((s,r)=>s+(r.fetched||0),0);
+    res.json({ ok: true, accounts: results, total_fetched: totalFetched, total_saved: totalSaved });
   } catch(e){ next(e); }
 });
 
