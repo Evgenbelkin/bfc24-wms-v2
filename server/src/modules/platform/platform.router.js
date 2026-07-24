@@ -141,6 +141,11 @@ router.post('/tenants/:id/impersonate', async (req, res, next) => {
         id: user.id, tenantId: user.tenant_id, clientId: user.client_id,
         username: user.username, role: user.role, roles,
         companyName: tenant.company_name,
+        // Флаг для фронта — на его основе ui.js рисует предупреждающую
+        // плашку на каждом экране склада, чтобы не забыть, что это чужие
+        // реальные данные. Сохраняется в localStorage вместе с остальным
+        // user-объектом и не теряется при silent-refresh access-токена.
+        impersonated: true,
       },
     });
   } catch (e) { next(e); }

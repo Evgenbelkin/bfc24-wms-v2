@@ -197,6 +197,33 @@
     }
   } catch (_) { /* ignore */ }
 
+  // ─────────────── Плашка "вошли как клиент" ───────────────
+  // Владелец платформы может зайти на склад клиента одной кнопкой из
+  // /platform/dashboard.html ("Войти на склад клиента") — тогда backend
+  // помечает user.impersonated=true. Этот флаг живёт в localStorage вместе
+  // с остальным user-объектом и НЕ теряется при тихом обновлении access-токена
+  // (silent-refresh в api.js трогает только сами токены, не wms2_user), так что
+  // плашка держится всю сессию, пока явно не выйти. Показываем на каждом
+  // экране склада — чтобы не забыть, что это чужие реальные данные, и не
+  // тыкать там что попало "просто посмотреть".
+  try {
+    const _u = window.API && window.API.getUser && window.API.getUser();
+    if (_u && _u.impersonated) {
+      const bar = document.createElement('div');
+      bar.id = 'impersonation-banner';
+      bar.style.cssText = 'position:sticky;top:0;z-index:99999;background:#7c2d12;color:#fed7aa;'
+        + 'padding:10px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;'
+        + 'justify-content:center;gap:12px;flex-wrap:wrap;text-align:center;border-bottom:2px solid #f97316;';
+      bar.innerHTML = `⚠️ Режим просмотра клиента «${escHtml(_u.companyName || '')}» — вход через панель платформы, ничего не нажимайте зря`
+        + `<button id="impersonation-exit" style="background:#f97316;color:#1a0a02;border:none;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;">Выйти</button>`;
+      document.body.prepend(bar);
+      document.getElementById('impersonation-exit').addEventListener('click', async () => {
+        try { await window.API.auth.logout(); } catch (_) {}
+        window.location.href = '/app/login.html';
+      });
+    }
+  } catch (_) { /* ignore */ }
+
   // ─────────────── Export ───────────────
 
   window.UI = {
