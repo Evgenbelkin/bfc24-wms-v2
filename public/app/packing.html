@@ -11,7 +11,8 @@
     .line-photo{width:44px;height:44px;object-fit:cover;border-radius:8px;background:#0f172a;flex-shrink:0;}
     .line-photo-placeholder{width:44px;height:44px;border-radius:8px;background:#0f172a;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--muted);}
     .line-name{font-size:14px;font-weight:600;}
-    .line-barcode{font-size:12px;color:var(--muted);}
+    .line-barcode{font-size:15px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-weight:700;letter-spacing:.3px;}
+    .line-next-tag{background:#1e3a5f;color:#7dd3fc;font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;margin-left:8px;white-space:nowrap;}
     .line-progress{font-size:15px;font-weight:800;white-space:nowrap;}
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
@@ -29,7 +30,8 @@
     .big-photo-placeholder{color:var(--muted);font-size:52px;text-align:center;padding:20px;}
     .big-photo-hint{font-size:14px;margin-top:12px;color:var(--muted);}
     .big-photo-name{font-size:19px;font-weight:700;margin-top:14px;}
-    .big-photo-barcode{font-size:14px;color:var(--muted);margin-top:4px;}
+    .big-photo-barcode{font-size:22px;color:var(--green2);margin-top:6px;font-family:'SF Mono',Consolas,monospace;font-weight:800;letter-spacing:.5px;}
+    .big-photo-expect-tag{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.4px;}
   </style>
 </head>
 <body>
@@ -186,8 +188,23 @@
     }
     UI.onScan('#pickup-scan', confirmPickup);
 
+    // Пока ничего не отсканировано (или последняя отсканированная строка уже
+    // полностью упакована) — показываем не пустой плейсхолдер, а карточку
+    // СЛЕДУЮЩЕГО ожидаемого товара: имя/фото/крупный штрихкод. Так упаковщик
+    // может визуально сверить штрихкод на распечатанном стикере с тем, что
+    // реально требуется по заданию, ДО скана — а не гадать по мелкому тексту
+    // в списке состава.
+    function getNextExpectedLine() {
+      return currentLines.find(l => Number(l.qty_packed||0) < Number(l.qty_plan||0)) || null;
+    }
+
     function renderBigPhoto() {
-      const line = currentLines.find(l => l.barcode === lastScannedBarcode);
+      let line = currentLines.find(l => l.barcode === lastScannedBarcode);
+      let isExpected = false;
+      if (!line) {
+        line = getNextExpectedLine();
+        isExpected = true;
+      }
       const img = document.getElementById('big-photo-img');
       const placeholder = document.getElementById('big-photo-placeholder');
       const hint = document.getElementById('big-photo-hint');
@@ -195,14 +212,16 @@
       if (!line) {
         img.style.display = 'none';
         placeholder.style.display = 'block';
-        hint.textContent = 'Отсканируйте товар, чтобы увидеть фото';
+        hint.textContent = 'Все строки упакованы';
         document.getElementById('big-photo-name').textContent = '';
         document.getElementById('big-photo-barcode').textContent = '';
         return;
       }
 
       document.getElementById('big-photo-name').textContent = line.item_name || line.barcode;
-      document.getElementById('big-photo-barcode').textContent = line.barcode;
+      document.getElementById('big-photo-barcode').innerHTML = isExpected
+        ? `<div class="big-photo-expect-tag">Ожидается по заданию</div>${UI.escHtml(line.barcode)}`
+        : UI.escHtml(line.barcode);
 
       if (line.preview_url) {
         img.src = line.preview_url;
@@ -222,17 +241,19 @@
       const pct = totalPlan > 0 ? Math.round((totalPacked/totalPlan)*100) : 0;
       document.getElementById('progress-fill').style.width = pct + '%';
 
+      const nextExpected = getNextExpectedLine();
       document.getElementById('lines-list').innerHTML = currentLines.map(l => {
         const done = Number(l.qty_packed||0) >= Number(l.qty_plan||0);
         const justScanned = l.barcode === lastScannedBarcode;
+        const isNext = !justScanned && nextExpected && l === nextExpected;
         const photo = l.preview_url
           ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'line-photo-placeholder',textContent:'📦'}))"/>`
           : `<div class="line-photo-placeholder">📦</div>`;
         return `
-          <div class="line-row" style="${justScanned ? 'background:#0f2a1e;border-radius:10px;padding-left:6px;' : ''}">
+          <div class="line-row" style="${justScanned ? 'background:#0f2a1e;border-radius:10px;padding-left:6px;' : isNext ? 'background:#1a2740;border-radius:10px;padding-left:6px;' : ''}">
             ${photo}
             <div class="main" style="flex:1;min-width:0;">
-              <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}</div>
+              <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}${isNext ? '<span class="line-next-tag">Далее</span>' : ''}</div>
               <div class="line-barcode">${UI.escHtml(l.barcode)}</div>
             </div>
             <div class="line-progress" style="color:${done ? 'var(--green2)' : 'var(--amber)'}">
