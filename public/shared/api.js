@@ -342,6 +342,8 @@
 
   function getPlatformToken() { return localStorage.getItem(PLATFORM_TOKEN_KEY); }
   function savePlatformAuth(token) { localStorage.setItem(PLATFORM_TOKEN_KEY, token); }
+  function clearPlatformAuth() { localStorage.removeItem(PLATFORM_TOKEN_KEY); }
+  function isPlatformLoggedIn() { return !!getPlatformToken(); }
 
   async function platformRequest(method, path, data = null) {
     const token = getPlatformToken();
@@ -363,12 +365,16 @@
       if (res?.token) savePlatformAuth(res.token);
       return res;
     },
+    logout() { clearPlatformAuth(); },
+    isLoggedIn: isPlatformLoggedIn,
     tenants:  {
-      list:   (p) => platformRequest('GET', `/platform/tenants${p ? '?' + new URLSearchParams(p) : ''}`),
-      get:    (id)=> platformRequest('GET', `/platform/tenants/${id}`),
-      create: (d) => platformRequest('POST', '/platform/tenants', d),
-      update: (id,d)=> platformRequest('PATCH', `/platform/tenants/${id}`, d),
-      setModule:(id,d)=>platformRequest('POST', `/platform/tenants/${id}/modules`, d),
+      list:        (p) => platformRequest('GET', `/platform/tenants${p ? '?' + new URLSearchParams(p) : ''}`),
+      get:         (id)=> platformRequest('GET', `/platform/tenants/${id}`),
+      create:      (d) => platformRequest('POST', '/platform/tenants', d),
+      update:      (id,d)=> platformRequest('PATCH', `/platform/tenants/${id}`, d),
+      setModule:   (id,d)=>platformRequest('POST', `/platform/tenants/${id}/modules`, d),
+      extend:      (id,d)=>platformRequest('POST', `/platform/tenants/${id}/extend`, d),
+      subscriptions:(id)=>platformRequest('GET', `/platform/tenants/${id}/subscriptions`),
     },
     plans:   () => platformRequest('GET', '/platform/plans'),
     modules: () => platformRequest('GET', '/platform/modules'),

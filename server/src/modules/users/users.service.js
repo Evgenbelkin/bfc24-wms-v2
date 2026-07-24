@@ -117,6 +117,30 @@ async function getUserById({ tenantId, userId }) {
 }
 
 /**
+ * Лимит пользователей приходит из платформенной подписки (platform.tenants
+ * .max_users_override, если задан персонально, иначе platform.plans.max_users
+ * по тарифу клиента). Считаем по тому же принципу, что и в панели платформы
+ * (wms.users активные, все роли) — иначе показанный там лимит разойдётся с
+ * реальным поведением. Если у тенанта вообще нет тарифа/override — лимит не
+ * задан, не ограничиваем (на всякий случай, чтобы не сломать существующих
+ * клиентов без привязанного плана).
+ */
+async function checkUserLimit({ tenantId }) {
+  const r = await query(
+    `SELECT COALESCE(t.max_users_override, p.max_users) AS "limit"
+     FROM platform.tenants t LEFT JOIN platform.plans p ON p.id = t.plan_id
+     WHERE t.id = $1`,
+    [tenantId]
+  );
+  const limit = r.rows[0]?.limit;
+  if (limit === null || limit === undefined) return;
+  const cnt = await query(`SELECT COUNT(*)::int AS n FROM wms.users WHERE tenant_id=$1 AND is_active=TRUE`, [tenantId]);
+  if (cnt.rows[0].n >= limit) {
+    throw new ForbiddenError(`Достигнут лимит пользователей по тарифу (${limit}). Для увеличения лимита обратитесь к поставщику услуги.`);
+  }
+}
+
+/**
  * Создать пользователя
  */
 async function createUser({ tenantId, createdById, data }) {
@@ -133,6 +157,8 @@ async function createUser({ tenantId, createdById, data }) {
   if (role === 'seller' && !clientId) {
     throw new ValidationError('client_id is required for seller role');
   }
+
+  if (isActive) await checkUserLimit({ tenantId });
 
   // Проверяем уникальность username внутри tenant
   const exists = await query(
@@ -202,8 +228,13 @@ async function updateUser({ tenantId, userId, data, updatedById }) {
   }
 
   if (data.is_active !== undefined) {
+    const willBeActive = parseBool(data.is_active);
+    // Реактивация ранее отключённого пользователя — та же лазейка, что и
+    // создание нового: без проверки лимит по тарифу легко обойти отключением
+    // одного сотрудника и включением другого сверх лимита.
+    if (willBeActive && !current.is_active) await checkUserLimit({ tenantId });
     fields.push(`is_active = $${idx++}`);
-    params.push(parseBool(data.is_active));
+    params.push(willBeActive);
   }
 
   if (data.client_id !== undefined) {
