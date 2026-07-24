@@ -111,9 +111,14 @@ async function processJob(job) {
     const svgText = decodeSvg(payload);
     if (!svgText) throw new Error('No SVG/sticker in payload_json');
 
-    // Размер по типу документа
-    const SQUARE_DOC_TYPES = ['shipping_qr', 'pick_list_label'];
-    const dims = SQUARE_DOC_TYPES.includes(job.doc_type) ? { widthMm: 58, heightMm: 58 } : { widthMm: 58, heightMm: 40 };
+    // Все три типа документа (стикер WB, внутренняя наклейка сборки, QR поставки)
+    // печатаются на одном и том же физическом рулоне термоэтикеток 58×40мм —
+    // раньше QR-документы (shipping_qr, pick_list_label) рендерились в PDF-страницу
+    // 58×58 (квадрат), что не совпадает с реальной этикеткой. QR — квадратное
+    // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
+    // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
+    // безопасен для всех типов документов.
+    const dims = { widthMm: 58, heightMm: 40 };
 
     await buildPdf(svgText, pdfPath, dims);
 
