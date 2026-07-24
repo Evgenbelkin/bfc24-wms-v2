@@ -34,6 +34,10 @@
     .stage-bar-fill.picking{background:#38bdf8;}
     .stage-bar-fill.packing{background:var(--amber);}
     .stage-bar-fill.shipping{background:var(--green2);}
+    .ship-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+    .ship-filter-btn{background:var(--card2);border:none;color:var(--muted);font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;}
+    .ship-filter-btn.active{background:var(--accent);color:#fff;}
+    .ship-sort-select{margin-left:auto;background:var(--card2);color:var(--text);border:none;border-radius:8px;padding:7px 10px;font-size:12px;}
   </style>
 </head>
 <body>
@@ -57,6 +61,21 @@
 
   <div class="card">
     <div class="card-title">Отгрузки в работе</div>
+    <div class="ship-filters">
+      <button class="ship-filter-btn active" data-filter="all" onclick="setShipFilter('all')">Все</button>
+      <button class="ship-filter-btn" data-filter="not_in_wave" onclick="setShipFilter('not_in_wave')">Не в волне</button>
+      <button class="ship-filter-btn" data-filter="picking" onclick="setShipFilter('picking')">Сборка</button>
+      <button class="ship-filter-btn" data-filter="packing" onclick="setShipFilter('packing')">Упаковка</button>
+      <button class="ship-filter-btn" data-filter="ready" onclick="setShipFilter('ready')">Готовы к отгрузке</button>
+      <button class="ship-filter-btn" data-filter="shipped" onclick="setShipFilter('shipped')">В пути</button>
+      <select class="ship-sort-select" id="ship-sort" onchange="setShipSort(this.value)">
+        <option value="new_first">Сначала новые</option>
+        <option value="old_first">Сначала старые (зависшие)</option>
+        <option value="picking_pct">По % сборки ↑</option>
+        <option value="packing_pct">По % упаковки ↑</option>
+        <option value="shipping_pct">По % отгрузки ↑</option>
+      </select>
+    </div>
     <div id="shipments-list"></div>
   </div>
 
@@ -152,53 +171,109 @@
       return { activeCount: active.length, idleCount: active.filter(w => { const m = minutesAgo(w.updated_at); return m !== null && m >= IDLE_THRESHOLD_MS/60000; }).length, readyCount: ready.length, openCount: open.length };
     }
 
-    async function loadShipments() {
-      const res = await window.API.shipping.board({ limit: 100 });
-      const shipments = (res.shipments || []).filter(s => !['done','cancelled'].includes(s.status));
-      const list = document.getElementById('shipments-list');
-      if (!shipments.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет активных отгрузок</div>`;
-        return { total: 0, readyToShip: 0 };
-      }
-      list.innerHTML = shipments.map(s => {
-        const packingNote = s.packing_status
-          ? `${PACKING_STATUS_LABELS[s.packing_status]||s.packing_status}${s.packer_name ? ' · упаковщик: '+UI.escHtml(s.packer_name) : ''}`
-          : 'ещё не в очереди на упаковку';
+    let allShipments = [];      // кэш последней загрузки, с посчитанными % — фильтр/сортировка работают без рефетча
+    let shipFilter = 'all';
+    let shipSort = 'new_first';
 
+    const STAGE_LABELS = {
+      not_in_wave: 'ещё не в волне', picking: 'на сборке', packing: 'на упаковке',
+      ready: 'готова к отгрузке', shipped: 'в пути / отгружена',
+    };
+
+    function stageOf(pickingPct, packingPct, shippingPct, tasksTotal) {
+      if (!tasksTotal) return 'not_in_wave';
+      if (pickingPct < 100) return 'picking';
+      if (packingPct < 100) return 'packing';
+      if (shippingPct < 100) return 'ready';
+      return 'shipped';
+    }
+
+    function setShipFilter(f) {
+      shipFilter = f;
+      document.querySelectorAll('.ship-filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+      renderShipmentsList();
+    }
+
+    function setShipSort(s) {
+      shipSort = s;
+      renderShipmentsList();
+    }
+
+    async function loadShipments() {
+      const res = await window.API.shipping.board({ limit: 500 });
+      const raw = (res.shipments || []).filter(s => !['done','cancelled'].includes(s.status));
+
+      allShipments = raw.map(s => {
         const qtyPlan = Number(s.qty_plan||0);
         const packedQty = Math.min(Number(s.total_packed_qty||0), qtyPlan || Number(s.total_packed_qty||0));
         const pickingPct = s.tasks_total ? Math.round((s.tasks_done||0) / s.tasks_total * 100) : 0;
         const packingPct = qtyPlan ? Math.round(packedQty / qtyPlan * 100) : 0;
         const shippingPct = ['in_transit','done'].includes(s.status) ? 100 : 0;
+        return {
+          ...s, pickingPct, packingPct, shippingPct,
+          stage: stageOf(pickingPct, packingPct, shippingPct, s.tasks_total),
+        };
+      });
 
-        return `
-        <div class="list-row" style="flex-direction:column;align-items:stretch;">
-          <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-            <div>
-              <div class="title">${UI.escHtml(s.external_id)}</div>
-              <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · строк ${s.tasks_total||0}</div>
-              <div class="sub">📦 ${packingNote}</div>
+      return renderShipmentsList();
+    }
+
+    function renderShipmentsList() {
+      const list = document.getElementById('shipments-list');
+
+      let items = shipFilter === 'all' ? allShipments : allShipments.filter(s => s.stage === shipFilter);
+
+      items = items.slice().sort((a, b) => {
+        switch (shipSort) {
+          case 'old_first':    return new Date(a.created_at) - new Date(b.created_at);
+          case 'picking_pct':  return a.pickingPct - b.pickingPct;
+          case 'packing_pct':  return a.packingPct - b.packingPct;
+          case 'shipping_pct': return a.shippingPct - b.shippingPct;
+          case 'new_first':
+          default:             return new Date(b.created_at) - new Date(a.created_at);
+        }
+      });
+
+      if (!allShipments.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет активных отгрузок</div>`;
+      } else if (!items.length) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">🔍</div>Ничего не найдено по фильтру «${STAGE_LABELS[shipFilter]||shipFilter}»</div>`;
+      } else {
+        list.innerHTML = items.map(s => {
+          const packingNote = s.packing_status
+            ? `${PACKING_STATUS_LABELS[s.packing_status]||s.packing_status}${s.packer_name ? ' · упаковщик: '+UI.escHtml(s.packer_name) : ''}`
+            : 'ещё не в очереди на упаковку';
+
+          return `
+          <div class="list-row" style="flex-direction:column;align-items:stretch;">
+            <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+              <div>
+                <div class="title">${UI.escHtml(s.external_id)}</div>
+                <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · строк ${s.tasks_total||0}</div>
+                <div class="sub">📦 ${packingNote}</div>
+              </div>
+              <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
             </div>
-            <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
+            <div class="stage-bars">
+              <div class="stage-bar">
+                <div class="stage-bar-label"><span>Сборка</span><span>${s.pickingPct}%</span></div>
+                <div class="stage-bar-track"><div class="stage-bar-fill picking" style="width:${s.pickingPct}%"></div></div>
+              </div>
+              <div class="stage-bar">
+                <div class="stage-bar-label"><span>Упаковка</span><span>${s.packingPct}%</span></div>
+                <div class="stage-bar-track"><div class="stage-bar-fill packing" style="width:${s.packingPct}%"></div></div>
+              </div>
+              <div class="stage-bar">
+                <div class="stage-bar-label"><span>Отгрузка</span><span>${s.shippingPct}%</span></div>
+                <div class="stage-bar-track"><div class="stage-bar-fill shipping" style="width:${s.shippingPct}%"></div></div>
+              </div>
+            </div>
           </div>
-          <div class="stage-bars">
-            <div class="stage-bar">
-              <div class="stage-bar-label"><span>Сборка</span><span>${pickingPct}%</span></div>
-              <div class="stage-bar-track"><div class="stage-bar-fill picking" style="width:${pickingPct}%"></div></div>
-            </div>
-            <div class="stage-bar">
-              <div class="stage-bar-label"><span>Упаковка</span><span>${packingPct}%</span></div>
-              <div class="stage-bar-track"><div class="stage-bar-fill packing" style="width:${packingPct}%"></div></div>
-            </div>
-            <div class="stage-bar">
-              <div class="stage-bar-label"><span>Отгрузка</span><span>${shippingPct}%</span></div>
-              <div class="stage-bar-track"><div class="stage-bar-fill shipping" style="width:${shippingPct}%"></div></div>
-            </div>
-          </div>
-        </div>
-      `;
-      }).join('');
-      return { total: shipments.length, readyToShip: shipments.filter(s=>s.status==='ready_to_ship').length };
+        `;
+        }).join('');
+      }
+
+      return { total: allShipments.length, readyToShip: allShipments.filter(s=>s.status==='ready_to_ship').length };
     }
 
     function renderKpis({ activeCount, idleCount, readyCount, openCount }, shipStats) {
