@@ -249,8 +249,8 @@
     async function loadHistory() {
       try {
         const clientId = getClientId();
-        const rows = await window.API.placement.history(clientId ? { client_id: clientId, limit: 100 } : { limit: 100 });
-        UI.renderTable('#history-body', rows, (r) => `
+        const res = await window.API.placement.history(clientId ? { client_id: clientId, limit: 100 } : { limit: 100 });
+        UI.renderTable('#history-body', res.rows, (r) => `
           <tr>
             <td>${UI.fmtDateTime(r.created_at)}</td>
             <td>${UI.escHtml(r.item_name || r.barcode)}</td>

@@ -60,6 +60,11 @@
   </div>
 
   <div class="card">
+    <div class="card-title">Пропущенные позиции (сборка)</div>
+    <div id="skipped-list"></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Отгрузки в работе</div>
     <div class="ship-filters">
       <button class="ship-filter-btn active" data-filter="all" onclick="setShipFilter('all')">Все</button>
@@ -297,11 +302,58 @@
       `).join('');
     }
 
+    // ---------- Пропущенные при сборке позиции ----------
+    // Skip навсегда переводит задание в 'skipped' и создаёт задание инвентаризации
+    // на его ячейку, но никак не связывает их обратно: даже когда остаток на
+    // ячейке подтверждён/добавлен инвентаризацией, само задание сборки само по
+    // себе не оживает. Тут супервайзер вручную возвращает его в очередь сборки —
+    // сборщику эта кнопка недоступна (страница целиком под supervisor/tenant_admin).
+    async function loadSkipped() {
+      try {
+        const res = await window.API.picking.skipped({ limit: 100 });
+        renderSkipped(res.rows || []);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function renderSkipped(rows) {
+      const box = document.getElementById('skipped-list');
+      if (!rows.length) {
+        box.innerHTML = `<div class="empty-state" style="padding:16px;"><div class="icon">✅</div>Нет пропущенных позиций</div>`;
+        return;
+      }
+      box.innerHTML = rows.map(r => {
+        const hasStock = Number(r.qty_available_now) > 0;
+        return `
+        <div class="list-row" style="flex-direction:column;align-items:stretch;">
+          <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+            <div>
+              <div class="title">${UI.escHtml(r.item_name || r.barcode)}</div>
+              <div class="sub">${UI.escHtml(r.shipment_code||'—')} · ячейка ${UI.escHtml(r.location_code||'—')} · нужно ${UI.fmtQty(r.qty)}</div>
+              <div class="sub">Пропустил: ${UI.escHtml(r.picker_name||'—')} · ${UI.fmtDateTime(r.finished_at)}</div>
+            </div>
+            <span class="pill ${hasStock ? 'pill-green' : 'pill-red'}">${hasStock ? 'на ячейке: '+UI.fmtQty(r.qty_available_now) : 'на ячейке пусто'}</span>
+          </div>
+          <button class="btn-sm btn-back" style="align-self:flex-end;margin-top:8px;" onclick="requeueTask(${r.id})">↩ Вернуть в сборку</button>
+        </div>
+      `;
+      }).join('');
+    }
+
+    async function requeueTask(id) {
+      try {
+        await window.API.picking.requeue(id);
+        UI.notify.ok('Задание возвращено в сборку');
+        loadSkipped();
+        loadAll();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
     async function loadAll() {
       try {
         const [waveStats, shipStats] = await Promise.all([
           loadWaves().then(renderWaves),
           loadShipments(),
+          loadSkipped(),
         ]);
         renderKpis(waveStats, shipStats);
       } catch (e) { UI.notify.err(e.message); }

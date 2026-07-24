@@ -10,41 +10,82 @@
 
   // ─────────────── Token Management ───────────────
 
-  const TOKEN_KEY   = 'wms2_token';
-  const USER_KEY    = 'wms2_user';
+  const TOKEN_KEY         = 'wms2_token';
+  const REFRESH_TOKEN_KEY = 'wms2_refresh_token';
+  const USER_KEY          = 'wms2_user';
 
-  function getToken()   { return localStorage.getItem(TOKEN_KEY); }
-  function getUser()    { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; } }
-  function saveAuth(token, user) {
+  function getToken()        { return localStorage.getItem(TOKEN_KEY); }
+  function getRefreshToken() { return localStorage.getItem(REFRESH_TOKEN_KEY); }
+  function getUser()         { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; } }
+  function saveAuth(token, user, refreshToken) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   }
   function clearAuth() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
   }
   function isLoggedIn() { return !!getToken(); }
 
   // ─────────────── HTTP Core ───────────────
 
-  async function request(method, path, data = null, opts = {}) {
-    const token = getToken();
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+  // Access token живёт недолго (см. JWT_EXPIRES_IN, по умолчанию 2ч). Чтобы не
+  // выкидывать пользователя на логин при каждом истечении, при 401 пробуем один
+  // раз молча обновить его через refresh token, и только если это не удалось —
+  // разлогиниваем. Конкурентные запросы, словившие 401 одновременно, ждут один
+  // и тот же refresh (не долбят /auth/refresh параллельно).
+  let refreshPromise = null;
 
-    const config = {
-      method,
-      headers,
-      ...opts,
+  async function trySilentRefresh() {
+    const rt = getRefreshToken();
+    if (!rt) return false;
+    if (!refreshPromise) {
+      refreshPromise = (async () => {
+        try {
+          const res = await fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: rt }),
+          });
+          if (!res.ok) return false;
+          const json = await res.json().catch(() => null);
+          if (!json || json.ok === false || !json.accessToken) return false;
+          localStorage.setItem(TOKEN_KEY, json.accessToken);
+          if (json.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, json.refreshToken);
+          return true;
+        } catch (_) {
+          return false;
+        } finally {
+          refreshPromise = null;
+        }
+      })();
+    }
+    return refreshPromise;
+  }
+
+  async function request(method, path, data = null, opts = {}) {
+    const doFetch = () => {
+      const token = getToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const config = { method, headers, ...opts };
+      if (data !== null && method !== 'GET') config.body = JSON.stringify(data);
+      const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+      return fetch(url, config);
     };
-    if (data !== null && method !== 'GET') {
-      config.body = JSON.stringify(data);
+
+    let res = await doFetch();
+
+    // Access token истёк — пробуем один раз обновить и повторить запрос молча,
+    // прежде чем показывать пользователю экран логина.
+    if (res.status === 401 && !opts.noRedirect) {
+      const refreshed = await trySilentRefresh();
+      if (refreshed) res = await doFetch();
     }
 
-    const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
-    const res = await fetch(url, config);
-
-    // 401 → перенаправить на логин
+    // 401 → перенаправить на логин (refresh не удался или недоступен)
     if (res.status === 401 && !opts.noRedirect) {
       clearAuth();
       window.location.href = '/app/login.html';
@@ -80,12 +121,12 @@
   const auth = {
     async login(username, password) {
       const res = await request('POST', '/auth/login', { username, password }, { noRedirect: true });
-      if (res) saveAuth(res.accessToken, res.user);
+      if (res) saveAuth(res.accessToken, res.user, res.refreshToken);
       return res;
     },
     async me() { return get('/auth/me'); },
     async logout(refreshToken) {
-      try { await post('/auth/logout', { refreshToken }); } catch(_) {}
+      try { await post('/auth/logout', { refreshToken: refreshToken || getRefreshToken() }); } catch(_) {}
       clearAuth();
     },
     async changePassword(currentPassword, newPassword) {
@@ -217,6 +258,8 @@
     scanItem:     (d) => post('/picking/scan/item', d),
     skip:         (d) => post('/picking/skip', d),
     manualWave:   (d) => post('/picking/manual-wave', d),
+    skipped:      (p) => get('/picking/tasks/skipped', p),
+    requeue:      (id) => post(`/picking/tasks/${id}/requeue`),
   };
 
   // ─────────────── Packing ───────────────

@@ -277,8 +277,8 @@
     // ---------- История ----------
     async function loadHistory() {
       try {
-        const rows = await window.API.receiving.history({ limit: 100 });
-        UI.renderTable('#history-body', rows, (r) => `
+        const res = await window.API.receiving.history({ limit: 100 });
+        UI.renderTable('#history-body', res.rows, (r) => `
           <tr>
             <td>${UI.fmtDateTime(r.completed_at || r.created_at)}</td>
             <td>${UI.escHtml(r.item_name || r.barcode)}</td>

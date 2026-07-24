@@ -247,8 +247,8 @@
     async function loadDiscrepancies() {
       try {
         const clientId = getClientId();
-        const rows = await window.API.inventory.discrepancies(clientId ? { client_id: clientId, limit: 200 } : { limit: 200 });
-        UI.renderTable('#discrepancies-body', rows, (r) => `
+        const res = await window.API.inventory.discrepancies(clientId ? { client_id: clientId, limit: 200 } : { limit: 200 });
+        UI.renderTable('#discrepancies-body', res.rows, (r) => `
           <tr>
             <td>${UI.fmtDateTime(r.closed_at)}</td>
             <td>${UI.escHtml(r.item_name || r.barcode || '—')}</td>

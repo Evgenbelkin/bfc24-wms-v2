@@ -377,6 +377,87 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
   });
 }
 
+/**
+ * Пропущенные задания (для супервайзера/админа) — например, после того как по
+ * задаче инвентаризации, созданной автоматически при пропуске, товар нашёлся
+ * и остаток на ячейке подтверждён, но само задание сборки так и осталось
+ * 'skipped' навсегда (skipTask его туда и не двигает обратно).
+ */
+async function listSkippedTasks({ tenantId, warehouseId = null, limit = 100 }) {
+  const r = await query(
+    `SELECT t.id, t.barcode, t.qty, t.location_code, t.shipment_code, t.wave_id,
+       t.reason, t.comment, t.finished_at, t.warehouse_id,
+       i.item_name,
+       u.username AS picker_name,
+       w.status AS wave_status,
+       COALESCE(sb.qty_available, 0) AS qty_available_now
+     FROM wms.picking_tasks t
+     LEFT JOIN wms.items i ON i.id = t.item_id
+     LEFT JOIN wms.users u ON u.id = t.picker_id
+     LEFT JOIN wms.pick_waves w ON w.id = t.wave_id
+     LEFT JOIN wms.locations l ON l.tenant_id = t.tenant_id
+       AND l.warehouse_id = t.warehouse_id AND UPPER(l.location_code) = UPPER(t.location_code)
+     LEFT JOIN wms.stock_balances sb ON sb.location_id = l.id
+       AND sb.item_id = t.item_id AND sb.client_id = t.client_id
+     WHERE t.tenant_id=$1 AND t.status='skipped'
+       AND ($2::int IS NULL OR t.warehouse_id=$2)
+     ORDER BY t.finished_at DESC
+     LIMIT $3`,
+    [tenantId, warehouseId, Math.min(limit, 200)]
+  );
+  return r.rows;
+}
+
+/**
+ * Вернуть пропущенное задание обратно в сборку (только supervisor/tenant_admin —
+ * не сам сборщик, чтобы не получилось "пропустил → сразу вернул себе то же самое").
+ * Сбрасывает задание в статус 'new' в той же волне; если волна уже успела стать
+ * 'ready' (потому что при пропуске remaining считался без учёта skipped), возвращает
+ * её обратно в 'active', иначе закрыть волну с недобранной позицией будет нельзя.
+ */
+async function requeueSkippedTask({ tenantId, taskId, actorId }) {
+  return transaction(async (client) => {
+    const tRes = await client.query(
+      `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [taskId, tenantId]
+    );
+    if (tRes.rowCount === 0) throw new NotFoundError('PickingTask', taskId);
+    const task = tRes.rows[0];
+    if (task.status !== 'skipped') {
+      throw new ValidationError(`Вернуть в сборку можно только пропущенное задание (сейчас статус '${task.status}')`);
+    }
+
+    let wave = null;
+    if (task.wave_id) {
+      const wRes = await client.query(`SELECT * FROM wms.pick_waves WHERE id=$1 FOR UPDATE`, [task.wave_id]);
+      wave = wRes.rows[0] || null;
+      if (wave && wave.status === 'done') {
+        throw new ValidationError(
+          'Волна уже закрыта и короб передан на упаковку — вернуть это задание в сборку автоматически нельзя. Оформите недостающий товар отдельным ручным заказом.'
+        );
+      }
+    }
+
+    await client.query(
+      `UPDATE wms.picking_tasks
+       SET status='new', qty_picked=0, scan_step='await_location',
+           reason=NULL, comment=NULL, started_at=NULL, finished_at=NULL,
+           updated_at=NOW(), updated_by=$1
+       WHERE id=$2`,
+      [actorId, taskId]
+    );
+
+    if (wave && wave.status === 'ready') {
+      await client.query(
+        `UPDATE wms.pick_waves SET status='active', ready_at=NULL, updated_at=NOW() WHERE id=$1`,
+        [wave.id]
+      );
+    }
+
+    return { ok: true, taskId, waveId: task.wave_id || null };
+  });
+}
+
 /** Закрыть волну (все задачи done + парковка короба) */
 async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode }) {
   return transaction(async (client) => {
@@ -564,6 +645,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
 module.exports = {
   listWaves, getWaveByShipmentCode, takeWave,
   getNextTask, scanLocation, scanItem, skipTask,
+  listSkippedTasks, requeueSkippedTask,
   closeWave, getWaveStatus,
   createManualWave,
 };

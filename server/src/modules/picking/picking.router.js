@@ -109,6 +109,34 @@ router.post('/skip', requireRole('tenant_admin','supervisor','picker'), async (r
   } catch(e){ next(e); }
 });
 
+/** GET /picking/tasks/skipped — пропущенные задания (только supervisor/tenant_admin) */
+router.get('/tasks/skipped', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const rows = await svc.listSkippedTasks({
+      tenantId:    req.user.tenantId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      limit:       Number(req.query.limit) || 100,
+    });
+    res.json({ ok: true, rows });
+  } catch(e){ next(e); }
+});
+
+/**
+ * POST /picking/tasks/:id/requeue — вернуть пропущенное задание обратно в сборку.
+ * Намеренно НЕ доступно роли 'picker' — иначе сборщик мог бы сам себе тут же
+ * вернуть то, что только что пропустил, без реальной проверки остатка супервайзером.
+ */
+router.post('/tasks/:id/requeue', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.requeueSkippedTask({
+      tenantId: req.user.tenantId,
+      taskId:   validatePositiveInt(req.params.id, 'id'),
+      actorId:  req.user.id,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /picking/manual-wave — создать отгрузку+волну вручную (без маркетплейса) */
 router.post('/manual-wave', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
