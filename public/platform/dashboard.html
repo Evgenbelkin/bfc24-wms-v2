@@ -8,11 +8,11 @@
   <style>
     .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;}
     @media (min-width:700px){ .kpi-grid{grid-template-columns:repeat(4,1fr);} }
-    .kpi{background:var(--card);border-radius:14px;padding:16px;text-align:center;}
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
     .kpi .num{font-size:26px;font-weight:800;}
     .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
     .kpi.warn .num{color:var(--amber);}
-    .kpi.danger .num{color:#f87171;}
+    .kpi.danger .num{color:var(--red);}
     .kpi.ok .num{color:var(--green2);}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
     .toolbar input[type=text]{flex:1;min-width:160px;padding:10px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
@@ -39,7 +39,7 @@
     <div class="toolbar">
       <input type="text" id="f-search" placeholder="Поиск: компания или код..." onkeydown="if(event.key==='Enter')loadTenants()"/>
       <button class="btn-sm btn-back" onclick="loadTenants()">🔍 Найти</button>
-      <button class="btn-sm btn-blue" style="background:var(--accent);color:#0f172a;" onclick="openCreateForm()">+ Новый клиент</button>
+      <button class="btn-sm btn-blue" style="background:var(--accent);color:#fff;" onclick="openCreateForm()">+ Новый клиент</button>
     </div>
 
     <div class="tabs">
@@ -68,7 +68,7 @@
         <div class="badge"><span>Заказов (мес)</span><div id="d-orders">—</div></div>
         <div class="badge"><span>Доступ до</span><div id="d-access">—</div></div>
       </div>
-      <button class="btn-sm" style="background:var(--accent);color:#0f172a;margin-top:12px;" onclick="impersonateTenant(currentTenantId)">🔑 Войти на склад клиента</button>
+      <button class="btn-sm" style="background:var(--accent);color:#fff;margin-top:12px;" onclick="impersonateTenant(currentTenantId)">🔑 Войти на склад клиента</button>
     </div>
 
     <div class="card">
@@ -299,7 +299,7 @@
             </div>
           </div>
           <div class="row-actions">
-            <button class="btn-sm" style="background:var(--accent);color:#0f172a;" onclick="event.stopPropagation();impersonateTenant(${t.id})">🔑 Войти на склад</button>
+            <button class="btn-sm" style="background:var(--accent);color:#fff;" onclick="event.stopPropagation();impersonateTenant(${t.id})">🔑 Войти на склад</button>
             <button class="btn-sm btn-green" style="background:var(--green);color:#fff;" onclick="event.stopPropagation();quickExtend(${t.id})">+30 дней</button>
           </div>
         </div>

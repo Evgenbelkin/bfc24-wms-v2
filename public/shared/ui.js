@@ -72,7 +72,7 @@
     const tbody = el(tbodySelector);
     if (!tbody) return;
     if (!rows || !rows.length) {
-      tbody.innerHTML = `<tr><td colspan="99" style="text-align:center;color:#888;padding:24px;">Нет данных</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="99" style="text-align:center;color:#64748b;padding:24px;">Нет данных</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map(renderRow).join('');

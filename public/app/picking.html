@@ -6,39 +6,39 @@
   <title>Сборка — BFC24 WMS v2</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:-apple-system,sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh;padding:12px;}
+    body{font-family:-apple-system,sans-serif;background:#f8fafc;color:#0f172a;min-height:100vh;padding:12px;}
     .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
-    .header h1{font-size:20px;font-weight:700;color:#38bdf8;}
+    .header h1{font-size:20px;font-weight:700;color:#0284c7;}
     .btn-sm{padding:8px 14px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
-    .btn-back{background:#1e293b;color:#94a3b8;}
-    .btn-logout{background:#7f1d1d;color:#fca5a5;}
-    .card{background:#1e293b;border-radius:14px;padding:20px;margin-bottom:12px;}
+    .btn-back{background:#ffffff;color:#334155;border:1px solid #e2e8f0;}
+    .btn-logout{background:#fee2e2;color:#b91c1c;}
+    .card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:12px;}
     .card-title{font-size:13px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
     .wave-info{display:flex;gap:12px;flex-wrap:wrap;}
-    .badge{background:#0f172a;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;}
+    .badge{background:#f1f5f9;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;}
     .badge span{color:#64748b;font-size:12px;display:block;}
     /* Progress bar */
-    .progress-bar{height:8px;background:#0f172a;border-radius:4px;overflow:hidden;margin:12px 0;}
+    .progress-bar{height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;margin:12px 0;}
     .progress-fill{height:100%;background:#22c55e;border-radius:4px;transition:width .3s;}
     /* Task card */
-    .task-card{background:#0f172a;border-radius:14px;padding:20px;}
-    .task-barcode{font-size:26px;font-weight:800;color:#38bdf8;margin-bottom:4px;word-break:break-all;}
-    .task-name{font-size:16px;color:#f1f5f9;margin-bottom:16px;}
-    .task-location{display:flex;align-items:center;gap:10px;background:#1e293b;border-radius:10px;padding:14px;margin-bottom:16px;}
+    .task-card{background:#f1f5f9;border-radius:14px;padding:20px;}
+    .task-barcode{font-size:26px;font-weight:800;color:#0284c7;margin-bottom:4px;word-break:break-all;}
+    .task-name{font-size:16px;color:#0f172a;margin-bottom:16px;}
+    .task-location{display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:16px;}
     .location-icon{font-size:28px;}
-    .location-code{font-size:24px;font-weight:800;color:#fbbf24;}
+    .location-code{font-size:24px;font-weight:800;color:#b45309;}
     .location-label{font-size:12px;color:#64748b;}
-    .task-qty{font-size:40px;font-weight:800;color:#22c55e;text-align:center;margin:16px 0;}
+    .task-qty{font-size:40px;font-weight:800;color:#16a34a;text-align:center;margin:16px 0;}
     .task-preview{width:80px;height:80px;object-fit:cover;border-radius:8px;float:right;margin-left:12px;}
     /* Scan input */
     .scan-section{margin-top:16px;}
-    .scan-label{font-size:14px;color:#94a3b8;margin-bottom:8px;font-weight:600;}
-    .scan-input{width:100%;padding:18px;background:#0f172a;border:3px solid #334155;border-radius:12px;color:#f1f5f9;font-size:18px;outline:none;}
+    .scan-label{font-size:14px;color:#334155;margin-bottom:8px;font-weight:600;}
+    .scan-input{width:100%;padding:18px;background:#f1f5f9;border:3px solid #e2e8f0;border-radius:12px;color:#0f172a;font-size:18px;outline:none;}
     .scan-input.awaiting-location{border-color:#fbbf24;}
-    .scan-input.awaiting-item{border-color:#38bdf8;}
-    .scan-input:focus{border-color:#7dd3fc;}
+    .scan-input.awaiting-item{border-color:#0284c7;}
+    .scan-input:focus{border-color:#0ea5e9;}
     .scan-row{display:flex;gap:8px;}
-    .scan-camera-btn{padding:0 18px;border:none;border-radius:12px;background:#334155;color:#38bdf8;font-size:22px;cursor:pointer;}
+    .scan-camera-btn{padding:0 18px;border:1px solid #e2e8f0;border-radius:12px;background:#f1f5f9;color:#0284c7;font-size:22px;cursor:pointer;}
     /* Buttons */
     .btn-row{display:flex;gap:10px;margin-top:12px;}
     .btn-big{flex:1;padding:18px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;}
@@ -51,14 +51,14 @@
     .no-wave p{color:#64748b;font-size:16px;margin-bottom:20px;}
     /* Step indicator */
     .step-indicator{display:flex;gap:6px;justify-content:center;margin-bottom:16px;}
-    .step{width:12px;height:12px;border-radius:50%;background:#334155;}
-    .step.active{background:#38bdf8;}
+    .step{width:12px;height:12px;border-radius:50%;background:#e2e8f0;}
+    .step.active{background:#0284c7;}
     .step.done{background:#22c55e;}
     #status-msg{text-align:center;color:#64748b;font-size:14px;min-height:20px;margin-top:8px;}
-    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
-    .modal-card{background:#1e293b;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:#ffffff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;box-shadow:0 -8px 30px rgba(15,23,42,.15);}
     @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
-    .modal-card .field-label{font-size:12px;color:#94a3b8;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px;}
+    .modal-card .field-label{font-size:12px;color:#334155;font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px;}
     .modal-card .hint{font-size:12px;color:#64748b;margin-top:10px;line-height:1.5;}
   </style>
 </head>
@@ -90,7 +90,7 @@
   <div class="card" id="wave-complete-card" style="display:none">
     <div style="text-align:center;padding:10px 0;">
       <div style="font-size:48px;margin-bottom:12px;">✅</div>
-      <p style="color:#94a3b8;margin-bottom:20px;">Все товары собраны! Поставьте короб на ячейку МХ и закройте волну.</p>
+      <p style="color:#334155;margin-bottom:20px;">Все товары собраны! Поставьте короб на ячейку МХ и закройте волну.</p>
       <button class="btn-big btn-red" onclick="closeWave()">Закрыть волну</button>
     </div>
   </div>
