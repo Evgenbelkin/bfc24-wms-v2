@@ -16,7 +16,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🔀 Перемещение</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M17 3h4v4"/><path d="M21 3l-6.6 6.6"/><path d="M3 21l6-6"/><path d="M3 7h3.5L15 20.5h6"/><path d="M3 3h3.5L11 9"/><path d="M17 21h4v-4"/></svg> Перемещение</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -37,7 +37,7 @@
       <div class="card-title">Откуда</div>
       <div class="scan-row">
         <input id="from-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#from-location','Скан ячейки-источника')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#from-location','Скан ячейки-источника')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
       <div id="from-content" style="margin-top:10px;"></div>
     </div>
@@ -46,7 +46,7 @@
       <div class="card-title">Товар</div>
       <div class="scan-row">
         <input id="move-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#move-barcode','Скан товара')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#move-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
       <div class="refresh-note" id="barcode-note"></div>
     </div>
@@ -64,11 +64,11 @@
       <div class="card-title">Куда</div>
       <div class="scan-row">
         <input id="to-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#to-location','Скан ячейки-назначения')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#to-location','Скан ячейки-назначения')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
     </div>
 
-    <button class="btn-big btn-green btn-full" onclick="submitMove()">✅ Переместить</button>
+    <button class="btn-big btn-green btn-full" onclick="submitMove()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Переместить</button>
     <div id="move-status" class="refresh-note"></div>
   </div>
 

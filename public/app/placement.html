@@ -17,7 +17,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🧭 Размещение</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2 6.4-6.4 2 2-6.4z"/></svg> Размещение</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -39,7 +39,7 @@
       <div class="card-title">Или сразу отсканируйте товар</div>
       <div class="scan-row">
         <input id="scan-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-barcode','Скан товара')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
     </div>
 
@@ -72,13 +72,13 @@
       <div class="card-title" style="margin-top:16px;">Куда (целевая ячейка)</div>
       <div class="scan-row">
         <input id="to-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#to-location','Скан ячейки')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#to-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
-      <button class="btn-sm btn-back" style="margin-top:8px;" onclick="suggestLocation()">💡 Предложить ячейку</button>
+      <button class="btn-sm btn-back" style="margin-top:8px;" onclick="suggestLocation()"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.5.4.8 1.1.8 1.8v.5h6.4v-.5c0-.7.3-1.4.8-1.8A7 7 0 0 0 12 2z"/></svg> Предложить ячейку</button>
       <div id="suggest-note" class="refresh-note"></div>
 
       <div class="btn-row">
-        <button class="btn-big btn-green" onclick="confirmPlacement()">✅ Разместить</button>
+        <button class="btn-big btn-green" onclick="confirmPlacement()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Разместить</button>
         <button class="btn-big btn-yellow" onclick="clearSelection()">Отмена</button>
       </div>
     </div>
@@ -148,7 +148,7 @@
         document.getElementById('pending-count').textContent = pendingItems.length;
         const list = document.getElementById('pending-list');
         if (!pendingItems.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">✅</div>Нечего размещать</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>Нечего размещать</div>`;
           return;
         }
         list.innerHTML = pendingItems.map((it, idx) => `
@@ -222,7 +222,7 @@
         if (!res.suggestion) { document.getElementById('suggest-note').textContent = 'Нет предложений — введите ячейку вручную'; return; }
         UI.setVal('#to-location', res.suggestion.location_code);
         document.getElementById('suggest-note').textContent =
-          res.suggestion.reason === 'consolidation' ? '💡 Есть остаток этого товара в этой ячейке' : '💡 Свободная ячейка';
+          res.suggestion.reason === 'consolidation' ? '<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.5.4.8 1.1.8 1.8v.5h6.4v-.5c0-.7.3-1.4.8-1.8A7 7 0 0 0 12 2z"/></svg> Есть остаток этого товара в этой ячейке' : '<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.5.4.8 1.1.8 1.8v.5h6.4v-.5c0-.7.3-1.4.8-1.8A7 7 0 0 0 12 2z"/></svg> Свободная ячейка';
       } catch (e) { UI.notify.err(e.message); }
     }
 

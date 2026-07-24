@@ -9,7 +9,7 @@
 <body>
   <div class="header">
     <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🧾 Заказы и отгрузки</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M6 2h12v19l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg> Заказы и отгрузки</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -99,7 +99,7 @@
         const res = await window.API.seller.shipments();
         const shipments = res.shipments || [];
         if (!shipments.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Отгрузок пока нет</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Отгрузок пока нет</div>`;
           return;
         }
         list.innerHTML = shipments.map(s => {
@@ -110,7 +110,7 @@
               <div>
                 <div class="title">${UI.escHtml(s.external_id)}</div>
                 <div class="sub">Упаковано: ${s.total_packed_qty||0}/${s.total_planned_qty||0} · Отгружено: ${s.total_shipped_qty||0}</div>
-                ${s.shipped_at ? `<div class="sub">🚚 ${UI.fmtDateTime(s.shipped_at)}</div>` : ''}
+                ${s.shipped_at ? `<div class="sub"><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> ${UI.fmtDateTime(s.shipped_at)}</div>` : ''}
               </div>
               <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
             </div>

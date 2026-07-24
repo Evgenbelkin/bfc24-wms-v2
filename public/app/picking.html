@@ -65,7 +65,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🏃 Сборка</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L21 8H6"/></svg> Сборка</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -81,7 +81,7 @@
 
   <!-- No wave -->
   <div class="card no-wave" id="no-wave-card">
-    <div style="font-size:48px;margin-bottom:16px;">📦</div>
+    <div style="font-size:48px;margin-bottom:16px;"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></div>
     <p>Нет активной волны сборки</p>
     <button class="btn-big btn-blue" onclick="takeWave()">Взять волну</button>
   </div>
@@ -89,7 +89,7 @@
   <!-- Wave complete, waiting to be closed -->
   <div class="card" id="wave-complete-card" style="display:none">
     <div style="text-align:center;padding:10px 0;">
-      <div style="font-size:48px;margin-bottom:12px;">✅</div>
+      <div style="font-size:48px;margin-bottom:12px;"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>
       <p style="color:#334155;margin-bottom:20px;">Все товары собраны! Поставьте короб на ячейку МХ и закройте волну.</p>
       <button class="btn-big btn-red" onclick="closeWave()">Закрыть волну</button>
     </div>
@@ -110,7 +110,7 @@
       </div>
 
       <div class="task-location">
-        <div class="location-icon">📍</div>
+        <div class="location-icon"><svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg></div>
         <div>
           <div class="location-label">Ячейка</div>
           <div class="location-code" id="task-location">—</div>
@@ -124,7 +124,7 @@
         <div class="scan-row">
           <input type="text" id="scan-input" class="scan-input awaiting-location"
                  placeholder="Сканировать..." inputmode="none" autocomplete="off"/>
-          <button type="button" class="scan-camera-btn" onclick="openCameraScan()">📷</button>
+          <button type="button" class="scan-camera-btn" onclick="openCameraScan()"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
         </div>
       </div>
 
@@ -166,13 +166,13 @@
         locStep.className  = 'step active';
         itemStep.className = 'step';
         scanInput.className = 'scan-input awaiting-location';
-        scanLabel.textContent = '📍 Отсканируйте ЯЧЕЙКУ';
+        scanLabel.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg> Отсканируйте ЯЧЕЙКУ';
         scanInput.placeholder = 'Скан ячейки...';
       } else {
         locStep.className  = 'step done';
         itemStep.className = 'step active';
         scanInput.className = 'scan-input awaiting-item';
-        scanLabel.textContent = '📦 Отсканируйте ТОВАР';
+        scanLabel.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
         scanInput.placeholder = 'Скан товара...';
       }
     }
@@ -261,7 +261,7 @@
           if (res.result === 'ok') {
             currentTask.scan_step = 'await_item';
             updateStepIndicator('await_item');
-            statusEl.textContent = '✅ Ячейка подтверждена';
+            statusEl.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Ячейка подтверждена';
           } else {
             UI.notify.err(`Неверная ячейка! Ожидалась: ${res.expected}`);
             statusEl.textContent = `Ожидается: ${res.expected}`;
@@ -273,7 +273,7 @@
           });
           if (res.result === 'ok') {
             if (res.done) {
-              UI.notify.ok(`✅ Готово! (${res.qty_picked}/${res.qty_total})`);
+              UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})`);
               await loadWaveStatus();
               await loadNextTask();
             } else {
@@ -308,11 +308,11 @@
             <div class="field-label">Ячейка (МХ), куда поставили короб</div>
             <div class="scan-row">
               <input id="close-wave-loc" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-              <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#close-wave-loc','Скан ячейки МХ')">📷</button>
+              <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#close-wave-loc','Скан ячейки МХ')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
             </div>
             <div class="hint">Ячейка должна быть отмечена как буферная зона (МХ) в справочнике мест хранения — любую другую ячейку система не примет. После подтверждения на принтер упаковки уйдёт внутренняя наклейка с кодом этой отгрузки — упаковщик найдёт короб по этой ячейке и отсканирует наклейку, чтобы взять задание в работу.</div>
             <div class="btn-row">
-              <button class="btn-big btn-green" onclick="confirmCloseWave()">✅ Подтвердить</button>
+              <button class="btn-big btn-green" onclick="confirmCloseWave()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтвердить</button>
               <button class="btn-big btn-yellow" onclick="closeWaveModalClose()">Отмена</button>
             </div>
           </div>

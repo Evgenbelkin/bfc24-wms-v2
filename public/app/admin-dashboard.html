@@ -43,14 +43,14 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>📊 Диспетчерская</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Диспетчерская</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
   <div class="kpi-grid" id="kpi-grid"></div>
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-    <div class="auto-refresh">🔄 Автообновление каждые 15 сек</div>
+    <div class="auto-refresh"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Автообновление каждые 15 сек</div>
     <button class="btn-sm btn-back" onclick="loadAll()">↻ Сейчас</button>
   </div>
 
@@ -171,7 +171,7 @@
         `);
       }
 
-      list.innerHTML = rows.join('') || `<div class="empty-state"><div class="icon">😴</div>Нет активных волн сборки</div>`;
+      list.innerHTML = rows.join('') || `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>Нет активных волн сборки</div>`;
 
       return { activeCount: active.length, idleCount: active.filter(w => { const m = minutesAgo(w.updated_at); return m !== null && m >= IDLE_THRESHOLD_MS/60000; }).length, readyCount: ready.length, openCount: open.length };
     }
@@ -249,9 +249,9 @@
       });
 
       if (!allShipments.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет активных отгрузок</div>`;
+        list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Нет активных отгрузок</div>`;
       } else if (!items.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon">🔍</div>Ничего не найдено по фильтру «${STAGE_LABELS[shipFilter]||shipFilter}»</div>`;
+        list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg></div>Ничего не найдено по фильтру «${STAGE_LABELS[shipFilter]||shipFilter}»</div>`;
       } else {
         list.innerHTML = items.map(s => {
           const packingNote = s.packing_status
@@ -264,7 +264,7 @@
               <div>
                 <div class="title">${UI.escHtml(s.external_id)}</div>
                 <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · строк ${s.tasks_total||0}</div>
-                <div class="sub">📦 ${packingNote}</div>
+                <div class="sub"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> ${packingNote}</div>
               </div>
               <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
             </div>
@@ -318,7 +318,7 @@
     function renderSkipped(rows) {
       const box = document.getElementById('skipped-list');
       if (!rows.length) {
-        box.innerHTML = `<div class="empty-state" style="padding:16px;"><div class="icon">✅</div>Нет пропущенных позиций</div>`;
+        box.innerHTML = `<div class="empty-state" style="padding:16px;"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>Нет пропущенных позиций</div>`;
         return;
       }
       box.innerHTML = rows.map(r => {

@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🚚 Отгрузка</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> Отгрузка</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -36,8 +36,8 @@
       <input type="date" id="f-shipped-from"/>
       <label>по</label>
       <input type="date" id="f-shipped-to"/>
-      <button class="btn-sm btn-back" onclick="applyDateFilter()">🔍 Показать</button>
-      <button class="btn-sm btn-back" onclick="resetDateFilter()">✕ Сброс</button>
+      <button class="btn-sm btn-back" onclick="applyDateFilter()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+      <button class="btn-sm btn-back" onclick="resetDateFilter()"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg> Сброс</button>
     </div>
     <div id="ship-list"></div>
     <button class="btn-sm btn-back" onclick="loadBoard()">↻ Обновить</button>
@@ -61,7 +61,7 @@
       <div class="refresh-note" id="confirm-hint" style="margin-bottom:8px;">Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)</div>
       <div class="scan-row">
         <input id="scan-code" class="scan-input" placeholder="Код поставки" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-code','Скан кода поставки')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-code','Скан кода поставки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
       <div id="confirm-status" class="refresh-note"></div>
       <div id="qr-result" style="display:none"></div>
@@ -149,14 +149,14 @@
         shipments = res.shipments || [];
         const list = document.getElementById('ship-list');
         if (!shipments.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Нет отгрузок</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Нет отгрузок</div>`;
           return;
         }
         list.innerHTML = shipments.map((s, idx) => {
           // Факт отгрузки: когда и кто — заполняется только после реального
           // подтверждения (shipping.confirm), для ещё не отгруженных пусто.
           const shippedLine = s.shipped_at
-            ? `<div class="sub">🚚 ${UI.fmtDateTime(s.shipped_at)}${s.shipper_name ? ' · '+UI.escHtml(s.shipper_name) : ''}</div>`
+            ? `<div class="sub"><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> ${UI.fmtDateTime(s.shipped_at)}${s.shipper_name ? ' · '+UI.escHtml(s.shipper_name) : ''}</div>`
             : '';
           return `
           <div class="list-row ship-row" onclick="openShipment(${idx})">
@@ -318,12 +318,12 @@
           scanned_code: scannedCode,
         });
         UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped ?? '—'} шт.`);
-        statusEl.textContent = '✅ Подтверждено';
+        statusEl.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтверждено';
         if (res.wbDelivered) {
           statusEl.textContent += ' · ВБ уведомлён';
         } else if (res.wbDeliverError) {
           UI.notify.warn('Локально отгружено, но ВБ не подтвердил статус: ' + res.wbDeliverError + '. В кабинете ВБ поставка может ещё висеть «На сборке» — попробуйте отсканировать код ещё раз чуть позже.');
-          statusEl.textContent += ' · ⚠️ ВБ не подтвердил, повторите скан позже';
+          statusEl.textContent += ' · <svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> ВБ не подтвердил, повторите скан позже';
         }
         if (res.qr_base64) {
           document.getElementById('qr-result').style.display = 'block';
@@ -339,7 +339,7 @@
         await loadBoard();
       } catch (e) {
         UI.notify.err(e.message);
-        statusEl.textContent = '❌ ' + e.message;
+        statusEl.textContent = '<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg> ' + e.message;
       }
     }
     UI.onScan('#scan-code', confirmShipment);

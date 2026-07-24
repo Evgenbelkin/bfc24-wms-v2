@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🔍 Инвентаризация</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Инвентаризация</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -51,7 +51,7 @@
       </div>
       <input id="count-comment" class="scan-input" style="font-size:14px;padding:10px;margin-top:12px;" placeholder="Комментарий (необязательно)"/>
       <div class="btn-row">
-        <button class="btn-big btn-green" onclick="submitCount()">✅ Внести счёт</button>
+        <button class="btn-big btn-green" onclick="submitCount()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Внести счёт</button>
         <button class="btn-big btn-red" onclick="cancelTask()">Отменить задачу</button>
       </div>
       <button class="btn-sm btn-back" style="margin-top:10px;" onclick="closeCountCard()">← К списку</button>
@@ -70,17 +70,17 @@
       <div class="card-title">Ячейка</div>
       <div class="scan-row">
         <input id="new-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#new-location','Скан ячейки')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#new-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
     </div>
     <div class="card">
       <div class="card-title">Штрихкод товара (необязательно — если пусто, проверяется вся ячейка)</div>
       <div class="scan-row">
         <input id="new-barcode" class="scan-input" placeholder="Штрихкод (необязательно)" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#new-barcode','Скан товара')">📷</button>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#new-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
     </div>
-    <button class="btn-big btn-blue btn-full" onclick="createCheck()">➕ Создать проверку</button>
+    <button class="btn-big btn-blue btn-full" onclick="createCheck()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Создать проверку</button>
     <div id="new-status" class="refresh-note"></div>
   </div>
 
@@ -153,7 +153,7 @@
         document.getElementById('tasks-count').textContent = tasks.length;
         const list = document.getElementById('tasks-list');
         if (!tasks.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">✅</div>Нет открытых задач инвентаризации</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>Нет открытых задач инвентаризации</div>`;
           return;
         }
         list.innerHTML = tasks.map((t, idx) => `

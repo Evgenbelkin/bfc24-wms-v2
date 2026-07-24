@@ -19,7 +19,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🖨️ Панель принтеров</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Панель принтеров</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -35,7 +35,7 @@
       <div class="card-title">Принтеры (<span id="pr-count">0</span>)</div>
       <div id="pr-list"></div>
     </div>
-    <button class="btn-big btn-green btn-full" onclick="openPrinterModal(null)">➕ Новый принтер</button>
+    <button class="btn-big btn-green btn-full" onclick="openPrinterModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый принтер</button>
   </div>
 
   <!-- ============ Маршруты ============ -->
@@ -44,7 +44,7 @@
       <div class="card-title">Что на какой принтер печатается (<span id="rt-count">0</span>)</div>
       <div id="rt-list"></div>
     </div>
-    <button class="btn-big btn-green btn-full" onclick="openRouteModal()">➕ Новый маршрут</button>
+    <button class="btn-big btn-green btn-full" onclick="openRouteModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый маршрут</button>
   </div>
 
   <!-- ============ Очередь ============ -->
@@ -58,7 +58,7 @@
         <option value="processing">В процессе</option>
         <option value="cancelled">Отменённые</option>
       </select>
-      <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadJobs()">🔍 Показать</button>
+      <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadJobs()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
     </div>
     <div class="card">
       <div class="card-title">Задания (<span id="job-count">0</span>)</div>
@@ -111,7 +111,7 @@
         document.getElementById('pr-count').textContent = printersList.length;
         const list = document.getElementById('pr-list');
         if (!printersList.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🖨️</div>Принтеров пока нет</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg></div>Принтеров пока нет</div>`;
           return;
         }
         list.innerHTML = printersList.map((p, idx) => `
@@ -147,7 +147,7 @@
             <div class="field"><label style="display:inline;">Принтер по умолчанию</label> <input type="checkbox" id="m-default" ${p && p.is_default ? 'checked':''}/></div>
             ${p ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${p.is_active ? 'checked':''}/></div>` : ''}
             <div class="btn-row">
-              <button class="btn-big btn-green" onclick="savePrinter(${idx})">💾 Сохранить</button>
+              <button class="btn-big btn-green" onclick="savePrinter(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>
@@ -211,7 +211,7 @@
         document.getElementById('rt-count').textContent = routes.length;
         const list = document.getElementById('rt-list');
         if (!routes.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🔀</div>Маршрутов пока нет — без них задания создаются, но печать не назначена на конкретный принтер</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M17 3h4v4"/><path d="M21 3l-6.6 6.6"/><path d="M3 21l6-6"/><path d="M3 7h3.5L15 20.5h6"/><path d="M3 3h3.5L11 9"/><path d="M17 21h4v-4"/></svg></div>Маршрутов пока нет — без них задания создаются, но печать не назначена на конкретный принтер</div>`;
           return;
         }
         list.innerHTML = routes.map(r => `
@@ -238,7 +238,7 @@
             <div class="field"><label>На каком принтере</label><select id="rm-printer">${printerOptions}</select></div>
             <div class="field"><label style="display:inline;">По умолчанию для этого типа</label> <input type="checkbox" id="rm-default" checked/></div>
             <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveRoute()">💾 Сохранить</button>
+              <button class="btn-big btn-green" onclick="saveRoute()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>
@@ -275,7 +275,7 @@
         document.getElementById('job-count').textContent = jobs.length;
         const list = document.getElementById('job-list');
         if (!jobs.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🖨️</div>Пусто</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg></div>Пусто</div>`;
           return;
         }
         list.innerHTML = jobs.map(j => `
@@ -284,7 +284,7 @@
               <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===j.doc_type)||{}).label || j.doc_type)} <span class="pill ${JOB_STATUS_PILL[j.status]||'pill-gray'}">${JOB_STATUS_LABELS[j.status]||j.status}</span></div>
               <div class="sub">${UI.escHtml(j.printer_name)} · ${UI.fmtDateTime(j.created_at)} ${j.error_text ? '· <span style=\"color:var(--red)\">'+UI.escHtml(j.error_text)+'</span>' : ''}</div>
             </div>
-            ${(j.status==='error'||j.status==='printed') ? `<button class="btn-sm btn-back" onclick="reprintJob(${j.id})">🔁 Повторить</button>` : ''}
+            ${(j.status==='error'||j.status==='printed') ? `<button class="btn-sm btn-back" onclick="reprintJob(${j.id})"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Повторить</button>` : ''}
           </div>
         `).join('');
       } catch (e) { UI.notify.err(e.message); }

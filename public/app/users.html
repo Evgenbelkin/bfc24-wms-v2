@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>👥 Пользователи</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.3"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 14.3c2.6.5 4.5 2.5 4.5 5.7"/></svg> Пользователи</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -28,7 +28,7 @@
       <input id="f-search" placeholder="Логин или имя"/>
       <select id="f-role"><option value="">Все роли</option></select>
     </div>
-    <button class="btn-big btn-blue btn-full" onclick="loadUsers()">🔍 Показать</button>
+    <button class="btn-big btn-blue btn-full" onclick="loadUsers()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
   </div>
 
   <div class="card">
@@ -36,7 +36,7 @@
     <div id="u-list"></div>
   </div>
 
-  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новый пользователь</button>
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый пользователь</button>
 
   <div id="modal-root"></div>
 
@@ -90,7 +90,7 @@
 
         const list = document.getElementById('u-list');
         if (!usersCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">👥</div>Никого не найдено</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.3"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 14.3c2.6.5 4.5 2.5 4.5 5.7"/></svg></div>Никого не найдено</div>`;
           return;
         }
         list.innerHTML = usersCache.map((u, idx) => `
@@ -133,7 +133,7 @@
             ${canManage ? `<div class="field"><label>${u ? 'Новый пароль (оставьте пустым, чтобы не менять)' : 'Пароль'}</label><input id="m-password" type="password" autocomplete="new-password"/></div>` : ''}
             ${u ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${u.is_active ? 'checked':''} ${canManage?'':'disabled'}/></div>` : ''}
             <div class="btn-row">
-              ${canManage ? `<button class="btn-big btn-green" onclick="saveUser(${idx})">💾 Сохранить</button>` : ''}
+              ${canManage ? `<button class="btn-big btn-green" onclick="saveUser(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
               ${canManage && u && u.id !== me.id ? `<button class="btn-big btn-red" onclick="deactivateUser(${idx})">Деактивировать</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>

@@ -49,12 +49,12 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🧭 Табло</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2 6.4-6.4 2 2-6.4z"/></svg> Табло</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-    <div class="auto-refresh">🔄 Автообновление каждые 20 сек</div>
+    <div class="auto-refresh"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Автообновление каждые 20 сек</div>
     <button class="btn-sm btn-back" onclick="loadAll()">↻ Сейчас</button>
   </div>
 
@@ -108,28 +108,28 @@
         ].map(k => `<div class="kpi ${k.cls}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>`).join('');
 
         let html = '';
-        html += stage('c-receiving', '📥', 'Приёмка', 'receiving.html?from=overview', [
+        html += stage('c-receiving', '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg>', 'Приёмка', 'receiving.html?from=overview', [
           { label:'Заявок',    num: r.active_orders||0 },
           { label:'Ожидается', num: r.units_expected||0 },
           { label:'Принято',   num: r.units_received||0, cls:'ok' },
         ]);
-        html += stage('c-placement', '🗄️', 'Размещение', 'placement.html?from=overview', [
+        html += stage('c-placement', '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>', 'Размещение', 'placement.html?from=overview', [
           { label:'Строк',  num: p.lines_pending||0,  cls: p.lines_pending>0 ? 'warn':'' },
           { label:'Единиц', num: p.units_pending||0,  cls: p.units_pending>0 ? 'warn':'' },
         ]);
-        html += stage('c-wave', '🧩', 'Волна', 'wb.html?from=overview', [
+        html += stage('c-wave', '<svg class="i" viewBox="0 0 24 24"><path d="M10 3h4a1 1 0 0 1 1 1v2.1a2 2 0 1 1 0 3.8V12h2.1a2 2 0 1 1 0 4H15v2.1a2 2 0 1 1-4 0V16H8.9a2 2 0 1 1 0-4H11v-2.1a2 2 0 1 1 0-3.8V4a1 1 0 0 1 1-1z"/></svg>', 'Волна', 'wb.html?from=overview', [
           { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
         ]);
-        html += stage('c-picking', '🧺', 'Сборка', 'admin-dashboard.html?from=overview', [
+        html += stage('c-picking', '<svg class="i" viewBox="0 0 24 24"><path d="M3 10h18l-1.5 9a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/><path d="M8 10 10 4M16 10 14 4M3 10h18"/></svg>', 'Сборка', 'admin-dashboard.html?from=overview', [
           { label:'Строк ждут', num: pk.tasks_pending||0, cls: pk.tasks_pending>0 ? 'warn':'' },
           { label:'Штук ждут',  num: pk.qty_pending||0,   cls: pk.qty_pending>0 ? 'warn':'' },
           { label:'Собрано',    num: pk.tasks_done||0,    cls:'ok' },
         ]);
-        html += stage('c-packing', '📦', 'Упаковка', 'admin-dashboard.html?from=overview', [
+        html += stage('c-packing', '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>', 'Упаковка', 'admin-dashboard.html?from=overview', [
           { label:'Ждут',      num: pc.tasks_pending||0, cls: pc.tasks_pending>0 ? 'warn':'' },
           { label:'Упаковано', num: pc.tasks_done||0,    cls:'ok' },
         ]);
-        html += stage('c-shipping', '🚚', 'Отгрузка', 'shipping.html?from=overview', [
+        html += stage('c-shipping', '<svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg>', 'Отгрузка', 'shipping.html?from=overview', [
           { label:'Готовы',     num: sh.ready_to_ship||0, cls: sh.ready_to_ship>0 ? 'ok':'' },
           { label:'В пути',     num: sh.in_transit||0 },
           { label:'Доставлено', num: sh.done_total||0,    cls:'ok' },

@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🗄️ Места хранения</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Места хранения</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -37,7 +37,7 @@
         <option value="virtual">Виртуальная</option>
       </select>
     </div>
-    <button class="btn-big btn-blue btn-full" onclick="loadLocations()">🔍 Показать</button>
+    <button class="btn-big btn-blue btn-full" onclick="loadLocations()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
   </div>
 
   <div class="card">
@@ -46,7 +46,7 @@
     <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadMore()">↓ Ещё</button>
   </div>
 
-  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новая ячейка</button>
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая ячейка</button>
 
   <div id="modal-root"></div>
 
@@ -95,7 +95,7 @@
 
         const list = document.getElementById('loc-list');
         if (!locCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🗄️</div>Ничего не найдено</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg></div>Ничего не найдено</div>`;
           return;
         }
         list.innerHTML = locCache.map((l, idx) => `
@@ -130,7 +130,7 @@
             <div class="field"><label style="display:inline;">Активна</label> <input type="checkbox" id="m-active" ${!loc || loc.is_active ? 'checked':''}/></div>
             <div class="field"><label style="display:inline;">Ячейка сборки (pick location)</label> <input type="checkbox" id="m-pick" ${!loc || loc.is_pick_location ? 'checked':''}/></div>
             <div class="btn-row">
-              ${canEdit ? `<button class="btn-big btn-green" onclick="saveLocation(${idx})">💾 Сохранить</button>` : ''}
+              ${canEdit ? `<button class="btn-big btn-green" onclick="saveLocation(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>

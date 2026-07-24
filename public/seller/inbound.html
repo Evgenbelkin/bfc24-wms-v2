@@ -19,13 +19,13 @@
 <body>
   <div class="header">
     <a href="/seller/menu.html" class="btn-sm btn-back" id="header-back">← Меню</a>
-    <h1>🚚 Заявки на поставку</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> Заявки на поставку</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
   <!-- ============ LIST ============ -->
   <div id="list-view">
-    <button class="btn-big btn-green btn-full" onclick="openCreateForm()">➕ Новая заявка</button>
+    <button class="btn-big btn-green btn-full" onclick="openCreateForm()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая заявка</button>
     <div class="card" style="margin-top:12px;">
       <div id="orders-list"></div>
     </div>
@@ -53,7 +53,7 @@
         </table>
       </div>
     </div>
-    <button class="btn-big btn-green btn-full" id="confirm-btn" style="display:none" onclick="confirmOrder()">✅ Подтвердить заявку (отправить складу)</button>
+    <button class="btn-big btn-green btn-full" id="confirm-btn" style="display:none" onclick="confirmOrder()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтвердить заявку (отправить складу)</button>
   </div>
 
   <!-- ============ CREATE ============ -->
@@ -83,7 +83,7 @@
         <button class="qty-btn" onclick="stepAddQty(-1)">−</button>
         <div class="qty-val" id="add-qty-val">1</div>
         <button class="qty-btn" onclick="stepAddQty(1)">+</button>
-        <button class="btn-big btn-blue" style="flex:1;" onclick="addLine()">➕ Добавить</button>
+        <button class="btn-big btn-blue" style="flex:1;" onclick="addLine()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Добавить</button>
       </div>
     </div>
 
@@ -92,7 +92,7 @@
       <div id="lines-list"></div>
     </div>
 
-    <button class="btn-big btn-green btn-full" onclick="submitOrder()">📝 Создать заявку</button>
+    <button class="btn-big btn-green btn-full" onclick="submitOrder()"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> Создать заявку</button>
   </div>
 
   <script src="/shared/api.js"></script>
@@ -128,7 +128,7 @@
         const res = await window.API.seller.inbound.list({ limit: 100 });
         const orders = res.orders || [];
         if (!orders.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">📭</div>Заявок пока нет — создайте первую кнопкой выше</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Заявок пока нет — создайте первую кнопкой выше</div>`;
           return;
         }
         list.innerHTML = orders.map(o => `
@@ -218,7 +218,7 @@
     function selectSuggestion(item) {
       UI.setVal('#add-barcode', item.barcode);
       pendingItemName = item.item_name;
-      document.getElementById('add-item-name').textContent = `✓ ${item.item_name}`;
+      document.getElementById('add-item-name').textContent = `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${item.item_name}`;
       UI.setVal('#search-item', '');
       document.getElementById('suggest-list').innerHTML = '';
     }
@@ -272,7 +272,7 @@
       document.getElementById('lines-count').textContent = orderLines.length;
       const list = document.getElementById('lines-list');
       if (!orderLines.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon">📦</div>Пока пусто — добавьте товары выше</div>`;
+        list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></div>Пока пусто — добавьте товары выше</div>`;
         return;
       }
       list.innerHTML = orderLines.map((l, idx) => `
@@ -282,7 +282,7 @@
             <div class="sub">${UI.escHtml(l.barcode)}</div>
           </div>
           <div class="badge"><span>Кол-во</span><div>${UI.fmtQty(l.qty)}</div></div>
-          <button class="btn-remove" onclick="removeLine(${idx})">✕</button>
+          <button class="btn-remove" onclick="removeLine(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
         </div>
       `).join('');
     }

@@ -18,7 +18,7 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🏢 Клиенты</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/></svg> Клиенты</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
@@ -27,7 +27,7 @@
     <div class="filters-row">
       <input id="f-search" placeholder="Название или код клиента"/>
     </div>
-    <button class="btn-big btn-blue btn-full" onclick="loadClients()">🔍 Показать</button>
+    <button class="btn-big btn-blue btn-full" onclick="loadClients()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
   </div>
 
   <div class="card">
@@ -35,7 +35,7 @@
     <div id="client-list"></div>
   </div>
 
-  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)">➕ Новый клиент</button>
+  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый клиент</button>
 
   <div id="modal-root"></div>
 
@@ -65,7 +65,7 @@
 
         const list = document.getElementById('client-list');
         if (!clientCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🏢</div>Клиентов нет</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/></svg></div>Клиентов нет</div>`;
           return;
         }
         list.innerHTML = clientCache.map((c, idx) => `
@@ -99,7 +99,7 @@
             <div class="field"><label>Заметки</label><textarea id="m-notes" rows="3">${full && full.notes ? UI.escHtml(full.notes):''}</textarea></div>
             <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!full || full.is_active ? 'checked':''}/></div>
             <div class="btn-row">
-              ${canEdit ? `<button class="btn-big btn-green" onclick="saveClient(${idx})">💾 Сохранить</button>` : ''}
+              ${canEdit ? `<button class="btn-big btn-green" onclick="saveClient(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>

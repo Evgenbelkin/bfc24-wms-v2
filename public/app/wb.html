@@ -24,13 +24,13 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1>🟣 Wildberries</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg> Wildberries</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
   <div id="module-disabled" class="card" style="display:none">
     <div class="empty-state">
-      <div class="icon">🔒</div>
+      <div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
       Модуль интеграции с WB не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
     </div>
   </div>
@@ -48,7 +48,7 @@
         <div class="card-title">Аккаунты (<span id="acc-count">0</span>)</div>
         <div id="acc-list"></div>
       </div>
-      <button class="btn-big btn-green btn-full" onclick="openAccModal(null)">➕ Новый аккаунт</button>
+      <button class="btn-big btn-green btn-full" onclick="openAccModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый аккаунт</button>
     </div>
 
     <!-- ============ Справочник WB (каталог) ============ -->
@@ -58,7 +58,7 @@
         <select id="cat-account" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
           <option value="">Загрузка...</option>
         </select>
-        <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="importItems()">⬇️ Импортировать карточки из WB</button>
+        <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="importItems()">⬇ Импортировать карточки из WB</button>
         <div id="import-result"></div>
       </div>
 
@@ -77,10 +77,10 @@
           <option value="">Загрузка...</option>
         </select>
 
-        <button class="btn-big btn-blue btn-full" onclick="syncOrders()">🔄 Синхронизировать заказы</button>
+        <button class="btn-big btn-blue btn-full" onclick="syncOrders()"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Синхронизировать заказы</button>
         <div id="sync-result"></div>
 
-        <button class="btn-sm btn-back btn-full" style="margin-top:8px;" onclick="syncOrdersAll()">🔄 Синхронизировать все магазины</button>
+        <button class="btn-sm btn-back btn-full" style="margin-top:8px;" onclick="syncOrdersAll()"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Синхронизировать все магазины</button>
         <div id="sync-all-result"></div>
         <div class="refresh-note" style="text-align:left;margin-top:6px;">Заказы также подтягиваются автоматически в фоне — эта кнопка нужна только чтобы обновить прямо сейчас перед формированием волны.</div>
 
@@ -88,7 +88,7 @@
           <label>Сколько заказов включить в волну (без поставки)</label>
           <input id="wave-limit" type="number" value="50" min="1" max="500"/>
         </div>
-        <button class="btn-big btn-green btn-full" onclick="generateWave()">🌊 Сформировать волну</button>
+        <button class="btn-big btn-green btn-full" onclick="generateWave()"><svg class="i" viewBox="0 0 24 24"><path d="M2 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 20c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg> Сформировать волну</button>
         <div id="wave-result"></div>
       </div>
 
@@ -103,7 +103,7 @@
             <option value="cancel">Отменён</option>
           </select>
         </div>
-        <button class="btn-big btn-blue btn-full" onclick="loadOrders()">🔍 Показать</button>
+        <button class="btn-big btn-blue btn-full" onclick="loadOrders()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
       </div>
 
       <div class="card">
@@ -164,7 +164,7 @@
 
         const list = document.getElementById('acc-list');
         if (!accountsList.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🟣</div>Аккаунтов пока нет</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></div>Аккаунтов пока нет</div>`;
         } else {
           list.innerHTML = accountsList.map((a, idx) => `
             <div class="list-row acc-row" onclick="openAccModal(${idx})">
@@ -172,7 +172,7 @@
                 <div class="title">${UI.escHtml(a.account_name)}</div>
                 <div class="sub">${UI.escHtml(a.client_name)} ${a.supplier_id ? '· supplier '+UI.escHtml(a.supplier_id) : ''} ${a.has_token ? '' : '· <span style=\"color:var(--red)\">нет токена</span>'} ${a.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
               </div>
-              <div class="badge"><span>WB</span><div>${a.has_token ? '🔑' : '—'}</div></div>
+              <div class="badge"><span>WB</span><div>${a.has_token ? '<svg class="i" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="M11.5 11.5 20 3"/><path d="M16 7l3 3"/><path d="M19 4l3 3"/></svg>' : '—'}</div></div>
             </div>
           `).join('');
         }
@@ -202,7 +202,7 @@
             </div>
             ${a ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${a.is_active ? 'checked':''}/></div>` : ''}
             <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveAccount(${idx})">💾 Сохранить</button>
+              <button class="btn-big btn-green" onclick="saveAccount(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>
@@ -269,7 +269,7 @@
 
         const list = document.getElementById('cat-list');
         if (!catCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon">🏷️</div>Каталог пуст — нажмите «Импортировать карточки»</div>`;
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z"/><circle cx="15.5" cy="7.5" r="1.4"/></svg></div>Каталог пуст — нажмите «Импортировать карточки»</div>`;
           return;
         }
         list.innerHTML = catCache.map(it => `
@@ -313,7 +313,7 @@
         UI.notify.info('Синхронизируем все магазины с WB...');
         const res = await window.API.wb.syncOrdersAll();
         const rows = (res.accounts||[]).map(a =>
-          `<div class="loc-row"><span>${UI.escHtml(a.account_name||('#'+a.account_id))}</span><span>${a.ok ? `+${a.saved}/${a.fetched}` : '⚠ '+UI.escHtml(a.error||'ошибка')}</span></div>`
+          `<div class="loc-row"><span>${UI.escHtml(a.account_name||('#'+a.account_id))}</span><span>${a.ok ? `+${a.saved}/${a.fetched}` : '<svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> '+UI.escHtml(a.error||'ошибка')}</span></div>`
         ).join('');
         document.getElementById('sync-all-result').innerHTML = `
           <div class="result-box">Итого получено: <strong>${res.total_fetched}</strong> · сохранено/обновлено: <strong>${res.total_saved}</strong></div>
