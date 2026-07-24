@@ -108,28 +108,28 @@
         ].map(k => `<div class="kpi ${k.cls}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>`).join('');
 
         let html = '';
-        html += stage('c-receiving', '📥', 'Приёмка', 'receiving.html', [
+        html += stage('c-receiving', '📥', 'Приёмка', 'receiving.html?from=overview', [
           { label:'Заявок',    num: r.active_orders||0 },
           { label:'Ожидается', num: r.units_expected||0 },
           { label:'Принято',   num: r.units_received||0, cls:'ok' },
         ]);
-        html += stage('c-placement', '🗄️', 'Размещение', 'placement.html', [
+        html += stage('c-placement', '🗄️', 'Размещение', 'placement.html?from=overview', [
           { label:'Строк',  num: p.lines_pending||0,  cls: p.lines_pending>0 ? 'warn':'' },
           { label:'Единиц', num: p.units_pending||0,  cls: p.units_pending>0 ? 'warn':'' },
         ]);
-        html += stage('c-wave', '🧩', 'Волна', 'wb.html', [
+        html += stage('c-wave', '🧩', 'Волна', 'wb.html?from=overview', [
           { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
         ]);
-        html += stage('c-picking', '🧺', 'Сборка', 'admin-dashboard.html', [
+        html += stage('c-picking', '🧺', 'Сборка', 'admin-dashboard.html?from=overview', [
           { label:'Строк ждут', num: pk.tasks_pending||0, cls: pk.tasks_pending>0 ? 'warn':'' },
           { label:'Штук ждут',  num: pk.qty_pending||0,   cls: pk.qty_pending>0 ? 'warn':'' },
           { label:'Собрано',    num: pk.tasks_done||0,    cls:'ok' },
         ]);
-        html += stage('c-packing', '📦', 'Упаковка', 'admin-dashboard.html', [
+        html += stage('c-packing', '📦', 'Упаковка', 'admin-dashboard.html?from=overview', [
           { label:'Ждут',      num: pc.tasks_pending||0, cls: pc.tasks_pending>0 ? 'warn':'' },
           { label:'Упаковано', num: pc.tasks_done||0,    cls:'ok' },
         ]);
-        html += stage('c-shipping', '🚚', 'Отгрузка', 'shipping.html', [
+        html += stage('c-shipping', '🚚', 'Отгрузка', 'shipping.html?from=overview', [
           { label:'Готовы',     num: sh.ready_to_ship||0, cls: sh.ready_to_ship>0 ? 'ok':'' },
           { label:'В пути',     num: sh.in_transit||0 },
           { label:'Доставлено', num: sh.done_total||0,    cls:'ok' },

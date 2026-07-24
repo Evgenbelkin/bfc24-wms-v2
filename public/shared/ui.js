@@ -171,6 +171,23 @@
   styleTag.textContent = `@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`;
   document.head.appendChild(styleTag);
 
+  // ─────────────── Назад из Табло ───────────────
+  // Табло (overview-board.html) ссылается на приёмку/размещение/диспетчерскую/
+  // отгрузку с ?from=overview. Без этого пришлось бы возвращаться в общее меню
+  // и заново открывать Табло — просто подменяем "← Меню" на "← Табло" в шапке,
+  // если пришли оттуда. Работает автоматически на любой странице, где подключён
+  // этот файл (ui.js подключается уже после разметки шапки, элемент есть в DOM).
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from') === 'overview') {
+      const back = document.querySelector('.header a.btn-back');
+      if (back) {
+        back.href = '/app/overview-board.html';
+        back.textContent = '← Табло';
+      }
+    }
+  } catch (_) { /* ignore */ }
+
   // ─────────────── Export ───────────────
 
   window.UI = {
