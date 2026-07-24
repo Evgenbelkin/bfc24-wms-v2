@@ -117,7 +117,7 @@
           { label:'Строк',  num: p.lines_pending||0,  cls: p.lines_pending>0 ? 'warn':'' },
           { label:'Единиц', num: p.units_pending||0,  cls: p.units_pending>0 ? 'warn':'' },
         ]);
-        html += stage('c-wave', '<svg class="i" viewBox="0 0 24 24"><path d="M10 3h4a1 1 0 0 1 1 1v2.1a2 2 0 1 1 0 3.8V12h2.1a2 2 0 1 1 0 4H15v2.1a2 2 0 1 1-4 0V16H8.9a2 2 0 1 1 0-4H11v-2.1a2 2 0 1 1 0-3.8V4a1 1 0 0 1 1-1z"/></svg>', 'Волна', 'wb.html?from=overview', [
+        html += stage('c-wave', '<svg class="i" viewBox="0 0 24 24"><path d="M2 7c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/><path d="M2 13c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/><path d="M2 19c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>', 'Волна', 'wb.html?from=overview', [
           { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
         ]);
         html += stage('c-picking', '<svg class="i" viewBox="0 0 24 24"><path d="M3 10h18l-1.5 9a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/><path d="M8 10 10 4M16 10 14 4M3 10h18"/></svg>', 'Сборка', 'admin-dashboard.html?from=overview', [
