@@ -188,6 +188,15 @@
       return 'shipped';
     }
 
+    // Раньше, чтобы посмотреть детали конкретной зависшей отгрузки (состав,
+    // кто собирал/упаковывал, QR, фото/стикер), приходилось отдельно идти в
+    // модуль "Отгрузка" и искать её там заново. Теперь строка кликабельна и
+    // сразу открывает детальную карточку этой отгрузки (там же виден любой
+    // этап — не только сборка).
+    function openShipmentDetail(code) {
+      location.href = `shipping.html?code=${encodeURIComponent(code)}&from=admin-dashboard`;
+    }
+
     function setShipFilter(f) {
       shipFilter = f;
       document.querySelectorAll('.ship-filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
@@ -245,7 +254,7 @@
             : 'ещё не в очереди на упаковку';
 
           return `
-          <div class="list-row" style="flex-direction:column;align-items:stretch;">
+          <div class="list-row" style="flex-direction:column;align-items:stretch;cursor:pointer;" onclick="openShipmentDetail('${s.external_id}')">
             <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
               <div>
                 <div class="title">${UI.escHtml(s.external_id)}</div>

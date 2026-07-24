@@ -129,16 +129,23 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    async function openShipment(idx) {
-      const s = shipments[idx];
+    function openShipment(idx) {
+      openShipmentByCode(shipments[idx].external_id);
+    }
+
+    // Позволяет открыть детальную карточку отгрузки напрямую по коду — не
+    // только кликом по строке в собственном списке этой страницы, но и
+    // переходом с другого экрана (Диспетчерская, Табло — см. ?code= в URL
+    // ниже), не важно на каком этапе сейчас отгрузка (сборка/упаковка/отгрузка).
+    async function openShipmentByCode(code) {
       try {
-        const res = await window.API.shipping.details(s.external_id);
+        const res = await window.API.shipping.details(code);
         currentShipment = res.shipment;
         document.getElementById('list-view').style.display = 'none';
         document.getElementById('detail-view').style.display = 'block';
         document.getElementById('d-code').textContent = currentShipment.external_id;
         document.getElementById('d-status').textContent = STATUS_LABELS[currentShipment.status] || currentShipment.status;
-        document.getElementById('d-client').textContent = s.client_name || '—';
+        document.getElementById('d-client').textContent = currentShipment.client_name || '—';
         const totalPlan = (res.lines||[]).reduce((a,l)=>a+Number(l.qty||0),0);
         const totalPicked = (res.lines||[]).reduce((a,l)=>a+Number(l.qty_picked||0),0);
         document.getElementById('d-picked').textContent = `${totalPicked}/${totalPlan}`;
@@ -225,6 +232,13 @@
       document.getElementById('detail-view').style.display = 'none';
       document.getElementById('list-view').style.display = 'block';
       currentShipment = null;
+      // Убираем ?code= из адреса, чтобы обновление страницы не открывало
+      // ту же деталь заново после того, как явно вернулись к списку.
+      const url = new URL(location.href);
+      if (url.searchParams.has('code')) {
+        url.searchParams.delete('code');
+        history.replaceState(null, '', url.pathname + url.search);
+      }
     }
 
     async function confirmShipment(scannedCode) {
@@ -263,6 +277,11 @@
     UI.onScan('#scan-code', confirmShipment);
 
     loadBoard();
+
+    // Прямая ссылка на конкретную отгрузку (?code=WB-GI-...) — например с
+    // Диспетчерской, где строку отгрузки теперь можно кликнуть.
+    const deepLinkCode = new URLSearchParams(location.search).get('code');
+    if (deepLinkCode) openShipmentByCode(deepLinkCode);
   </script>
 </body>
 </html>
