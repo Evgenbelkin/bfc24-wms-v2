@@ -12,6 +12,7 @@ const { ValidationError, NotFoundError, ConflictError } = require('../../utils/e
 const { validateNonEmptyString, validateEmail, validatePassword, parseBool, validatePositiveInt } = require('../../utils/validators');
 const { invalidateTenantCache } = require('../../middleware/tenant');
 const { sendTelegramMessage } = require('../../utils/telegram');
+const { slugify } = require('../../utils/slugify');
 const logger = require('../../utils/logger');
 
 const REFRESH_TOKEN_BYTES = 48;
@@ -26,18 +27,6 @@ router.get('/health', (req, res) => res.json({ ok: true, layer: 'platform' }));
 
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-}
-
-const TRANSLIT_MAP = {
-  а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',
-  н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'h',ц:'c',ч:'ch',ш:'sh',щ:'sch',
-  ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',
-};
-function slugify(text) {
-  let out = '';
-  for (const ch of String(text || '').toLowerCase()) out += (TRANSLIT_MAP[ch] !== undefined ? TRANSLIT_MAP[ch] : ch);
-  out = out.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
-  return out.slice(0, 40) || 'tenant';
 }
 
 const registerLimiter = rateLimit({

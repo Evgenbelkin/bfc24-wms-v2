@@ -150,12 +150,15 @@
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
             <div class="card-title">${p ? UI.escHtml(p.printer_name) : 'Новый принтер'}</div>
-            ${!p ? `<div class="field"><label>Код принтера</label><input id="m-code" placeholder="printer-01"/></div>` : ''}
             <div class="field"><label>Название</label><input id="m-name" value="${p ? UI.escHtml(p.printer_name):''}" placeholder="Принтер на упаковке"/></div>
             <div class="field"><label>Склад (опционально)</label><select id="m-warehouse" ${p?'disabled':''}>${whOptions}</select></div>
             <div class="field"><label>Способ подключения</label><select id="m-conn" onchange="onConnChange()" ${p?'disabled':''}>${connOptions}</select></div>
             <div id="conn-hint"></div>
-            <div class="field"><label>Точное имя устройства</label><input id="m-device" value="${p && p.device_name ? UI.escHtml(p.device_name):''}" placeholder="Как принтер называется в Windows/CUPS"/></div>
+            <div class="field">
+              <label>Точное имя устройства (для способа «Через агент»)</label>
+              <input id="m-device" value="${p && p.device_name ? UI.escHtml(p.device_name):''}" placeholder="например: Xprinter XP-365B"/>
+              <div class="hint-box" style="margin-top:6px;">Как принтер называется в самой Windows на компьютере с принтером: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).</div>
+            </div>
             <div class="field-row2" id="network-fields" style="display:none">
               <div class="field"><label>IP-адрес</label><input id="m-ip" value="${p && p.ip_address ? UI.escHtml(p.ip_address):''}"/></div>
               <div class="field"><label>Порт</label><input id="m-port" type="number" value="${p && p.port ? p.port:''}"/></div>
@@ -231,20 +234,28 @@
           }
           await window.API.printing.printers.update(p.id, data);
           UI.notify.ok('Принтер обновлён');
+          closeModal();
+          await loadPrinters();
         } else {
-          data.printer_code = UI.val('#m-code');
           data.connection_type = UI.val('#m-conn');
           data.warehouse_id = UI.val('#m-warehouse') || null;
           data.ip_address = UI.val('#m-ip');
           data.port = UI.val('#m-port') || null;
           data.is_default = document.getElementById('m-default').checked;
-          if (!data.printer_code) { UI.notify.err('Укажите код принтера'); return; }
           if (!data.printer_name) { UI.notify.err('Укажите название'); return; }
-          await window.API.printing.printers.create(data);
+          const res = await window.API.printing.printers.create(data);
           UI.notify.ok('Принтер создан');
+          await loadPrinters();
+          // Для "через агент" сразу открываем карточку заново, в режиме
+          // редактирования уже сохранённого принтера — именно там появляется
+          // ссылка на установщик и кнопка выпуска ключа (их не видно на форме
+          // создания, что раньше сбивало с толку).
+          if (data.connection_type === 'agent' && res?.printer?.id) {
+            const newIdx = printersList.findIndex(x => x.id === res.printer.id);
+            if (newIdx !== -1) { openPrinterModal(newIdx); return; }
+          }
+          closeModal();
         }
-        closeModal();
-        await loadPrinters();
       } catch (e) { UI.notify.err(e.message); }
     }
 

@@ -20,6 +20,13 @@ const API_BASE    = process.env.API_BASE_URL || 'http://localhost:3001/api/v2';
 const AGENT_KEY    = process.env.AGENT_KEY   || '';
 const POLL_MS     = Number(process.env.POLL_INTERVAL_MS || 1500);
 const TMP_DIR     = path.join(__dirname, 'tmp');
+// Отладочная копия последних напечатанных документов (сырой SVG от сервера +
+// готовый PDF) — не чистится автоматически как tmp/, держим последние
+// DEBUG_KEEP штук, чтобы при вопросах "почему стикер съехал" можно было
+// открыть файл и посмотреть, что реально пришло и что получилось на выходе,
+// вместо гадания вслепую.
+const DEBUG_DIR   = path.join(__dirname, 'debug');
+const DEBUG_KEEP  = 20;
 
 // AGENT_KEY имеет вид pk_{printerId}_{secret} — печатается один раз в панели
 // принтеров при выпуске (кнопка "Выпустить ключ агента"). Он не привязан к
@@ -36,6 +43,16 @@ console.log('PRINTER_ID:', PRINTER_ID, '(из AGENT_KEY)');
 console.log('POLL_INTERVAL_MS:', POLL_MS);
 
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
+if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true });
+
+function pruneDebugDir() {
+  try {
+    const files = fs.readdirSync(DEBUG_DIR)
+      .map(f => ({ f, t: fs.statSync(path.join(DEBUG_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.t - a.t);
+    for (const { f } of files.slice(DEBUG_KEEP)) fs.unlinkSync(path.join(DEBUG_DIR, f));
+  } catch (_) {}
+}
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -111,6 +128,12 @@ async function processJob(job) {
     const svgText = decodeSvg(payload);
     if (!svgText) throw new Error('No SVG/sticker in payload_json');
 
+    // Сохраняем сырой SVG "как есть" в debug/ — чтобы при жалобах на кривую
+    // печать (сдвиг, обрезка и т.п.) можно было посмотреть, что РЕАЛЬНО пришло
+    // с сервера, не гадая вслепую.
+    const debugBase = path.join(DEBUG_DIR, `job-${job.id}-${job.doc_type}-${Date.now()}`);
+    try { fs.writeFileSync(`${debugBase}.svg`, svgText, 'utf8'); } catch (_) {}
+
     // Все три типа документа (стикер WB, внутренняя наклейка сборки, QR поставки)
     // печатаются на одном и том же физическом рулоне термоэтикеток 58×40мм —
     // раньше QR-документы (shipping_qr, pick_list_label) рендерились в PDF-страницу
@@ -121,6 +144,8 @@ async function processJob(job) {
     const dims = { widthMm: 58, heightMm: 40 };
 
     await buildPdf(svgText, pdfPath, dims);
+    try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
+    pruneDebugDir();
 
     const printerName = job.printer_name || job.device_name || 'Xprinter XP-D365B';
     await printPdf(pdfPath, printerName);

@@ -214,8 +214,27 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     };
   });
 
-  // Получаем QR ПОСЛЕ commit транзакции — чтобы не держать DB-соединение во время HTTP
-  if (shipmentId && !txResult.alreadyShipped) {
+  // ВАЖНО: порядок здесь принципиален. WB отдаёт РЕАЛЬНЫЙ QR/штрихкод поставки
+  // только когда поставка уже помечена "в доставке" (PATCH .../deliver) — если
+  // запросить штрихкод РАНЬШЕ этого вызова, WB возвращает пусто, и печать
+  // поставки просто никогда не срабатывает (баг, из-за которого QR не печатался
+  // вообще). Поэтому сначала уведомляем WB о передаче перевозчику, и только
+  // потом идём за штрихкодом. Оба шага — после commit транзакции, чтобы не
+  // держать DB-соединение открытым во время похода в сеть; soft-fail — сбой
+  // здесь не должен откатывать уже свершившуюся физическую отгрузку.
+  if (shipmentId && txResult.needsWbDeliver) {
+    const deliverResult = await notifyWbSupplyDelivered({ tenantId, shipmentId, shipmentCode });
+    txResult.wbDelivered      = deliverResult.ok;
+    txResult.wbDeliverSkipped = deliverResult.reason === 'no_wb_account';
+    if (!deliverResult.ok && deliverResult.reason !== 'no_wb_account') {
+      txResult.wbDeliverError = deliverResult.message || 'Не удалось передать статус в WB';
+    }
+  }
+
+  // Забираем QR, только если ещё не забирали успешно раньше — так повторный
+  // скан (например, если в прошлый раз deliverSupply выше ещё не был вызван
+  // или упал) сам дотянет QR, не создавая дублей задания на печать.
+  if (shipmentId && !txResult.qr_base64) {
     let qrBase64 = null;
     try {
       qrBase64 = await fetchWbSupplyQrAfterCommit({ tenantId, shipmentCode });
@@ -237,21 +256,6 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     }
 
     txResult.qr_base64 = qrBase64;
-  }
-
-  // Сообщаем ВБ, что поставка передана перевозчику (PATCH .../deliver) —
-  // ТОЖЕ после commit, той же логикой soft-fail, что и QR выше: локальный
-  // склад уже сделал своё дело (списание/статус), поэтому проблема с внешним
-  // API ВБ не должна откатывать или ломать уже свершившуюся физическую отгрузку.
-  // needsWbDeliver=true и в первом подтверждении, и при повторном скане уже
-  // отгруженной поставки, если раньше это не получилось (см. миграцию 012).
-  if (shipmentId && txResult.needsWbDeliver) {
-    const deliverResult = await notifyWbSupplyDelivered({ tenantId, shipmentId, shipmentCode });
-    txResult.wbDelivered      = deliverResult.ok;
-    txResult.wbDeliverSkipped = deliverResult.reason === 'no_wb_account';
-    if (!deliverResult.ok && deliverResult.reason !== 'no_wb_account') {
-      txResult.wbDeliverError = deliverResult.message || 'Не удалось передать статус в WB';
-    }
   }
 
   return txResult;

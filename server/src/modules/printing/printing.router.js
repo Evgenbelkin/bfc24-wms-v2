@@ -10,6 +10,7 @@ const { tenantMiddleware } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
+const { slugify } = require('../../utils/slugify');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -56,12 +57,26 @@ router.post('/printers/:id/agent-key', requireRole('tenant_admin','supervisor'),
 
 router.post('/printers', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
-    const { printer_code, printer_name, printer_type='label', connection_type='agent', agent_code, device_name, ip_address, port, zone_code, warehouse_id, is_default=false } = req.body;
-    if (!printer_code||!printer_name) throw new ValidationError('printer_code and printer_name are required');
+    const { printer_name, printer_type='label', connection_type='agent', agent_code, device_name, ip_address, port, zone_code, warehouse_id, is_default=false } = req.body;
+    if (!printer_name) throw new ValidationError('printer_name is required');
+
+    // "Код принтера" раньше вводился человеком вручную — техническое поле, в
+    // котором путались ("какой код куда писать"). Теперь подбирается сам из
+    // названия, с ретраем при коллизии (UNIQUE(tenant_id,printer_code)) —
+    // пользователь этого не видит и не заполняет.
+    const base = slugify(printer_name, 40);
+    let printerCode = base;
+    for (let attempt = 0; ; attempt++) {
+      const exists = await query(`SELECT id FROM wms.printers WHERE tenant_id=$1 AND printer_code=$2`, [req.user.tenantId, printerCode]);
+      if (exists.rowCount === 0) break;
+      if (attempt >= 10) throw new ValidationError('Could not generate a unique printer code, try a different name');
+      printerCode = `${base}-${crypto.randomBytes(2).toString('hex')}`;
+    }
+
     const r = await query(
       `INSERT INTO wms.printers(tenant_id,warehouse_id,printer_code,printer_name,printer_type,connection_type,agent_code,device_name,ip_address,port,zone_code,is_default,is_active)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE) RETURNING *`,
-      [req.user.tenantId, warehouse_id||null, printer_code, printer_name, printer_type, connection_type, agent_code||null, device_name||null, ip_address||null, port||null, zone_code||null, !!is_default]
+      [req.user.tenantId, warehouse_id||null, printerCode, printer_name, printer_type, connection_type, agent_code||null, device_name||null, ip_address||null, port||null, zone_code||null, !!is_default]
     );
     res.status(201).json({ ok:true, printer:r.rows[0] });
   } catch(e){ next(e); }
