@@ -131,9 +131,10 @@ router.post('/routes', requireRole('tenant_admin','supervisor'), async (req,res,
 router.patch('/routes/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const id = validatePositiveInt(req.params.id,'id');
-    const { printer_id, is_default, is_active } = req.body;
+    const { printer_id, doc_type, is_default, is_active } = req.body;
     const fields=[]; const params=[]; let idx=1;
     if (printer_id !== undefined) { fields.push(`printer_id=$${idx++}`); params.push(Number(printer_id)); }
+    if (doc_type   !== undefined) { fields.push(`doc_type=$${idx++}`);   params.push(doc_type); }
     if (is_default !== undefined) { fields.push(`is_default=$${idx++}`); params.push(!!is_default); }
     if (is_active  !== undefined) { fields.push(`is_active=$${idx++}`);  params.push(!!is_active); }
     if (!fields.length) throw new ValidationError('No fields');

@@ -294,7 +294,7 @@
           <div class="modal-card">
             <div class="card-title">${r ? UI.escHtml(r.route_code) : 'Новый маршрут печати'}</div>
             ${r ? '' : `<div class="field"><label>Код маршрута</label><input id="rm-code" placeholder="route-wb-sticker-1"/></div>`}
-            <div class="field"><label>Что печатаем</label><select id="rm-doctype" ${r?'disabled':''}>${docOptions}</select></div>
+            <div class="field"><label>Что печатаем</label><select id="rm-doctype">${docOptions}</select></div>
             <div class="field"><label>На каком принтере</label><select id="rm-printer">${printerOptions}</select></div>
             <div class="field"><label style="display:inline;">По умолчанию для этого типа</label> <input type="checkbox" id="rm-default" ${!r || r.is_default ? 'checked':''}/></div>
             ${r ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="rm-active" ${r.is_active ? 'checked':''}/></div>` : ''}
@@ -314,6 +314,7 @@
         if (r) {
           const data = {
             printer_id: UI.val('#rm-printer'),
+            doc_type:   UI.val('#rm-doctype'),
             is_default: document.getElementById('rm-default').checked,
             is_active:  document.getElementById('rm-active').checked,
           };
