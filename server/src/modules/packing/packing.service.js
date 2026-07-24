@@ -96,23 +96,36 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
   );
   const packedMap = Object.fromEntries(packedRes.rows.map(r => [r.barcode, Number(r.qty_packed)]));
 
-  // WB стикеры
+  // WB стикеры — по одному штрихкоду в поставке может быть НЕСКОЛЬКО заказов
+  // (несколько физических единиц одного и того же товара), и у каждой единицы
+  // свой уникальный стикер ВБ. Раньше брали DISTINCT ON — только один "образец"
+  // стикера на весь штрихкод, из-за чего упаковщик не мог заранее увидеть ВСЕ
+  // стикеры, которые должны напечататься по этому товару. Теперь берём их все,
+  // в том же порядке (ORDER BY id), в котором scanItem их потом раздаёт по
+  // OFFSET — так позиция в списке 1:1 соответствует тому, какой скан по счёту
+  // какой стикер печатает.
   const stickersRes = await query(
-    `SELECT DISTINCT ON (wo.barcode)
-       wo.barcode, wo.wb_sticker, wo.wb_sticker_code
+    `SELECT wo.barcode, wo.wb_sticker, wo.wb_sticker_code
      FROM wms.wb_orders wo
-     WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND wo.wb_sticker IS NOT NULL
+     WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND wo.wb_sticker_code IS NOT NULL
      ORDER BY wo.barcode, wo.id`,
     [tenantId, shipment.external_id]
   );
-  const stickerMap = Object.fromEntries(stickersRes.rows.map(r => [r.barcode, r]));
+  const stickersByBarcode = {};
+  for (const r of stickersRes.rows) {
+    (stickersByBarcode[r.barcode] ||= []).push({ code: r.wb_sticker_code, image: r.wb_sticker });
+  }
 
-  const lines = planRes.rows.map(row => ({
-    ...row,
-    qty_packed:       packedMap[row.barcode] || 0,
-    wb_sticker:       stickerMap[row.barcode]?.wb_sticker || null,
-    wb_sticker_code:  stickerMap[row.barcode]?.wb_sticker_code || null,
-  }));
+  const lines = planRes.rows.map(row => {
+    const stickers = stickersByBarcode[row.barcode] || [];
+    return {
+      ...row,
+      qty_packed: packedMap[row.barcode] || 0,
+      stickers,                                   // [{code, image}, ...] — по одному на каждую единицу товара
+      wb_sticker:      stickers[0]?.image || null, // для обратной совместимости
+      wb_sticker_code: stickers[0]?.code  || null,
+    };
+  });
 
   // Откуда забрать сборочный лист — МХ, на который сборщик поставил короб при
   // закрытии волны (picking.closeWave). Без этого упаковщик не понимает,

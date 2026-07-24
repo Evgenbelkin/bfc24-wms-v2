@@ -13,6 +13,9 @@
     .line-name{font-size:14px;font-weight:600;}
     .line-barcode{font-size:15px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-weight:700;letter-spacing:.3px;}
     .line-next-tag{background:#1e3a5f;color:#7dd3fc;font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;margin-left:8px;white-space:nowrap;}
+    .line-stickers{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
+    .sticker-chip{font-family:'SF Mono',Consolas,monospace;font-weight:800;font-size:13px;padding:2px 9px;border-radius:6px;background:#78350f;color:#fcd34d;white-space:nowrap;cursor:pointer;}
+    .sticker-chip.done{background:#14532d;color:#86efac;}
     .line-progress{font-size:15px;font-weight:800;white-space:nowrap;}
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:none;background:#334155;color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
@@ -297,19 +300,31 @@
       document.getElementById('progress-fill').style.width = pct + '%';
 
       const nextExpected = getNextExpectedLine();
-      document.getElementById('lines-list').innerHTML = currentLines.map(l => {
+      document.getElementById('lines-list').innerHTML = currentLines.map((l, li) => {
         const done = Number(l.qty_packed||0) >= Number(l.qty_plan||0);
         const justScanned = l.barcode === lastScannedBarcode;
         const isNext = !justScanned && nextExpected && l === nextExpected;
         const photo = l.preview_url
           ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'line-photo-placeholder',textContent:'📦'}))"/>`
           : `<div class="line-photo-placeholder">📦</div>`;
+        // Стикеры ВБ этого товара — по одному на каждую физическую единицу.
+        // Видно ДО скана (что должно напечататься), а после каждого скана
+        // соответствующий чип зеленеет — сверяем с тем, что реально выехало
+        // из принтера.
+        const stickersHtml = (l.stickers && l.stickers.length)
+          ? `<div class="line-stickers">${l.stickers.map((s, si) => `
+              <span class="sticker-chip ${si < Number(l.qty_packed||0) ? 'done' : ''}"
+                    onclick="openStickerChip(${li},${si});event.stopPropagation();"
+                    title="${si < Number(l.qty_packed||0) ? 'Уже напечатан' : 'Ожидает печати'}">${UI.escHtml(s.code)}</span>
+            `).join('')}</div>`
+          : '';
         return `
           <div class="line-row" style="${justScanned ? 'background:#0f2a1e;border-radius:10px;padding-left:6px;' : isNext ? 'background:#1a2740;border-radius:10px;padding-left:6px;' : ''}">
             ${photo}
             <div class="main" style="flex:1;min-width:0;">
               <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}${isNext ? '<span class="line-next-tag">Далее</span>' : ''}</div>
               <div class="line-barcode">${UI.escHtml(l.barcode)}</div>
+              ${stickersHtml}
             </div>
             <div class="line-progress" style="color:${done ? 'var(--green2)' : 'var(--amber)'}">
               ${done ? '✅' : ''} ${l.qty_packed||0}/${l.qty_plan||0}
@@ -317,6 +332,19 @@
           </div>
         `;
       }).join('') || `<div class="empty-state">Нет строк</div>`;
+    }
+
+    function openStickerChip(lineIdx, stickerIdx) {
+      const l = currentLines[lineIdx];
+      const s = l?.stickers?.[stickerIdx];
+      if (!s?.image) { UI.notify.warn('Для этого стикера нет изображения'); return; }
+      const w = window.open('', '_blank');
+      w.document.write(`<title>Стикер ${UI.escHtml(s.code||'')}</title>
+        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
+          <img src="data:image/svg+xml;base64,${s.image}" style="max-width:90vw;max-height:80vh;"/>
+          ${s.code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(s.code)}</div>` : ''}
+        </body>`);
+      w.document.close();
     }
 
     async function loadTaskDetails(res) {
