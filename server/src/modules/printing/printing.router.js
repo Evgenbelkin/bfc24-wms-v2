@@ -184,9 +184,12 @@ router.patch('/jobs/:id', requireRole('tenant_admin','supervisor'), async (req,r
     const allowed = ['processing','printed','error','cancelled'];
     if (!allowed.includes(status)) throw new ValidationError(`status must be one of: ${allowed.join(', ')}`);
     const r = await query(
+      // См. аналогичный фикс в printingAgent.router.js — без явного ::text/
+      // ::wms.print_job_status Postgres не может согласовать тип $1 между
+      // "status=$1" и "$1='printed'" в CASE и падает с ошибкой 42P08.
       `UPDATE wms.print_jobs
-       SET status=$1, error_text=$2,
-           printed_at=CASE WHEN $1='printed' THEN NOW() ELSE NULL END,
+       SET status=$1::wms.print_job_status, error_text=$2,
+           printed_at=CASE WHEN $1::text='printed' THEN NOW() ELSE NULL END,
            attempt_count=attempt_count+1, last_attempt_at=NOW(), updated_at=NOW()
        WHERE id=$3 AND tenant_id=$4 RETURNING id, status, printed_at`,
       [status, error_text||null, id, req.user.tenantId]
