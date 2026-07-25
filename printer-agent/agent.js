@@ -5,6 +5,7 @@ require('dotenv').config();
 const axios    = require('axios');
 const fs       = require('fs');
 const path     = require('path');
+const { spawn } = require('child_process');
 const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const { print }  = require('pdf-to-printer');
@@ -186,19 +187,76 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
 // ВАЖНО: имя Stock ("58x40") зависит от КОНКРЕТНОЙ модели/экземпляра
 // принтера и от того, как именно назвал его тот, кто настраивал драйвер -
 // у другого принтера (другая модель, другой склад) это имя почти наверняка
-// будет другим или его не будет вовсе. Поэтому это НЕ константа агента, а
-// paperSizeName - параметр, который приходит per-job с сервера (см.
-// migration 016_printer_paper_size.sql, поле wms.printers.paper_size_name,
-// настраивается в панели принтеров при заведении конкретного принтера).
-// Если оно не задано - используем generic custom size из фактических мм,
-// как раньше (работает для принтеров без именованного Stock).
-async function printPdf(pdfPath, printerName, { widthMm = 58, heightMm = 40, paperSizeName = null } = {}) {
-  if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
-  await print(pdfPath, {
-    printer: printerName,
-    scale: 'noscale',
-    paperSize: paperSizeName || `${widthMm}mm x ${heightMm}mm`,
+// будет другим или его не будет вовсе.
+//
+// ПРОДОЛЖЕНИЕ (после разбора с ChatGPT, см. printer-agent/README-print-fix.md):
+// bundled в pdf-to-printer SumatraPDF - версия 3.4.6, в ней ещё нет флага
+// `disable-auto-rotation` (появился в 3.5). У SumatraPDF есть СВОЯ логика
+// автоповорота страницы (если PDF шире чем выше - крутит на 90°) поверх той
+// ориентации, которую в это же мгновение сообщает драйвер - а состояние
+// драйвера (DEVMODE) может быть НЕ до конца нормализовано на первом задании
+// после запуска агента/после смены настроек и "устаканиться" только к
+// повторному заданию - отсюда именно нестабильность "то криво то нет" на
+// ОДНОМ и том же файле. Плюс наш paperSize (что кастомный, что по имени)
+// - это отдельная попытка драйвера сопоставить форму, которая тоже может
+// разъезжаться с уже выбранным в драйвере Stock.
+//
+// Фикс на этом уровне:
+// 1) Используем СВОЙ, более новый SumatraPDF.exe (printer-agent/bin/, кладёт
+//    туда сам администратор склада - см. install.bat/README-print-fix.md,
+//    т.к. скачивать бинарник с сайта автоматически при установке агента
+//    неудобно/небезопасно) - в нём есть disable-auto-rotation.
+// 2) НЕ передаём paper=/paperSize вообще - вместо этого формат "58x40" (или
+//    любой другой, специфичный для конкретного принтера) должен быть
+//    настроен как ПОСТОЯННЫЙ default в самой Windows (Свойства принтера ->
+//    Настройка печати/Printing Preferences, И ОТДЕЛЬНО Свойства принтера ->
+//    Дополнительно -> Параметры печати по умолчанию/Printing Defaults - это
+//    два РАЗНЫХ места в Windows, и именно "Printing Defaults" использует
+//    печать "в фоне"/без интерактивного диалога, как у нас) - см.
+//    README-print-fix.md. Тогда agent просто не трогает размер бумаги, и
+//    печать идёт с уже настроенным в драйвере форматом - как при печати из
+//    браузера.
+// 3) Если кастомный SumatraPDF.exe не положен в bin/ - используем старый
+//    bundled из pdf-to-printer как раньше (без disable-auto-rotation, но
+//    тоже без paperSize).
+const CUSTOM_SUMATRA_PATH = path.join(__dirname, 'bin', 'SumatraPDF.exe');
+
+function runSumatra(sumatraPath, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(sumatraPath, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', d => { stderr += d.toString(); });
+    child.once('error', reject);
+    child.once('close', code => {
+      if (code !== 0) reject(new Error(`SumatraPDF exited with code ${code}: ${stderr.trim()}`));
+      else resolve();
+    });
   });
+}
+
+let loggedSumatraChoice = false;
+async function printPdf(pdfPath, printerName) {
+  if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
+  const useCustomSumatra = fs.existsSync(CUSTOM_SUMATRA_PATH);
+  if (!loggedSumatraChoice) {
+    console.log(useCustomSumatra
+      ? `[SUMATRA] используем свой ${CUSTOM_SUMATRA_PATH} (disable-auto-rotation доступен)`
+      : `[SUMATRA] bin/SumatraPDF.exe не найден - используем старый bundled из pdf-to-printer (без disable-auto-rotation). См. README-print-fix.md`);
+    loggedSumatraChoice = true;
+  }
+  if (useCustomSumatra) {
+    await runSumatra(CUSTOM_SUMATRA_PATH, [
+      '-print-to', printerName,
+      '-silent',
+      '-print-settings', 'noscale,disable-auto-rotation',
+      pdfPath,
+    ]);
+  } else {
+    // Старый bundled Sumatra (3.4.6) - без disable-auto-rotation, и без
+    // paperSize (см. комментарий выше - формат должен быть default'ом в
+    // самой Windows, а не переопределяться на каждое задание).
+    await print(pdfPath, { printer: printerName, scale: 'noscale' });
+  }
 }
 
 // Удалить temp файлы
@@ -283,17 +341,20 @@ async function processJob(job) {
     const printerName = job.device_name || job.printer_name || 'Xprinter XP-D365B';
     // ОПРОВЕРГНУТО пользователем по временным меткам debug-файлов (разница
     // между заданиями была 3+ минуты, не миллисекунды) - гипотеза "принтер не
-    // успевает остыть между заданиями" была неверной. Настоящая причина -
-    // ниже (paperSizeName). Паузу оставляем как дешёвый защитный минимум на
-    // будущее (не мешает, если она не нужна), но она не основной фикс.
+    // успевает остыть между заданиями" была неверной. Паузу оставляем как
+    // дешёвый защитный минимум на будущее (не мешает, если она не нужна), но
+    // она не основной фикс.
     await waitForPrinterCooldown(job.printer_id);
-    // НАСТОЯЩАЯ причина (подтверждено): агент передавал в pdf-to-printer
-    // самодельную строку размера бумаги вместо ИМЕНИ именованного Stock,
-    // который выбран в драйвере и всегда используется при печати из браузера
-    // (см. printPdf() и migration 016_printer_paper_size.sql). paperSizeName
-    // берётся из карточки КОНКРЕТНОГО принтера в панели (не хардкод в коде
-    // агента) - для других принтеров/моделей будет своё значение или пусто.
-    await printPdf(pdfPath, printerName, { ...dims, paperSizeName: job.paper_size_name || null });
+    // См. подробный комментарий у printPdf()/README-print-fix.md - разбирались
+    // с ChatGPT: причина нестабильной печати, похоже, в собственной логике
+    // автоповорота старого SumatraPDF (3.4.6) поверх состояния драйвера,
+    // которое не всегда успевает нормализоваться к первому заданию. Формат
+    // бумаги (paper_size_name из карточки принтера) больше НЕ передаём при
+    // печати - вместо этого он должен быть настроен как default прямо в
+    // Windows (см. README-print-fix.md). Поле в БД/панели оставляем на
+    // будущее (вдруг для другого принтера/драйвера понадобится), но agent.js
+    // сейчас его не использует.
+    await printPdf(pdfPath, printerName);
     lastPrintAtByPrinter.set(job.printer_id, Date.now());
 
     await markJob(job.id, 'printed');
