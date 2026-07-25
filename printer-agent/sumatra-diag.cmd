@@ -1,26 +1,15 @@
 @echo off
-title BFC24 - Full printer diagnostics (raw SumatraPDF)
+title BFC24 - Windows printer diagnostics
 cd /d "%~dp0"
 
-set SUMATRA=node_modules\pdf-to-printer\dist\SumatraPDF-3.4.6-32.exe
-
-if not exist "%SUMATRA%" (
-  echo ERROR: %SUMATRA% not found.
-  echo Run install.bat first, then try this again.
-  echo.
-  pause
-  exit /b 1
-)
-
 echo ==========================================
-echo   Full printer diagnostics (raw SumatraPDF)
-echo   This shows default paper size, orientation
-echo   and exact form/paperkind names and IDs -
-echo   more detail than list-printers.cmd
+echo   Windows printer diagnostics (PowerShell)
+echo   Shows real driver paper size/orientation,
+echo   independent of SumatraPDF version.
 echo ==========================================
 echo.
 
-"%SUMATRA%" -list-printers
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0diag.ps1"
 
 echo.
 echo ==========================================
