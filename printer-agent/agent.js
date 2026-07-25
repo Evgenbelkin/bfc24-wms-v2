@@ -131,12 +131,26 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
 // Исправление - явно указывать paperSize кастомным размером в мм, СОВПАДАЮЩИМ
 // с реальным размером PDF-страницы (см. `paper=76mm x 130mm` в документации
 // SumatraPDF, поддерживает произвольные WxH в мм).
+//
+// ПРОДОЛЖЕНИЕ (после diag.ps1): Win32_PrinterConfiguration для Xprinter
+// XP-D365B показал Orientation:1 (Portrait) как ТЕКУЩИЙ дефолт драйвера
+// (PaperWidth/PaperLength у него вообще пустые - кастомный Stock 58x40
+// живёт в приватных настройках драйвера, Windows его в этих полях не видит).
+// В документации SumatraPDF прямо написано: `paper=` задаёт только РАЗМЕР,
+// а физическая ориентация страницы берётся из "printer defaults" (т.е. из
+// Portrait, который сейчас стоит по умолчанию). Отдельный флаг
+// `orientation=landscape/portrait` поворачивает именно СОДЕРЖИМОЕ на 90°,
+// чтобы оно легло в физическую ориентацию, которую ожидает драйвер. Наш PDF
+// landscape (58 шире 40) при дефолтной Portrait-ориентации драйвера - и есть
+// та нестыковка, из-за которой QR резался/сдвигался. Поэтому явно передаём
+// orientation, вычисляя его из формы страницы (widthMm > heightMm → landscape).
 async function printPdf(pdfPath, printerName, { widthMm = 58, heightMm = 40 } = {}) {
   if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
   await print(pdfPath, {
     printer: printerName,
     scale: 'noscale',
     paperSize: `${widthMm}mm x ${heightMm}mm`,
+    orientation: widthMm > heightMm ? 'landscape' : 'portrait',
   });
 }
 
