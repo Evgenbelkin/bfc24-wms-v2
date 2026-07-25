@@ -113,14 +113,31 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
 }
 
 // Отправить на принтер
-// scale:'noscale' - ОБЯЗАТЕЛЬНО. Без этого SumatraPDF (движок печати внутри
-// pdf-to-printer) сам решает, подгонять ли наш PDF под текущий размер бумаги
-// в драйвере - именно это и рвало печать (растягивало на 2 этикетки, крутило
-// и т.п.), хотя наш PDF всегда ровно 58х40мм. При печати из браузера этой
-// проблемы нет, потому что браузер обычно шлёт на печать в масштабе 100%.
-async function printPdf(pdfPath, printerName) {
+// НАСТОЯЩАЯ причина кривой печати (найдено через исходники pdf-to-printer +
+// документацию SumatraPDF, см. https://www.sumatrapdfreader.org/docs/Command-line-arguments):
+// pdf-to-printer под капотом просто дёргает `SumatraPDF.exe -print-to <printer>
+// -print-settings <...> file.pdf`. Если НЕ передать paperSize, SumatraPDF при
+// печати из командной строки берёт размер бумаги ТЕКУЩИЙ ПО УМОЛЧАНИЮ В ДРАЙВЕРЕ
+// принтера - а не размер страницы самого PDF. Кастомный Stock "58x40",
+// заведённый через утилиту Xprinter, не входит в список paperSizes, который
+// возвращает getPrinters() (там только 76x130/72x130/1x1.5/1.25x2.5) - то есть
+// движок печати в принципе не может сослаться на него по имени. В итоге реальные
+// задания печати уходили на какой-то ДРУГОЙ (больший/несовпадающий) размер
+// бумаги драйвера, и scale:'noscale' тут не спасал - он просто не давал
+// содержимое растянуть под этот неправильный размер, из-за чего сверху выходили
+// то поля по бокам, то съезд на вторую этикетку.
+// Печать из браузера этой проблемы никогда не имела, потому что там всегда
+// используются ТЕКУЩИЕ настройки диалога печати драйвера, а не CLI-дефолт.
+// Исправление - явно указывать paperSize кастомным размером в мм, СОВПАДАЮЩИМ
+// с реальным размером PDF-страницы (см. `paper=76mm x 130mm` в документации
+// SumatraPDF, поддерживает произвольные WxH в мм).
+async function printPdf(pdfPath, printerName, { widthMm = 58, heightMm = 40 } = {}) {
   if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
-  await print(pdfPath, { printer: printerName, scale: 'noscale' });
+  await print(pdfPath, {
+    printer: printerName,
+    scale: 'noscale',
+    paperSize: `${widthMm}mm x ${heightMm}mm`,
+  });
 }
 
 // Удалить temp файлы
@@ -185,7 +202,7 @@ async function processJob(job) {
     // приоритет был перепутан, из-за чего печать пыталась уйти на
     // несуществующий в Windows принтер "XP365B" и тихо проваливалась.
     const printerName = job.device_name || job.printer_name || 'Xprinter XP-D365B';
-    await printPdf(pdfPath, printerName);
+    await printPdf(pdfPath, printerName, dims);
 
     await markJob(job.id, 'printed');
     console.log(`[JOB ${job.id}] PRINTED OK`);
