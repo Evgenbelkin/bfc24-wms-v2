@@ -93,15 +93,22 @@ function decodeSvg(payload) {
 // что и было на фото у пользователя. Фикс - регистрируем шрифт с кириллицей
 // (DejaVu Sans, см. fonts/DejaVuSans.ttf) под именем 'sans-serif' до вызова
 // SVGtoPDF.
+// Читаем файл шрифта В ПАМЯТЬ один раз при старте процесса агента (а не на
+// каждое задание) - на случай, если повторное чтение файла с диска на
+// каждый job добавляло свою нестабильность/задержку (например сразу после
+// распаковки zip, пока антивирус ещё сканирует новые файлы).
 const CYRILLIC_FONT_PATH = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
-let cyrillicFontRegistered = false;
+let cyrillicFontBuffer = null;
+let cyrillicFontWarned = false;
+try {
+  if (fs.existsSync(CYRILLIC_FONT_PATH)) cyrillicFontBuffer = fs.readFileSync(CYRILLIC_FONT_PATH);
+} catch (_) {}
 function ensureCyrillicFont(doc) {
-  if (fs.existsSync(CYRILLIC_FONT_PATH)) {
-    doc.registerFont('sans-serif', CYRILLIC_FONT_PATH);
-    cyrillicFontRegistered = true;
-  } else if (!cyrillicFontRegistered) {
+  if (cyrillicFontBuffer) {
+    doc.registerFont('sans-serif', cyrillicFontBuffer);
+  } else if (!cyrillicFontWarned) {
     console.error(`[FONT] ${CYRILLIC_FONT_PATH} not found - кириллица в стикерах не будет печататься!`);
-    cyrillicFontRegistered = true; // не спамить в лог на каждой job
+    cyrillicFontWarned = true; // не спамить в лог на каждой job
   }
 }
 
@@ -182,6 +189,25 @@ function cleanupTmp(files) {
   }
 }
 
+// "Остывание" принтера между заданиями - см. комментарий в processJob() про
+// то, откуда взялась гипотеза (одно и то же задание печатается криво "сразу"
+// и чисто "повтором" много позже). PRINTER_COOLDOWN_MS настраивается через
+// .env на случай, если 800мс для конкретной модели/скорости печати мало или
+// много - подбирается опытным путём на месте, без пересборки кода.
+const PRINTER_COOLDOWN_MS = Number(process.env.PRINTER_COOLDOWN_MS || 800);
+const lastPrintAtByPrinter = new Map();
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+async function waitForPrinterCooldown(printerId) {
+  const last = lastPrintAtByPrinter.get(printerId);
+  if (!last) return;
+  const elapsed = Date.now() - last;
+  if (elapsed < PRINTER_COOLDOWN_MS) {
+    const wait = PRINTER_COOLDOWN_MS - elapsed;
+    console.log(`[PRINTER ${printerId}] cooldown wait ${wait}ms`);
+    await sleep(wait);
+  }
+}
+
 // Обновить статус job
 async function markJob(jobId, status, errorText = null) {
   await api.patch(`/printer-agent/jobs/${jobId}`, { status, error_text: errorText });
@@ -236,7 +262,21 @@ async function processJob(job) {
     // приоритет был перепутан, из-за чего печать пыталась уйти на
     // несуществующий в Windows принтер "XP365B" и тихо проваливалась.
     const printerName = job.device_name || job.printer_name || 'Xprinter XP-D365B';
+    // НАЙДЕНО (пользователь): одно и то же задание (тот же payload_json,
+    // подтверждено - "Повторить" копирует его без изменений) при печати
+    // СРАЗУ выходит криво, а повтор чуть позже - идеально. Раз данные
+    // одинаковые, дело не в контенте, а во ВРЕМЕНИ печати: "сразу" обычно
+    // означает, что это задание идёт ВПРИТЫК за другим (например, наклейка
+    // сборки и следом стикер WB на одно и то же сканирование) - термопринтер
+    // может не успеть физически закончить протяжку/отрез предыдущей
+    // этикетки, и следующее задание уезжает "поверх" ещё не готового цикла
+    // печати, что и даёт кривую/сдвинутую картинку. Повтор из панели делается
+    // вручную намного позже, когда принтер точно простаивает - отсюда чистый
+    // результат. Фикс - выдерживаем минимальный интервал между КОНЦОМ
+    // предыдущей печати (на этом принтере) и НАЧАЛОМ следующей.
+    await waitForPrinterCooldown(job.printer_id);
     await printPdf(pdfPath, printerName, dims);
+    lastPrintAtByPrinter.set(job.printer_id, Date.now());
 
     await markJob(job.id, 'printed');
     console.log(`[JOB ${job.id}] PRINTED OK`);
