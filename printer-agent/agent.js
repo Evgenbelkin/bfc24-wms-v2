@@ -79,6 +79,32 @@ function decodeSvg(payload) {
   return null;
 }
 
+// НАСТОЯЩАЯ причина обрезанного/пропавшего текста ("1 шт.", "Москва_Запад-Юг"
+// на shipping_qr, и т.п.) - найдено экспериментально: подставляли ASCII-текст
+// вместо кириллического на ТЕХ ЖЕ координатах с ТЕМ ЖЕ transform - рендерился
+// полностью и верно. Значит дело не в transform/повороте (это была ложная
+// связь - в одном из тестов заодно поменял и текст на латиницу, и transform,
+// решил что дело в transform). Настоящая причина - PDFKit по умолчанию
+// использует встроенный шрифт Helvetica, в котором НЕТ кириллических глифов;
+// svg-to-pdfkit ничего не переопределяет (у текста в SVG от WB нет
+// font-family, берётся дефолт 'sans-serif', которого просто нет среди
+// зарегистрированных в PDFKit шрифтов). Кириллические символы рендерятся
+// как ничего (нулевая ширина) - остаются видны только цифры/точки/дефисы,
+// что и было на фото у пользователя. Фикс - регистрируем шрифт с кириллицей
+// (DejaVu Sans, см. fonts/DejaVuSans.ttf) под именем 'sans-serif' до вызова
+// SVGtoPDF.
+const CYRILLIC_FONT_PATH = path.join(__dirname, 'fonts', 'DejaVuSans.ttf');
+let cyrillicFontRegistered = false;
+function ensureCyrillicFont(doc) {
+  if (fs.existsSync(CYRILLIC_FONT_PATH)) {
+    doc.registerFont('sans-serif', CYRILLIC_FONT_PATH);
+    cyrillicFontRegistered = true;
+  } else if (!cyrillicFontRegistered) {
+    console.error(`[FONT] ${CYRILLIC_FONT_PATH} not found - кириллица в стикерах не будет печататься!`);
+    cyrillicFontRegistered = true; // не спамить в лог на каждой job
+  }
+}
+
 // SVG → PDF файл
 // rotate90: содержимое рисуется как будто холст перевёрнут (h x w) и
 // поворачивается на 90° по часовой, чтобы лечь в физическую страницу w x h -
@@ -95,6 +121,7 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
     const h = mmToPt(heightMm);
     const m = mmToPt(marginMm);
     const doc = new PDFDocument({ size: [w, h], margin: 0, autoFirstPage: true });
+    ensureCyrillicFont(doc);
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
     if (rotate90) {
@@ -177,8 +204,8 @@ async function processJob(job) {
     if (!svgText) throw new Error('No SVG/sticker in payload_json');
 
     // Сохраняем сырой SVG "как есть" в debug/ — чтобы при жалобах на кривую
-    // печать (сдвиг, обрезка и т.п.) можно было посмотреть, что РЕАЛЬНО пришло
-    // с сервера, не гадая вслепую.
+    // печать можно было посмотреть, что РЕАЛЬНО пришло с сервера, не гадая
+    // вслепую.
     const debugBase = path.join(DEBUG_DIR, `job-${job.id}-${job.doc_type}-${Date.now()}`);
     try { fs.writeFileSync(`${debugBase}.svg`, svgText, 'utf8'); } catch (_) {}
 
@@ -189,28 +216,14 @@ async function processJob(job) {
     // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
     // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
     // безопасен для всех типов документов.
-    // НАСТОЯЩАЯ причина кривого текста/QR (найдена экспериментально: рендерили
-    // реальные job-13/job-14 SVG от WB локально в PDF в обход принтера вообще
-    // и смотрели на картинку) - сами SVG от WB содержат
-    // <g transform="rotate(270) translate(-400 0)"> - контент в них нарисован
-    // в развёрнутом виде. Когда рендерим SVG "как есть" (математически верно
-    // по спецификации), получаем ИМЕННО тот перекошенный результат, что видно
-    // на фото у пользователя - текст вертикально, QR не на своём месте. Это
-    // не баг svg-to-pdfkit и не баг принтера/драйвера - подтверждено тем, что
-    // локальный рендер (без принтера) даёт точно такую же картинку. Печать из
-    // браузера всегда выглядела верно не потому что там другие настройки
-    // принтера, а потому что WMS для кнопки "Печать QR" рисует SVG иначе.
-    // Фикс - гасим встроенный поворот WB своим собственным поворотом на 90°
-    // при сборке PDF (rotate90 в buildPdf) для типов документов, которые
-    // приходят "как есть" от WB (wb_sticker, shipping_qr). Наши собственные
-    // QR (pick_list_label, generateQrSvg) рисуются без такого transform -
-    // их не трогаем.
-    const NEEDS_ROTATE = new Set(['wb_sticker', 'shipping_qr']);
-    const dims = {
-      widthMm: 58,
-      heightMm: 40,
-      rotate90: NEEDS_ROTATE.has(job.doc_type),
-    };
+    // ВАЖНО (уточнено пользователем по референсу): текст на стикерах/QR от WB
+    // ДОЛЖЕН быть вертикальным - это их штатный вид (WB.ru печатает так же).
+    // <g transform="rotate(270) translate(-400 0)"> в их SVG - это и есть
+    // правильная, ожидаемая ориентация, а не баг. Пробовали гасить её своим
+    // rotate90 - это НЕПРАВИЛЬНО, результат получал двойной поворот и почти
+    // весь уезжал за край страницы (см. фото - пусто, обрезанный QR). Рендерим
+    // SVG "как есть", без какого-либо дополнительного поворота с нашей стороны.
+    const dims = { widthMm: 58, heightMm: 40 };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
