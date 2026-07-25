@@ -123,10 +123,28 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message: { ok: false, error: { code: 'RATE_LIMIT', message: 'Too many requests' } },
-  skip: (req) => config.isDev && req.ip === '::1', // В dev не ограничиваем localhost
+  // В dev не ограничиваем localhost; /printer-agent живёт на отдельном, более
+  // щедром лимите ниже — см. комментарий там про причину.
+  skip: (req) => (config.isDev && req.ip === '::1') || req.path.startsWith('/printer-agent'),
 });
 
 app.use(config.server.apiPrefix, globalLimiter);
+
+// Агент печати опрашивает сервер раз в ~1.5 сек НА КАЖДЫЙ принтер (обычный,
+// ожидаемый трафик, не злоупотребление) — с обычным общим лимитом (100/мин
+// на IP) одного принтера почти хватает впритык, а с двумя-тремя принтерами
+// за одним офисным/складским IP (обычная ситуация) лимит выбивало мгновенно,
+// съедая заодно и весь бюджет на обычную работу в браузере с того же IP.
+// Аутентификация тут уже отдельная (постоянный ключ принтера), так что можно
+// позволить более щедрый предел, не открывая дыру для злоупотреблений.
+const agentLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: { code: 'RATE_LIMIT', message: 'Too many requests' } },
+});
+app.use(`${config.server.apiPrefix}/printer-agent`, agentLimiter);
 
 // ---------------------------------------------------------------------------
 // Static files (фронтенд)
