@@ -80,14 +80,26 @@ function decodeSvg(payload) {
 }
 
 // SVG → PDF файл
-function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40 } = {}) {
+// rotate90: содержимое рисуется как будто холст перевёрнут (h x w) и
+// поворачивается на 90° по часовой, чтобы лечь в физическую страницу w x h -
+// нужно для QR поставки WB, чей SVG рассчитан на другую (не термо-58х40)
+// ориентацию и потому печатался повёрнутым/со сдвигом.
+function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = false } = {}) {
   return new Promise((resolve, reject) => {
     const w = mmToPt(widthMm);
     const h = mmToPt(heightMm);
     const doc = new PDFDocument({ size: [w, h], margin: 0, autoFirstPage: true });
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
-    SVGtoPDF(doc, svgText, 0, 0, { width: w, height: h, preserveAspectRatio: 'xMidYMid meet' });
+    if (rotate90) {
+      doc.save();
+      doc.translate(w, 0);
+      doc.rotate(90);
+      SVGtoPDF(doc, svgText, 0, 0, { width: h, height: w, preserveAspectRatio: 'xMidYMid meet' });
+      doc.restore();
+    } else {
+      SVGtoPDF(doc, svgText, 0, 0, { width: w, height: h, preserveAspectRatio: 'xMidYMid meet' });
+    }
     doc.end();
     stream.on('finish', resolve);
     stream.on('error', reject);
@@ -141,7 +153,11 @@ async function processJob(job) {
     // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
     // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
     // безопасен для всех типов документов.
-    const dims = { widthMm: 58, heightMm: 40 };
+    // QR поставки WB (shipping_qr) — SVG от их API рассчитан на другую
+    // ориентацию (текст сбоку), пробуем повернуть на 90° под нашу термо-
+    // этикетку. wb_sticker и pick_list_label уже печатаются нормально —
+    // их не трогаем.
+    const dims = { widthMm: 58, heightMm: 40, rotate90: job.doc_type === 'shipping_qr' };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
