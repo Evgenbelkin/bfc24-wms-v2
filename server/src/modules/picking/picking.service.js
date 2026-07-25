@@ -98,6 +98,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
   const inProg = await query(
     `SELECT t.id, t.barcode, t.qty, t.qty_picked, t.scan_step,
        t.location_code, t.shipment_code, t.wave_id, t.wb_order_id,
+       t.warehouse_id, t.client_id, t.item_id,
        i.item_name, i.preview_url
      FROM wms.picking_tasks t
      LEFT JOIN wms.items i ON i.id=t.item_id
@@ -106,7 +107,43 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
      ORDER BY t.id LIMIT 1`,
     [tenantId, pickerId, shipmentCode||null]
   );
-  if (inProg.rowCount > 0) return inProg.rows[0];
+  if (inProg.rowCount > 0) {
+    const task = inProg.rows[0];
+    // Задачу могли взять в работу, когда товара ещё нигде не было на складе
+    // (ячейка тогда осталась пустой, "—"). Раньше ячейка так и оставалась
+    // пустой навсегда, даже после того, как товар приняли через приёмку —
+    // потому что для уже in_progress задачи повторный поиск ячейки никогда
+    // не запускался. Теперь при каждом обращении к задаче без ячейки пробуем
+    // найти её заново — как только товар появится на любой ячейке, сборщик
+    // увидит её без необходимости пересоздавать волну.
+    if (!task.location_code && task.item_id) {
+      const resolved = await transaction(async (client) => {
+        const best = await findBestPickLocation({
+          tenantId, warehouseId: task.warehouse_id,
+          itemId: task.item_id, clientId: task.client_id,
+        });
+        if (!best) return null;
+        const loc = await getLocationByCode({ tenantId, warehouseId: task.warehouse_id, locationCode: best.location_code }).catch(() => null);
+        const locId = loc?.id || null;
+        if (locId) {
+          await ledger.reserveStock({
+            tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+            itemId: task.item_id, locationId: locId, barcode: task.barcode,
+            qty: Number(task.qty) - Number(task.qty_picked || 0),
+            refType: 'picking_task', refId: task.id,
+            dbClient: client,
+          });
+        }
+        await client.query(
+          `UPDATE wms.picking_tasks SET location_code=$1, updated_at=NOW() WHERE id=$2`,
+          [best.location_code, task.id]
+        );
+        return best.location_code;
+      });
+      if (resolved) task.location_code = resolved;
+    }
+    return task;
+  }
 
   // Берём новую задачу
   return transaction(async (client) => {
