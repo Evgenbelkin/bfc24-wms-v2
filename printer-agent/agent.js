@@ -147,7 +147,13 @@ async function processJob(job) {
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
     pruneDebugDir();
 
-    const printerName = job.printer_name || job.device_name || 'Xprinter XP-D365B';
+    // ВАЖНО: printer_name — это просто ярлык из WMS ("XP365B"), который
+    // придумывает пользователь, а не реальное имя принтера в Windows.
+    // Реальное имя (то, что видно в Параметры → Принтеры и сканеры) — это
+    // device_name ("Точное имя устройства" в карточке принтера). Раньше
+    // приоритет был перепутан, из-за чего печать пыталась уйти на
+    // несуществующий в Windows принтер "XP365B" и тихо проваливалась.
+    const printerName = job.device_name || job.printer_name || 'Xprinter XP-D365B';
     await printPdf(pdfPath, printerName);
 
     await markJob(job.id, 'printed');
