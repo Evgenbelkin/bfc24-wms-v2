@@ -82,12 +82,18 @@ function decodeSvg(payload) {
 // SVG → PDF файл
 // rotate90: содержимое рисуется как будто холст перевёрнут (h x w) и
 // поворачивается на 90° по часовой, чтобы лечь в физическую страницу w x h -
-// нужно для QR поставки WB, чей SVG рассчитан на другую (не термо-58х40)
-// ориентацию и потому печатался повёрнутым/со сдвигом.
-function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = false } = {}) {
+// оставлено на будущее, сейчас не используется (см. коммит с разбором
+// реальных SVG от WB - у них разворот уже встроен в сам SVG).
+// marginMm: у прямых термопринтеров обычно есть недопечатываемая полоса
+// у края этикетки (1-3мм) - контент WB рассчитан впритык к краю viewBox
+// (без своих отступов), поэтому нижние строки текста физически обрезались
+// принтером. Отступ съедает немного места под QR, но гарантирует, что
+// ничего не уходит в мёртвую зону у края.
+function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = false, marginMm = 1.5 } = {}) {
   return new Promise((resolve, reject) => {
     const w = mmToPt(widthMm);
     const h = mmToPt(heightMm);
+    const m = mmToPt(marginMm);
     const doc = new PDFDocument({ size: [w, h], margin: 0, autoFirstPage: true });
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
@@ -95,10 +101,10 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
       doc.save();
       doc.translate(w, 0);
       doc.rotate(90);
-      SVGtoPDF(doc, svgText, 0, 0, { width: h, height: w, preserveAspectRatio: 'xMidYMid meet' });
+      SVGtoPDF(doc, svgText, m, m, { width: h - 2 * m, height: w - 2 * m, preserveAspectRatio: 'xMidYMid meet' });
       doc.restore();
     } else {
-      SVGtoPDF(doc, svgText, 0, 0, { width: w, height: h, preserveAspectRatio: 'xMidYMid meet' });
+      SVGtoPDF(doc, svgText, m, m, { width: w - 2 * m, height: h - 2 * m, preserveAspectRatio: 'xMidYMid meet' });
     }
     doc.end();
     stream.on('finish', resolve);
