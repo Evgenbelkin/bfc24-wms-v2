@@ -368,7 +368,10 @@
               <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===j.doc_type)||{}).label || j.doc_type)} <span class="pill ${JOB_STATUS_PILL[j.status]||'pill-gray'}">${JOB_STATUS_LABELS[j.status]||j.status}</span></div>
               <div class="sub">${UI.escHtml(j.printer_name)} · ${UI.fmtDateTime(j.created_at)} ${j.error_text ? '· <span style=\"color:var(--red)\">'+UI.escHtml(j.error_text)+'</span>' : ''}</div>
             </div>
-            ${(j.status==='error'||j.status==='printed') ? `<button class="btn-sm btn-back" onclick="reprintJob(${j.id})"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Повторить</button>` : ''}
+            <div style="display:flex;gap:6px;">
+              ${(j.status==='error'||j.status==='printed'||j.status==='new') ? `<button class="btn-sm btn-back" onclick="reprintJob(${j.id})"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Повторить</button>` : ''}
+              ${(j.status==='new'||j.status==='processing') ? `<button class="btn-sm btn-red" onclick="cancelJob(${j.id})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Отменить</button>` : ''}
+            </div>
           </div>
         `).join('');
       } catch (e) { UI.notify.err(e.message); }
@@ -377,7 +380,16 @@
     async function reprintJob(jobId) {
       try {
         await window.API.printing.reprint(jobId);
-        UI.notify.ok('Задание на повторную печать создано');
+        UI.notify.ok('Задание на повторную печать создано (на текущий принтер по маршруту)');
+        await loadJobs();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function cancelJob(jobId) {
+      if (!UI.confirm('Отменить задание на печать? Если документ всё ещё нужен — используйте "Повторить", он создаст новое задание на актуальный принтер.')) return;
+      try {
+        await window.API.printing.updateJob(jobId, { status: 'cancelled' });
+        UI.notify.ok('Задание отменено');
         await loadJobs();
       } catch (e) { UI.notify.err(e.message); }
     }

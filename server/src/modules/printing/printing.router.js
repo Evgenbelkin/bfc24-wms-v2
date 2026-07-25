@@ -205,11 +205,27 @@ router.post('/jobs/reprint', requireRole('tenant_admin','supervisor','packer','s
     );
     if (orig.rowCount===0) throw new NotFoundError('PrintJob', originalId);
     const o = orig.rows[0];
+
+    // Принтер для повтора ищем заново по актуальному маршруту для этого типа
+    // документа, а не берём printer_id из старого задания как есть — иначе
+    // повтор уйдёт на тот же принтер, который могли уже поменять/выключить
+    // (реальный кейс: задание висело на отключённом складском принтере,
+    // маршрут перевели на другой, а "Повторить" всё равно бил в старый).
+    let printerId = o.printer_id;
+    const routeRes = await query(
+      `SELECT pr.printer_id FROM wms.printer_routes pr
+       JOIN wms.printers p ON p.id=pr.printer_id
+       WHERE pr.tenant_id=$1 AND pr.doc_type=$2 AND pr.is_active=TRUE AND p.is_active=TRUE
+       ORDER BY pr.is_default DESC, pr.id LIMIT 1`,
+      [req.user.tenantId, o.doc_type]
+    );
+    if (routeRes.rowCount > 0) printerId = routeRes.rows[0].printer_id;
+
     const jobCode = `REPRINT-${originalId}-${Date.now()}`;
     const r = await query(
       `INSERT INTO wms.print_jobs(tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'new',$10) RETURNING id, job_code, status`,
-      [req.user.tenantId, jobCode, o.printer_id, o.route_id, o.doc_type, o.entity_type, o.entity_id, o.copies, o.payload_json, req.user.id]
+      [req.user.tenantId, jobCode, printerId, o.route_id, o.doc_type, o.entity_type, o.entity_id, o.copies, o.payload_json, req.user.id]
     );
     res.json({ ok:true, job:r.rows[0] });
   } catch(e){ next(e); }
