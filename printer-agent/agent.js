@@ -153,11 +153,11 @@ async function processJob(job) {
     // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
     // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
     // безопасен для всех типов документов.
-    // QR поставки WB (shipping_qr) — SVG от их API рассчитан на другую
-    // ориентацию (текст сбоку), пробуем повернуть на 90° под нашу термо-
-    // этикетку. wb_sticker и pick_list_label уже печатаются нормально —
-    // их не трогаем.
-    const dims = { widthMm: 58, heightMm: 40, rotate90: job.doc_type === 'shipping_qr' };
+    // QR поставки и стикер WB (shipping_qr, wb_sticker) - SVG от их API
+    // рассчитан на другую ориентацию (текст сбоку), пробуем повернуть на
+    // 90° под нашу термоэтикетку. pick_list_label (наш собственный QR)
+    // уже печатается нормально - его не трогаем.
+    const dims = { widthMm: 58, heightMm: 40, rotate90: job.doc_type === 'shipping_qr' || job.doc_type === 'wb_sticker' };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
