@@ -159,6 +159,11 @@
               <input id="m-device" value="${p && p.device_name ? UI.escHtml(p.device_name):''}" placeholder="например: Xprinter XP-365B"/>
               <div class="hint-box" style="margin-top:6px;">Как принтер называется в самой Windows на компьютере с принтером: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).</div>
             </div>
+            <div class="field">
+              <label>Имя формата бумаги в драйвере (опционально)</label>
+              <input id="m-paper-size" value="${p && p.paper_size_name ? UI.escHtml(p.paper_size_name):''}" placeholder="например: 58x40"/>
+              <div class="hint-box" style="margin-top:6px;">Если в настройках драйвера этого принтера (обычно "Свойства принтера" → "Настройка страницы"/Page Setup → список Stock/Paper Size) заведён свой именованный формат бумаги — впишите его точное имя сюда. Агент будет ссылаться на этот формат по имени при автоматической печати, а не создавать размер заново — это важно, если в именованном формате настроена ещё и калибровка датчика зазора между этикетками. Если оставить пустым, агент подставит размер просто в мм.</div>
+            </div>
             <div class="field-row2" id="network-fields" style="display:none">
               <div class="field"><label>IP-адрес</label><input id="m-ip" value="${p && p.ip_address ? UI.escHtml(p.ip_address):''}"/></div>
               <div class="field"><label>Порт</label><input id="m-port" type="number" value="${p && p.port ? p.port:''}"/></div>
@@ -224,6 +229,7 @@
       const data = {
         printer_name: UI.val('#m-name'),
         device_name:  UI.val('#m-device'),
+        paper_size_name: UI.val('#m-paper-size') || null,
       };
       try {
         if (p) {

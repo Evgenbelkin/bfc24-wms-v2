@@ -62,8 +62,12 @@ router.get('/jobs', agentKeyAuth, async (req,res,next)=>{
     const { status='new', limit=20 } = req.query;
     // printer_name/device_name нужны агенту, чтобы понять, какому устройству ОС
     // (Windows/CUPS) слать печать — оставляем join, как было в старом эндпоинте.
+    // paper_size_name — необязательное имя именованного формата бумаги (Stock)
+    // из настроек драйвера конкретного принтера (см. migration 016) - агент
+    // подставляет его в paperSize при печати вместо generic custom-size, если
+    // оно задано в карточке принтера.
     const r = await query(
-      `SELECT pj.*, p.printer_name, p.device_name
+      `SELECT pj.*, p.printer_name, p.device_name, p.paper_size_name
        FROM wms.print_jobs pj
        JOIN wms.printers p ON p.id = pj.printer_id
        WHERE pj.tenant_id=$1 AND pj.printer_id=$2 AND pj.status=$3
