@@ -153,11 +153,14 @@ async function processJob(job) {
     // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
     // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
     // безопасен для всех типов документов.
-    // QR поставки и стикер WB (shipping_qr, wb_sticker) - SVG от их API
-    // рассчитан на другую ориентацию (текст сбоку), пробуем повернуть на
-    // 90° под нашу термоэтикетку. pick_list_label (наш собственный QR)
-    // уже печатается нормально - его не трогаем.
-    const dims = { widthMm: 58, heightMm: 40, rotate90: job.doc_type === 'shipping_qr' || job.doc_type === 'wb_sticker' };
+    // ВАЖНО: проверено на реальных SVG от WB (сохранены в debug/) - и у
+    // shipping_qr, и у wb_sticker внешний <svg viewBox="0 0 580 400">
+    // УЖЕ landscape (580:400 = 58:40, ровно наша этикетка), а нужный
+    // поворот WB уже сделал сам внутри через <g transform="rotate(270)...">.
+    // Поэтому rotate90 здесь не нужен и не используется - предыдущая
+    // попытка его включить была ошибкой (разворачивала уже правильно
+    // повёрнутый SVG ещё раз).
+    const dims = { widthMm: 58, heightMm: 40 };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
