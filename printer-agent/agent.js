@@ -113,9 +113,14 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
 }
 
 // Отправить на принтер
+// scale:'noscale' - ОБЯЗАТЕЛЬНО. Без этого SumatraPDF (движок печати внутри
+// pdf-to-printer) сам решает, подгонять ли наш PDF под текущий размер бумаги
+// в драйвере - именно это и рвало печать (растягивало на 2 этикетки, крутило
+// и т.п.), хотя наш PDF всегда ровно 58х40мм. При печати из браузера этой
+// проблемы нет, потому что браузер обычно шлёт на печать в масштабе 100%.
 async function printPdf(pdfPath, printerName) {
   if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
-  await print(pdfPath, { printer: printerName });
+  await print(pdfPath, { printer: printerName, scale: 'noscale' });
 }
 
 // Удалить temp файлы
@@ -159,14 +164,15 @@ async function processJob(job) {
     // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
     // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
     // безопасен для всех типов документов.
-    // В драйвере принтера (Edit Label Stock) заготовка была объявлена как
-    // Width=58мм/Length=40мм, хотя физическая лента, похоже, на самом деле
-    // 40мм в ширину / 58мм в длину - отсюда пустые поля по бокам (наша
-    // страница у'же/шире реальной ленты, драйвер центрирует). Сейчас
-    // заготовка в драйвере переопределена как Width=40/Length=58 (родная
-    // ориентация 0-Portrait) - страница агента и поворот контента должны
-    // это отражать зеркально.
-    const dims = { widthMm: 40, heightMm: 58, rotate90: true };
+    // Настоящая причина кривой печати была не в размере страницы и не в
+    // драйвере (печать тех же SVG прямо из браузера всегда была верной с
+    // исходными настройками принтера) - а в том, что printPdf() не запрещал
+    // SumatraPDF масштабировать/подгонять PDF под бумагу (см. scale:'noscale'
+    // в printPdf). Возвращаем страницу к изначальному, математически
+    // проверенному по реальным SVG от WB размеру: 58х40 landscape без
+    // поворота - драйвер принтера тоже должен быть на исходных настройках
+    // (Stock 58x40, Orientation 0-Portrait).
+    const dims = { widthMm: 58, heightMm: 40 };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
