@@ -173,12 +173,22 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
 // Убрали. Разворот содержимого теперь делаем сами внутри PDF (см. rotate90 в
 // processJob/buildPdf) - это не зависит от того, что умеет или не умеет
 // драйвер, и подтверждено рабочим локальным рендером.
+//
+// ПРОДОЛЖЕНИЕ (скриншот диалога настроек драйвера Xprinter, вкладка Page
+// Setup -> Stock): у принтера есть ИМЕНОВАННЫЙ вариант "58x40(58.0 mm x 40.0
+// mm)" - именно он выбран и используется при печати из браузера. Наш код
+// передавал не это имя, а свою кастомную строку размера "58mm x 40mm" -
+// это создаёт generic custom-size в DEVMODE, а не выбирает именованный Stock
+// из драйвера, в котором (в отличие от generic custom size) может быть
+// зашита калибровка датчика зазора между этикетками конкретно под этот
+// Stock. Меняем на точное имя "58x40", чтобы SumatraPDF ссылался на тот же
+// самый Stock, что и браузер, а не создавал свой размер с нуля.
 async function printPdf(pdfPath, printerName, { widthMm = 58, heightMm = 40 } = {}) {
   if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
   await print(pdfPath, {
     printer: printerName,
     scale: 'noscale',
-    paperSize: `${widthMm}mm x ${heightMm}mm`,
+    paperSize: '58x40',
   });
 }
 
