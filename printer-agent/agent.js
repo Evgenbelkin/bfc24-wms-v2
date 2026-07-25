@@ -132,25 +132,19 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
 // с реальным размером PDF-страницы (см. `paper=76mm x 130mm` в документации
 // SumatraPDF, поддерживает произвольные WxH в мм).
 //
-// ПРОДОЛЖЕНИЕ (после diag.ps1): Win32_PrinterConfiguration для Xprinter
-// XP-D365B показал Orientation:1 (Portrait) как ТЕКУЩИЙ дефолт драйвера
-// (PaperWidth/PaperLength у него вообще пустые - кастомный Stock 58x40
-// живёт в приватных настройках драйвера, Windows его в этих полях не видит).
-// В документации SumatraPDF прямо написано: `paper=` задаёт только РАЗМЕР,
-// а физическая ориентация страницы берётся из "printer defaults" (т.е. из
-// Portrait, который сейчас стоит по умолчанию). Отдельный флаг
-// `orientation=landscape/portrait` поворачивает именно СОДЕРЖИМОЕ на 90°,
-// чтобы оно легло в физическую ориентацию, которую ожидает драйвер. Наш PDF
-// landscape (58 шире 40) при дефолтной Portrait-ориентации драйвера - и есть
-// та нестыковка, из-за которой QR резался/сдвигался. Поэтому явно передаём
-// orientation, вычисляя его из формы страницы (widthMm > heightMm → landscape).
+// ПРОДОЛЖЕНИЕ: пробовали ещё передавать SumatraPDF свой orientation=landscape,
+// чтобы подстроиться под Orientation:1 (Portrait) из диагностики
+// Win32_PrinterConfiguration - эмпирически не сработало (фото показало тот же
+// результат, что и без этого флага), т.е. этот RAW-драйвер его не учитывает.
+// Убрали. Разворот содержимого теперь делаем сами внутри PDF (см. rotate90 в
+// processJob/buildPdf) - это не зависит от того, что умеет или не умеет
+// драйвер, и подтверждено рабочим локальным рендером.
 async function printPdf(pdfPath, printerName, { widthMm = 58, heightMm = 40 } = {}) {
   if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
   await print(pdfPath, {
     printer: printerName,
     scale: 'noscale',
     paperSize: `${widthMm}mm x ${heightMm}mm`,
-    orientation: widthMm > heightMm ? 'landscape' : 'portrait',
   });
 }
 
@@ -195,15 +189,28 @@ async function processJob(job) {
     // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
     // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
     // безопасен для всех типов документов.
-    // Настоящая причина кривой печати была не в размере страницы и не в
-    // драйвере (печать тех же SVG прямо из браузера всегда была верной с
-    // исходными настройками принтера) - а в том, что printPdf() не запрещал
-    // SumatraPDF масштабировать/подгонять PDF под бумагу (см. scale:'noscale'
-    // в printPdf). Возвращаем страницу к изначальному, математически
-    // проверенному по реальным SVG от WB размеру: 58х40 landscape без
-    // поворота - драйвер принтера тоже должен быть на исходных настройках
-    // (Stock 58x40, Orientation 0-Portrait).
-    const dims = { widthMm: 58, heightMm: 40 };
+    // НАСТОЯЩАЯ причина кривого текста/QR (найдена экспериментально: рендерили
+    // реальные job-13/job-14 SVG от WB локально в PDF в обход принтера вообще
+    // и смотрели на картинку) - сами SVG от WB содержат
+    // <g transform="rotate(270) translate(-400 0)"> - контент в них нарисован
+    // в развёрнутом виде. Когда рендерим SVG "как есть" (математически верно
+    // по спецификации), получаем ИМЕННО тот перекошенный результат, что видно
+    // на фото у пользователя - текст вертикально, QR не на своём месте. Это
+    // не баг svg-to-pdfkit и не баг принтера/драйвера - подтверждено тем, что
+    // локальный рендер (без принтера) даёт точно такую же картинку. Печать из
+    // браузера всегда выглядела верно не потому что там другие настройки
+    // принтера, а потому что WMS для кнопки "Печать QR" рисует SVG иначе.
+    // Фикс - гасим встроенный поворот WB своим собственным поворотом на 90°
+    // при сборке PDF (rotate90 в buildPdf) для типов документов, которые
+    // приходят "как есть" от WB (wb_sticker, shipping_qr). Наши собственные
+    // QR (pick_list_label, generateQrSvg) рисуются без такого transform -
+    // их не трогаем.
+    const NEEDS_ROTATE = new Set(['wb_sticker', 'shipping_qr']);
+    const dims = {
+      widthMm: 58,
+      heightMm: 40,
+      rotate90: NEEDS_ROTATE.has(job.doc_type),
+    };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
