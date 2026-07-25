@@ -1,12 +1,11 @@
 @echo off
-chcp 65001 >nul
-title BFC24 - Удаление агента печати из автозапуска
-echo Убираю агент печати из автозапуска Windows...
+title BFC24 Printer Agent - Remove from startup
+echo Removing printer agent from Windows startup...
 
 set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 if exist "%STARTUP_DIR%\BFC24PrinterAgent.vbs" del "%STARTUP_DIR%\BFC24PrinterAgent.vbs"
 
-echo Готово. Автозапуск отключён.
-echo Если агент сейчас работает в фоне - закройте процесс node.exe через
-echo Диспетчер задач, либо просто перезагрузите компьютер.
+echo Done. Autostart disabled.
+echo If the agent is currently running in the background - close it via
+echo Task Manager (look for node.exe), or just restart the computer.
 pause
