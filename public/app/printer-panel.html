@@ -220,6 +220,14 @@
             Вписывается в настройки агента (<b>AGENT_KEY</b>) на компьютере, подключённом к принтеру —
             <a href="/downloads/printer-agent.zip" target="_blank">скачайте программу-агент и инструкцию (.zip)</a>,
             распакуйте на этом компьютере и запустите install.bat, он сам попросит вставить ключ.
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+              Дополнительно (для термопринтеров этикеток, один раз на компьютер): скачайте
+              <a href="https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" target="_blank">SumatraPDF 3.6.1 (portable, .zip)</a>,
+              достаньте из архива файл <code>SumatraPDF.exe</code> и положите его в папку агента по пути
+              <code>printer-agent\bin\SumatraPDF.exe</code> (папку <code>bin</code> создайте, если её нет). В сам
+              printer-agent.zip этот файл не входит — без него агент работает, но со старой (менее надёжной)
+              логикой печати.
+            </div>
             <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
               <input readonly value="${UI.escHtml(res.agent_key)}" style="flex:1;font-family:monospace;font-size:12px;" onclick="this.select()"/>
               <button class="btn-sm btn-blue" onclick="navigator.clipboard.writeText('${res.agent_key}'); UI.notify.ok('Скопировано')">Копировать</button>
