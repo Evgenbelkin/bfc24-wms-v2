@@ -76,10 +76,14 @@ nano /var/www/bfc24-wms-v2-staging/server/.env
 Поменять в нём:
 
 ```
-PORT=3002
+PORT=3004
 DB_NAME=bfc24_v2_staging
 CORS_ORIGINS=https://staging.bfc-24.ru
 ```
+
+(порт 3004 — на VPS уже заняты 3000-3003 и 3005 другими процессами (`bfc24-wms`,
+`bfc24-wms-v2`, старый `bfc24-wms-prod-git` и др.) — перед выбором порта для
+нового процесса всегда проверяй `sudo ss -tlnp | grep 300`, чтобы не столкнуться.)
 
 `NODE_ENV=production` — оставить как в проде (чтобы staging вёл себя
 максимально похоже на боевую версию).
@@ -126,7 +130,7 @@ server {
     server_name staging.bfc-24.ru;
 
     location / {
-        proxy_pass http://127.0.0.1:3002;
+        proxy_pass http://127.0.0.1:3004;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
