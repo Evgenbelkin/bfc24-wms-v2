@@ -468,9 +468,18 @@
     }
 
     async function printStationSticker(id) {
+      // Открываем окно СРАЗУ, синхронно по клику — если сделать это после
+      // await (когда придёт ответ сервера), браузер (особенно мобильный)
+      // считает это не результатом действия пользователя и молча блокирует
+      // всплывающее окно — получается пустая вкладка. Поэтому: сначала
+      // window.open (не document.open — это разные вещи, у document.open
+      // ненадёжное поведение в мобильных браузерах), потом уже запрос.
+      const w = window.open('', '_blank');
+      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этого сайта и попробуйте снова'); return; }
+      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Готовим стикер…</p>');
       try {
         const res = await window.API.workstations.sticker(id);
-        const w = document.open('', '_blank');
+        w.document.open();
         w.document.write(`
           <html><head><title>${UI.escHtml(res.station_name)}</title>
           <style>
@@ -485,7 +494,10 @@
           </body></html>
         `);
         w.document.close();
-      } catch (e) { UI.notify.err(e.message); }
+      } catch (e) {
+        w.document.body.innerHTML = `<p style="font-family:sans-serif;text-align:center;padding:40px;color:#c00;">Ошибка: ${UI.escHtml(e.message)}</p>`;
+        UI.notify.err(e.message);
+      }
     }
 
     // ---------- Очередь печати ----------
