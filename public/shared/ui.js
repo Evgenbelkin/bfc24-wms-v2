@@ -129,16 +129,25 @@
       if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(()=>{});
       const isErr = tone === 'err';
+      const now = _audioCtx.currentTime;
       const osc = _audioCtx.createOscillator();
       const gain = _audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = isErr ? 320 : 1000;
-      const dur = isErr ? 0.22 : 0.1;
-      gain.gain.setValueAtTime(0.18, _audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + dur);
+      // square вместо sine — на маленьких динамиках телефона звучит заметно
+      // громче и резче при той же громкости (богаче гармониками), плюс
+      // держим пик какое-то время вместо немедленного затухания — короткий
+      // sine-щелчок на слух воспринимается тихим, даже если технически
+      // громкость та же.
+      osc.type = 'square';
+      osc.frequency.value = isErr ? 300 : 1700;
+      const hold = isErr ? 0.18 : 0.09;
+      const tail = 0.05;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.9, now + 0.005); // без щелчка на старте
+      gain.gain.setValueAtTime(0.9, now + hold);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + hold + tail);
       osc.connect(gain).connect(_audioCtx.destination);
-      osc.start();
-      osc.stop(_audioCtx.currentTime + dur + 0.02);
+      osc.start(now);
+      osc.stop(now + hold + tail + 0.02);
     } catch (_) { /* звук не критичен для работы - тихо игнорируем (например, если Web Audio недоступен) */ }
   }
 
