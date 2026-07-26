@@ -130,24 +130,40 @@
       if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(()=>{});
       const isErr = tone === 'err';
       const now = _audioCtx.currentTime;
-      const osc = _audioCtx.createOscillator();
-      const gain = _audioCtx.createGain();
-      // square вместо sine — на маленьких динамиках телефона звучит заметно
-      // громче и резче при той же громкости (богаче гармониками), плюс
-      // держим пик какое-то время вместо немедленного затухания — короткий
-      // sine-щелчок на слух воспринимается тихим, даже если технически
-      // громкость та же.
-      osc.type = 'square';
-      osc.frequency.value = isErr ? 300 : 1700;
-      const hold = isErr ? 0.18 : 0.09;
-      const tail = 0.05;
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.9, now + 0.005); // без щелчка на старте
-      gain.gain.setValueAtTime(0.9, now + hold);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + hold + tail);
-      osc.connect(gain).connect(_audioCtx.destination);
-      osc.start(now);
-      osc.stop(now + hold + tail + 0.02);
+      const baseFreq = isErr ? 300 : 1700;
+      const hold = isErr ? 0.2 : 0.16;
+      const tail = 0.06;
+
+      // Компрессор + make-up gain — тот же приём, что и в громких уведомлениях:
+      // сначала "сплющиваем" динамику (компрессор), потом поднимаем общий
+      // уровень выше исходного пика (makeup) — цифровой сигнал становится
+      // громче на слух, чем просто одна нота на полной громкости.
+      const comp = _audioCtx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-24, now);
+      comp.knee.setValueAtTime(6, now);
+      comp.ratio.setValueAtTime(12, now);
+      comp.attack.setValueAtTime(0.001, now);
+      comp.release.setValueAtTime(0.05, now);
+      const makeup = _audioCtx.createGain();
+      makeup.gain.setValueAtTime(4, now);
+      comp.connect(makeup).connect(_audioCtx.destination);
+
+      // Две гармоники (основная + октава выше) звучат громче и "плотнее" на
+      // маленьком динамике телефона, чем одна чистая нота той же амплитуды.
+      [baseFreq, baseFreq * 2].forEach((freq, i) => {
+        const osc = _audioCtx.createOscillator();
+        const gain = _audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        const peak = i === 0 ? 0.9 : 0.4;
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(peak, now + 0.005); // без щелчка на старте
+        gain.gain.setValueAtTime(peak, now + hold);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + hold + tail);
+        osc.connect(gain).connect(comp);
+        osc.start(now);
+        osc.stop(now + hold + tail + 0.02);
+      });
     } catch (_) { /* звук не критичен для работы - тихо игнорируем (например, если Web Audio недоступен) */ }
   }
 
