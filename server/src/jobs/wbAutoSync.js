@@ -26,6 +26,7 @@ async function runOnce() {
   try {
     const tenantIds = await wbService.listTenantsWithWbIntegration();
     let totalAccounts = 0, totalSaved = 0, totalErrors = 0;
+    let totalShipmentsChecked = 0, totalShipmentsAccepted = 0;
     for (const tenantId of tenantIds) {
       try {
         const results = await wbService.syncAllAccountsForTenant(tenantId);
@@ -36,9 +37,25 @@ async function runOnce() {
         totalErrors++;
         logger.error({ err: e, tenantId }, 'WB auto-sync: tenant sync failed');
       }
+
+      // Отдельно от синка НОВЫХ заказов — проверяем, не принял ли WB физически
+      // заказы отгрузок, которые у нас уже in_transit (см. syncDeliveryStatusForTenant):
+      // без этого шага счётчик "в пути" на табло копится бесконечно, ничего его не разгружает.
+      try {
+        const r = await wbService.syncDeliveryStatusForTenant(tenantId);
+        totalShipmentsChecked += r.checked;
+        totalShipmentsAccepted += r.updated;
+      } catch (e) {
+        totalErrors++;
+        logger.error({ err: e, tenantId }, 'WB auto-sync: delivery-status check failed');
+      }
     }
     logger.info(
-      { tenants: tenantIds.length, accounts: totalAccounts, saved: totalSaved, errors: totalErrors, ms: Date.now()-startedAt },
+      {
+        tenants: tenantIds.length, accounts: totalAccounts, saved: totalSaved, errors: totalErrors,
+        shipmentsChecked: totalShipmentsChecked, shipmentsAccepted: totalShipmentsAccepted,
+        ms: Date.now()-startedAt,
+      },
       'WB auto-sync run finished'
     );
   } catch (e) {

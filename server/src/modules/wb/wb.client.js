@@ -251,6 +251,21 @@ async function deliverSupply(token, supplyId) {
   });
 }
 
+/** Получить реальный статус приёмки заказов у WB (не наш локальный supplierStatus,
+ *  а именно wbStatus — статус на стороне WB: 'waiting' значит подтверждён
+ *  продавцом, но WB ещё физически не принял; 'sorted'/'sold'/и т.п. — уже принят
+ *  и обрабатывается дальше). Нужно, чтобы понять, когда поставка реально
+ *  дошла до склада WB, а не просто была отмечена нами как "в пути". */
+async function fetchOrderStatuses(token, orderIds) {
+  if (!orderIds || !orderIds.length) return [];
+  const data = await wbRequest({
+    token, method: 'POST',
+    path: '/api/v3/orders/status',
+    data: { orders: orderIds.map(Number) },
+  });
+  return Array.isArray(data?.orders) ? data.orders : [];
+}
+
 /** Получить остатки FBS по складу */
 async function fetchFbsStocks(token, warehouseId) {
   const data = await wbRequest({
@@ -301,6 +316,7 @@ module.exports = {
   createSupply, addOrdersToSupply,
   fetchOrderStickers, fetchSupplyBarcode,
   deliverSupply,
+  fetchOrderStatuses,
   fetchFbsStocks, updateFbsStocks,
   normalizeShipmentCode, extractStickerCode,
 };

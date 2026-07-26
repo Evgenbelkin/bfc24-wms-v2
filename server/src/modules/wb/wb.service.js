@@ -107,6 +107,55 @@ async function syncAllAccountsForTenant(tenantId) {
   return results;
 }
 
+/** Проверяет через WB API, принял ли WB физически заказы отгрузок, которые у
+ *  нас всё ещё висят в status='in_transit' (скан QR поставки отгрузчиком уже
+ *  сделан, но подтверждения от самой WB мы никогда не спрашивали — раньше
+ *  счётчик "в пути" на табло копился бесконечно, т.к. ничего не переводило
+ *  отгрузку дальше). wbStatus='waiting' у заказа означает "продавец
+ *  подтвердил, WB ещё не получил физически" — как только у ВСЕХ заказов
+ *  поставки wbStatus вышел из 'waiting' (sorted/sold/и т.п. — WB реально
+ *  принял), переводим отгрузку в status='done' локально. */
+async function syncDeliveryStatusForTenant(tenantId) {
+  const shipRes = await query(
+    `SELECT id, external_id FROM wms.shipments WHERE tenant_id=$1 AND status='in_transit'`,
+    [tenantId]
+  );
+  if (shipRes.rowCount === 0) return { checked: 0, updated: 0 };
+
+  let updated = 0;
+  for (const shipment of shipRes.rows) {
+    try {
+      const ordersRes = await query(
+        `SELECT wo.wb_order_id, ma.api_token
+         FROM wms.wb_orders wo
+         JOIN wms.mp_accounts ma ON ma.id=wo.mp_account_id
+         WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND ma.api_token IS NOT NULL`,
+        [tenantId, shipment.external_id]
+      );
+      if (ordersRes.rowCount === 0) continue; // ещё не досинхронизировано/нет токена — попробуем в следующий прогон
+
+      // Поставка всегда привязана к одному WB-аккаунту, поэтому один токен на все её заказы.
+      const token = ordersRes.rows[0].api_token;
+      const orderIds = ordersRes.rows.map(r => Number(r.wb_order_id));
+
+      const statuses = await wbClient.fetchOrderStatuses(token, orderIds);
+      if (!statuses.length) continue;
+
+      const allAccepted = statuses.every(s => s.wbStatus && s.wbStatus !== 'waiting');
+      if (allAccepted) {
+        await query(
+          `UPDATE wms.shipments SET status='done', wb_accepted_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          [shipment.id]
+        );
+        updated++;
+      }
+    } catch (e) {
+      logger.warn({ err: e.message, tenantId, shipmentId: shipment.id }, 'WB delivery-status check failed for shipment (non-fatal)');
+    }
+  }
+  return { checked: shipRes.rowCount, updated };
+}
+
 /** tenant_id всех тенантов с включённым модулем wb_integration и активным доступом (для фонового джоба) */
 async function listTenantsWithWbIntegration() {
   const r = await query(
@@ -122,5 +171,6 @@ module.exports = {
   listActiveAccounts,
   syncOrdersForAccount,
   syncAllAccountsForTenant,
+  syncDeliveryStatusForTenant,
   listTenantsWithWbIntegration,
 };
