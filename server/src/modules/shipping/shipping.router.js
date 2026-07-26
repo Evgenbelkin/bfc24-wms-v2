@@ -47,4 +47,18 @@ router.post('/confirm', requireRole('tenant_admin','supervisor','shipper','packe
   } catch(e){ next(e); }
 });
 
+// Ручное подтверждение доставки — только супервайзер/админ (закрывает
+// отгрузку окончательно, минуя автопроверку через WB API).
+router.post('/mark-delivered', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { shipment_code } = req.body;
+    const result = await svc.markDelivered({
+      tenantId:     req.user.tenantId,
+      shipmentCode: shipment_code,
+      userId:       req.user.id,
+    });
+    res.json({ ok: true, shipment: result });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;

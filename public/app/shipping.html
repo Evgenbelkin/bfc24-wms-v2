@@ -67,6 +67,15 @@
       <div id="qr-result" style="display:none"></div>
     </div>
 
+    <!-- Ручное подтверждение доставки — нужно для отгрузок вне WB (marketplace=
+         'manual'), у которых нет автоматического подтверждения приёмки, а также
+         как override для WB-отгрузок, если автопроверка почему-то не сработала. -->
+    <div class="card" id="delivered-card" style="display:none">
+      <div class="card-title">Доставка</div>
+      <div class="refresh-note" id="delivered-hint" style="margin-bottom:8px;"></div>
+      <button type="button" class="btn-big btn-green btn-full" onclick="markDelivered()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Отметить доставленной</button>
+    </div>
+
     <!-- Постоянный блок QR поставки WB — виден в любой момент, если QR уже получен
          (не только сразу после подтверждения отгрузки), чтобы можно было открыть/
          перепечатать позже, например если стикер зажевало принтером. -->
@@ -231,6 +240,20 @@
           ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.'
           : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
         setTimeout(() => document.getElementById('scan-code')?.focus(), 150);
+
+        // Кнопка "Отметить доставленной" — только supervisor/tenant_admin, только
+        // пока отгрузка в 'in_transit'. Для WB-отгрузок это обычно происходит само
+        // (см. Wildberries в справке), для остальных (marketplace='manual') — это
+        // единственный способ закрыть отгрузку, WB API там спросить не у кого.
+        const deliveredCard = document.getElementById('delivered-card');
+        if (canRequeue && currentShipment.status === 'in_transit') {
+          deliveredCard.style.display = 'block';
+          document.getElementById('delivered-hint').textContent = currentShipment.marketplace === 'wb'
+            ? 'Обычно закрывается автоматически, когда WB подтвердит приёмку (см. справку). Если висит долго — можно закрыть вручную.'
+            : 'Эта отгрузка не через Wildberries — подтвердить доставку можно только вручную, автоматической проверки для неё нет.';
+        } else {
+          deliveredCard.style.display = 'none';
+        }
       } catch (e) { UI.notify.err(e.message); }
     }
 
@@ -246,6 +269,16 @@
       try {
         await window.API.picking.requeue(l.task_id);
         UI.notify.ok(`Возвращено в сборку: ${l.item_name || l.barcode}`);
+        await openShipmentByCode(currentShipment.external_id);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function markDelivered() {
+      if (!currentShipment) return;
+      if (!UI.confirm(`Отметить отгрузку ${currentShipment.external_id} доставленной? Это финальный статус, отменить его будет нельзя.`)) return;
+      try {
+        await window.API.shipping.markDelivered(currentShipment.external_id);
+        UI.notify.ok('Отгрузка отмечена доставленной');
         await openShipmentByCode(currentShipment.external_id);
       } catch (e) { UI.notify.err(e.message); }
     }

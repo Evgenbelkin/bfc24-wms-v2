@@ -277,6 +277,7 @@
     board:   (p) => get('/shipping/board', p),
     details: (code) => get('/shipping/details', { shipment_code: code }),
     confirm: (d) => post('/shipping/confirm', d),
+    markDelivered: (code) => post('/shipping/mark-delivered', { shipment_code: code }),
   };
 
   // ─────────────── Overview ("Табло") ───────────────

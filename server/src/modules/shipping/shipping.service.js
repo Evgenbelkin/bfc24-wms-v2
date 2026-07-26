@@ -341,4 +341,29 @@ async function createQrPrintJobDirect({ tenantId, shipmentId, qrBase64, userId }
   );
 }
 
-module.exports = { listShipments, getShipmentDetails, confirmShipment };
+/** Ручное подтверждение доставки — для отгрузок, у которых нет автоматического
+ *  источника подтверждения (marketplace='manual' — фоновая проверка WB API их
+ *  не видит, а других маркетплейсов, которые бы подтверждали приёмку, у нас
+ *  пока нет). Разрешаем и для 'wb' тоже — как ручной override на случай, если
+ *  авто-проверка почему-то не сработала (нет токена, аккаунт отключён и т.п.) —
+ *  супервайзер/админ сам знает, что груз реально доставлен. */
+async function markDelivered({ tenantId, shipmentCode, userId }) {
+  const r = await query(
+    `UPDATE wms.shipments
+     SET status='done', delivered_at=NOW(), delivered_by=$1, updated_at=NOW()
+     WHERE tenant_id=$2 AND external_id=$3 AND status='in_transit'
+     RETURNING id, external_id, status, delivered_at`,
+    [userId, tenantId, shipmentCode]
+  );
+  if (r.rowCount === 0) {
+    // Отдельно проверяем, есть ли вообще такая отгрузка — чтобы не путать
+    // "не найдена" с "уже не в статусе in_transit" (например, кто-то другой
+    // уже отметил её, или WB-автопроверка успела сработать первой).
+    const exists = await query(`SELECT status FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2`, [tenantId, shipmentCode]);
+    if (exists.rowCount === 0) throw new NotFoundError('Shipment', shipmentCode);
+    throw new ValidationError(`Отгрузка сейчас в статусе '${exists.rows[0].status}', подтвердить доставку можно только из статуса 'в пути'`);
+  }
+  return r.rows[0];
+}
+
+module.exports = { listShipments, getShipmentDetails, confirmShipment, markDelivered };
