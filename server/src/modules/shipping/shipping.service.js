@@ -4,6 +4,7 @@ const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const wbClient = require('../wb/wb.client');
+const { resolvePrinter } = require('../printing/printerResolver');
 
 // =============================================================================
 // Shipping Service
@@ -324,20 +325,18 @@ async function fetchWbSupplyQrAfterCommit({ tenantId, shipmentCode }) {
 }
 
 async function createQrPrintJobDirect({ tenantId, shipmentId, qrBase64, userId }) {
-  const routeRes = await query(
-    `SELECT pr.printer_id FROM wms.printer_routes pr
-     JOIN wms.printers p ON p.id=pr.printer_id
-     WHERE pr.tenant_id=$1 AND pr.doc_type='shipping_qr' AND pr.is_active=TRUE AND p.is_active=TRUE
-     ORDER BY pr.is_default DESC, pr.id LIMIT 1`,
-    [tenantId]
-  );
-  if (routeRes.rowCount === 0) return;
+  // Рабочее место сотрудника отгрузки (своя зона отгрузки со своим принтером),
+  // иначе — общий маршрут shipping_qr как раньше.
+  const resolved = await resolvePrinter(query, {
+    tenantId, docType: 'shipping_qr', employeeId: userId,
+  });
+  if (!resolved) return;
   const jobCode = `SHIPQR-${shipmentId}-${Date.now()}`;
   await query(
     `INSERT INTO wms.print_jobs
        (tenant_id,job_code,printer_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
      VALUES($1,$2,$3,'shipping_qr','shipment',$4,1,$5::jsonb,'new',$6)`,
-    [tenantId, jobCode, routeRes.rows[0].printer_id, shipmentId,
+    [tenantId, jobCode, resolved.printerId, shipmentId,
      JSON.stringify({ qr_base64: qrBase64 }), userId]
   );
 }

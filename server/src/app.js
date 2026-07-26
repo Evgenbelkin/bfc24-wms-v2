@@ -29,6 +29,7 @@ const packingRouter = require('./modules/packing/packing.router');
 const shippingRouter = require('./modules/shipping/shipping.router');
 const printingRouter = require('./modules/printing/printing.router');
 const printingAgentRouter = require('./modules/printing/printingAgent.router');
+const workstationsRouter = require('./modules/printing/workstations.router');
 const wbRouter = require('./modules/wb/wb.router');
 const sellerRouter = require('./modules/seller/seller.router');
 const analyticsRouter = require('./modules/analytics/analytics.router');
@@ -195,6 +196,7 @@ app.use(`${api}/shipping`,   shippingRouter);
 app.use(`${api}/printing`,   printingRouter);
 // Отдельная аутентификация ключом принтера (не JWT сотрудника) — см. printingAgent.router.js
 app.use(`${api}/printer-agent`, printingAgentRouter);
+app.use(`${api}/workstations`, workstationsRouter);
 app.use(`${api}/wb`,         wbRouter);
 app.use(`${api}/seller`,     sellerRouter);
 app.use(`${api}/analytics`,  analyticsRouter);

@@ -321,6 +321,18 @@
     reprint:   (jobId) => post('/printing/jobs/reprint', { job_id: jobId }),
   };
 
+  // ─────────────── Workstations (рабочие места) ───────────────
+
+  const workstations = {
+    list:   ()      => get('/workstations'),
+    create: (d)     => post('/workstations', d),
+    update: (id, d) => patch(`/workstations/${id}`, d),
+    delete: (id)    => del(`/workstations/${id}`),
+    my:     ()      => get('/workstations/my'),
+    select: (station_code) => post('/workstations/select', { station_code }),
+    sticker: (id)   => get(`/workstations/${id}/sticker`),
+  };
+
   // ─────────────── Seller ───────────────
 
   const seller = {
@@ -401,6 +413,7 @@
     placement, movement, inventory,
     picking, packing, shipping,
     wb, printing, overview,
+    workstations,
     seller, platform,
   };
 

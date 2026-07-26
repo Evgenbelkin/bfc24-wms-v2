@@ -3,6 +3,7 @@
 const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/errors');
 const { validatePositiveInt } = require('../../utils/validators');
+const { resolvePrinter } = require('../printing/printerResolver');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -248,18 +249,13 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
     try {
       if (stickerRes.rowCount > 0) {
         const sticker = stickerRes.rows[0];
-        const routeRes = await client.query(
-          `SELECT pr.id, pr.printer_id, p.printer_name
-           FROM wms.printer_routes pr
-           JOIN wms.printers p ON p.id=pr.printer_id
-           WHERE pr.tenant_id=$1 AND pr.doc_type='wb_sticker' AND pr.is_active=TRUE AND p.is_active=TRUE
-             AND (pr.client_id=$2 OR pr.client_id IS NULL)
-           ORDER BY CASE WHEN pr.client_id=$2 THEN 0 ELSE 1 END, pr.id
-           LIMIT 1`,
-          [tenantId, shipment.client_id]
-        );
-        if (routeRes.rowCount > 0) {
-          const route = routeRes.rows[0];
+        // Сначала пробуем рабочее место упаковщика (если он сканировал стол —
+        // печать уходит на его конкретный принтер), иначе — общий маршрут
+        // printer_routes по клиенту/умолчанию, как и раньше.
+        const resolved = await resolvePrinter(client.query.bind(client), {
+          tenantId, docType: 'wb_sticker', employeeId: packerId, clientId: shipment.client_id,
+        });
+        if (resolved) {
           const jobCode = `PKG-${shipment.id}-${barcode}-${Date.now()}`;
           const pjRes = await client.query(
             `INSERT INTO wms.print_jobs
@@ -268,7 +264,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
              VALUES($1,$2,$3,$4,'wb_sticker','shipment',$5,1,$6::jsonb,'new',$7)
              RETURNING id, job_code, status`,
             [
-              tenantId, jobCode, route.printer_id, route.id, shipment.id,
+              tenantId, jobCode, resolved.printerId, resolved.routeId, shipment.id,
               JSON.stringify({
                 wb_sticker:      sticker.wb_sticker,
                 wb_sticker_code: sticker.wb_sticker_code,

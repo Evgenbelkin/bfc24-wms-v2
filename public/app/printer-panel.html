@@ -26,6 +26,7 @@
   <div class="tabs">
     <button class="tab active" data-tab="printers" onclick="switchTab('printers')">Принтеры</button>
     <button class="tab" data-tab="routes" onclick="switchTab('routes')">Маршруты печати</button>
+    <button class="tab" data-tab="workstations" onclick="switchTab('workstations')">Рабочие места</button>
     <button class="tab" data-tab="jobs" onclick="switchTab('jobs')">Очередь печати</button>
   </div>
 
@@ -45,6 +46,16 @@
       <div id="rt-list"></div>
     </div>
     <button class="btn-big btn-green btn-full" onclick="openRouteModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый маршрут</button>
+  </div>
+
+  <!-- ============ Рабочие места ============ -->
+  <div id="tab-workstations" style="display:none">
+    <div class="hint-box" style="margin-bottom:10px;">Рабочее место — это физический стол/зона со своим принтером (например, стол упаковки №14 или зона отгрузки «Восток»). Сотрудник один раз сканирует стикер рабочего места на телефоне — и после этого печать со сканирования штрихкода уходит именно на принтер этого стола, а не на общий маршрут по типу документа.</div>
+    <div class="card">
+      <div class="card-title">Рабочие места (<span id="ws-count">0</span>)</div>
+      <div id="ws-list"></div>
+    </div>
+    <button class="btn-big btn-green btn-full" onclick="openWorkstationModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новое рабочее место</button>
   </div>
 
   <!-- ============ Очередь ============ -->
@@ -79,11 +90,12 @@
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
 
     function switchTab(name) {
-      ['printers','routes','jobs'].forEach(t => {
+      ['printers','routes','workstations','jobs'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
       if (name === 'routes' && !routesLoaded) loadRoutes();
+      if (name === 'workstations' && !workstationsLoaded) loadWorkstations();
       if (name === 'jobs' && !jobsLoaded) loadJobs();
     }
 
@@ -95,9 +107,18 @@
       { value:'other',           label:'Другое' },
     ];
 
+    const ZONE_TYPES = [
+      { value:'packing',  label:'Стол упаковки' },
+      { value:'picking',  label:'Зона сборки' },
+      { value:'shipping', label:'Зона отгрузки' },
+      { value:'inbound',  label:'Приёмка' },
+      { value:'other',    label:'Другое' },
+    ];
+
     let warehouses = [];
     let printersList = [];
-    let routesLoaded = false, jobsLoaded = false;
+    let workstationsList = [];
+    let routesLoaded = false, jobsLoaded = false, workstationsLoaded = false;
 
     async function loadWarehouses() {
       try { warehouses = (await window.API.warehouses.list()).warehouses || []; } catch (e) { UI.notify.err(e.message); }
@@ -349,6 +370,121 @@
         UI.notify.ok('Маршрут удалён');
         closeModal();
         await loadRoutes();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Рабочие места ----------
+    async function loadWorkstations() {
+      try {
+        workstationsLoaded = true;
+        const res = await window.API.workstations.list();
+        workstationsList = res.workstations || [];
+        document.getElementById('ws-count').textContent = workstationsList.length;
+        const list = document.getElementById('ws-list');
+        if (!workstationsList.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M3 3h18v14H3z"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></div>Рабочих мест пока нет</div>`;
+          return;
+        }
+        list.innerHTML = workstationsList.map((w, idx) => `
+          <div class="list-row row-item" onclick="openWorkstationModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(w.station_name)}</div>
+              <div class="sub">${UI.escHtml((ZONE_TYPES.find(z=>z.value===w.zone_type)||{}).label || w.zone_type)} · ${UI.escHtml(w.warehouse_name||'без склада')} · ${w.printer_name ? 'печать: '+UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>'} ${w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>'}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function openWorkstationModal(idx) {
+      const w = idx !== null ? workstationsList[idx] : null;
+      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}" ${w && w.warehouse_id===wh.id ? 'selected':''}>${UI.escHtml(wh.warehouse_name)}</option>`).join('');
+      const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}" ${w && w.zone_type===z.value ? 'selected':''}>${z.label}</option>`).join('');
+      const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.default_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
+
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${w ? UI.escHtml(w.station_name) : 'Новое рабочее место'}</div>
+            <div class="field"><label>Название</label><input id="wsm-name" value="${w ? UI.escHtml(w.station_name):''}" placeholder="Стол упаковки №14"/></div>
+            <div class="field"><label>Тип места</label><select id="wsm-zone">${zoneOptions}</select></div>
+            <div class="field"><label>Склад (опционально)</label><select id="wsm-warehouse" ${w?'disabled':''}>${whOptions}</select></div>
+            <div class="field"><label>Принтер этого места</label><select id="wsm-printer">${printerOptions}</select></div>
+            <div class="hint-box" style="margin-top:0;">Сотрудник сканирует код этого рабочего места на телефоне один раз (в начале смены/при смене места) — дальше вся печать со сканирования штрихкода на этом месте идёт на выбранный здесь принтер.</div>
+            ${w ? `<div class="field"><label style="display:inline;">Активно</label> <input type="checkbox" id="wsm-active" ${w.is_active ? 'checked':''}/></div>` : ''}
+            ${w ? `
+              <div class="field">
+                <button class="btn-sm btn-blue" onclick="printStationSticker(${w.id})"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Напечатать код рабочего места</button>
+                <div class="hint-box" style="margin-top:6px;">Откроется страница с QR-кодом и названием — распечатайте на обычном принтере и наклейте на стол. Код: <b>${UI.escHtml(w.station_code)}</b></div>
+              </div>
+            ` : ''}
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="saveWorkstation(${idx !== null ? idx : 'null'})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
+              ${w ? `<button class="btn-big btn-red" onclick="deleteWorkstation(${w.id})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveWorkstation(idx) {
+      const w = (idx !== null && idx !== undefined) ? workstationsList[idx] : null;
+      const name = UI.val('#wsm-name');
+      if (!name) { UI.notify.err('Укажите название'); return; }
+      try {
+        if (w) {
+          const data = {
+            station_name: name,
+            zone_type: UI.val('#wsm-zone'),
+            default_printer_id: UI.val('#wsm-printer') || null,
+            is_active: document.getElementById('wsm-active').checked,
+          };
+          await window.API.workstations.update(w.id, data);
+          UI.notify.ok('Рабочее место обновлено');
+        } else {
+          const data = {
+            station_name: name,
+            zone_type: UI.val('#wsm-zone'),
+            warehouse_id: UI.val('#wsm-warehouse') || null,
+            default_printer_id: UI.val('#wsm-printer') || null,
+          };
+          await window.API.workstations.create(data);
+          UI.notify.ok('Рабочее место создано');
+        }
+        closeModal();
+        await loadWorkstations();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deleteWorkstation(id) {
+      if (!UI.confirm('Удалить рабочее место? Сотрудники, у которых оно выбрано текущим, перестанут иметь привязку к принтеру и печать пойдёт по общему маршруту.')) return;
+      try {
+        await window.API.workstations.delete(id);
+        UI.notify.ok('Рабочее место удалено');
+        closeModal();
+        await loadWorkstations();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function printStationSticker(id) {
+      try {
+        const res = await window.API.workstations.sticker(id);
+        const w = document.open('', '_blank');
+        w.document.write(`
+          <html><head><title>${UI.escHtml(res.station_name)}</title>
+          <style>
+            body{font-family:sans-serif;text-align:center;padding:30px;}
+            .code{font-size:14px;color:#555;margin-top:10px;font-family:monospace;}
+            .name{font-size:20px;font-weight:700;margin-top:14px;}
+          </style></head><body>
+          ${res.svg}
+          <div class="name">${UI.escHtml(res.station_name)}</div>
+          <div class="code">${UI.escHtml(res.station_code)}</div>
+          <script>window.onload = () => window.print();<\/script>
+          </body></html>
+        `);
+        w.document.close();
       } catch (e) { UI.notify.err(e.message); }
     }
 

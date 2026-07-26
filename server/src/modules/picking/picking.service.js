@@ -7,6 +7,7 @@ const { findBestPickLocation, getLocationByCode } = require('../masterdata/locat
 const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
 const { generateQrSvg } = require('../../utils/qrcode');
+const { resolvePrinter } = require('../printing/printerResolver');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -561,15 +562,12 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
       // Внутренняя наклейка с кодом отгрузки — soft-fail, как и печать WB-стикеров:
       // ошибка печати не должна блокировать закрытие волны.
       try {
-        const routeRes = await client.query(
-          `SELECT pr.id, pr.printer_id FROM wms.printer_routes pr
-           JOIN wms.printers p ON p.id=pr.printer_id
-           WHERE pr.tenant_id=$1 AND pr.doc_type='pick_list_label' AND pr.is_active=TRUE AND p.is_active=TRUE
-           ORDER BY pr.is_default DESC, pr.id LIMIT 1`,
-          [tenantId]
-        );
-        if (routeRes.rowCount > 0) {
-          const route = routeRes.rows[0];
+        // Сначала рабочее место сборщика (если он привязан к зоне сборки со
+        // своим принтером), иначе — общий маршрут pick_list_label как раньше.
+        const resolved = await resolvePrinter(client.query.bind(client), {
+          tenantId, docType: 'pick_list_label', employeeId: pickerId,
+        });
+        if (resolved) {
           const svg = await generateQrSvg(shipmentCode);
           const jobCode = `PICKLIST-${shipment.id}-${Date.now()}`;
           await client.query(
@@ -577,7 +575,7 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
                (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
              VALUES($1,$2,$3,$4,'pick_list_label','shipment',$5,1,$6::jsonb,'new',$7)`,
             [
-              tenantId, jobCode, route.printer_id, route.id, shipment.id,
+              tenantId, jobCode, resolved.printerId, resolved.routeId, shipment.id,
               JSON.stringify({ sticker: svg, shipment_code: shipmentCode, buffer_location_code: bufferLocationCode || null }),
               pickerId,
             ]

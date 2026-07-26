@@ -230,6 +230,64 @@
     }
   } catch (_) { /* ignore */ }
 
+  // ─────────────── Рабочее место (маршрутизация печати по столам/зонам) ───────────────
+  // Сотрудник сканирует код своего рабочего места (стол упаковки, зона сборки,
+  // зона отгрузки) один раз — дальше print_job на любой скан штрихкода уходит
+  // именно на принтер этого места (см. server/.../printing/printerResolver.js),
+  // а не на общий маршрут по типу документа на весь склад. Показываем узкую
+  // плашку с текущим местом только на "рабочих" экранах, где сканирование
+  // штрихкода реально создаёт print_job — там важно видеть, куда сейчас идёт
+  // печать. На админ-панелях/логине/платформе плашка не показывается.
+  const WORKSTATION_PAGES = ['packing', 'picking', 'shipping', 'receiving', 'placement', 'movement', 'inbound'];
+
+  async function initWorkstationBanner() {
+    try {
+      const page = (window.location.pathname.split('/').pop() || '').replace(/\.html$/, '');
+      if (!WORKSTATION_PAGES.includes(page)) return;
+      const u = window.API && window.API.getUser && window.API.getUser();
+      if (!u || u.role === 'seller' || !window.API.workstations) return;
+
+      const header = document.querySelector('.header');
+      if (!header) return;
+
+      const bar = document.createElement('div');
+      bar.id = 'workstation-banner';
+      bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;'
+        + 'background:var(--card2,#f1f5f9);border:1px dashed var(--border,#e2e8f0);border-radius:10px;'
+        + 'padding:8px 12px;margin:10px 0;font-size:13px;color:var(--muted,#64748b);flex-wrap:wrap;';
+      header.insertAdjacentElement('afterend', bar);
+
+      function scan() {
+        if (!window.Scanner) { notify.err('Модуль камеры-сканера не загружен'); return; }
+        Scanner.open({
+          title: 'Скан кода рабочего места',
+          onResult: async (code) => {
+            try {
+              await window.API.workstations.select(code);
+              notify.ok('Рабочее место выбрано');
+              await render();
+            } catch (err) { notify.err(err.message); }
+          },
+        });
+      }
+
+      async function render() {
+        let station = null;
+        try { station = (await window.API.workstations.my()).station; } catch (_) { /* не блокируем экран */ }
+        const label = station
+          ? `Рабочее место: <b style="color:var(--text,#0f172a);">${escHtml(station.station_name)}</b>`
+          : `Рабочее место не выбрано — печать пойдёт по общему маршруту склада`;
+        bar.innerHTML = `<span>${label}</span>`
+          + `<button id="ws-banner-scan" style="background:var(--accent,#0284c7);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:12px;cursor:pointer;">${station ? 'Сменить' : 'Выбрать'}</button>`;
+        document.getElementById('ws-banner-scan').addEventListener('click', scan);
+      }
+
+      await render();
+    } catch (_) { /* тихо не мешаем странице, если что-то пошло не так */ }
+  }
+
+  initWorkstationBanner();
+
   // ─────────────── Смена пароля ───────────────
   // Доступно любому залогиненному пользователю (сотрудник склада или seller) —
   // самостоятельная замена пароля, без обращения к владельцу платформы.
