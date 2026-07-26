@@ -94,14 +94,21 @@
 
       <div class="card">
         <div class="card-title">Фильтры</div>
+        <div class="refresh-note" style="text-align:left;margin-bottom:8px;">По умолчанию показаны только новые заказы за последние 3 дня — старой историей список не грузим, чтобы не тормозить. Чтобы посмотреть больше, поменяйте статус и/или период ниже.</div>
         <div class="filters-row">
           <select id="f-status">
             <option value="">Все статусы</option>
-            <option value="new">Новый</option>
+            <option value="new" selected>Новый</option>
             <option value="confirm">В поставке</option>
             <option value="complete">Завершён</option>
             <option value="cancel">Отменён</option>
             <option value="external">Забрано в ЛК WB</option>
+          </select>
+          <select id="f-period">
+            <option value="3" selected>Последние 3 дня</option>
+            <option value="7">Последние 7 дней</option>
+            <option value="30">Последние 30 дней</option>
+            <option value="">Всё время</option>
           </select>
         </div>
         <button class="btn-big btn-blue btn-full" onclick="loadOrders()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
@@ -370,6 +377,11 @@
         const params = { limit: 300 };
         const accountId = UI.val('#ord-account'); if (accountId) params.account_id = accountId;
         const status = UI.val('#f-status'); if (status) params.status = status;
+        const period = UI.val('#f-period');
+        if (period) {
+          const d = new Date(); d.setDate(d.getDate() - Number(period));
+          params.date_from = d.toISOString().slice(0, 10);
+        }
         const res = await window.API.wb.orders(params);
         document.getElementById('ord-count').textContent = res.count;
         UI.renderTable('#ord-body', res.orders, (o) => `
