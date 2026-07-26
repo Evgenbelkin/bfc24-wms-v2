@@ -60,13 +60,20 @@ async function getPlacementStats(tenantId) {
   return r.rows[0];
 }
 
-/** WB-заказы, полученные синком, но ещё не сгруппированные в волну/поставку */
+/** WB-заказы, полученные синком, но ещё не сгруппированные в волну/поставку.
+    Раньше фильтровали "исключением" (NOT IN confirm/complete/cancel), из-за
+    чего заказы в статусе 'external' (уже забраны через личный кабинет WB,
+    в волну им попадать не нужно и незачем) всё равно засчитывались в бэклог
+    и раздували число "без волны" (реальный кейс: показывало 64, хотя
+    реально годных к волне — 12). В волну можно взять только заказ в
+    статусе 'new' — остальные статусы так или иначе уже не актуальны для
+    формирования волны, поэтому фильтруем по явному "разрешению", а не
+    "исключению". */
 async function getWaveBacklogStats(tenantId) {
   const r = await query(
     `SELECT COUNT(*)::int AS backlog_orders
      FROM wms.wb_orders
-     WHERE tenant_id=$1 AND wb_supply_id IS NULL
-       AND COALESCE(status,'') NOT IN ('confirm','complete','cancel')`,
+     WHERE tenant_id=$1 AND wb_supply_id IS NULL AND status='new'`,
     [tenantId]
   );
   return r.rows[0];
