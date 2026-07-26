@@ -197,6 +197,13 @@
                 <div class="hint-box" style="margin-top:0;">${p.has_agent_key ? 'Ключ уже выпущен.' : 'Ключ ещё не выпущен — без него агент не сможет подключиться.'} ${agentStatusHtml(p)}</div>
                 <button class="btn-sm btn-blue" style="margin-top:8px;" onclick="issueAgentKey(${p.id})"><svg class="i" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3"/></svg> ${p.has_agent_key ? 'Перевыпустить ключ' : 'Выпустить ключ агента'}</button>
                 <div id="agent-key-reveal"></div>
+                <div class="hint-box" style="margin-top:8px;">
+                  Для термопринтеров этикеток (один раз на компьютер с агентом): скачайте
+                  <a href="https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" target="_blank">SumatraPDF 3.6.1 (portable, .zip)</a>,
+                  достаньте <code>SumatraPDF.exe</code> и положите его в папку агента по пути
+                  <code>printer-agent\bin\SumatraPDF.exe</code>. Без этого файла агент работает по старой,
+                  менее надёжной логике печати.
+                </div>
               </div>
             ` : ''}
             <div class="btn-row">
