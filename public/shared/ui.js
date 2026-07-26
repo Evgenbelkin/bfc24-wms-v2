@@ -116,6 +116,32 @@
 
   function fmtQty(n) { return Number(n||0).toLocaleString('ru-RU'); }
 
+  // ─────────────── Звук при сканировании ───────────────
+  // Один AudioContext на всю страницу (создавать новый на каждый бип и
+  // расточительно, и в некоторых браузерах есть лимит на количество). Короткий
+  // писк, как у обычного ТСД/кассового сканера — подтверждает, что код реально
+  // считан, до того как успеет прийти ответ сервера. tone='ok' — короткий
+  // высокий; tone='err' — чуть ниже и длиннее, для неудачного скана (совпадает
+  // по смыслу с notify.err рядом).
+  let _audioCtx = null;
+  function beep(tone) {
+    try {
+      if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(()=>{});
+      const isErr = tone === 'err';
+      const osc = _audioCtx.createOscillator();
+      const gain = _audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = isErr ? 320 : 1000;
+      const dur = isErr ? 0.22 : 0.1;
+      gain.gain.setValueAtTime(0.18, _audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, _audioCtx.currentTime + dur);
+      osc.connect(gain).connect(_audioCtx.destination);
+      osc.start();
+      osc.stop(_audioCtx.currentTime + dur + 0.02);
+    } catch (_) { /* звук не критичен для работы - тихо игнорируем (например, если Web Audio недоступен) */ }
+  }
+
   // ─────────────── Scanner input helper ───────────────
   // TSD-friendly: Enter-triggered scan
 
@@ -126,9 +152,10 @@
       if (e.key === 'Enter') {
         const value = input.value.trim();
         if (!value) return;
+        beep('ok');
         input.value = '';
         input.blur();
-        try { await callback(value); } catch(err) { notify.err(err.message); }
+        try { await callback(value); } catch(err) { beep('err'); notify.err(err.message); }
         setTimeout(() => { input.focus(); }, 300);
       }
     });
@@ -361,6 +388,7 @@
     fmtDate, fmtDateTime, fmtMoney, fmtQty,
     onScan, scanInto, populateSelect, confirm,
     openChangePasswordModal,
+    beep,
   };
 
 })(window);
