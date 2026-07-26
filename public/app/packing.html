@@ -396,18 +396,25 @@
       }
     }
     UI.onScan('#scan-barcode', handleScan);
+    // Скан ячейки зоны отгрузки сразу завершает упаковку — не нужно после
+    // скана ещё отдельно нажимать "Подтвердить упаковку" рукой.
+    UI.onScan('#pack-location', confirmPacking);
 
     function stepBoxes(delta) { boxes = Math.max(1, boxes + delta); document.getElementById('boxes-val').value = boxes; }
     function setBoxes(val) { boxes = Math.max(1, Math.round(Number(val)) || 1); document.getElementById('boxes-val').value = boxes; }
 
-    async function confirmPacking() {
+    // locationCode передаётся напрямую при скане (см. UI.onScan ниже) — само
+    // поле #pack-location к этому моменту уже очищено сканером, поэтому
+    // подтверждение не может брать код оттуда. При обычном клике на кнопку
+    // locationCode не передаётся, и код берётся из поля как раньше.
+    async function confirmPacking(locationCode) {
       if (!currentShipment) return;
       const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
       const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
       if (totalPacked < totalPlan) {
         if (!UI.confirm(`Упаковано не всё (${totalPacked}/${totalPlan}). Всё равно попробовать завершить?`)) return;
       }
-      const packLocation = UI.val('#pack-location').trim();
+      const packLocation = (locationCode !== undefined ? locationCode : UI.val('#pack-location')).trim();
       if (!packLocation) { UI.notify.err('Отсканируйте ячейку зоны отгрузки'); return; }
       try {
         await window.API.packing.confirm({
