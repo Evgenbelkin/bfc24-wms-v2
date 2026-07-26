@@ -95,11 +95,6 @@ const config = {
     pretty: boolEnv('LOG_PRETTY', true),
   },
 
-  telegram: {
-    botToken: optionalEnv('TELEGRAM_BOT_TOKEN'),
-    chatId:   optionalEnv('TELEGRAM_ALERTS_CHAT_ID'),
-  },
-
   wb: {
     // Автосинхронизация заказов WB в фоне (0 = выключено)
     autoSyncIntervalMinutes: intEnv('WB_AUTO_SYNC_INTERVAL_MINUTES', 15),
