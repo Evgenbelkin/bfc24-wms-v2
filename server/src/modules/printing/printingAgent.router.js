@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const { query } = require('../../config/database');
 const { validatePositiveInt } = require('../../utils/validators');
 const { AuthError, ValidationError, NotFoundError } = require('../../utils/errors');
+const { verifyAgentKey } = require('../../utils/agentKey');
 
 // =============================================================================
 // Отдельный роутер для printer-agent (программа-агент печати, работающая на
@@ -35,13 +36,22 @@ async function agentKeyAuth(req, res, next) {
     const printerId = Number(m[1]);
 
     const r = await query(
-      `SELECT id, tenant_id, agent_key_hash, is_active FROM wms.printers WHERE id=$1`,
+      `SELECT id, tenant_id, agent_key_hash, agent_key_sha256, is_active FROM wms.printers WHERE id=$1`,
       [printerId]
     );
-    if (r.rowCount === 0 || !r.rows[0].agent_key_hash) throw new AuthError('Unknown agent key');
+    if (r.rowCount === 0 || (!r.rows[0].agent_key_hash && !r.rows[0].agent_key_sha256)) {
+      throw new AuthError('Unknown agent key');
+    }
     const printer = r.rows[0];
 
-    const match = await bcrypt.compare(raw, printer.agent_key_hash);
+    // Быстрый путь (HMAC-SHA256, ~0.006мс) — все ключи, выпущенные после
+    // перехода на agentKey.js. Медленный bcrypt — только для ключей, выпущенных
+    // ДО этого изменения и ещё не перевыпущенных (обратная совместимость;
+    // agent-key issuance теперь всегда пишет только agent_key_sha256, так что
+    // этот путь со временем отомрёт сам по мере перевыпуска ключей).
+    const match = printer.agent_key_sha256
+      ? verifyAgentKey(raw, printer.agent_key_sha256)
+      : await bcrypt.compare(raw, printer.agent_key_hash);
     if (!match) throw new AuthError('Invalid agent key');
     if (!printer.is_active) throw new AuthError('Printer is disabled');
 

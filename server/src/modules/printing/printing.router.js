@@ -3,7 +3,6 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const { query } = require('../../config/database');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware } = require('../../middleware/tenant');
@@ -11,6 +10,7 @@ const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const { slugify } = require('../../utils/slugify');
+const { hashAgentKey } = require('../../utils/agentKey');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -23,7 +23,7 @@ router.get('/printers', async (req,res,next)=>{
               p.connection_type, p.device_name, p.ip_address, p.port, p.zone_code,
               p.paper_size_name,
               p.is_default, p.is_active, p.notes, p.created_at, p.updated_at,
-              p.agent_last_seen_at, (p.agent_key_hash IS NOT NULL) AS has_agent_key,
+              p.agent_last_seen_at, (p.agent_key_hash IS NOT NULL OR p.agent_key_sha256 IS NOT NULL) AS has_agent_key,
               w.warehouse_name
        FROM wms.printers p
        LEFT JOIN wms.warehouses w ON w.id=p.warehouse_id
@@ -37,7 +37,11 @@ router.get('/printers', async (req,res,next)=>{
 // Выпустить (или перевыпустить) постоянный ключ доступа для агента печати —
 // не JWT сотрудника, который истекает, а отдельный секрет вида pk_{printerId}_{...},
 // привязанный к конкретному принтеру. Показывается вызывающему один раз, хранится
-// только bcrypt-хэш. Перевыпуск делает предыдущий ключ недействительным.
+// в виде HMAC-SHA256 (см. utils/agentKey.js — быстрый хэш, не bcrypt: ключ это
+// 192 бита случайности, а не пароль человека, замедлять перебор незачем, а CPU
+// на частых опросах агента это жгло заметно). agent_key_hash (bcrypt) явно
+// обнуляем — перевыпуск полностью переводит принтер на быстрый путь проверки.
+// Перевыпуск делает предыдущий ключ недействительным.
 router.post('/printers/:id/agent-key', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const id = validatePositiveInt(req.params.id,'id');
@@ -46,10 +50,10 @@ router.post('/printers/:id/agent-key', requireRole('tenant_admin','supervisor'),
 
     const secret = crypto.randomBytes(24).toString('hex');
     const rawKey = `pk_${id}_${secret}`;
-    const hash = await bcrypt.hash(rawKey, 10);
+    const hashHex = hashAgentKey(rawKey);
     await query(
-      `UPDATE wms.printers SET agent_key_hash=$1, agent_last_seen_at=NULL, updated_at=NOW() WHERE id=$2`,
-      [hash, id]
+      `UPDATE wms.printers SET agent_key_sha256=$1, agent_key_hash=NULL, agent_last_seen_at=NULL, updated_at=NOW() WHERE id=$2`,
+      [hashHex, id]
     );
     // rawKey отдаём один-единственный раз — второй раз получить его будет неоткуда
     res.json({ ok:true, agent_key: rawKey });
