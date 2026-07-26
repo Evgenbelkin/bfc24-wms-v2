@@ -289,11 +289,12 @@
         Scanner.open({
           title: 'Скан кода рабочего места',
           onResult: async (code) => {
+            beep('ok');
             try {
               await window.API.workstations.select(code);
               notify.ok('Рабочее место выбрано');
               await render();
-            } catch (err) { notify.err(err.message); }
+            } catch (err) { beep('err'); notify.err(err.message); }
           },
         });
       }
