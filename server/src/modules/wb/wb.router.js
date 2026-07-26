@@ -336,8 +336,18 @@ router.get('/orders', requireRole('tenant_admin','supervisor'), async (req,res,n
     if (date_from)  { conds.push(`o.created_at>=$${idx++}::date`); params.push(date_from); }
     if (date_to)    { conds.push(`o.created_at<($${idx++}::date+INTERVAL '1 day')`); params.push(date_to); }
     params.push(Math.min(Number(limit),1000));
+    // ВАЖНО: не SELECT o.* — в wb_orders на каждой строке лежит wb_sticker
+    // (base64 SVG стикера) и raw (полный JSON-дамп ответа WB), оба могут
+    // весить десятки КБ на заказ. Список заказов их не показывает и не
+    // использует — раньше это тянуло по несколько МБ на каждую загрузку
+    // страницы (при лимите до 1000 заказов) и было основной причиной
+    // "долго загружаются заказы". Печать стикера читает wb_sticker отдельным
+    // прицельным запросом (см. packing.service.js), сюда он не нужен.
     const r = await query(
-      `SELECT o.*, ma.account_name FROM wms.wb_orders o
+      `SELECT o.id, o.mp_account_id, o.wb_order_id, o.article, o.barcode,
+              o.warehouse_name, o.status, o.wb_supply_id, o.created_at,
+              ma.account_name
+       FROM wms.wb_orders o
        JOIN wms.mp_accounts ma ON ma.id=o.mp_account_id
        WHERE ${conds.join(' AND ')} ORDER BY o.created_at DESC NULLS LAST LIMIT $${idx}`,
       params
