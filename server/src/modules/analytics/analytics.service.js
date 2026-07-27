@@ -53,7 +53,7 @@ async function getStockSnapshot({
        SUM(sb.qty_on_hand)::int    AS total_on_hand,
        SUM(sb.qty_reserved)::int   AS total_reserved,
        SUM(sb.qty_available)::int  AS total_available,
-       SUM(sb.qty_on_hand * COALESCE(sb.avg_cost,0))::numeric AS total_cost_value,
+       SUM(sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS total_cost_value,
        COUNT(DISTINCT sb.location_id)::int AS location_count,
        MAX(sb.last_movement_at) AS last_movement_at
      FROM wms.stock_balances sb
@@ -260,8 +260,9 @@ async function getClientReport({ tenantId, clientId, dateFrom, dateTo }) {
        SUM(sb.qty_reserved)::int  AS total_reserved,
        SUM(sb.qty_available)::int AS total_available,
        COUNT(DISTINCT sb.barcode)::int AS sku_count,
-       SUM(sb.qty_on_hand * COALESCE(sb.avg_cost,0)) AS total_stock_value
+       SUM(sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0)) AS total_stock_value
      FROM wms.stock_balances sb
+     LEFT JOIN wms.items i ON i.id = sb.item_id
      WHERE sb.tenant_id=$1 AND sb.client_id=$2`,
     [tenantId, clientId]
   );

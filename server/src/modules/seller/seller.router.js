@@ -150,9 +150,10 @@ router.get('/items', async (req,res,next)=>{
     const clientId = resolveClientScope(req, req.user.clientId);
     const r = await query(
       `SELECT i.id, i.barcode, i.item_name, i.vendor_code, i.wb_vendor_code,
-         i.brand, i.unit, i.volume_liters, i.is_active, i.preview_url,
+         i.brand, i.unit, i.volume_liters, i.is_active, i.preview_url, i.cost_price,
          COALESCE(SUM(sb.qty_on_hand),0)::int AS total_on_hand,
-         COALESCE(SUM(sb.qty_available),0)::int AS total_available
+         COALESCE(SUM(sb.qty_available),0)::int AS total_available,
+         (COALESCE(SUM(sb.qty_on_hand),0) * COALESCE(i.cost_price,0))::numeric AS total_cost_value
        FROM wms.items i
        LEFT JOIN wms.stock_balances sb ON sb.item_id=i.id AND sb.tenant_id=i.tenant_id
        WHERE i.tenant_id=$1 AND i.client_id=$2 AND i.is_active=TRUE
@@ -161,6 +162,29 @@ router.get('/items', async (req,res,next)=>{
       [req.user.tenantId, clientId, Math.min(Number(req.query.limit)||200, 500), Number(req.query.offset)||0]
     );
     res.json({ ok:true, items:r.rows });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /seller/items/:id/cost-price — клиент указывает себестоимость СВОЕГО
+ *  товара (нужна складу для понимания материальной ответственности при утере).
+ *  Намеренно узкий эндпоинт — правит только cost_price, не даёт клиенту менять
+ *  штрихкод/название и прочие поля, которыми управляет склад. */
+router.patch('/items/:id/cost-price', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const itemId = Number(req.params.id);
+    const costPrice = req.body.cost_price;
+    if (costPrice === undefined || costPrice === null || isNaN(Number(costPrice)) || Number(costPrice) < 0) {
+      throw new ValidationError('cost_price must be a non-negative number');
+    }
+    const r = await query(
+      `UPDATE wms.items SET cost_price=$1, updated_at=NOW()
+       WHERE id=$2 AND tenant_id=$3 AND client_id=$4
+       RETURNING id, cost_price`,
+      [Number(costPrice), itemId, req.user.tenantId, clientId]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Item not found'} });
+    res.json({ ok:true, item:r.rows[0] });
   } catch(e){ next(e); }
 });
 

@@ -35,12 +35,26 @@ async function listStockBalances({
   );
   const total = countRes.rows[0].total;
 
+  // total_cost_value считается по ВСЕЙ выборке (без учёта limit/offset страницы) -
+  // отдельным агрегатом, иначе "итого" на экране будет только по текущей странице
+  // и будет вводить в заблуждение при пагинации.
+  const sumRes = await query(
+    `SELECT SUM(sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS total_cost_value
+     FROM wms.stock_balances sb
+     LEFT JOIN wms.locations l ON l.id = sb.location_id
+     LEFT JOIN wms.items i ON i.id = sb.item_id
+     WHERE ${conds.join(' AND ')}`,
+    params.slice(0, idx - 1)
+  );
+  const totalCostValue = Number(sumRes.rows[0].total_cost_value || 0);
+
   params.push(Math.min(limit, 2000), Math.max(offset, 0));
   const res = await query(
     `SELECT
        sb.id, sb.client_id, sb.item_id, sb.barcode,
        sb.qty_on_hand, sb.qty_reserved, sb.qty_available,
-       sb.avg_cost, sb.last_movement_at,
+       sb.avg_cost, sb.last_movement_at, i.cost_price,
+       (sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS cost_value,
        l.id AS location_id, l.location_code, l.zone_code, l.location_type,
        w.id AS warehouse_id, w.warehouse_name,
        i.item_name, i.vendor_code, i.unit, i.volume_liters, i.needs_packaging,
@@ -55,7 +69,7 @@ async function listStockBalances({
      LIMIT $${idx++} OFFSET $${idx}`,
     params
   );
-  return { stock: res.rows, total, limit, offset };
+  return { stock: res.rows, total, totalCostValue, limit, offset };
 }
 
 /**
@@ -123,11 +137,12 @@ async function getClientStockSummary({ tenantId, clientId }) {
        SUM(sb.qty_on_hand)::int    AS total_on_hand,
        SUM(sb.qty_reserved)::int   AS total_reserved,
        SUM(sb.qty_available)::int  AS total_available,
-       i.item_name, i.vendor_code, i.unit
+       i.id AS item_id, i.item_name, i.vendor_code, i.unit, i.cost_price,
+       (SUM(sb.qty_on_hand) * COALESCE(i.cost_price,0))::numeric AS total_cost_value
      FROM wms.stock_balances sb
      LEFT JOIN wms.items i ON i.id = sb.item_id
      WHERE sb.tenant_id = $1 AND sb.client_id = $2 AND sb.qty_on_hand > 0
-     GROUP BY sb.barcode, i.item_name, i.vendor_code, i.unit
+     GROUP BY sb.barcode, i.id, i.item_name, i.vendor_code, i.unit, i.cost_price
      ORDER BY i.item_name, sb.barcode`,
     [tenantId, clientId]
   );

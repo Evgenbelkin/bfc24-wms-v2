@@ -348,6 +348,7 @@
     orders:   (p)     => get('/seller/orders', p),
     shipments:(p)     => get('/seller/shipments', p),
     items:    (p)     => get('/seller/items', p),
+    setItemCostPrice: (itemId, costPrice) => patch(`/seller/items/${itemId}/cost-price`, { cost_price: costPrice }),
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
     billing:  (p)     => get('/seller/billing', p),

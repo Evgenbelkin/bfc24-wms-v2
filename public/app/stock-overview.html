@@ -51,9 +51,13 @@
 
     <div class="card">
       <div class="card-title">Остатки (<span id="stock-count">0</span> из <span id="stock-total">0</span>)</div>
+      <div class="total-row" style="font-size:14px;color:var(--text);margin-bottom:6px;">
+        <span>Стоимость товара на складе (по себестоимости, указанной клиентами)</span>
+        <strong id="stock-cost-value">—</strong>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Стоимость</th></tr></thead>
           <tbody id="stock-body"></tbody>
         </table>
       </div>
@@ -157,6 +161,9 @@
         stockRowsCache = append ? stockRowsCache.concat(res.stock) : res.stock;
         document.getElementById('stock-total').textContent = res.total;
         document.getElementById('stock-count').textContent = stockRowsCache.length;
+        document.getElementById('stock-cost-value').textContent = res.totalCostValue > 0
+          ? Number(res.totalCostValue).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'
+          : '— (клиенты ещё не указали себестоимость)';
 
         UI.renderTable('#stock-body', stockRowsCache, (r) => `
           <tr>
@@ -166,6 +173,7 @@
             <td>${UI.fmtQty(r.qty_on_hand)}</td>
             <td>${UI.fmtQty(r.qty_reserved)}</td>
             <td><strong>${UI.fmtQty(r.qty_available)}</strong></td>
+            <td>${r.cost_value > 0 ? Number(r.cost_value).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽' : '—'}</td>
           </tr>
         `);
       } catch (e) { UI.notify.err(e.message); }

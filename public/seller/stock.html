@@ -29,10 +29,15 @@
       <div class="badge"><span>Позиций</span><div id="k-lines">0</div></div>
       <div class="badge"><span>На складе, шт</span><div id="k-onhand">0</div></div>
       <div class="badge"><span>Доступно, шт</span><div id="k-available">0</div></div>
+      <div class="badge"><span>Стоимость товара на складе</span><div id="k-cost-value">—</div></div>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin:-6px 0 12px;">
+      Себестоимость нужна складу, чтобы понимать материальную ответственность при утере товара.
+      Впиши свою закупочную цену за штуку — сумма посчитается автоматически.
+    </p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Товар</th><th>Штрихкод</th><th>На складе</th><th>Резерв</th><th>Доступно</th></tr></thead>
+        <thead><tr><th>Товар</th><th>Штрихкод</th><th>На складе</th><th>Резерв</th><th>Доступно</th><th>Себестоимость, ₽/шт</th></tr></thead>
         <tbody id="stock-body"></tbody>
       </table>
     </div>
@@ -91,26 +96,35 @@
       document.getElementById('k-lines').textContent = filtered.length;
       document.getElementById('k-onhand').textContent = UI.fmtQty(filtered.reduce((a,s)=>a+Number(s.total_on_hand||0),0));
       document.getElementById('k-available').textContent = UI.fmtQty(filtered.reduce((a,s)=>a+Number(s.total_available||0),0));
+      const totalCostValue = filtered.reduce((a,s)=>a+Number(s.total_cost_value||0),0);
+      document.getElementById('k-cost-value').textContent = totalCostValue > 0
+        ? totalCostValue.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'
+        : '—';
 
       const body = document.getElementById('stock-body');
       if (!filtered.length) {
-        body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
+        body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
         return;
       }
       body.innerHTML = filtered.map(s => {
         const rows = [`
-          <tr class="stock-row" onclick="toggleLocations('${UI.escHtml(s.barcode)}')">
-            <td>${UI.escHtml(s.item_name || s.vendor_code || '—')}</td>
-            <td>${UI.escHtml(s.barcode)}</td>
-            <td>${UI.fmtQty(s.total_on_hand)}</td>
-            <td>${UI.fmtQty(s.total_reserved)}</td>
-            <td><strong>${UI.fmtQty(s.total_available)}</strong></td>
+          <tr class="stock-row">
+            <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.escHtml(s.item_name || s.vendor_code || '—')}</td>
+            <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.escHtml(s.barcode)}</td>
+            <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.fmtQty(s.total_on_hand)}</td>
+            <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.fmtQty(s.total_reserved)}</td>
+            <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')"><strong>${UI.fmtQty(s.total_available)}</strong></td>
+            <td onclick="event.stopPropagation()">
+              ${s.item_id ? `<input type="number" min="0" step="0.01" value="${s.cost_price != null ? s.cost_price : ''}"
+                placeholder="не указано" style="width:100px;padding:6px 8px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;"
+                onchange="saveCostPrice(${s.item_id}, this.value, this)"/>` : '—'}
+            </td>
           </tr>
         `];
         if (expandedBarcode === s.barcode) {
           const locs = locationsCache[s.barcode] || [];
           rows.push(`
-            <tr><td colspan="5" style="padding:0;border-bottom:none;">
+            <tr><td colspan="6" style="padding:0;border-bottom:none;">
               <div class="locations-box">
                 ${locs.length ? locs.map(l => `
                   <div class="loc-row">
@@ -124,6 +138,18 @@
         }
         return rows.join('');
       }).join('');
+    }
+
+    async function saveCostPrice(itemId, value, inputEl) {
+      const num = Number(value);
+      if (value === '' || isNaN(num) || num < 0) { UI.notify.err('Некорректная сумма'); return; }
+      try {
+        await window.API.seller.setItemCostPrice(itemId, num);
+        const row = stock.find(s => s.item_id === itemId);
+        if (row) row.cost_price = num, row.total_cost_value = num * Number(row.total_on_hand||0);
+        UI.notify.ok('Сохранено');
+        renderStock();
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     loadStock();
