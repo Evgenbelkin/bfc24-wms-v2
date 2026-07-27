@@ -208,6 +208,11 @@
             <div class="field">
               <label>API-токен ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
               <input id="m-token" type="password" placeholder="${a && a.has_token ? 'Токен уже сохранён' : 'Вставьте токен из ЛК WB'}"/>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+                Токен создаётся в ЛК WB: Профиль → Настройки → Доступ к API → «Создать новый токен».
+                Категории — отметьте <b>«Контент»</b> и <b>«Маркетплейс»</b>. Галочку «Только чтение» <b>не ставить</b> —
+                нужен полный доступ (чтение и запись), иначе не сработает синхронизация заказов, печать стикеров и распределение остатков по складам.
+              </div>
             </div>
             ${a ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${a.is_active ? 'checked':''}/></div>` : ''}
             <div class="btn-row">
