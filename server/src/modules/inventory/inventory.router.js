@@ -8,6 +8,7 @@ const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenan
 const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const { ValidationError } = require('../../utils/errors');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -149,6 +150,28 @@ router.get('/discrepancies', requireRole('tenant_admin','supervisor','analyst'),
       offset: Number(req.query.offset) || 0,
     });
     res.json({ ok: true, rows });
+  } catch (e) { next(e); }
+});
+
+/** POST /inventory/assemble-kit — собрать комплект из базового товара
+ *  (см. inventory.service.js assembleKit) - списывает qty*kit_multiplier
+ *  базового товара с ячейки, зачисляет qty комплекта на ту же ячейку. */
+router.post('/assemble-kit', requireRole('tenant_admin','supervisor','inventory_manager','receiver'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.body.client_id);
+    if (!clientId) throw new ValidationError('client_id is required');
+    const wh = req.body.warehouse_id ? Number(req.body.warehouse_id) : (await getDefaultWarehouse(req.user.tenantId)).id;
+    const result = await svc.assembleKit({
+      tenantId: req.user.tenantId,
+      warehouseId: wh,
+      clientId,
+      kitItemId: validatePositiveInt(req.body.kit_item_id, 'kit_item_id'),
+      qty: req.body.qty,
+      locationCode: req.body.location_code,
+      userId: req.user.id,
+      comment: req.body.comment || null,
+    });
+    res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
 

@@ -8,8 +8,10 @@ const {
   ValidationError,
   ForbiddenError,
 } = require('../../utils/errors');
-const { validateBarcode, validatePositiveInt } = require('../../utils/validators');
+const { validateBarcode, validatePositiveInt, validateQty } = require('../../utils/validators');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { getLocationByCode } = require('../masterdata/locations/locations.service');
+const { InsufficientStockError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -459,6 +461,100 @@ async function getDiscrepancyReport({
   return r.rows;
 }
 
+/**
+ * Сборка комплекта (kit) из базового товара — например, отпугиватель мышей
+ * продаётся на WB как "1 шт"/"2 шт"/"3 шт"/"4 шт" под разными карточками
+ * (разными штрихкодами), а физически на складе один и тот же товар. Комплект -
+ * обычный wms.items с kit_of_item_id+kit_multiplier (см. migration 022).
+ *
+ * Списывает qty*kit_multiplier единиц базового товара с указанной ячейки,
+ * зачисляет qty единиц комплекта на ту же ячейку - одной атомарной операцией
+ * (movement_type='assembly'). После этого комплект - обычный физический
+ * остаток: сборка/упаковка/отгрузка/распределение по складам WB работают с
+ * ним точно так же, как с любым другим товаром, без специальной логики.
+ */
+async function assembleKit({ tenantId, warehouseId, clientId, kitItemId, qty, locationCode, userId, comment }) {
+  const q = validateQty(qty, 'qty');
+
+  const result = await transaction(async (client) => {
+    const kitRes = await client.query(
+      `SELECT id, barcode, item_name, kit_of_item_id, kit_multiplier FROM wms.items
+       WHERE id=$1 AND tenant_id=$2 AND client_id=$3`,
+      [kitItemId, tenantId, clientId]
+    );
+    if (kitRes.rowCount === 0) throw new NotFoundError('Item', kitItemId);
+    const kit = kitRes.rows[0];
+    if (!kit.kit_of_item_id) {
+      throw new ValidationError('Этот товар не настроен как комплект (не указан базовый товар в карточке)');
+    }
+
+    const baseRes = await client.query(
+      `SELECT id, barcode, item_name FROM wms.items WHERE id=$1 AND tenant_id=$2 AND client_id=$3`,
+      [kit.kit_of_item_id, tenantId, clientId]
+    );
+    if (baseRes.rowCount === 0) throw new NotFoundError('Base item', kit.kit_of_item_id);
+    const base = baseRes.rows[0];
+
+    const loc = await getLocationByCode({ tenantId, warehouseId, locationCode });
+    const baseQtyNeeded = q * Number(kit.kit_multiplier);
+
+    // Проверяем остаток базового товара WITH LOCK
+    const balRes = await client.query(
+      `SELECT qty_available, avg_cost FROM wms.stock_balances
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
+       FOR UPDATE`,
+      [tenantId, warehouseId, clientId, base.id, loc.id]
+    );
+    const available = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_available) : 0;
+    if (available < baseQtyNeeded) throw new InsufficientStockError(available, baseQtyNeeded, base.id, loc.id);
+    const avgCost = balRes.rowCount > 0 ? balRes.rows[0].avg_cost : null;
+
+    const commentText = comment || `Сборка: ${q} шт. комплекта из ${baseQtyNeeded} шт. базового товара`;
+
+    // Списываем базовый товар
+    await client.query(
+      `INSERT INTO wms.stock_movements
+         (tenant_id,warehouse_id,client_id,item_id,barcode,movement_type,qty,
+          from_location_id,from_location_code,ref_type,ref_id,user_id,comment)
+       VALUES($1,$2,$3,$4,$5,'assembly',$6,$7,$8,'item',$9,$10,$11)`,
+      [tenantId, warehouseId, clientId, base.id, base.barcode, -baseQtyNeeded,
+       loc.id, loc.location_code, kit.id, userId, commentText]
+    );
+    await client.query(
+      `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [tenantId, warehouseId, clientId, base.id, loc.id, base.barcode, -baseQtyNeeded, null]
+    );
+
+    // Зачисляем комплект
+    await client.query(
+      `INSERT INTO wms.stock_movements
+         (tenant_id,warehouse_id,client_id,item_id,barcode,movement_type,qty,
+          to_location_id,to_location_code,ref_type,ref_id,user_id,comment)
+       VALUES($1,$2,$3,$4,$5,'assembly',$6,$7,$8,'item',$9,$10,$11)`,
+      [tenantId, warehouseId, clientId, kit.id, kit.barcode, q,
+       loc.id, loc.location_code, base.id, userId, commentText]
+    );
+    await client.query(
+      `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [tenantId, warehouseId, clientId, kit.id, loc.id, kit.barcode, q, avgCost]
+    );
+
+    logger.info({ tenantId, clientId, kitItemId: kit.id, baseItemId: base.id, qty: q, baseQtyNeeded, locationCode: loc.location_code }, 'Kit assembled');
+
+    return {
+      kitItemId: kit.id, kitItemName: kit.item_name, kitBarcode: kit.barcode,
+      baseItemId: base.id, baseItemName: base.item_name, baseBarcode: base.barcode,
+      qtyAssembled: q, baseQtyUsed: baseQtyNeeded, locationCode: loc.location_code,
+    };
+  });
+
+  // Состав остатков изменился так, как WB сам узнать не мог (комплект
+  // прибыл, базовый товар убыл) - пересчитываем распределение по складам WB.
+  triggerRedistributionForClient({ tenantId, clientId });
+
+  return result;
+}
+
 module.exports = {
   createTask,
   createBatchTasks,
@@ -468,4 +564,5 @@ module.exports = {
   submitCount,
   closeTask,
   getDiscrepancyReport,
+  assembleKit,
 };

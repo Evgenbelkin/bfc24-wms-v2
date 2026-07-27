@@ -245,6 +245,7 @@
     count:        (id, d)  => post(`/inventory/tasks/${id}/count`, d),
     close:        (id, d)  => post(`/inventory/tasks/${id}/close`, d),
     discrepancies:(p)      => get('/inventory/discrepancies', p),
+    assembleKit:  (d)      => post('/inventory/assemble-kit', d),
   };
 
   // ─────────────── Picking ───────────────

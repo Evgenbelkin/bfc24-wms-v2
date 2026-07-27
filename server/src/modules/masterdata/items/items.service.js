@@ -37,10 +37,12 @@ async function listItems({ tenantId, clientId = null, search = null, isActive = 
        i.length_cm, i.width_cm, i.height_cm, i.weight_grams,
        i.cost_price, i.processing_fee, i.needs_packaging,
        i.is_active, i.source, i.wb_nm_id, i.preview_url,
-       i.created_at,
+       i.created_at, i.kit_of_item_id, i.kit_multiplier,
+       base.item_name AS kit_of_item_name, base.barcode AS kit_of_barcode,
        c.client_name
      FROM wms.items i
      LEFT JOIN wms.clients c ON c.id = i.client_id
+     LEFT JOIN wms.items base ON base.id = i.kit_of_item_id
      WHERE ${conds.join(' AND ')}
      ORDER BY i.item_name
      LIMIT $${idx++} OFFSET $${idx}`,
@@ -95,12 +97,28 @@ async function createItem({ tenantId, clientId, createdById, data }) {
     throw new ValidationError('volume_liters is required and must be > 0 for unit=л');
   }
 
+  // Комплект (kit): kit_of_item_id должен указывать на СУЩЕСТВУЮЩИЙ товар
+  // этого же клиента - иначе можно случайно построить комплект из чужого
+  // товара или из несуществующего id.
+  let kitOfItemId = null;
+  let kitMultiplier = 1;
+  if (data.kit_of_item_id) {
+    const baseCheck = await query(
+      `SELECT id FROM wms.items WHERE id=$1 AND tenant_id=$2 AND client_id=$3`,
+      [Number(data.kit_of_item_id), tenantId, cid]
+    );
+    if (baseCheck.rowCount === 0) throw new ValidationError('kit_of_item_id: базовый товар не найден у этого клиента');
+    kitOfItemId = Number(data.kit_of_item_id);
+    kitMultiplier = Math.max(1, Math.round(Number(data.kit_multiplier) || 1));
+  }
+
   const res = await query(
     `INSERT INTO wms.items
        (tenant_id, client_id, barcode, item_name, vendor_code, wb_vendor_code,
         brand, unit, volume_liters, length_cm, width_cm, height_cm, weight_grams,
-        cost_price, processing_fee, needs_packaging, is_active, source, wb_nm_id, preview_url, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        cost_price, processing_fee, needs_packaging, is_active, source, wb_nm_id, preview_url, created_by,
+        kit_of_item_id, kit_multiplier)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
      RETURNING *`,
     [
       tenantId, cid, barcode, itemName,
@@ -121,6 +139,8 @@ async function createItem({ tenantId, clientId, createdById, data }) {
       data.wb_nm_id        ? Number(data.wb_nm_id) : null,
       data.preview_url     || null,
       createdById,
+      kitOfItemId,
+      kitMultiplier,
     ]
   );
 
@@ -162,6 +182,27 @@ async function updateItem({ tenantId, itemId, data }) {
 
   if (data.needs_packaging !== undefined) { fields.push(`needs_packaging = $${idx++}`); params.push(parseBool(data.needs_packaging)); }
   if (data.is_active !== undefined) { fields.push(`is_active = $${idx++}`); params.push(parseBool(data.is_active)); }
+
+  // Комплект: kit_of_item_id=null явно снимает связь (делает товар обычным),
+  // непустое значение - проверяем, что базовый товар существует у ТОГО ЖЕ
+  // клиента, что и текущий товар (нельзя привязать к чужому).
+  if (data.kit_of_item_id !== undefined) {
+    if (data.kit_of_item_id === null || data.kit_of_item_id === '') {
+      fields.push(`kit_of_item_id = $${idx++}`); params.push(null);
+      fields.push(`kit_multiplier = $${idx++}`); params.push(1);
+    } else {
+      const baseCheck = await query(
+        `SELECT id FROM wms.items WHERE id=$1 AND tenant_id=$2 AND client_id=$3`,
+        [Number(data.kit_of_item_id), tenantId, current.client_id]
+      );
+      if (baseCheck.rowCount === 0) throw new ValidationError('kit_of_item_id: базовый товар не найден у этого клиента');
+      if (Number(data.kit_of_item_id) === itemId) throw new ValidationError('Товар не может быть комплектом самого себя');
+      fields.push(`kit_of_item_id = $${idx++}`); params.push(Number(data.kit_of_item_id));
+      fields.push(`kit_multiplier = $${idx++}`); params.push(Math.max(1, Math.round(Number(data.kit_multiplier) || 1)));
+    }
+  } else if (data.kit_multiplier !== undefined && current.kit_of_item_id) {
+    fields.push(`kit_multiplier = $${idx++}`); params.push(Math.max(1, Math.round(Number(data.kit_multiplier) || 1)));
+  }
 
   if (fields.length === 0) throw new ValidationError('No fields to update');
   fields.push(`updated_at = NOW()`);

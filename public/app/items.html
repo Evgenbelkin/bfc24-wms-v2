@@ -121,6 +121,13 @@
       const it = idx !== null ? itemCache[idx] : null;
       const clientOptions = clientsList.map(c => `<option value="${c.id}" ${it && it.client_id===c.id ? 'selected':''}>${UI.escHtml(c.client_name)}</option>`).join('');
       const unitOptions = UNITS.map(u => `<option value="${u}" ${it && it.unit===u ? 'selected':''}>${u}</option>`).join('');
+      const kitBaseOptions = it
+        ? ['<option value="">— не комплект —</option>'].concat(
+            itemCache
+              .filter(x => x.id !== it.id && x.client_id === it.client_id)
+              .map(x => `<option value="${x.id}" ${it.kit_of_item_id===x.id ? 'selected':''}>${UI.escHtml(x.item_name)} (${UI.escHtml(x.barcode)})</option>`)
+          ).join('')
+        : '';
 
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
@@ -150,6 +157,22 @@
                 <input id="m-print-copies" type="number" min="1" max="200" value="1" style="max-width:90px;"/>
                 <button class="btn-big btn-blue" style="flex:1;" onclick="printItemLabel(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/></svg> Напечатать</button>
               </div>
+            </div>
+            <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+              <label>Комплект (например: разные фасовки одного товара на WB)</label>
+              <div class="field-row2">
+                <div class="field"><label>Собран из</label><select id="m-kit-base">${kitBaseOptions}</select></div>
+                <div class="field"><label>Штук в комплекте</label><input id="m-kit-mult" type="number" min="1" value="${it.kit_multiplier || 1}"/></div>
+              </div>
+              ${it.kit_of_item_id ? `
+              <p style="font-size:12px;color:var(--muted);margin:6px 0 8px;">
+                Комплект из ${it.kit_multiplier} шт. товара «${UI.escHtml(it.kit_of_item_name||'')}» (${UI.escHtml(it.kit_of_barcode||'')})
+              </p>
+              <div class="field-row2">
+                <input id="m-assemble-qty" type="number" min="1" value="1" placeholder="Кол-во комплектов" style="max-width:140px;"/>
+                <input id="m-assemble-loc" placeholder="Код ячейки" style="max-width:140px;"/>
+                <button class="btn-big btn-green" style="flex:1;" onclick="assembleKit(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg> Собрать</button>
+              </div>` : ''}
             </div>` : ''}
             <div class="btn-row">
               ${canEdit ? `<button class="btn-big btn-green" onclick="saveItem(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
@@ -169,6 +192,24 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    async function assembleKit(idx) {
+      const it = itemCache[idx];
+      const qty = Number(UI.val('#m-assemble-qty'));
+      const locationCode = UI.val('#m-assemble-loc');
+      if (!qty || qty < 1) { UI.notify.err('Укажите количество комплектов'); return; }
+      if (!locationCode) { UI.notify.err('Укажите код ячейки, где стоит базовый товар'); return; }
+      try {
+        const res = await window.API.inventory.assembleKit({
+          client_id: it.client_id,
+          kit_item_id: it.id,
+          qty,
+          location_code: locationCode,
+        });
+        UI.notify.ok(`Собрано: ${res.qtyAssembled} шт. комплекта (списано ${res.baseQtyUsed} шт. базового товара)`);
+        closeModal();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 
     async function saveItem(idx) {
@@ -184,6 +225,11 @@
         needs_packaging: document.getElementById('m-needspkg').checked,
         is_active: document.getElementById('m-active').checked,
       };
+      if (it) {
+        const kitBase = UI.val('#m-kit-base');
+        data.kit_of_item_id = kitBase ? Number(kitBase) : null;
+        data.kit_multiplier = Number(UI.val('#m-kit-mult')) || 1;
+      }
       try {
         if (it) {
           await window.API.items.update(it.id, data);
