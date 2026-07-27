@@ -1,6 +1,7 @@
 'use strict';
 
 const QRCode = require('qrcode');
+const bwipjs = require('bwip-js');
 
 /**
  * Сгенерировать QR-код как SVG-строку (для печати через printer-agent,
@@ -45,4 +46,42 @@ async function generateShipmentLabelSvg(shipmentCode, { qrSize = 260, width = 32
     `</svg>`;
 }
 
-module.exports = { generateQrSvg, generateShipmentLabelSvg };
+/**
+ * Линейный штрихкод товара (Code128 — принимает ЛЮБУЮ строку/длину, в отличие
+ * от EAN13, который требует ровно валидный по контрольной сумме код и упал бы
+ * на части реальных баркодов WB) + название/артикул текстом сверху — для
+ * печати из справочника товаров при приёмке (наклеил на товар — дальше сканером
+ * читается как обычный магазинный штрихкод).
+ * Цифры самого баркода рисует bwip-js через includetext (это ASCII, свой шрифт
+ * встроен в саму библиотеку). Название товара - Cyrillic-текст, рендерится уже
+ * НАШИМ <text> поверх, через тот же шрифт DejaVuSans, что и в остальных
+ * составных этикетках (см. generateShipmentLabelSvg выше).
+ */
+function generateItemLabelSvg(barcode, itemName, { vendorCode = null, width = 400, height = 260, barcodeHeightMm = 10 } = {}) {
+  const barcodeSvg = bwipjs.toSVG({
+    bcid: 'code128',
+    text: String(barcode),
+    scale: 2,
+    height: barcodeHeightMm,
+    includetext: true,
+    textxalign: 'center',
+  });
+  // bwip-js сам проставляет viewBox — вытаскиваем его, чтобы вписать без искажений
+  const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(barcodeSvg);
+  const bw = vbMatch ? Number(vbMatch[1]) : 300;
+  const bh = vbMatch ? Number(vbMatch[2]) : 100;
+  const barcodeW = width - 20;
+  const barcodeH = Math.round(barcodeW * (bh / bw));
+  const barcodeY = height - barcodeH - 10;
+
+  const titleLine = escapeXml(itemName || '');
+  const subLine = vendorCode ? escapeXml(`Артикул: ${vendorCode}`) : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
+    `<text x="${width / 2}" y="34" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="26">${titleLine}</text>` +
+    (subLine ? `<text x="${width / 2}" y="62" text-anchor="middle" font-family="sans-serif" font-size="20">${subLine}</text>` : '') +
+    `<svg x="10" y="${barcodeY}" width="${barcodeW}" height="${barcodeH}">${barcodeSvg}</svg>` +
+    `</svg>`;
+}
+
+module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg };

@@ -143,6 +143,14 @@
             </div>
             <div class="field"><label style="display:inline;">Требует упаковки</label> <input type="checkbox" id="m-needspkg" ${it && it.needs_packaging ? 'checked':''}/></div>
             <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!it || it.is_active ? 'checked':''}/></div>
+            ${it ? `
+            <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+              <label>Печать этикетки (штрихкод + название)</label>
+              <div class="field-row2">
+                <input id="m-print-copies" type="number" min="1" max="200" value="1" style="max-width:90px;"/>
+                <button class="btn-big btn-blue" style="flex:1;" onclick="printItemLabel(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/></svg> Напечатать</button>
+              </div>
+            </div>` : ''}
             <div class="btn-row">
               ${canEdit ? `<button class="btn-big btn-green" onclick="saveItem(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
@@ -150,6 +158,15 @@
           </div>
         </div>
       `;
+    }
+
+    async function printItemLabel(idx) {
+      const it = itemCache[idx];
+      const copies = Math.min(Math.max(Number(UI.val('#m-print-copies')) || 1, 1), 200);
+      try {
+        const res = await window.API.items.printLabel(it.id, copies);
+        UI.notify.ok(`Отправлено на печать: ${res.printed} шт.`);
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }

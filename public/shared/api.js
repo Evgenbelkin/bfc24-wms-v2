@@ -171,6 +171,7 @@
     get:       (id)=> get(`/items/${id}`),
     create:    (d) => post('/items', d),
     update:    (id,d)=>patch(`/items/${id}`, d),
+    printLabel:(id,copies=1)=>post(`/items/${id}/print-label`, { copies }),
   };
 
   // ─────────────── Locations ───────────────
