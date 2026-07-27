@@ -152,6 +152,7 @@
           `).join('');
       } catch (e) {
         document.getElementById('from-content').innerHTML = '';
+        UI.beep('err');
         UI.notify.err(e.message);
       }
     }
@@ -171,6 +172,8 @@
         qty = 1; document.getElementById('qty-val').value = qty;
       } else {
         note.textContent = '';
+        UI.beep('err');
+        UI.notify.err('Этого товара нет в отсканированной ячейке-источнике');
       }
     }
     UI.onScan('#move-barcode', (v) => { UI.setVal('#move-barcode', v); checkBarcodeAvailability(v); document.getElementById('to-location').focus(); });

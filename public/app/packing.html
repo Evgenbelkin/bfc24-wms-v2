@@ -238,6 +238,7 @@
     function confirmPickup(scanned) {
       const shipmentCode = currentShipment?.external_id || currentTask?.shipment_code || '';
       if (String(scanned).trim().toUpperCase() !== String(shipmentCode).trim().toUpperCase()) {
+        UI.beep('err');
         UI.notify.err('Это не тот короб — код на наклейке не совпадает с текущим заданием');
         UI.setVal('#pickup-scan', '');
         return;
@@ -392,6 +393,7 @@
         UI.notify.ok(`Упаковано: ${res.qty_packed}/${res.qty_plan}`);
       } catch (e) {
         statusEl.textContent = '';
+        UI.beep('err');
         UI.notify.err(e.message);
       }
     }
@@ -428,7 +430,7 @@
         UI.setVal('#pack-location','');
         await loadCurrent();
         if (!currentTask) await takeNext();
-      } catch (e) { UI.notify.err(e.message); }
+      } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
     }
 
     loadCurrent();

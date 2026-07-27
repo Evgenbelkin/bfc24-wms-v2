@@ -178,14 +178,14 @@
       try {
         const clientId = getClientId();
         const rows = await window.API.placement.pendingByBarcode(barcode, clientId ? { client_id: clientId } : {});
-        if (!rows.length) { UI.notify.warn('Этот штрихкод не ожидает размещения'); return; }
+        if (!rows.length) { UI.beep('err'); UI.notify.warn('Этот штрихкод не ожидает размещения'); return; }
         const it = rows[0];
         applySelection({
           barcode: it.barcode, item_name: it.item_name, preview_url: null,
           from_location_code: it.location_code, qty_available: it.qty_available,
           item_id: null, client_id: it.client_id,
         });
-      } catch (e) { UI.notify.err(e.message); }
+      } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
     }
     UI.onScan('#scan-barcode', (v) => { UI.setVal('#scan-barcode', v); scanBarcodeDirect(v); });
 
