@@ -9,6 +9,7 @@ const {
   ForbiddenError,
 } = require('../../utils/errors');
 const { validateBarcode, validatePositiveInt } = require('../../utils/validators');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -287,7 +288,7 @@ async function submitCount({ tenantId, taskId, qtyActual, userId, comment }) {
     throw new ValidationError('qty_actual must be a non-negative integer');
   }
 
-  return transaction(async (client) => {
+  const taskResult = await transaction(async (client) => {
     // FOR UPDATE задачи
     const tRes = await client.query(
       `SELECT * FROM wms.inventory_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
@@ -370,8 +371,16 @@ async function submitCount({ tenantId, taskId, qtyActual, userId, comment }) {
 
     logger.info({ tenantId, taskId, delta, actual, systemQty }, 'Inventory count submitted');
 
-    return r.rows[0];
+    return { row: r.rows[0], clientId: task.client_id, delta };
   });
+
+  // Пересчитать распределение по складам WB, только если реально что-то
+  // изменилось (delta=0 - подтвердили то, что и так было, пересчитывать нечего)
+  if (taskResult.delta !== 0) {
+    triggerRedistributionForClient({ tenantId, clientId: taskResult.clientId });
+  }
+
+  return taskResult.row;
 }
 
 /**

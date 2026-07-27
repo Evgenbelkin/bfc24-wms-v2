@@ -155,6 +155,21 @@ router.post('/sync-orders-all', requireRole('tenant_admin','supervisor'), async 
   } catch(e){ next(e); }
 });
 
+// ─────────────── Распределение остатков по складам WB ───────────────
+
+/** POST /wb/accounts/:id/redistribute-stock — форсировать пересчёт вручную
+ *  (обычно срабатывает само после приёмки/инвентаризации/смены настроек
+ *  клиентом - эта кнопка для админа/саппорта, когда нужно пересчитать прямо
+ *  сейчас без ожидания события). */
+router.post('/accounts/:id/redistribute-stock', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const accountId = Number(req.params.id);
+    await getMpAccount(req.user.tenantId, accountId); // валидирует принадлежность тенанту
+    const result = await wbService.distributeStockForAccount({ tenantId: req.user.tenantId, mpAccountId: accountId });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Генерация FBS-волны ───────────────
 
 router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{

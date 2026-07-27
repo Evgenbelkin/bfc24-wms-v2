@@ -156,6 +156,186 @@ async function syncDeliveryStatusForTenant(tenantId) {
   return { checked: shipRes.rowCount, updated };
 }
 
+// =============================================================================
+// Автораспределение остатков по складам WB (собственные склады продавца, FBS)
+//
+// Идея: клиент хранит товар у нас на складе, а на WB зарегистрировано
+// несколько его собственных складов (например Подольск/Видное), между
+// которыми раньше приходилось руками раскидывать остатки в личном кабинете
+// WB. Мы уже физически знаем, сколько чего есть на складе (wms.stock_balances)
+// - осталось только: 1) знать вес/долю каждого склада WB (задаёт клиент,
+// wms.wb_seller_warehouses.weight), 2) посчитать доступное к раздаче
+// количество (с резервом, который не раздаём никуда) и 3) отправить в WB
+// через уже готовый updateFbsStocks().
+//
+// Когда пересчитывать - НЕ после каждого шага picking/packing/shipping: сам
+// WB уже резервирует остаток на своей стороне в момент создания заказа
+// (раньше, чем мы вообще узнаём о заказе) - у нас и у него счётчики и так
+// разъезжаются одинаково в обе стороны. Пересчёт нужен только когда меняется
+// ИТОГОВОЕ количество на складе способом, о котором WB не мог узнать сам:
+// приёмка нового товара, инвентаризация/списание, и смена клиентом
+// весов/резерва. См. вызовы triggerRedistributionForClient() в
+// receiving.service.js, inventory.service.js, seller.router.js.
+// =============================================================================
+
+/** Подтянуть список складов продавца из WB (/api/v3/warehouses) в нашу таблицу.
+ *  Новый склад сохраняется с weight=1.0 (дефолт колонки) - это автоматически
+ *  даёт РАВНОМЕРНОЕ распределение между складами, пока клиент не задаст свои
+ *  проценты вручную (веса нормализуются по сумме при расчёте, не обязаны
+ *  быть именно процентами). Склад, который клиент убрал у себя в WB, помечаем
+ *  is_active=false, а не удаляем - настройки (weight/is_enabled_for_dist) не
+ *  теряются, если он вернётся. */
+async function syncSellerWarehouses({ tenantId, mpAccountId }) {
+  const acc = await getMpAccount(tenantId, mpAccountId);
+  const warehouses = await wbClient.fetchSellerWarehouses(acc.api_token);
+
+  let synced = 0;
+  for (const w of warehouses) {
+    if (!w || w.id == null) continue;
+    const warehouseCode = String(w.id);
+    await query(
+      `INSERT INTO wms.wb_seller_warehouses
+         (tenant_id, mp_account_id, wb_warehouse_id, warehouse_code, warehouse_name, is_active, source, last_synced_at)
+       VALUES ($1,$2,$3,$4,$5,TRUE,'wb_api',NOW())
+       ON CONFLICT (mp_account_id, warehouse_code)
+       DO UPDATE SET warehouse_name=$5, is_active=TRUE, wb_warehouse_id=$3, last_synced_at=NOW(), updated_at=NOW()`,
+      [tenantId, mpAccountId, w.id, warehouseCode, w.name || null]
+    );
+    synced++;
+  }
+
+  const currentCodes = warehouses.filter(w => w && w.id != null).map(w => String(w.id));
+  if (currentCodes.length > 0) {
+    await query(
+      `UPDATE wms.wb_seller_warehouses SET is_active=FALSE, updated_at=NOW()
+       WHERE mp_account_id=$1 AND NOT (warehouse_code = ANY($2::text[]))`,
+      [mpAccountId, currentCodes]
+    );
+  }
+  return { synced, total: warehouses.length };
+}
+
+/** Пересчитать и отправить в WB распределение остатков по складам для ОДНОГО
+ *  аккаунта. Возвращает сводку (для лога/ручного вызова из панели), сам по
+ *  себе не бросает наружу ошибки похода в WB API по отдельным складам -
+ *  каждый склад пушится независимо, один упавший не должен блокировать
+ *  остальные. */
+async function distributeStockForAccount({ tenantId, mpAccountId }) {
+  const accRes = await query(
+    `SELECT id, client_id, api_token, settings FROM wms.mp_accounts
+     WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE AND marketplace='wb'`,
+    [mpAccountId, tenantId]
+  );
+  if (accRes.rowCount === 0) return { skipped: true, reason: 'account_not_found' };
+  const account = accRes.rows[0];
+  if (!account.api_token) return { skipped: true, reason: 'no_api_token' };
+
+  const whRes = await query(
+    `SELECT wb_warehouse_id, warehouse_code, weight FROM wms.wb_seller_warehouses
+     WHERE mp_account_id=$1 AND is_active=TRUE AND is_enabled_for_dist=TRUE AND weight > 0`,
+    [mpAccountId]
+  );
+  const warehouses = whRes.rows;
+  if (warehouses.length === 0) return { skipped: true, reason: 'no_enabled_warehouses' };
+
+  const totalWeight = warehouses.reduce((s, w) => s + Number(w.weight), 0);
+  if (totalWeight <= 0) return { skipped: true, reason: 'zero_total_weight' };
+
+  const settings = account.settings || {};
+  const reservePct = Number.isFinite(Number(settings.stock_reserve_pct)) ? Number(settings.stock_reserve_pct) : 5;
+
+  // Только штрихкоды, реально зарегистрированные у WB под этим аккаунтом -
+  // иначе рискуем пушить в WB товары, которых там вообще нет в карточках
+  // (например клиент хранит у нас что-то не для WB).
+  const stockRes = await query(
+    `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty
+     FROM wms.stock_balances sb
+     WHERE sb.tenant_id=$1 AND sb.client_id=$2
+       AND EXISTS (SELECT 1 FROM wms.wb_item_barcodes wib WHERE wib.mp_account_id=$3 AND wib.barcode=sb.barcode)
+     GROUP BY sb.barcode
+     HAVING SUM(sb.qty_available) > 0`,
+    [tenantId, account.client_id, mpAccountId]
+  );
+
+  const distByWarehouse = {};
+  warehouses.forEach(w => { distByWarehouse[w.warehouse_code] = []; });
+
+  for (const row of stockRes.rows) {
+    const barcode = row.barcode;
+    const totalQty = Number(row.qty);
+    // Резерв - часть остатка, которую сознательно НЕ раздаём по складам WB
+    // (буфер на случай ошибок/повреждений, чтобы не продать то, чего
+    // физически может не оказаться).
+    const toDistribute = Math.floor(totalQty * (1 - reservePct / 100));
+
+    // Largest remainder method - целые количества по складам, которые в
+    // сумме дают ровно toDistribute (простое round() по каждому складу
+    // отдельно почти всегда даёт сумму, отличную от toDistribute).
+    const raw  = warehouses.map(w => toDistribute * (Number(w.weight) / totalWeight));
+    const base = raw.map(r => Math.floor(r));
+    const assigned = base.reduce((a, b) => a + b, 0);
+    let remainder = toDistribute - assigned;
+    const order = raw
+      .map((r, i) => ({ i, frac: r - base[i] }))
+      .sort((a, b) => b.frac - a.frac);
+    for (let k = 0; k < remainder && order.length > 0; k++) {
+      base[order[k % order.length].i]++;
+    }
+
+    for (let i = 0; i < warehouses.length; i++) {
+      const w = warehouses[i];
+      const qty = base[i];
+      if (qty > 0) distByWarehouse[w.warehouse_code].push({ sku: barcode, amount: qty });
+      await query(
+        `INSERT INTO wms.wb_stock_distribution(tenant_id, mp_account_id, barcode, warehouse_code, qty, calculated_at)
+         VALUES($1,$2,$3,$4,$5,NOW())
+         ON CONFLICT (mp_account_id, barcode, warehouse_code)
+         DO UPDATE SET qty=$5, calculated_at=NOW(), updated_at=NOW()`,
+        [tenantId, mpAccountId, barcode, w.warehouse_code, qty]
+      );
+    }
+  }
+
+  let pushedWarehouses = 0;
+  let failedWarehouses = 0;
+  for (const w of warehouses) {
+    const stocks = distByWarehouse[w.warehouse_code];
+    if (!stocks.length) continue;
+    try {
+      await wbClient.updateFbsStocks(account.api_token, w.wb_warehouse_id, stocks);
+      pushedWarehouses++;
+    } catch (e) {
+      failedWarehouses++;
+      logger.warn({ err: e.message, mpAccountId, warehouseCode: w.warehouse_code }, 'Failed to push FBS stocks to WB (soft-fail)');
+    }
+  }
+
+  logger.info(
+    { tenantId, mpAccountId, warehouses: warehouses.length, skus: stockRes.rowCount, pushedWarehouses, failedWarehouses },
+    'Stock redistribution finished'
+  );
+  return { ok: true, warehousesCount: warehouses.length, skusCount: stockRes.rowCount, pushedWarehouses, failedWarehouses };
+}
+
+/** Найти активные WB-аккаунты клиента и пересчитать/отправить распределение
+ *  для каждого. Fire-and-forget с точки зрения вызывающего кода (приёмка/
+ *  инвентаризация не должны ждать похода в WB API и тем более падать, если
+ *  он недоступен) - сам логирует все ошибки внутри. */
+function triggerRedistributionForClient({ tenantId, clientId }) {
+  query(
+    `SELECT id FROM wms.mp_accounts WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE`,
+    [tenantId, clientId]
+  ).then(accRes => {
+    for (const row of accRes.rows) {
+      distributeStockForAccount({ tenantId, mpAccountId: row.id }).catch(e => {
+        logger.warn({ err: e.message, mpAccountId: row.id, clientId }, 'Stock redistribution failed (soft-fail)');
+      });
+    }
+  }).catch(e => {
+    logger.warn({ err: e.message, tenantId, clientId }, 'Failed to look up WB accounts for redistribution (soft-fail)');
+  });
+}
+
 /** tenant_id всех тенантов с включённым модулем wb_integration и активным доступом (для фонового джоба) */
 async function listTenantsWithWbIntegration() {
   const r = await query(
@@ -173,4 +353,7 @@ module.exports = {
   syncAllAccountsForTenant,
   syncDeliveryStatusForTenant,
   listTenantsWithWbIntegration,
+  syncSellerWarehouses,
+  distributeStockForAccount,
+  triggerRedistributionForClient,
 };

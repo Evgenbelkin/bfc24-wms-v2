@@ -8,6 +8,7 @@ const { getInboundOrderByBarcode, getInboundOrderLines } = require('../inbound/i
 const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/errors');
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -24,7 +25,7 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
   const b = validateBarcode(barcode);
   const q = validateQty(qty, 'qty');
 
-  return transaction(async (client) => {
+  const receiveResult = await transaction(async (client) => {
     const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
     const loc = await getLocationByCode({ tenantId, warehouseId, locationCode });
 
@@ -47,6 +48,14 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
     logger.info({ tenantId, clientId, barcode: b, qty: q, locationCode }, 'Free receiving completed');
     return { ...result, itemId };
   });
+
+  // Пересчитать и отправить в WB распределение остатков по складам клиента -
+  // после приёмки итоговое количество на складе изменилось так, как WB сам
+  // узнать не мог. Fire-and-forget (см. wb.service.js) - приёмщик не должен
+  // ждать похода в WB API.
+  triggerRedistributionForClient({ tenantId, clientId });
+
+  return receiveResult;
 }
 
 /**
@@ -58,7 +67,7 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
   const itemB    = validateBarcode(scannedBarcode);
   const q        = validateQty(qty, 'qty');
 
-  return transaction(async (client) => {
+  const receiveResult = await transaction(async (client) => {
     // 1. Находим заявку
     const order = await client.query(
       `SELECT * FROM wms.inbound_orders WHERE tenant_id=$1 AND barcode=$2 LIMIT 1 FOR UPDATE`,
@@ -162,6 +171,10 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
       line: { ...line, qty_received: newQtyReceived, status: newLineStatus },
     };
   });
+
+  triggerRedistributionForClient({ tenantId, clientId });
+
+  return receiveResult;
 }
 
 /**

@@ -353,6 +353,12 @@
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
     billing:  (p)     => get('/seller/billing', p),
+    wbWarehouses: {
+      list:        ()          => get('/seller/wb-warehouses'),
+      sync:        ()          => post('/seller/wb-warehouses/sync'),
+      update:      (id, data)  => patch(`/seller/wb-warehouses/${id}`, data),
+      setReserve:  (reservePct)=> patch('/seller/wb-warehouses/settings/reserve', { reserve_pct: reservePct }),
+    },
   };
 
   // ─────────────── Platform (Owner-admin) ───────────────

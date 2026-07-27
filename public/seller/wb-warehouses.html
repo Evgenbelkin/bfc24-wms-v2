@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Склады WB — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .wh-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);}
+    .wh-row:last-child{border-bottom:none;}
+    .wh-name{flex:1;font-weight:700;font-size:14px;}
+    .wh-name .sub{font-weight:400;color:var(--muted);font-size:12px;margin-top:2px;}
+    .wh-weight{width:90px;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:right;}
+    .wh-pct{width:56px;text-align:right;font-size:13px;color:var(--muted);}
+    .reserve-row{display:flex;align-items:center;gap:10px;}
+    .reserve-row input{width:80px;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:right;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Склады WB</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">
+      Программа сама раскидывает остаток вашего товара по складам WB (FBS) в тех пропорциях,
+      которые вы зададите здесь — не нужно вручную перераспределять остатки в личном кабинете WB.
+      Пересчёт происходит после приёмки нового товара, инвентаризации и после изменения настроек здесь.
+    </p>
+  </div>
+
+  <div class="card" id="no-account-card" style="display:none;">
+    <div class="empty-state">Аккаунт WB ещё не подключён — обратитесь к складу.</div>
+  </div>
+
+  <div id="main-content" style="display:none;">
+    <div class="card">
+      <div class="card-title">Резерв</div>
+      <div class="reserve-row">
+        <span style="font-size:13px;">Не раздавать по складам</span>
+        <input id="reserve-input" type="number" min="0" max="90" step="1"/>
+        <span style="font-size:13px;">%</span>
+        <button class="btn-sm btn-back" onclick="saveReserve()">Сохранить</button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0;">
+        Эта часть остатка держится в буфере и никогда не передаётся в WB — на случай пересорта, брака или ошибки при подсчёте.
+      </p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div class="card-title" style="margin:0;">Ваши склады FBS</div>
+        <button class="btn-sm btn-back" onclick="syncWarehouses()">↻ Обновить список из WB</button>
+      </div>
+      <div id="wh-list"></div>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0;">
+        Доли не обязаны в сумме давать ровно 100 — программа сама нормализует пропорции.
+        Если у склада доля 0 или он выключен — товар на него не отправляется вообще.
+      </p>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let warehouses = [];
+
+    function renderWarehouses() {
+      const totalWeight = warehouses.reduce((s,w) => s + Number(w.weight||0), 0);
+      const list = document.getElementById('wh-list');
+      if (!warehouses.length) {
+        list.innerHTML = `<div class="empty-state">Складов пока нет — нажми «Обновить список из WB»</div>`;
+        return;
+      }
+      list.innerHTML = warehouses.map(w => {
+        const pct = totalWeight > 0 ? Math.round(Number(w.weight)/totalWeight*100) : 0;
+        return `
+        <div class="wh-row">
+          <div class="wh-name">${UI.escHtml(w.warehouse_name || w.warehouse_code)}
+            <div class="sub">${w.is_enabled_for_dist ? 'участвует в распределении' : 'выключен'}</div>
+          </div>
+          <div class="wh-pct">${w.is_enabled_for_dist ? pct+'%' : '—'}</div>
+          <input class="wh-weight" type="number" min="0" step="1" value="${w.weight}"
+            onchange="updateWarehouse(${w.id}, {weight: this.value})"/>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;">
+            <input type="checkbox" ${w.is_enabled_for_dist?'checked':''}
+              onchange="updateWarehouse(${w.id}, {is_enabled_for_dist: this.checked})"/> вкл
+          </label>
+        </div>
+      `;
+      }).join('');
+    }
+
+    async function loadWarehouses() {
+      try {
+        const res = await window.API.seller.wbWarehouses.list();
+        if (!res.account) {
+          document.getElementById('no-account-card').style.display = 'block';
+          document.getElementById('main-content').style.display = 'none';
+          return;
+        }
+        document.getElementById('no-account-card').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
+        document.getElementById('reserve-input').value = res.account.reserve_pct;
+        warehouses = res.warehouses || [];
+        renderWarehouses();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function syncWarehouses() {
+      try {
+        const res = await window.API.seller.wbWarehouses.sync();
+        UI.notify.ok(`Складов найдено: ${res.total}`);
+        await loadWarehouses();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function updateWarehouse(id, data) {
+      try {
+        await window.API.seller.wbWarehouses.update(id, data);
+        const w = warehouses.find(x => x.id === id);
+        if (w) Object.assign(w, data);
+        UI.notify.ok('Сохранено');
+        renderWarehouses();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function saveReserve() {
+      try {
+        const pct = Number(document.getElementById('reserve-input').value);
+        await window.API.seller.wbWarehouses.setReserve(pct);
+        UI.notify.ok('Резерв сохранён');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadWarehouses();
+  </script>
+</body>
+</html>

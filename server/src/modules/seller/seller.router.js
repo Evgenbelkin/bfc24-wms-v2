@@ -234,6 +234,102 @@ router.get('/history', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+// ─────────────── Склады WB (автораспределение остатков) ───────────────
+// Клиент сам решает, в какой пропорции раскидывать остаток по своим складам
+// WB (FBS) - раньше делал это руками в личном кабинете WB, теперь программа
+// делает это сама после приёмки/инвентаризации. См. wb.service.js -
+// distributeStockForAccount()/triggerRedistributionForClient() - вся логика
+// расчёта и отправки в WB там, здесь только CRUD настроек.
+
+const wbSvc = require('../wb/wb.service');
+
+/** GET /seller/wb-warehouses — список складов клиента у WB с текущими весами */
+router.get('/wb-warehouses', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const accRes = await query(
+      `SELECT id, account_name, settings FROM wms.mp_accounts
+       WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE
+       ORDER BY id LIMIT 1`,
+      [req.user.tenantId, clientId]
+    );
+    if (accRes.rowCount === 0) return res.json({ ok:true, account:null, warehouses:[] });
+    const account = accRes.rows[0];
+    const whRes = await query(
+      `SELECT id, wb_warehouse_id, warehouse_code, warehouse_name, is_active, is_enabled_for_dist, weight, last_synced_at
+       FROM wms.wb_seller_warehouses
+       WHERE mp_account_id=$1 AND is_active=TRUE
+       ORDER BY warehouse_name`,
+      [account.id]
+    );
+    res.json({
+      ok: true,
+      account: { id: account.id, name: account.account_name, reserve_pct: Number(account.settings?.stock_reserve_pct ?? 5) },
+      warehouses: whRes.rows,
+    });
+  } catch(e){ next(e); }
+});
+
+/** POST /seller/wb-warehouses/sync — подтянуть актуальный список складов из WB */
+router.post('/wb-warehouses/sync', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const accRes = await query(
+      `SELECT id FROM wms.mp_accounts WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE LIMIT 1`,
+      [req.user.tenantId, clientId]
+    );
+    if (accRes.rowCount === 0) throw new ValidationError('Нет подключённого аккаунта WB');
+    const result = await wbSvc.syncSellerWarehouses({ tenantId: req.user.tenantId, mpAccountId: accRes.rows[0].id });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /seller/wb-warehouses/:id — изменить долю склада / включить-выключить участие */
+router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const { weight, is_enabled_for_dist } = req.body;
+    const fields = []; const params = []; let idx = 1;
+    if (weight !== undefined) {
+      const w = Number(weight);
+      if (!Number.isFinite(w) || w < 0) throw new ValidationError('weight must be a non-negative number');
+      fields.push(`weight=$${idx++}`); params.push(w);
+    }
+    if (is_enabled_for_dist !== undefined) { fields.push(`is_enabled_for_dist=$${idx++}`); params.push(!!is_enabled_for_dist); }
+    if (!fields.length) throw new ValidationError('Nothing to update');
+    fields.push(`updated_at=NOW()`);
+    params.push(Number(req.params.id), req.user.tenantId, clientId);
+    const r = await query(
+      `UPDATE wms.wb_seller_warehouses w SET ${fields.join(', ')}
+       FROM wms.mp_accounts ma
+       WHERE w.mp_account_id = ma.id AND w.id=$${idx++} AND w.tenant_id=$${idx++} AND ma.client_id=$${idx++}
+       RETURNING w.id, w.weight, w.is_enabled_for_dist`,
+      params
+    );
+    if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Warehouse not found'} });
+    wbSvc.triggerRedistributionForClient({ tenantId: req.user.tenantId, clientId });
+    res.json({ ok:true, warehouse: r.rows[0] });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /seller/wb-warehouses/reserve — изменить % резерва (не раздаётся по складам) */
+router.patch('/wb-warehouses/settings/reserve', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const pct = Number(req.body.reserve_pct);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 90) throw new ValidationError('reserve_pct must be between 0 and 90');
+    const r = await query(
+      `UPDATE wms.mp_accounts SET settings = settings || jsonb_build_object('stock_reserve_pct', $1::numeric), updated_at=NOW()
+       WHERE tenant_id=$2 AND client_id=$3 AND marketplace='wb' AND is_active=TRUE
+       RETURNING id`,
+      [pct, req.user.tenantId, clientId]
+    );
+    if (r.rowCount === 0) throw new ValidationError('Нет подключённого аккаунта WB');
+    wbSvc.triggerRedistributionForClient({ tenantId: req.user.tenantId, clientId });
+    res.json({ ok:true, reserve_pct: pct });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Billing (просмотр) ───────────────
 
 /** GET /seller/billing */
