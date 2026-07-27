@@ -1,0 +1,109 @@
+name: Build Android APK (BFC24 WMS)
+
+# Сборка Capacitor-обёртки (mobile-app/) в APK.
+#
+# Зачем через CI, а не только локально: headless-песочница, где готовился
+# этот проект, не имеет Android SDK/эмулятора, а установка Android Studio
+# на рабочей машине — отдельная, тяжёлая задача. GitHub Actions даёт
+# воспроизводимую сборку без локальной установки Android Studio; локальная
+# сборка через Android Studio остаётся рабочей альтернативой (см.
+# mobile-app/README.md) и нужна, если требуется отладка на подключённом
+# по USB устройстве.
+#
+# Всегда собирается debug-APK (не требует секретов, сразу доступен как
+# артефакт). Release-APK (подписанный боевым ключом) собирается
+# дополнительно, только если в secrets репозитория заданы
+# ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
+# ANDROID_KEY_PASSWORD — см. инструкцию в mobile-app/README.md.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [dev, main]
+    paths:
+      - 'mobile-app/**'
+      - '.github/workflows/build-android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Capacitor deps
+        run: npm install
+
+      - name: Sync web assets into native project
+        run: npx cap sync android
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('mobile-app/android/**/*.gradle*') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: mobile-app/android
+        run: ./gradlew assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: bfc24-wms-debug-apk
+          path: mobile-app/android/app/build/outputs/apk/debug/app-debug.apk
+
+      # --- Release (подписанный) APK — только если заданы секреты ключа ---
+      - name: Check for release signing secrets
+        id: check_signing
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "has_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decode release keystore
+        if: steps.check_signing.outputs.has_signing == 'true'
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+
+      - name: Build release APK (signed)
+        if: steps.check_signing.outputs.has_signing == 'true'
+        working-directory: mobile-app/android
+        run: |
+          ./gradlew assembleRelease \
+            -PRELEASE_STORE_FILE=release.keystore \
+            -PRELEASE_STORE_PASSWORD="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            -PRELEASE_KEY_ALIAS="${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -PRELEASE_KEY_PASSWORD="${{ secrets.ANDROID_KEY_PASSWORD }}"
+
+      - name: Upload release APK
+        if: steps.check_signing.outputs.has_signing == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bfc24-wms-release-apk
+          path: mobile-app/android/app/build/outputs/apk/release/app-release.apk

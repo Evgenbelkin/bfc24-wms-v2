@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BFC24 WMS</title>
+<style>
+  :root { color-scheme: light; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #10182a;
+  }
+  .screen {
+    min-height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 24px; box-sizing: border-box;
+    gap: 28px;
+  }
+  .logo {
+    color: #fff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;
+  }
+  .logo span { color: #4f8cff; }
+  .subtitle {
+    color: #9aa4bd; font-size: 14px; text-align: center; margin-top: -18px;
+  }
+  .options {
+    width: 100%; max-width: 340px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  button.env-btn {
+    appearance: none; border: 1px solid #2c3752; border-radius: 12px;
+    background: #182238; color: #fff; padding: 16px 18px;
+    font-size: 16px; text-align: left; cursor: pointer;
+  }
+  button.env-btn small { display: block; color: #9aa4bd; font-size: 12px; margin-top: 4px; font-weight: 400; }
+  button.env-btn.staging { border-color: #7a5a1e; }
+  button.env-btn:active { opacity: 0.7; }
+  .loading { color: #9aa4bd; font-size: 14px; }
+  .hint {
+    color: #5c6684; font-size: 12px; text-align: center; max-width: 320px;
+  }
+</style>
+</head>
+<body>
+  <div class="screen" id="screen"></div>
+
+  <script>
+    // Bootstrap-страница живёт в локальном ассете приложения (не на сервере).
+    // Она решает, какой домен грузить в WebView — dev.bfc-24.ru или
+    // staging.bfc-24.ru — и запоминает выбор в localStorage ЭТОГО (локального)
+    // origin'а. Дальше вся навигация происходит внутри выбранного origin'а,
+    // поэтому localStorage с токенами (accessToken/refreshToken/user) в
+    // public/shared/api.js работает как обычно, без изменений.
+    //
+    // Чтобы сменить окружение позже — см. MainActivity: аппаратная кнопка
+    // "назад" на экране логина без истории возвращает сюда с ?reset=1.
+
+    var ENV_KEY = 'bfc24_env';
+    var ENVIRONMENTS = {
+      prod:    { host: 'dev.bfc-24.ru',     label: 'Рабочий сервер' },
+      staging: { host: 'staging.bfc-24.ru', label: 'Тестовый сервер (staging)' }
+    };
+    // Страница входа в само веб-приложение (см. deploy/MOBILE_APP_BRIEF.md —
+    // у корня "/" нет index-страницы, точка входа — /app/login.html).
+    var ENTRY_PATH = '/app/login.html';
+
+    function goTo(envKey) {
+      var env = ENVIRONMENTS[envKey];
+      if (!env) return;
+      try { localStorage.setItem(ENV_KEY, envKey); } catch (e) {}
+      window.location.href = 'https://' + env.host + ENTRY_PATH;
+    }
+
+    function forcedReset() {
+      var params = new URLSearchParams(window.location.search);
+      return params.get('reset') === '1';
+    }
+
+    function renderChooser() {
+      var screen = document.getElementById('screen');
+      screen.innerHTML =
+        '<div class="logo">BFC24 <span>WMS</span></div>' +
+        '<div class="subtitle">Выберите сервер для входа</div>' +
+        '<div class="options">' +
+          '<button class="env-btn" data-env="prod">' + ENVIRONMENTS.prod.label +
+            '<small>' + ENVIRONMENTS.prod.host + '</small></button>' +
+          '<button class="env-btn staging" data-env="staging">' + ENVIRONMENTS.staging.label +
+            '<small>' + ENVIRONMENTS.staging.host + '</small></button>' +
+        '</div>' +
+        '<div class="hint">Выбор запоминается. Сменить сервер позже можно кнопкой «Назад» на экране входа.</div>';
+      Array.prototype.forEach.call(screen.querySelectorAll('.env-btn'), function (btn) {
+        btn.addEventListener('click', function () { goTo(btn.getAttribute('data-env')); });
+      });
+    }
+
+    function renderLoading() {
+      document.getElementById('screen').innerHTML =
+        '<div class="logo">BFC24 <span>WMS</span></div>' +
+        '<div class="loading">Загрузка…</div>';
+    }
+
+    (function init() {
+      var saved = null;
+      try { saved = localStorage.getItem(ENV_KEY); } catch (e) {}
+      if (saved && ENVIRONMENTS[saved] && !forcedReset()) {
+        renderLoading();
+        goTo(saved);
+      } else {
+        renderChooser();
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "mobile-app",
+  "version": "1.0.0",
+  "description": "Capacitor Android-обёртка для BFC24 WMS (remote URL mode)",
+  "main": "index.js",
+  "scripts": {
+    "cap": "capacitor",
+    "sync": "capacitor sync android",
+    "open:android": "capacitor open android"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.4.2"
+  }
+}

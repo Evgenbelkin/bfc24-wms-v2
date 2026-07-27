@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BFC24 WMS</string>
+    <string name="title_activity_main">BFC24 WMS</string>
+    <string name="package_name">ru.bfc24.wms</string>
+    <string name="custom_url_scheme">ru.bfc24.wms</string>
+</resources>

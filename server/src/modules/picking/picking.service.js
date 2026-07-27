@@ -6,7 +6,7 @@ const { resolveOrCreateItem } = require('../masterdata/items/items.service');
 const { findBestPickLocation, getLocationByCode } = require('../masterdata/locations/locations.service');
 const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
-const { generateQrSvg } = require('../../utils/qrcode');
+const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const logger = require('../../utils/logger');
 
@@ -568,7 +568,7 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
           tenantId, docType: 'pick_list_label', employeeId: pickerId,
         });
         if (resolved) {
-          const svg = await generateQrSvg(shipmentCode);
+          const svg = await generateShipmentLabelSvg(shipmentCode);
           const jobCode = `PICKLIST-${shipment.id}-${Date.now()}`;
           await client.query(
             `INSERT INTO wms.print_jobs

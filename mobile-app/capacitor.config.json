@@ -1,0 +1,16 @@
+{
+  "appId": "ru.bfc24.wms",
+  "appName": "BFC24 WMS",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "allowNavigation": [
+      "dev.bfc-24.ru",
+      "staging.bfc-24.ru"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
