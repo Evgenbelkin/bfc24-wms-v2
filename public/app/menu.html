@@ -78,6 +78,7 @@
       users:        `<circle cx="9" cy="8" r="3.3"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 14.3c2.6.5 4.5 2.5 4.5 5.7"/>`,
       shrug:        `<circle cx="12" cy="8" r="3.3"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>`,
       help:         `<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/>`,
+      qr:           `<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z"/>`,
     };
     function icon(name){ return `<svg viewBox="0 0 24 24">${ICONS[name]||''}</svg>`; }
 
@@ -101,6 +102,8 @@
       { href:'printer-panel.html',    icon:'printer',   label:'Панель принтеров',roles:['tenant_admin','supervisor'] },
       { href:'users.html',            icon:'users',     label:'Пользователи',    roles:['tenant_admin','supervisor'] },
       { href:'help.html',             icon:'help',      label:'Инструкция и поддержка', roles:['tenant_admin','supervisor','receiver','picker','packer','shipper','inventory_manager'] },
+      { href:'checkin.html',          icon:'qr',        label:'Отметка на складе', roles:['receiver','picker','packer','shipper','inventory_manager'] },
+      { href:'checkin-kiosk.html',    icon:'qr',        label:'QR для отметки (экран на входе)', roles:['tenant_admin','supervisor'] },
     ];
 
     // Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя

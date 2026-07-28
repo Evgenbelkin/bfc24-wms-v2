@@ -95,6 +95,14 @@
     let json;
     try { json = await res.json(); } catch { json = { ok: false, error: { message: 'Invalid response' } }; }
 
+    // 403 NOT_CHECKED_IN → сотрудник не отметился на складе (см. requireCheckedIn.js) —
+    // ведём на экран скана вместо того, чтобы просто показать ошибку в тосте.
+    if (res.status === 403 && json?.error?.code === 'NOT_CHECKED_IN' && !opts.noRedirect
+        && window.location.pathname !== '/app/checkin.html') {
+      window.location.href = '/app/checkin.html';
+      return null;
+    }
+
     if (!res.ok || json?.ok === false) {
       const msg = json?.error?.message || json?.message || `HTTP ${res.status}`;
       const err = new Error(msg);
@@ -336,6 +344,14 @@
     sticker: (id)   => get(`/workstations/${id}/sticker`),
   };
 
+  // ─────────────── Checkin (отметка на складе по QR) ───────────────
+
+  const checkin = {
+    token:  ()      => get('/checkin/token'),                 // supervisor/admin — свежий QR для экрана
+    scan:   (token) => post('/checkin/scan', { token }),       // сотрудник — отсканировал код
+    status: ()      => get('/checkin/status'),
+  };
+
   // ─────────────── Seller ───────────────
 
   const seller = {
@@ -424,6 +440,7 @@
     picking, packing, shipping,
     wb, printing, overview,
     workstations,
+    checkin,
     seller, platform,
   };
 

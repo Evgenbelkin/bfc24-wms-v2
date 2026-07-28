@@ -5,9 +5,10 @@ const svc = require('./receiving.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
+const { requireCheckedIn } = require('../../middleware/requireCheckedIn');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 
-router.use(authRequired, tenantMiddleware);
+router.use(authRequired, tenantMiddleware, requireCheckedIn);
 
 /** POST /receiving/accept — свободная приёмка */
 router.post('/accept', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {

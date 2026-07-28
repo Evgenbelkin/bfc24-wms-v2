@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Отметка на складе — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .status-card{text-align:center;padding:32px 20px;}
+    .status-icon{width:64px;height:64px;margin:0 auto 16px;}
+    .status-icon svg{width:100%;height:100%;}
+    .status-ok{color:var(--green);}
+    .status-bad{color:var(--red);}
+    .status-title{font-size:19px;font-weight:800;margin-bottom:8px;}
+    .status-sub{color:var(--muted);font-size:14px;}
+    .scan-big-btn{width:100%;padding:22px;border-radius:14px;background:var(--accent);color:#fff;border:none;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;}
+    .scan-big-btn svg{width:24px;height:24px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg> Отметка на складе</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card status-card" id="status-card">
+    <div class="status-sub">Загрузка...</div>
+  </div>
+
+  <div class="card" id="scan-card" style="display:none;">
+    <div class="card-title">Скан QR с экрана на входе</div>
+    <p class="mode-note">Попросите старшего смены показать код на его экране («QR для отметки») и наведите камеру.</p>
+    <input id="checkin-input" class="scan-input" style="opacity:0;position:absolute;pointer-events:none;" inputmode="none" autocomplete="off"/>
+    <button type="button" class="scan-big-btn" onclick="UI.scanInto('#checkin-input','Скан QR склада')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Сканировать код
+    </button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    async function logout() {
+      await window.API.auth.logout();
+      window.location.href = '/app/login.html';
+    }
+
+    function renderOk(validUntil) {
+      const t = new Date(validUntil).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      document.getElementById('status-card').innerHTML = `
+        <div class="status-icon status-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>
+        <div class="status-title status-ok">Вы отмечены на складе</div>
+        <div class="status-sub">Действует до ${t} — потом нужно будет отметиться заново</div>
+      `;
+      document.getElementById('scan-card').style.display = 'none';
+    }
+
+    function renderNeedScan() {
+      document.getElementById('status-card').innerHTML = `
+        <div class="status-icon status-bad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg></div>
+        <div class="status-title status-bad">Вы ещё не отмечены</div>
+        <div class="status-sub">Отсканируйте QR-код на экране у входа, чтобы получить доступ к сборке/упаковке/приёмке</div>
+      `;
+      document.getElementById('scan-card').style.display = 'block';
+    }
+
+    async function loadStatus() {
+      try {
+        const res = await window.API.checkin.status();
+        if (res.checked_in) renderOk(res.valid_until);
+        else renderNeedScan();
+      } catch (e) {
+        renderNeedScan();
+      }
+    }
+
+    UI.onScan('#checkin-input', async (code) => {
+      try {
+        const res = await window.API.checkin.scan(code);
+        UI.notify.ok('Отметка принята!');
+        renderOk(res.valid_until);
+      } catch (e) {
+        UI.notify.err(e.message);
+      }
+    });
+
+    loadStatus();
+  </script>
+</body>
+</html>

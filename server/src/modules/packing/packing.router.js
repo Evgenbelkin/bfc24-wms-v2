@@ -5,9 +5,10 @@ const svc = require('./packing.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
+const { requireCheckedIn } = require('../../middleware/requireCheckedIn');
 const { validatePositiveInt } = require('../../utils/validators');
 
-router.use(authRequired, tenantMiddleware);
+router.use(authRequired, tenantMiddleware, requireCheckedIn);
 
 /** POST /packing/next — взять/получить задачу */
 router.post('/next', requireRole('tenant_admin','supervisor','packer'), async (req,res,next)=>{

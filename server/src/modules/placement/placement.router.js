@@ -6,10 +6,11 @@ const svc = require('./placement.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
+const { requireCheckedIn } = require('../../middleware/requireCheckedIn');
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 
-router.use(authRequired, tenantMiddleware);
+router.use(authRequired, tenantMiddleware, requireCheckedIn);
 
 // =============================================================================
 // Placement Router

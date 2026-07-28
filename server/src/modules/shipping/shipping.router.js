@@ -5,8 +5,9 @@ const svc = require('./shipping.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
+const { requireCheckedIn } = require('../../middleware/requireCheckedIn');
 
-router.use(authRequired, tenantMiddleware);
+router.use(authRequired, tenantMiddleware, requireCheckedIn);
 
 router.get('/board', requireRole('tenant_admin','supervisor','picker','packer','shipper'), async (req,res,next)=>{
   try {

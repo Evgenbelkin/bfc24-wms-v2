@@ -6,11 +6,12 @@ const svc = require('./inventory.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
+const { requireCheckedIn } = require('../../middleware/requireCheckedIn');
 const { validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const { ValidationError } = require('../../utils/errors');
 
-router.use(authRequired, tenantMiddleware);
+router.use(authRequired, tenantMiddleware, requireCheckedIn);
 
 // =============================================================================
 // Inventory Router
