@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Баланс и счета — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .balance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .balance-cell{background:var(--card2);border-radius:10px;padding:12px;text-align:center;}
+    .balance-cell .num{font-size:20px;font-weight:700;}
+    .balance-cell .lbl{font-size:12px;color:var(--muted2);margin-top:2px;}
+    .inv-row{cursor:pointer;}
+    .inv-row:active{opacity:.7;}
+    .status-pill{font-size:11px;padding:3px 8px;border-radius:20px;background:var(--card2);}
+    .status-draft{color:var(--muted2);}
+    .status-sent{color:var(--yellow);}
+    .status-paid{color:var(--green);}
+    .status-cancelled{color:var(--red);text-decoration:line-through;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Баланс и счета</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">Биллинг пока не подключён для вашего склада.</div>
+  </div>
+
+  <div id="content">
+    <div class="tabs">
+      <button class="tab active" data-tab="balance"  onclick="switchTab('balance')">Баланс</button>
+      <button class="tab" data-tab="charges"   onclick="switchTab('charges')">Начисления</button>
+      <button class="tab" data-tab="invoices"  onclick="switchTab('invoices')">Счета</button>
+    </div>
+
+    <div id="tab-balance">
+      <div class="card">
+        <div class="card-title">Текущий баланс</div>
+        <div id="balance-box" class="balance-grid"></div>
+      </div>
+    </div>
+
+    <div id="tab-charges" style="display:none">
+      <div class="card">
+        <div class="card-title">Период</div>
+        <div class="filters-row">
+          <input id="ch-from" type="date"/>
+          <input id="ch-to" type="date"/>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadCharges()">Показать</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Начисления — итого <span id="charge-total">0</span> ₽</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Сумма</th></tr></thead>
+            <tbody id="charge-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-invoices" style="display:none">
+      <div class="card">
+        <div class="card-title">Счета</div>
+        <div id="inv-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('content').style.display = 'none';
+    }
+
+    function switchTab(name) {
+      ['balance','charges','invoices'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name==='balance') loadBalance();
+      if (name==='charges') loadCharges();
+      if (name==='invoices') loadInvoices();
+    }
+
+    const SERVICE_TYPES = {
+      receiving:'Приёмка', storage:'Хранение', placement:'Размещение',
+      picking:'Сборка', packing:'Упаковка', shipping:'Отгрузка',
+      processing:'Обработка', returns:'Возврат', materials:'Расходники', subscription:'Подписка',
+    };
+    const serviceLabel = t => SERVICE_TYPES[t] || t;
+
+    let invoiceCache = [];
+
+    async function loadBalance() {
+      try {
+        const res = await window.API.seller.billingBalance();
+        const b = res.balance || {};
+        document.getElementById('balance-box').innerHTML = `
+          <div class="balance-cell"><div class="num">${Number(b.uninvoiced_total||0).toFixed(2)} ₽</div><div class="lbl">Не выставлено</div></div>
+          <div class="balance-cell"><div class="num" style="color:var(--yellow)">${Number(b.invoiced_unpaid||0).toFixed(2)} ₽</div><div class="lbl">Выставлено, к оплате</div></div>
+          <div class="balance-cell"><div class="num" style="color:var(--green)">${Number(b.total_paid||0).toFixed(2)} ₽</div><div class="lbl">Оплачено</div></div>
+        `;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadCharges() {
+      try {
+        const params = {};
+        const from = UI.val('#ch-from'); if (from) params.period_from = from;
+        const to = UI.val('#ch-to'); if (to) params.period_to = to;
+        const res = await window.API.seller.billing(params);
+        const rows = res.charges || [];
+        document.getElementById('charge-total').textContent = Number(res.total_amount||0).toFixed(2);
+        document.getElementById('charge-body').innerHTML = rows.length ? rows.map(c => `
+          <tr>
+            <td>${c.period_date}</td>
+            <td>${serviceLabel(c.service_type)}${c.description?' · '+UI.escHtml(c.description):''}</td>
+            <td>${c.quantity}</td>
+            <td>${Number(c.total_amount).toFixed(2)}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="4">Начислений нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadInvoices() {
+      try {
+        const res = await window.API.seller.billingInvoices({ limit: 100 });
+        invoiceCache = res.invoices || [];
+        const list = document.getElementById('inv-list');
+        if (!invoiceCache.length) { list.innerHTML = `<div class="empty-state">Счетов пока нет</div>`; return; }
+        list.innerHTML = invoiceCache.map((inv, idx) => `
+          <div class="list-row inv-row" onclick="openInvoiceModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(inv.invoice_number)}</div>
+              <div class="sub">${inv.period_from} — ${inv.period_to} · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
+            </div>
+            <div class="badge"><span>Сумма</span><div>${Number(inv.total_amount).toFixed(2)} ₽</div></div>
+          </div>
+        `).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function openInvoiceModal(idx) {
+      const inv = invoiceCache[idx];
+      let detail;
+      try { detail = await window.API.seller.billingInvoice(inv.id); } catch (e) { UI.notify.err(e.message); return; }
+      const rows = detail.charges.map(c => `<tr><td>${c.period_date}</td><td>${serviceLabel(c.service_type)}</td><td>${c.quantity}</td><td>${Number(c.total_amount).toFixed(2)}</td></tr>`).join('');
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${UI.escHtml(inv.invoice_number)} — ${Number(inv.total_amount).toFixed(2)} ₽ · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
+            <div class="table-wrap">
+              <table><thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Сумма</th></tr></thead><tbody>${rows}</tbody></table>
+            </div>
+            <button class="btn-big btn-yellow btn-full" onclick="closeModal()">Закрыть</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    loadBalance();
+  </script>
+</body>
+</html>

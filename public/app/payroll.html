@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Сдельная ЗП — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .r-row{cursor:pointer;}
+    .r-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .emp-card{background:var(--card2);border-radius:10px;padding:12px 14px;margin-bottom:8px;}
+    .emp-card .emp-head{display:flex;justify-content:space-between;font-weight:600;}
+    .emp-card .emp-line{display:flex;justify-content:space-between;font-size:13px;color:var(--muted2);padding:2px 0;}
+    .grand-total{font-size:18px;font-weight:700;text-align:right;margin-top:10px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M16 13h4v4h-4a2 2 0 0 1 0-4z"/></svg> Сдельная ЗП</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">
+      <div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      Модуль сдельной ЗП не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="tabs">
+      <button class="tab active" data-tab="rates"  onclick="switchTab('rates')">Ставки</button>
+      <button class="tab" data-tab="report" onclick="switchTab('report')">Отчёт</button>
+    </div>
+
+    <!-- ============ Ставки ============ -->
+    <div id="tab-rates">
+      <div class="card">
+        <div class="card-title">Ставки за операцию (<span id="rate-count">0</span>)</div>
+        <div id="rate-list"></div>
+      </div>
+      <button class="btn-big btn-green btn-full" onclick="openRateModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая ставка</button>
+    </div>
+
+    <!-- ============ Отчёт ============ -->
+    <div id="tab-report" style="display:none">
+      <div class="card">
+        <div class="card-title">Период</div>
+        <div class="filters-row">
+          <input id="rep-from" type="date"/>
+          <input id="rep-to" type="date"/>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadReport()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Посчитать</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Выработка × ставка по сотрудникам</div>
+        <div id="report-list"></div>
+        <div class="grand-total" id="report-total"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('content').style.display = 'none';
+    }
+
+    function switchTab(name) {
+      ['rates','report'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name==='rates') loadRates();
+    }
+
+    const ROLES = [
+      ['receiver','Приёмщик'], ['picker','Сборщик'], ['packer','Упаковщик'],
+      ['shipper','Отгрузчик'], ['inventory_manager','Инвентаризация'],
+    ];
+    const MOVEMENT_TYPES = [
+      ['receiving','Приёмка'], ['placement','Размещение'], ['picking','Сборка'],
+      ['packing','Упаковка'], ['shipping','Отгрузка'],
+    ];
+    function roleLabel(r) { const f = ROLES.find(x=>x[0]===r); return f ? f[1] : r; }
+    function mtLabel(m) { const f = MOVEMENT_TYPES.find(x=>x[0]===m); return f ? f[1] : m; }
+
+    let rateCache = [], employeeCache = [];
+
+    async function loadRates() {
+      try {
+        const res = await window.API.payroll.rates.list();
+        rateCache = res.rows || [];
+        document.getElementById('rate-count').textContent = rateCache.length;
+        const list = document.getElementById('rate-list');
+        if (!rateCache.length) { list.innerHTML = `<div class="empty-state">Ставки не настроены</div>`; return; }
+        list.innerHTML = rateCache.map((r, idx) => `
+          <div class="list-row r-row" onclick="openRateModal(${idx})">
+            <div class="main">
+              <div class="title">${r.employee_id ? UI.escHtml(r.employee_name||('сотрудник #'+r.employee_id)) : roleLabel(r.role)}</div>
+              <div class="sub">${mtLabel(r.movement_type)}</div>
+            </div>
+            <div class="badge"><span>Ставка</span><div>${Number(r.rate).toFixed(2)} ₽</div></div>
+          </div>
+        `).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadEmployees() {
+      if (employeeCache.length) return employeeCache;
+      try {
+        const res = await window.API.users.list({});
+        employeeCache = (res.users || []).filter(u => ['receiver','picker','packer','shipper','inventory_manager'].includes(u.role));
+      } catch (e) { employeeCache = []; }
+      return employeeCache;
+    }
+
+    async function openRateModal(idx) {
+      const r = idx !== null ? rateCache[idx] : null;
+      await loadEmployees();
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${r ? 'Изменить ставку' : 'Новая ставка'}</div>
+            ${!r ? `
+            <div class="field"><label>Тип</label>
+              <select id="m-target-type" onchange="onTargetTypeChange()">
+                <option value="role">На роль</option>
+                <option value="employee">На конкретного сотрудника (override)</option>
+              </select>
+            </div>
+            <div class="field" id="m-role-wrap"><label>Роль</label>
+              <select id="m-role">${ROLES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+            </div>
+            <div class="field" id="m-emp-wrap" style="display:none"><label>Сотрудник</label>
+              <select id="m-employee">${employeeCache.map(u=>`<option value="${u.id}">${UI.escHtml(u.full_name||u.username)} (${roleLabel(u.role)})</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Тип операции</label>
+              <select id="m-movement">${MOVEMENT_TYPES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+            </div>
+            ` : `
+            <div class="field"><label>${r.employee_id ? 'Сотрудник' : 'Роль'}</label><input value="${r.employee_id ? UI.escHtml(r.employee_name||''): roleLabel(r.role)}" disabled/></div>
+            <div class="field"><label>Тип операции</label><input value="${mtLabel(r.movement_type)}" disabled/></div>
+            `}
+            <div class="field"><label>Ставка за единицу, ₽</label><input id="m-rate" type="number" step="0.01" value="${r?r.rate:''}"/></div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="saveRate(${idx})">Сохранить</button>
+              ${r ? `<button class="btn-big btn-red" onclick="deleteRate(${r.id})">Удалить</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function onTargetTypeChange() {
+      const isEmployee = UI.val('#m-target-type') === 'employee';
+      document.getElementById('m-role-wrap').style.display = isEmployee ? 'none' : 'block';
+      document.getElementById('m-emp-wrap').style.display = isEmployee ? 'block' : 'none';
+    }
+
+    async function saveRate(idx) {
+      const r = idx !== null ? rateCache[idx] : null;
+      try {
+        const payload = { rate: Number(UI.val('#m-rate')) || 0 };
+        if (r) {
+          payload.movement_type = r.movement_type;
+          if (r.employee_id) payload.employee_id = r.employee_id; else payload.role = r.role;
+        } else {
+          payload.movement_type = UI.val('#m-movement');
+          if (UI.val('#m-target-type') === 'employee') payload.employee_id = Number(UI.val('#m-employee'));
+          else payload.role = UI.val('#m-role');
+        }
+        await window.API.payroll.rates.upsert(payload);
+        UI.notify.ok('Сохранено');
+        closeModal();
+        await loadRates();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deleteRate(id) {
+      try {
+        await window.API.payroll.rates.delete(id);
+        UI.notify.ok('Удалено');
+        closeModal();
+        await loadRates();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadReport() {
+      const from = UI.val('#rep-from'), to = UI.val('#rep-to');
+      if (!from || !to) { UI.notify.err('Укажите период'); return; }
+      try {
+        const res = await window.API.payroll.report(from, to);
+        const list = document.getElementById('report-list');
+        if (!res.employees.length) { list.innerHTML = `<div class="empty-state">Нет данных за период</div>`; document.getElementById('report-total').textContent=''; return; }
+        list.innerHTML = res.employees.map(e => `
+          <div class="emp-card">
+            <div class="emp-head"><span>${UI.escHtml(e.fullName||'')} (${roleLabel(e.role)})</span><span>${e.total.toFixed(2)} ₽</span></div>
+            ${e.breakdown.map(b => `<div class="emp-line"><span>${mtLabel(b.movementType)} · ${b.units} ед. × ${b.rate.toFixed(2)}₽</span><span>${b.amount.toFixed(2)} ₽</span></div>`).join('')}
+          </div>
+        `).join('');
+        document.getElementById('report-total').textContent = `Итого: ${res.grand_total.toFixed(2)} ₽`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    loadRates();
+  </script>
+</body>
+</html>

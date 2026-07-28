@@ -8,6 +8,7 @@ const { NotFoundError, ValidationError, ForbiddenError, ConflictError, Insuffici
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
 const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
+const { chargeForOperation } = require('../billing/billing.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -252,7 +253,9 @@ async function scanLocation({ tenantId, pickerId, taskId, scannedLocationCode })
 
 /** Скан товара */
 async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment }) {
-  return transaction(async (client) => {
+  let chargeClientId = null, chargeQty = 0;
+
+  const result = await transaction(async (client) => {
     const tRes = await client.query(
       `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, [taskId, tenantId]
     );
@@ -316,6 +319,9 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
       userId: pickerId, comment: comment||null, dbClient: client,
     });
 
+    chargeClientId = task.client_id;
+    chargeQty = qtyToPick;
+
     await client.query(
       `UPDATE wms.picking_tasks
        SET status='done', scan_step='done', qty_picked=$1, finished_at=NOW(), updated_at=NOW(), updated_by=$2
@@ -348,6 +354,12 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
 
     return { ok: true, result: 'ok', done: true, qty_picked: qtyToPick, qty_total: qtyToPick };
   });
+
+  if (chargeClientId) {
+    chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'picking', quantity: chargeQty, refType: 'picking_task', refId: taskId });
+  }
+
+  return result;
 }
 
 /** Пропустить задачу (товар не найден) */

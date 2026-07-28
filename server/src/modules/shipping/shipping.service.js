@@ -5,6 +5,7 @@ const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 const wbClient = require('../wb/wb.client');
 const { resolvePrinter } = require('../printing/printerResolver');
+const { chargeForOperation } = require('../billing/billing.service');
 
 // =============================================================================
 // Shipping Service
@@ -95,6 +96,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
   if (!scanned) throw new ValidationError('scanned_code is required');
 
   let shipmentId = null;
+  let chargeClientId = null, chargeQty = 0;
 
   const txResult = await transaction(async (client) => {
     // Находим shipment
@@ -205,6 +207,9 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     );
 
     shipmentId = shipment.id;
+    chargeClientId = shipment.client_id;
+    chargeQty = totalShipped;
+
     return {
       ok: true,
       shipmentId:   shipment.id,
@@ -214,6 +219,12 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
       needsWbDeliver: true,
     };
   });
+
+  // chargeClientId остаётся null для идемпотентной ветки (уже in_transit) —
+  // повторный скан не начисляет клиенту дважды.
+  if (chargeClientId && chargeQty > 0) {
+    chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'shipping', quantity: chargeQty, refType: 'shipment', refId: shipmentId });
+  }
 
   // ВАЖНО: порядок здесь принципиален. WB отдаёт РЕАЛЬНЫЙ QR/штрихкод поставки
   // только когда поставка уже помечена "в доставке" (PATCH .../deliver) — если

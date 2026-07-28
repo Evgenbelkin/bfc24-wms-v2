@@ -352,6 +352,49 @@
     status: ()      => get('/checkin/status'),
   };
 
+  // ─────────────── Billing (биллинг фулфилмента) ───────────────
+
+  const billing = {
+    priceList: {
+      list:   (clientId) => get('/billing/price-list', clientId ? { client_id: clientId } : undefined),
+      upsert: (d)         => post('/billing/price-list', d),
+      delete: (id)        => del(`/billing/price-list/${id}`),
+    },
+    charges: {
+      list: (p) => get('/billing/charges', p),
+      add:  (d) => post('/billing/charges', d),
+    },
+    clientBalance: (clientId) => get(`/billing/clients/${clientId}/balance`),
+    invoices: {
+      list:         (p)      => get('/billing/invoices', p),
+      get:          (id)     => get(`/billing/invoices/${id}`),
+      create:       (d)      => post('/billing/invoices', d),
+      updateStatus: (id, status, notes) => patch(`/billing/invoices/${id}/status`, { status, notes }),
+    },
+  };
+
+  // ─────────────── Consumables (расходные материалы) ───────────────
+
+  const consumables = {
+    list:      (all)   => get('/consumables', all ? { all: 'true' } : undefined),
+    upsert:    (d)      => post('/consumables', d),
+    delete:    (id)     => del(`/consumables/${id}`),
+    adjust:    (id, delta, comment) => post(`/consumables/${id}/adjust`, { delta, comment }),
+    recordUsage:(id, d) => post(`/consumables/${id}/usage`, d),
+    usageHistory:(p)    => get('/consumables/usage', p),
+  };
+
+  // ─────────────── Payroll (сдельная ЗП) ───────────────
+
+  const payroll = {
+    rates: {
+      list:   ()      => get('/payroll/rates'),
+      upsert: (d)      => post('/payroll/rates', d),
+      delete: (id)     => del(`/payroll/rates/${id}`),
+    },
+    report: (dateFrom, dateTo) => get('/payroll/report', { date_from: dateFrom, date_to: dateTo }),
+  };
+
   // ─────────────── Seller ───────────────
 
   const seller = {
@@ -370,6 +413,9 @@
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
     billing:  (p)     => get('/seller/billing', p),
+    billingBalance:  ()   => get('/seller/billing/balance'),
+    billingInvoices: (p)  => get('/seller/billing/invoices', p),
+    billingInvoice:  (id) => get(`/seller/billing/invoices/${id}`),
     wbWarehouses: {
       list:        ()          => get('/seller/wb-warehouses'),
       sync:        ()          => post('/seller/wb-warehouses/sync'),
@@ -441,6 +487,7 @@
     wb, printing, overview,
     workstations,
     checkin,
+    billing, consumables, payroll,
     seller, platform,
   };
 

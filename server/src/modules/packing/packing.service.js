@@ -4,6 +4,7 @@ const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/errors');
 const { validatePositiveInt } = require('../../utils/validators');
 const { resolvePrinter } = require('../printing/printerResolver');
+const { chargeForOperation } = require('../billing/billing.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -303,7 +304,9 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
 
 /** Подтвердить упаковку (завершить задачу) */
 async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, locationCode, comment }) {
-  return transaction(async (client) => {
+  let chargeClientId = null, chargeQty = 0;
+
+  const result = await transaction(async (client) => {
     const shipRes = await client.query(
       `SELECT * FROM wms.shipments WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
       [shipmentId, tenantId]
@@ -383,8 +386,19 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
       [totalPacked, packingLocationId, code, packerId, shipmentId]
     );
 
+    chargeClientId = shipment.client_id;
+    chargeQty = totalPacked;
+
     return { ok: true, shipmentId, status: 'ready_to_ship', totalPlan, totalPacked, packingLocationCode: code };
   });
+
+  // chargeClientId остаётся null, если ветка была идемпотентной (уже ready_to_ship) —
+  // так повторный вызов confirmPacking не начисляет клиенту дважды.
+  if (chargeClientId) {
+    chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'packing', quantity: chargeQty, refType: 'shipment', refId: shipmentId });
+  }
+
+  return result;
 }
 
 module.exports = { getOrTakePackingTask, getPackingTaskDetails, scanItem, confirmPacking };

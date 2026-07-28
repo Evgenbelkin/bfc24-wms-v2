@@ -79,6 +79,8 @@
       shrug:        `<circle cx="12" cy="8" r="3.3"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>`,
       help:         `<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/>`,
       qr:           `<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z"/>`,
+      billing:      `<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>`,
+      wallet:       `<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M16 13h4v4h-4a2 2 0 0 1 0-4z"/>`,
     };
     function icon(name){ return `<svg viewBox="0 0 24 24">${ICONS[name]||''}</svg>`; }
 
@@ -101,6 +103,9 @@
       { href:'manual-order.html',     icon:'edit',      label:'Ручной заказ',    roles:['tenant_admin','supervisor'] },
       { href:'printer-panel.html',    icon:'printer',   label:'Панель принтеров',roles:['tenant_admin','supervisor'] },
       { href:'users.html',            icon:'users',     label:'Пользователи',    roles:['tenant_admin','supervisor'] },
+      { href:'billing.html',          icon:'billing',   label:'Биллинг',         roles:['tenant_admin','supervisor'] },
+      { href:'consumables.html',      icon:'box',       label:'Расходники',      roles:['tenant_admin','supervisor'] },
+      { href:'payroll.html',          icon:'wallet',    label:'Сдельная ЗП',     roles:['tenant_admin','supervisor'] },
       { href:'help.html',             icon:'help',      label:'Инструкция и поддержка', roles:['tenant_admin','supervisor','receiver','picker','packer','shipper','inventory_manager'] },
       { href:'checkin.html',          icon:'qr',        label:'Отметка на складе', roles:['receiver','picker','packer','shipper','inventory_manager'] },
       { href:'checkin-kiosk.html',    icon:'qr',        label:'QR для отметки (экран на входе)', roles:['tenant_admin','supervisor'] },

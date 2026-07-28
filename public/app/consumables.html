@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Расходники — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .c-row{cursor:pointer;}
+    .c-row:active{opacity:.7;}
+    .low-stock{color:var(--red);}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Расходники</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">
+      <div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      Модуль расходных материалов не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="tabs">
+      <button class="tab active" data-tab="stock" onclick="switchTab('stock')">Остатки</button>
+      <button class="tab" data-tab="usage" onclick="switchTab('usage')">Списания</button>
+    </div>
+
+    <!-- ============ Остатки ============ -->
+    <div id="tab-stock">
+      <div class="card">
+        <div class="card-title">Расходники (<span id="c-count">0</span>)</div>
+        <div id="c-list"></div>
+      </div>
+      <button class="btn-big btn-green btn-full" onclick="openConsumableModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый расходник</button>
+    </div>
+
+    <!-- ============ Списания ============ -->
+    <div id="tab-usage" style="display:none">
+      <div class="card">
+        <div class="card-title">Списать расходник</div>
+        <div class="field"><label>Расходник</label><select id="u-consumable"></select></div>
+        <div class="field"><label>Клиент (если списываем в счёт клиенту)</label>
+          <select id="u-client"><option value="">— внутреннее списание —</option></select>
+        </div>
+        <div class="field"><label>Количество</label><input id="u-qty" type="number" step="0.01" value="1"/></div>
+        <div class="field"><label>Комментарий</label><input id="u-comment"/></div>
+        <button class="btn-big btn-blue btn-full" onclick="recordUsage()">Списать</button>
+      </div>
+      <div class="card">
+        <div class="card-title">История списаний</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Когда</th><th>Расходник</th><th>Кол-во</th><th>Клиент</th><th>Кто</th></tr></thead>
+            <tbody id="u-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin','packer','shipper'])) {
+      window.location.href = '/app/menu.html';
+    }
+    const user = window.API.getUser();
+    const canManage = user?.role === 'tenant_admin' || user?.role === 'supervisor';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('content').style.display = 'none';
+    }
+
+    function switchTab(name) {
+      ['stock','usage'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name==='stock') loadConsumables();
+      if (name==='usage') { loadConsumableSelect(); loadClientSelect(); loadUsageHistory(); }
+    }
+
+    let consumableCache = [];
+
+    async function loadConsumables() {
+      try {
+        const res = await window.API.consumables.list();
+        consumableCache = res.rows || [];
+        document.getElementById('c-count').textContent = consumableCache.length;
+        const list = document.getElementById('c-list');
+        if (!consumableCache.length) { list.innerHTML = `<div class="empty-state">Расходников нет</div>`; return; }
+        list.innerHTML = consumableCache.map((c, idx) => {
+          const low = c.low_stock_threshold != null && Number(c.qty_on_hand) <= Number(c.low_stock_threshold);
+          return `
+          <div class="list-row c-row" onclick="openConsumableModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(c.name)}</div>
+              <div class="sub">${c.client_unit_price != null ? `клиенту: ${Number(c.client_unit_price).toFixed(2)} ₽/${c.unit}` : 'только учёт остатка'}</div>
+            </div>
+            <div class="badge"><span>Остаток</span><div class="${low?'low-stock':''}">${Number(c.qty_on_hand).toFixed(c.qty_on_hand % 1 ? 2 : 0)} ${UI.escHtml(c.unit)}</div></div>
+          </div>
+        `; }).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function openConsumableModal(idx) {
+      const c = idx !== null ? consumableCache[idx] : null;
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${c ? UI.escHtml(c.name) : 'Новый расходник'}</div>
+            <div class="field"><label>Название</label><input id="m-name" value="${c?UI.escHtml(c.name):''}"/></div>
+            <div class="field"><label>Единица</label><input id="m-unit" value="${c?UI.escHtml(c.unit):'шт'}"/></div>
+            <div class="field"><label>Порог низкого остатка (необязательно)</label><input id="m-threshold" type="number" step="0.01" value="${c&&c.low_stock_threshold!=null?c.low_stock_threshold:''}"/></div>
+            <div class="field"><label>Себестоимость, ₽ (необязательно)</label><input id="m-cost" type="number" step="0.01" value="${c&&c.cost_price!=null?c.cost_price:''}"/></div>
+            <div class="field"><label>Цена клиенту за единицу, ₽ (пусто = не выставляем клиенту)</label><input id="m-client-price" type="number" step="0.01" value="${c&&c.client_unit_price!=null?c.client_unit_price:''}"/></div>
+            ${c ? `<div class="field"><label>Корректировка остатка (+/-)</label><div style="display:flex;gap:8px;"><input id="m-delta" type="number" step="0.01" value="0" style="flex:1;"/><button class="btn-sm btn-blue" onclick="adjustStock(${c.id})">Применить</button></div></div>` : ''}
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="saveConsumable(${idx})">Сохранить</button>
+              ${c ? `<button class="btn-big btn-red" onclick="deleteConsumable(${c.id})">Деактивировать</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveConsumable(idx) {
+      const c = idx !== null ? consumableCache[idx] : null;
+      try {
+        await window.API.consumables.upsert({
+          id: c ? c.id : undefined,
+          name: UI.val('#m-name'),
+          unit: UI.val('#m-unit') || 'шт',
+          low_stock_threshold: UI.val('#m-threshold') ? Number(UI.val('#m-threshold')) : null,
+          cost_price: UI.val('#m-cost') ? Number(UI.val('#m-cost')) : null,
+          client_unit_price: UI.val('#m-client-price') ? Number(UI.val('#m-client-price')) : null,
+        });
+        UI.notify.ok('Сохранено');
+        closeModal();
+        await loadConsumables();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deleteConsumable(id) {
+      try {
+        await window.API.consumables.delete(id);
+        UI.notify.ok('Деактивирован');
+        closeModal();
+        await loadConsumables();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function adjustStock(id) {
+      const delta = Number(UI.val('#m-delta'));
+      if (!delta) { UI.notify.err('Укажите изменение остатка'); return; }
+      try {
+        await window.API.consumables.adjust(id, delta);
+        UI.notify.ok('Остаток скорректирован');
+        closeModal();
+        await loadConsumables();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadConsumableSelect() {
+      try {
+        const res = await window.API.consumables.list();
+        consumableCache = res.rows || [];
+        const sel = document.getElementById('u-consumable');
+        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${c.qty_on_hand} ${UI.escHtml(c.unit)})</option>`).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); }
+      }
+    }
+
+    async function loadClientSelect() {
+      try {
+        const res = await window.API.clients.short();
+        const sel = document.getElementById('u-client');
+        sel.innerHTML = '<option value="">— внутреннее списание —</option>' +
+          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+      } catch (e) { /* ignore */ }
+    }
+
+    async function recordUsage() {
+      const consumableId = Number(UI.val('#u-consumable'));
+      if (!consumableId) { UI.notify.err('Выберите расходник'); return; }
+      const clientId = UI.val('#u-client') ? Number(UI.val('#u-client')) : null;
+      const qty = Number(UI.val('#u-qty'));
+      if (!qty || qty <= 0) { UI.notify.err('Укажите количество'); return; }
+      try {
+        const res = await window.API.consumables.recordUsage(consumableId, {
+          client_id: clientId, qty, ref_type: 'manual', comment: UI.val('#u-comment'),
+        });
+        UI.notify.ok(res.chargeId ? 'Списано, клиенту начислено' : 'Списано');
+        document.getElementById('u-qty').value = 1;
+        document.getElementById('u-comment').value = '';
+        await loadConsumableSelect();
+        await loadUsageHistory();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadUsageHistory() {
+      try {
+        const res = await window.API.consumables.usageHistory({ limit: 200 });
+        const rows = res.rows || [];
+        document.getElementById('u-body').innerHTML = rows.length ? rows.map(r => `
+          <tr>
+            <td>${new Date(r.created_at).toLocaleString('ru-RU')}</td>
+            <td>${UI.escHtml(r.consumable_name)}</td>
+            <td>${r.qty} ${UI.escHtml(r.unit)}</td>
+            <td>${r.client_name ? UI.escHtml(r.client_name) : '—'}</td>
+            <td>${r.user_name ? UI.escHtml(r.user_name) : '—'}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="5">Списаний нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); }
+      }
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    // Не-админам (packer/shipper) сразу открываем вкладку списаний — им не нужен
+    // раздел управления остатками/ценами.
+    if (canManage) { loadConsumables(); }
+    else { switchTab('usage'); document.querySelector('.tab[data-tab="stock"]').style.display = 'none'; }
+  </script>
+</body>
+</html>

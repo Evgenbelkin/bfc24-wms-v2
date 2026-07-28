@@ -7,6 +7,7 @@ const {
   InsufficientStockError,
 } = require('../../utils/errors');
 const { validateBarcode, validateQty } = require('../../utils/validators');
+const { chargeForOperation } = require('../billing/billing.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -88,7 +89,7 @@ async function placeStock({ tenantId, warehouseId, clientId, barcode, fromLocati
   const b = validateBarcode(barcode);
   const q = validateQty(qty, 'qty');
 
-  return transaction(async (client) => {
+  const result = await transaction(async (client) => {
     // 1. Резолвим from-ячейку
     const fromRes = await client.query(
       `SELECT id, location_code, location_type FROM wms.locations
@@ -170,12 +171,16 @@ async function placeStock({ tenantId, warehouseId, clientId, barcode, fromLocati
       toLocationId:   toLoc.id,   toLocationCode:   toLoc.location_code,
     };
   });
+
+  chargeForOperation({ tenantId, clientId, serviceType: 'placement', quantity: q, refType: 'placement', refId: result.itemId });
+
+  return result;
 }
 
 async function placeBatch({ tenantId, warehouseId, clientId, lines, userId }) {
   if (!lines || !lines.length) throw new ValidationError('lines array is required');
 
-  return transaction(async (client) => {
+  const result = await transaction(async (client) => {
     const results = [];
 
     for (const line of lines) {
@@ -246,6 +251,11 @@ async function placeBatch({ tenantId, warehouseId, clientId, lines, userId }) {
 
     return { placed: results.length, results };
   });
+
+  const totalQty = result.results.reduce((s, r) => s + Number(r.qty), 0);
+  chargeForOperation({ tenantId, clientId, serviceType: 'placement', quantity: totalQty, refType: 'placement_batch', refId: null });
+
+  return result;
 }
 
 async function listPlacementHistory({ tenantId, clientId = null, warehouseId = null, barcode = null, dateFrom = null, dateTo = null, limit = 200, offset = 0 }) {

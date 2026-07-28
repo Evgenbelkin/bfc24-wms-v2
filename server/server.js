@@ -7,6 +7,7 @@ const config = require('./src/config');
 const { testConnection, pool } = require('./src/config/database');
 const logger = require('./src/utils/logger');
 const wbAutoSync = require('./src/jobs/wbAutoSync');
+const storageBilling = require('./src/jobs/storageBilling');
 
 // =============================================================================
 // Server entry point с graceful shutdown
@@ -45,6 +46,7 @@ async function start() {
   });
 
   wbAutoSync.start();
+  storageBilling.start();
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +55,7 @@ async function start() {
 async function shutdown(signal) {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
   wbAutoSync.stop();
+  storageBilling.stop();
 
   if (server) {
     server.close(async () => {

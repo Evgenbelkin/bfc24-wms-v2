@@ -9,6 +9,7 @@ const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { chargeForOperation } = require('../billing/billing.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -54,6 +55,10 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
   // узнать не мог. Fire-and-forget (см. wb.service.js) - приёмщик не должен
   // ждать похода в WB API.
   triggerRedistributionForClient({ tenantId, clientId });
+
+  // Начисление клиенту за приёмку (silent no-op, если для клиента не настроен
+  // прайс на 'receiving' — см. billing.service.js:chargeForOperation).
+  chargeForOperation({ tenantId, clientId, serviceType: 'receiving', quantity: q, refType: 'receiving', refId: receiveResult.itemId });
 
   return receiveResult;
 }
@@ -173,6 +178,8 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
   });
 
   triggerRedistributionForClient({ tenantId, clientId });
+
+  chargeForOperation({ tenantId, clientId, serviceType: 'receiving', quantity: q, refType: 'inbound', refId: receiveResult.orderId });
 
   return receiveResult;
 }

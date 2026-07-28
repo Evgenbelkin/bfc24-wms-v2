@@ -348,6 +348,55 @@ async function updateInvoiceStatus({ tenantId, invoiceId, status, notes }) {
   return r.rows[0];
 }
 
+// ─────────────── Storage (ежедневное начисление за хранение) ───────────────
+
+/**
+ * Клиенты с активным прайсом на 'storage' у тенантов с включённым модулем billing —
+ * используется фоновой джобой (jobs/storageBilling.js), которая обходит их раз в сутки.
+ */
+async function listClientsWithActiveStoragePrice() {
+  const r = await query(
+    `SELECT DISTINCT pl.tenant_id, pl.client_id
+     FROM billing.client_price_list pl
+     JOIN platform.tenant_modules tm ON tm.tenant_id = pl.tenant_id AND tm.module_code = 'billing'
+     WHERE pl.service_type = 'storage' AND pl.is_active = TRUE
+       AND pl.valid_from <= CURRENT_DATE
+       AND (pl.valid_to IS NULL OR pl.valid_to >= CURRENT_DATE)`
+  );
+  return r.rows;
+}
+
+/**
+ * Начислить клиенту за хранение сегодняшним днём: количество = число занятых
+ * грузомест (уникальных ячеек с положительным остатком). Идемпотентно — если
+ * начисление за 'storage' на сегодня уже есть, повторно не создаёт (защита от
+ * повторного/задвоенного запуска джобы в один день).
+ */
+async function chargeStorageForClientToday({ tenantId, clientId }) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const existing = await query(
+    `SELECT 1 FROM billing.service_charges
+     WHERE tenant_id=$1 AND client_id=$2 AND service_type='storage' AND period_date=$3::date LIMIT 1`,
+    [tenantId, clientId, today]
+  );
+  if (existing.rowCount > 0) return null; // уже начислено сегодня
+
+  const slotsRes = await query(
+    `SELECT COUNT(DISTINCT location_id)::int AS slots
+     FROM wms.stock_balances
+     WHERE tenant_id=$1 AND client_id=$2 AND qty_on_hand > 0`,
+    [tenantId, clientId]
+  );
+  const slots = slotsRes.rows[0].slots;
+  if (slots === 0) return null; // нечего хранить — не начисляем
+
+  return chargeForOperation({
+    tenantId, clientId, serviceType: 'storage',
+    quantity: slots, refType: 'storage_daily', refId: null, periodDate: today,
+  });
+}
+
 // ─────────────── Summary ───────────────
 
 async function getClientBalance({ tenantId, clientId }) {
@@ -377,4 +426,6 @@ module.exports = {
   createInvoice,
   updateInvoiceStatus,
   getClientBalance,
+  listClientsWithActiveStoragePrice,
+  chargeStorageForClientToday,
 };

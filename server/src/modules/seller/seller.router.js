@@ -7,10 +7,11 @@ const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireSellerRole, requireRole } = require('../../middleware/requireRole');
 const { requireModule } = require('../../middleware/tenant');
-const { ValidationError } = require('../../utils/errors');
+const { ValidationError, ForbiddenError } = require('../../utils/errors');
 const inboundSvc = require('../inbound/inbound.service');
 const stockSvc = require('../stock/stock.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const billingSvc = require('../billing/billing.service');
 
 // =============================================================================
 // Seller Cabinet Router
@@ -350,6 +351,39 @@ router.get('/billing', requireModule('billing'), async (req,res,next)=>{
     );
     const total = r.rows.reduce((s,row)=>s+Number(row.total_amount||0), 0);
     res.json({ ok:true, charges:r.rows, total_amount:total });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/billing/balance — сколько должен клиент (неоплаченное/выставленное/оплаченное) */
+router.get('/billing/balance', requireModule('billing'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const balance = await billingSvc.getClientBalance({ tenantId: req.user.tenantId, clientId });
+    res.json({ ok:true, balance });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/billing/invoices — счета клиента (только просмотр — статус меняет только фулфилмент) */
+router.get('/billing/invoices', requireModule('billing'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const result = await billingSvc.listInvoices({
+      tenantId: req.user.tenantId, clientId,
+      status: req.query.status || null,
+      limit: Number(req.query.limit) || 100,
+      offset: Number(req.query.offset) || 0,
+    });
+    res.json({ ok:true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/billing/invoices/:id — детали счёта (позиции начислений) */
+router.get('/billing/invoices/:id', requireModule('billing'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const result = await billingSvc.getInvoice({ tenantId: req.user.tenantId, invoiceId: Number(req.params.id) });
+    if (Number(result.invoice.client_id) !== Number(clientId)) throw new ForbiddenError('Invoice does not belong to this client');
+    res.json({ ok:true, ...result });
   } catch(e){ next(e); }
 });
 

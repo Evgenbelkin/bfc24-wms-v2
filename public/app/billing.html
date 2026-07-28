@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Биллинг — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .price-row, .inv-row, .charge-row{cursor:pointer;}
+    .price-row:active, .inv-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .balance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .balance-cell{background:var(--card2);border-radius:10px;padding:12px;text-align:center;}
+    .balance-cell .num{font-size:20px;font-weight:700;}
+    .balance-cell .lbl{font-size:12px;color:var(--muted2);margin-top:2px;}
+    .status-pill{font-size:11px;padding:3px 8px;border-radius:20px;background:var(--card2);}
+    .status-draft{color:var(--muted2);}
+    .status-sent{color:var(--yellow);}
+    .status-paid{color:var(--green);}
+    .status-cancelled{color:var(--red);text-decoration:line-through;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Биллинг</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">
+      <div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      Модуль биллинга не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
+    </div>
+  </div>
+
+  <div id="billing-content">
+    <div class="card">
+      <div class="card-title">Клиент</div>
+      <select id="f-client" onchange="onClientChange()"><option value="">Загрузка...</option></select>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="balance"  onclick="switchTab('balance')">Баланс</button>
+      <button class="tab" data-tab="pricelist" onclick="switchTab('pricelist')">Прайс-лист</button>
+      <button class="tab" data-tab="charges"   onclick="switchTab('charges')">Начисления</button>
+      <button class="tab" data-tab="invoices"  onclick="switchTab('invoices')">Счета</button>
+    </div>
+
+    <!-- ============ Баланс ============ -->
+    <div id="tab-balance">
+      <div class="card">
+        <div class="card-title">Баланс клиента</div>
+        <div id="balance-box" class="balance-grid"></div>
+      </div>
+    </div>
+
+    <!-- ============ Прайс-лист ============ -->
+    <div id="tab-pricelist" style="display:none">
+      <div class="card">
+        <div class="card-title">Прайс-лист (<span id="price-count">0</span>)</div>
+        <div id="price-list"></div>
+      </div>
+      <button class="btn-big btn-green btn-full" onclick="openPriceModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая позиция</button>
+    </div>
+
+    <!-- ============ Начисления ============ -->
+    <div id="tab-charges" style="display:none">
+      <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-row">
+          <input id="ch-from" type="date"/>
+          <input id="ch-to" type="date"/>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadCharges()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Начисления (<span id="charge-count">0</span>) — итого <span id="charge-total">0</span> ₽</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th>Счёт</th></tr></thead>
+            <tbody id="charge-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <button class="btn-sm btn-back btn-full" onclick="openManualChargeModal()">+ Ручное начисление</button>
+    </div>
+
+    <!-- ============ Счета ============ -->
+    <div id="tab-invoices" style="display:none">
+      <div class="card">
+        <div class="card-title">Создать счёт за период</div>
+        <div class="filters-row">
+          <input id="inv-from" type="date"/>
+          <input id="inv-to" type="date"/>
+        </div>
+        <button class="btn-big btn-green btn-full" onclick="createInvoice()">Создать счёт из неоплаченных начислений</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Счета (<span id="inv-count">0</span>)</div>
+        <div id="inv-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+    const user = window.API.getUser();
+    const canEdit = user?.role === 'tenant_admin';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('billing-content').style.display = 'none';
+    }
+
+    function switchTab(name) {
+      ['balance','pricelist','charges','invoices'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name==='balance') loadBalance();
+      if (name==='pricelist') loadPriceList();
+      if (name==='charges') loadCharges();
+      if (name==='invoices') loadInvoices();
+    }
+
+    let clients = [];
+    let priceCache = [], chargeCache = [], invoiceCache = [];
+
+    function currentClientId() { return Number(UI.val('#f-client')) || null; }
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        clients = res.clients || [];
+        const sel = document.getElementById('f-client');
+        sel.innerHTML = clients.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        if (clients.length) { loadBalance(); }
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function onClientChange() { switchTab(document.querySelector('.tab.active').dataset.tab); }
+
+    async function loadBalance() {
+      const clientId = currentClientId();
+      const box = document.getElementById('balance-box');
+      if (!clientId) { box.innerHTML = ''; return; }
+      try {
+        const res = await window.API.billing.clientBalance(clientId);
+        const b = res.balance || {};
+        box.innerHTML = `
+          <div class="balance-cell"><div class="num">${Number(b.uninvoiced_total||0).toFixed(2)} ₽</div><div class="lbl">Не выставлено (${b.uninvoiced_count||0})</div></div>
+          <div class="balance-cell"><div class="num" style="color:var(--yellow)">${Number(b.invoiced_unpaid||0).toFixed(2)} ₽</div><div class="lbl">Выставлено, не оплачено</div></div>
+          <div class="balance-cell"><div class="num" style="color:var(--green)">${Number(b.total_paid||0).toFixed(2)} ₽</div><div class="lbl">Оплачено</div></div>
+        `;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    // 'materials' — тип начислений за расходники (см. consumables.html), в прайс-лист
+    // его не добавляем: цена там задаётся прямо на карточке расходника, а не здесь
+    // (иначе upsertPrice на бэке отклонит — 'materials' не входит в VALID_TYPES прайса).
+    const SERVICE_TYPES = [
+      ['receiving','Приёмка'], ['storage','Хранение'], ['placement','Размещение'],
+      ['picking','Сборка'], ['packing','Упаковка'], ['shipping','Отгрузка'],
+      ['processing','Обработка'], ['returns','Возврат'], ['subscription','Подписка'],
+    ];
+    const ALL_SERVICE_TYPES = [...SERVICE_TYPES, ['materials','Расходники']];
+    function serviceLabel(t) { const f = ALL_SERVICE_TYPES.find(x=>x[0]===t); return f ? f[1] : t; }
+
+    async function loadPriceList() {
+      const clientId = currentClientId();
+      const list = document.getElementById('price-list');
+      if (!clientId) { list.innerHTML = ''; document.getElementById('price-count').textContent = 0; return; }
+      try {
+        const res = await window.API.billing.priceList.list(clientId);
+        priceCache = res.rows || [];
+        document.getElementById('price-count').textContent = priceCache.length;
+        if (!priceCache.length) { list.innerHTML = `<div class="empty-state">Прайс не настроен</div>`; return; }
+        list.innerHTML = priceCache.map((p, idx) => `
+          <div class="list-row price-row" onclick="openPriceModal(${idx})">
+            <div class="main">
+              <div class="title">${serviceLabel(p.service_type)}</div>
+              <div class="sub">${UI.escHtml(p.description||'')} ${p.min_charge ? `· мин. ${p.min_charge} ₽` : ''}</div>
+            </div>
+            <div class="badge"><span>Цена</span><div>${Number(p.unit_price).toFixed(2)} ₽</div></div>
+          </div>
+        `).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function openPriceModal(idx) {
+      const p = idx !== null ? priceCache[idx] : null;
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${p ? serviceLabel(p.service_type) : 'Новая позиция прайса'}</div>
+            <div class="field"><label>Тип услуги</label>
+              <select id="m-type" ${p?'disabled':''}>${SERVICE_TYPES.map(([v,l])=>`<option value="${v}" ${p&&p.service_type===v?'selected':''}>${l}</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Описание</label><input id="m-desc" value="${p?UI.escHtml(p.description||''):''}"/></div>
+            <div class="field"><label>Цена за единицу, ₽</label><input id="m-price" type="number" step="0.01" value="${p?p.unit_price:''}"/></div>
+            <div class="field"><label>Минимальная сумма, ₽ (необязательно)</label><input id="m-min" type="number" step="0.01" value="${p&&p.min_charge?p.min_charge:''}"/></div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="savePrice(${idx})">Сохранить</button>
+              ${p ? `<button class="btn-big btn-red" onclick="deletePrice(${p.id})">Удалить</button>` : ''}
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function savePrice(idx) {
+      const clientId = currentClientId();
+      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+      const p = idx !== null ? priceCache[idx] : null;
+      try {
+        await window.API.billing.priceList.upsert({
+          client_id: clientId,
+          service_type: p ? p.service_type : UI.val('#m-type'),
+          description: UI.val('#m-desc'),
+          unit_price: Number(UI.val('#m-price')) || 0,
+          min_charge: UI.val('#m-min') ? Number(UI.val('#m-min')) : null,
+        });
+        UI.notify.ok('Сохранено');
+        closeModal();
+        await loadPriceList();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deletePrice(id) {
+      try {
+        await window.API.billing.priceList.delete(id);
+        UI.notify.ok('Удалено');
+        closeModal();
+        await loadPriceList();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadCharges() {
+      const clientId = currentClientId();
+      const body = document.getElementById('charge-body');
+      if (!clientId) { body.innerHTML = ''; return; }
+      try {
+        const params = { client_id: clientId, limit: 300 };
+        const from = UI.val('#ch-from'); if (from) params.date_from = from;
+        const to = UI.val('#ch-to'); if (to) params.date_to = to;
+        const res = await window.API.billing.charges.list(params);
+        chargeCache = res.charges || [];
+        document.getElementById('charge-count').textContent = res.total || chargeCache.length;
+        const total = chargeCache.reduce((s,c)=>s+Number(c.total_amount||0), 0);
+        document.getElementById('charge-total').textContent = total.toFixed(2);
+        if (!chargeCache.length) { body.innerHTML = `<tr><td colspan="6">Начислений нет</td></tr>`; return; }
+        body.innerHTML = chargeCache.map(c => `
+          <tr>
+            <td>${c.period_date}</td>
+            <td>${serviceLabel(c.service_type)}${c.description?' · '+UI.escHtml(c.description):''}</td>
+            <td>${c.quantity}</td>
+            <td>${Number(c.unit_price).toFixed(2)}</td>
+            <td>${Number(c.total_amount).toFixed(2)}</td>
+            <td>${c.is_invoiced ? '✓' : '—'}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function openManualChargeModal() {
+      const clientId = currentClientId();
+      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Ручное начисление</div>
+            <div class="field"><label>Тип услуги</label>
+              <select id="mc-type">${ALL_SERVICE_TYPES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
+            </div>
+            <div class="field"><label>Описание</label><input id="mc-desc"/></div>
+            <div class="field"><label>Количество</label><input id="mc-qty" type="number" step="0.01" value="1"/></div>
+            <div class="field"><label>Цена за единицу, ₽</label><input id="mc-price" type="number" step="0.01" value="0"/></div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="saveManualCharge()">Начислить</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function saveManualCharge() {
+      const clientId = currentClientId();
+      try {
+        await window.API.billing.charges.add({
+          client_id: clientId,
+          service_type: UI.val('#mc-type'),
+          description: UI.val('#mc-desc'),
+          quantity: Number(UI.val('#mc-qty')) || 1,
+          unit_price: Number(UI.val('#mc-price')) || 0,
+        });
+        UI.notify.ok('Начислено');
+        closeModal();
+        await loadCharges();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadInvoices() {
+      const clientId = currentClientId();
+      const list = document.getElementById('inv-list');
+      if (!clientId) { list.innerHTML = ''; return; }
+      try {
+        const res = await window.API.billing.invoices.list({ client_id: clientId, limit: 100 });
+        invoiceCache = res.invoices || [];
+        document.getElementById('inv-count').textContent = res.total || invoiceCache.length;
+        if (!invoiceCache.length) { list.innerHTML = `<div class="empty-state">Счетов нет</div>`; return; }
+        list.innerHTML = invoiceCache.map((inv, idx) => `
+          <div class="list-row inv-row" onclick="openInvoiceModal(${idx})">
+            <div class="main">
+              <div class="title">${UI.escHtml(inv.invoice_number)}</div>
+              <div class="sub">${inv.period_from} — ${inv.period_to} · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
+            </div>
+            <div class="badge"><span>Сумма</span><div>${Number(inv.total_amount).toFixed(2)} ₽</div></div>
+          </div>
+        `).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function createInvoice() {
+      const clientId = currentClientId();
+      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+      const from = UI.val('#inv-from'), to = UI.val('#inv-to');
+      if (!from || !to) { UI.notify.err('Укажите период'); return; }
+      try {
+        const res = await window.API.billing.invoices.create({ client_id: clientId, period_from: from, period_to: to });
+        UI.notify.ok(`Счёт ${res.invoice.invoice_number} создан на ${res.total_amount} ₽`);
+        await loadInvoices();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function openInvoiceModal(idx) {
+      const inv = invoiceCache[idx];
+      let detail;
+      try { detail = await window.API.billing.invoices.get(inv.id); } catch (e) { UI.notify.err(e.message); return; }
+      const rows = detail.charges.map(c => `<tr><td>${c.period_date}</td><td>${serviceLabel(c.service_type)}</td><td>${c.quantity}</td><td>${Number(c.total_amount).toFixed(2)}</td></tr>`).join('');
+      const statusButtons = canEdit ? `
+        <div class="btn-row">
+          ${inv.status==='draft' ? `<button class="btn-big btn-blue" onclick="setInvoiceStatus(${inv.id},'sent')">Выставить</button>` : ''}
+          ${inv.status!=='paid'&&inv.status!=='cancelled' ? `<button class="btn-big btn-green" onclick="setInvoiceStatus(${inv.id},'paid')">Оплачен</button>` : ''}
+          ${inv.status!=='paid'&&inv.status!=='cancelled' ? `<button class="btn-big btn-red" onclick="setInvoiceStatus(${inv.id},'cancelled')">Отменить</button>` : ''}
+        </div>` : '';
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${UI.escHtml(inv.invoice_number)} — ${Number(inv.total_amount).toFixed(2)} ₽</div>
+            <div class="table-wrap">
+              <table><thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Сумма</th></tr></thead><tbody>${rows}</tbody></table>
+            </div>
+            ${statusButtons}
+            <button class="btn-big btn-yellow btn-full" onclick="closeModal()">Закрыть</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function setInvoiceStatus(id, status) {
+      try {
+        await window.API.billing.invoices.updateStatus(id, status);
+        UI.notify.ok('Статус обновлён');
+        closeModal();
+        await loadInvoices();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    loadClients();
+  </script>
+</body>
+</html>
