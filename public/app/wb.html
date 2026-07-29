@@ -260,7 +260,7 @@
         UI.notify.info('Импортируем карточки из WB, это может занять время...');
         const res = await window.API.wb.importItems({ account_id: accountId });
         document.getElementById('import-result').innerHTML = `
-          <div class="result-box">Получено карточек: <strong>${res.fetched_cards}</strong> · сохранено товаров: <strong>${res.saved_items}</strong> · штрихкодов: <strong>${res.saved_barcodes}</strong></div>
+          <div class="result-box">Получено карточек: <strong>${res.fetched_cards}</strong> · сохранено товаров: <strong>${res.saved_items}</strong> · штрихкодов: <strong>${res.saved_barcodes}</strong> · заполнен объём у: <strong>${res.filled_volume||0}</strong></div>
         `;
         UI.notify.ok('Импорт завершён');
         catOffset = 0;

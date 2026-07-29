@@ -86,10 +86,26 @@ router.post('/import-items', requireRole('tenant_admin','supervisor'), async (re
     const acc = await getMpAccount(req.user.tenantId, accountId);
     const cards = await wbClient.fetchItems(acc.api_token, { limit: 100, maxPages: 50 });
 
-    let savedItems = 0; let savedBarcodes = 0;
+    let savedItems = 0; let savedBarcodes = 0; let filledVolume = 0;
     await transaction(async (client) => {
       for (const card of cards) {
         const previewUrl = card.mediaFiles?.[0] || card.photos?.[0]?.big || null;
+
+        // Габариты и объём приходят из карточки WB (это те же данные, по которым
+        // сам ВБ считает платное хранение) — берём length/width/height (см) и
+        // weightBrutto (кг), считаем литраж как Д×Ш×В/1000. Заполняются одним
+        // блоком на всю карточку (у ВБ это габариты упаковки товара, они общие
+        // для всех размеров карточки), поэтому распространяются на каждый barcode
+        // этой карточки ниже.
+        const dim = card.dimensions || {};
+        const lengthCm = Number(dim.length) || null;
+        const widthCm  = Number(dim.width)  || null;
+        const heightCm = Number(dim.height) || null;
+        const volumeLiters = (lengthCm && widthCm && heightCm)
+          ? Number(((lengthCm * widthCm * heightCm) / 1000).toFixed(4))
+          : null;
+        const weightGrams = dim.weightBrutto ? Math.round(Number(dim.weightBrutto) * 1000) : null;
+
         await client.query(
           `INSERT INTO wms.wb_items(tenant_id,mp_account_id,nm_id,imt_id,vendor_code,brand,title,preview_url)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8)
@@ -111,22 +127,42 @@ router.post('/import-items', requireRole('tenant_admin','supervisor'), async (re
 
           // Синхронизируем в masterdata.items
           const item = await client.query(
-            `SELECT id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+            `SELECT id, volume_liters FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
             [req.user.tenantId, acc.client_id, b.barcode]
           );
           if (item.rowCount === 0 && card.title) {
             await client.query(
-              `INSERT INTO wms.items(tenant_id,client_id,barcode,item_name,vendor_code,brand,unit,source,wb_nm_id,preview_url)
-               VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8) ON CONFLICT DO NOTHING`,
+              `INSERT INTO wms.items(tenant_id,client_id,barcode,item_name,vendor_code,brand,unit,source,wb_nm_id,preview_url,
+                                      length_cm,width_cm,height_cm,volume_liters,weight_grams)
+               VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
               [req.user.tenantId, acc.client_id, b.barcode,
-               card.title, card.vendorCode||null, card.brand||null, card.nmID, previewUrl]
+               card.title, card.vendorCode||null, card.brand||null, card.nmID, previewUrl,
+               lengthCm, widthCm, heightCm, volumeLiters, weightGrams]
             );
+            if (volumeLiters) filledVolume++;
+          } else if (item.rowCount > 0 && item.rows[0].volume_liters == null && volumeLiters) {
+            // Товар уже был в справочнике, но объём никто не заполнил (ни вручную,
+            // ни при более раннем импорте) — подтягиваем из ВБ. Если объём УЖЕ
+            // стоит (в т.ч. вписанный вручную клиентом/складом) — не трогаем его,
+            // чтобы не затереть уточнённое значение данными из карточки ВБ.
+            await client.query(
+              `UPDATE wms.items SET
+                 length_cm = COALESCE(length_cm, $1),
+                 width_cm  = COALESCE(width_cm, $2),
+                 height_cm = COALESCE(height_cm, $3),
+                 volume_liters = $4,
+                 weight_grams = COALESCE(weight_grams, $5),
+                 updated_at = NOW()
+               WHERE id=$6`,
+              [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, item.rows[0].id]
+            );
+            filledVolume++;
           }
         }
       }
     });
 
-    res.json({ ok: true, fetched_cards: cards.length, saved_items: savedItems, saved_barcodes: savedBarcodes });
+    res.json({ ok: true, fetched_cards: cards.length, saved_items: savedItems, saved_barcodes: savedBarcodes, filled_volume: filledVolume });
   } catch(e){ next(e); }
 });
 
