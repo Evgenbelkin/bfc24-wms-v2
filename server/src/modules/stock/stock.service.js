@@ -35,11 +35,20 @@ async function listStockBalances({
   );
   const total = countRes.rows[0].total;
 
-  // total_cost_value считается по ВСЕЙ выборке (без учёта limit/offset страницы) -
-  // отдельным агрегатом, иначе "итого" на экране будет только по текущей странице
-  // и будет вводить в заблуждение при пагинации.
+  // Агрегаты считаются по ВСЕЙ выборке (без учёта limit/offset страницы) —
+  // иначе "итого" на экране было бы только по текущей странице и вводило бы
+  // в заблуждение при пагинации. total_volume — сумма (остаток × объём товара
+  // в литрах); нужно, чтобы понимать, сколько места реально занято на складе
+  // (задел на будущее: сравнивать с объёмом ячеек и считать свободные места).
+  // У товаров без указанного объёма (volume_liters IS NULL) вклад в сумму — 0,
+  // а не придуманное число, поэтому total_volume — это "минимум, который точно
+  // знаем", а не гарантированно полный объём склада.
   const sumRes = await query(
-    `SELECT SUM(sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS total_cost_value
+    `SELECT
+       SUM(sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS total_cost_value,
+       SUM(sb.qty_on_hand)::numeric AS total_qty,
+       SUM(sb.qty_on_hand * COALESCE(i.volume_liters, 0))::numeric AS total_volume,
+       COUNT(*) FILTER (WHERE i.volume_liters IS NULL)::int AS items_without_volume
      FROM wms.stock_balances sb
      LEFT JOIN wms.locations l ON l.id = sb.location_id
      LEFT JOIN wms.items i ON i.id = sb.item_id
@@ -47,6 +56,9 @@ async function listStockBalances({
     params.slice(0, idx - 1)
   );
   const totalCostValue = Number(sumRes.rows[0].total_cost_value || 0);
+  const totalQty = Number(sumRes.rows[0].total_qty || 0);
+  const totalVolume = Number(sumRes.rows[0].total_volume || 0);
+  const itemsWithoutVolume = Number(sumRes.rows[0].items_without_volume || 0);
 
   params.push(Math.min(limit, 2000), Math.max(offset, 0));
   const res = await query(
@@ -69,7 +81,7 @@ async function listStockBalances({
      LIMIT $${idx++} OFFSET $${idx}`,
     params
   );
-  return { stock: res.rows, total, totalCostValue, limit, offset };
+  return { stock: res.rows, total, totalCostValue, totalQty, totalVolume, itemsWithoutVolume, limit, offset };
 }
 
 /**

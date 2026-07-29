@@ -52,12 +52,20 @@
     <div class="card">
       <div class="card-title">Остатки (<span id="stock-count">0</span> из <span id="stock-total">0</span>)</div>
       <div class="total-row" style="font-size:14px;color:var(--text);margin-bottom:6px;">
+        <span>Всего товара на складе (шт, по текущему фильтру)</span>
+        <strong id="stock-qty-value">—</strong>
+      </div>
+      <div class="total-row" style="font-size:14px;color:var(--text);margin-bottom:6px;">
+        <span>Общий объём товара на складе</span>
+        <strong id="stock-volume-value">—</strong>
+      </div>
+      <div class="total-row" style="font-size:14px;color:var(--text);margin-bottom:6px;">
         <span>Стоимость товара на складе (по себестоимости, указанной клиентами)</span>
         <strong id="stock-cost-value">—</strong>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Стоимость</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Объём</th><th>Стоимость</th></tr></thead>
           <tbody id="stock-body"></tbody>
         </table>
       </div>
@@ -164,6 +172,11 @@
         document.getElementById('stock-cost-value').textContent = res.totalCostValue > 0
           ? Number(res.totalCostValue).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'
           : '— (клиенты ещё не указали себестоимость)';
+        document.getElementById('stock-qty-value').textContent = Number(res.totalQty || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' шт';
+        document.getElementById('stock-volume-value').textContent = res.totalVolume > 0
+          ? Number(res.totalVolume).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' л'
+            + (res.itemsWithoutVolume > 0 ? ` (без объёма: ${res.itemsWithoutVolume} SKU, не учтены)` : '')
+          : '— (объём товаров не указан)';
 
         UI.renderTable('#stock-body', stockRowsCache, (r) => `
           <tr>
@@ -173,6 +186,7 @@
             <td>${UI.fmtQty(r.qty_on_hand)}</td>
             <td>${UI.fmtQty(r.qty_reserved)}</td>
             <td><strong>${UI.fmtQty(r.qty_available)}</strong></td>
+            <td>${r.volume_liters != null ? (Number(r.volume_liters) * Number(r.qty_on_hand)).toFixed(2) + ' л' : '—'}</td>
             <td>${r.cost_value > 0 ? Number(r.cost_value).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽' : '—'}</td>
           </tr>
         `);
