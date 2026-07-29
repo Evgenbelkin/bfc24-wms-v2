@@ -70,9 +70,27 @@ function generateItemLabelSvg(barcode, itemName, { vendorCode = null, width = 40
   const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(barcodeSvg);
   const bw = vbMatch ? Number(vbMatch[1]) : 300;
   const bh = vbMatch ? Number(vbMatch[2]) : 100;
-  const barcodeW = width - 20;
-  const barcodeH = Math.round(barcodeW * (bh / bw));
-  const barcodeY = height - barcodeH - 10;
+
+  // ВАЖНО: раньше баркод оборачивался в <svg x y width height>, полагаясь на
+  // авто-масштабирование вложенного SVG по его viewBox (как это делает браузер).
+  // Агент печати рендерит через svg-to-pdfkit (см. printer-agent/agent.js),
+  // а эта библиотека вложенные <svg> с пересчётом по viewBox нормально не
+  // поддерживает — баркод печатался в "сыром" размере bwip-js без масштаба
+  // и уезжал за край этикетки (штрихкод оказывался прижат к одному краю и
+  // частично обрезан — отсюда и плохое считывание). Чиним явным
+  // transform="translate() scale()" на <g> с СОДЕРЖИМЫМ баркода (а не
+  // вложенным <svg>) — transform это базовая часть SVG, которую
+  // svg-to-pdfkit поддерживает надёжно. Заодно даём поля по бокам, чтобы
+  // штрихкод не растягивался на всю ширину этикетки и был по центру.
+  const marginX = 28;
+  const barcodeW = width - marginX * 2;
+  const scale = barcodeW / bw;
+  const barcodeH = Math.round(bh * scale);
+  const barcodeX = marginX;
+  const barcodeY = height - barcodeH - 14;
+
+  const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(barcodeSvg);
+  const barcodeInner = innerMatch ? innerMatch[1] : barcodeSvg;
 
   const titleLine = escapeXml(itemName || '');
   const subLine = vendorCode ? escapeXml(`Артикул: ${vendorCode}`) : '';
@@ -80,7 +98,7 @@ function generateItemLabelSvg(barcode, itemName, { vendorCode = null, width = 40
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
     `<text x="${width / 2}" y="34" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="26">${titleLine}</text>` +
     (subLine ? `<text x="${width / 2}" y="62" text-anchor="middle" font-family="sans-serif" font-size="20">${subLine}</text>` : '') +
-    `<svg x="10" y="${barcodeY}" width="${barcodeW}" height="${barcodeH}">${barcodeSvg}</svg>` +
+    `<g transform="translate(${barcodeX}, ${barcodeY}) scale(${scale})">${barcodeInner}</g>` +
     `</svg>`;
 }
 
