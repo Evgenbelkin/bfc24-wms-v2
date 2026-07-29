@@ -14,7 +14,11 @@
     .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
     @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
     .emp-card{background:var(--card2);border-radius:10px;padding:12px 14px;margin-bottom:8px;}
-    .emp-card .emp-head{display:flex;justify-content:space-between;font-weight:600;}
+    .emp-card .emp-head{display:flex;justify-content:space-between;font-weight:600;cursor:pointer;}
+    .emp-card .emp-head .arrow{display:inline-block;transition:transform .15s;margin-right:6px;color:var(--muted2);}
+    .emp-card.open .emp-head .arrow{transform:rotate(90deg);}
+    .emp-card .emp-detail{display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:6px;}
+    .emp-card.open .emp-detail{display:block;}
     .emp-card .emp-line{display:flex;justify-content:space-between;font-size:13px;color:var(--muted2);padding:2px 0;}
     .grand-total{font-size:18px;font-weight:700;text-align:right;margin-top:10px;}
   </style>
@@ -215,10 +219,12 @@
         const res = await window.API.payroll.report(from, to);
         const list = document.getElementById('report-list');
         if (!res.employees.length) { list.innerHTML = `<div class="empty-state">Нет данных за период</div>`; document.getElementById('report-total').textContent=''; return; }
-        list.innerHTML = res.employees.map(e => `
-          <div class="emp-card">
-            <div class="emp-head"><span>${UI.escHtml(e.fullName||'')} (${roleLabel(e.role)})</span><span>${e.total.toFixed(2)} ₽</span></div>
-            ${e.breakdown.map(b => `<div class="emp-line"><span>${mtLabel(b.movementType)} · ${b.units} ед. × ${b.rate.toFixed(2)}₽</span><span>${b.amount.toFixed(2)} ₽</span></div>`).join('')}
+        list.innerHTML = res.employees.map((e, idx) => `
+          <div class="emp-card" id="emp-card-${idx}">
+            <div class="emp-head" onclick="toggleEmpCard(${idx})"><span><span class="arrow">▶</span>${UI.escHtml(e.fullName||'')} (${roleLabel(e.role)})</span><span>${e.total.toFixed(2)} ₽</span></div>
+            <div class="emp-detail">
+              ${e.breakdown.map(b => `<div class="emp-line"><span>${mtLabel(b.movementType)} · ${b.units} ед. × ${b.rate.toFixed(2)}₽</span><span>${b.amount.toFixed(2)} ₽</span></div>`).join('')}
+            </div>
           </div>
         `).join('');
         document.getElementById('report-total').textContent = `Итого: ${res.grand_total.toFixed(2)} ₽`;
@@ -226,6 +232,10 @@
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);
       }
+    }
+
+    function toggleEmpCard(idx) {
+      document.getElementById(`emp-card-${idx}`).classList.toggle('open');
     }
 
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
