@@ -111,6 +111,11 @@
       processing:'Обработка', returns:'Возврат', materials:'Расходники', subscription:'Подписка',
     };
     const serviceLabel = t => SERVICE_TYPES[t] || t;
+    // period_date/period_from/period_to приходят с бэка как 'YYYY-MM-DD' (см.
+    // types.setTypeParser в server/src/config/database.js) — просто меняем
+    // порядок для показа, без создания Date() (чтобы не словить сдвиг по TZ).
+    function fmtDate(d) { if (!d) return '—'; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}.${m[2]}.${m[1]}` : d; }
+    function fmtQty(q) { const n = Number(q); return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(4))); }
 
     let invoiceCache = [];
 
@@ -139,9 +144,9 @@
         document.getElementById('charge-total').textContent = Number(res.total_amount||0).toFixed(2);
         document.getElementById('charge-body').innerHTML = rows.length ? rows.map(c => `
           <tr>
-            <td>${c.period_date}</td>
+            <td>${fmtDate(c.period_date)}</td>
             <td>${serviceLabel(c.service_type)}${c.description?' · '+UI.escHtml(c.description):''}</td>
-            <td>${c.quantity}</td>
+            <td>${fmtQty(c.quantity)}</td>
             <td>${Number(c.total_amount).toFixed(2)}</td>
           </tr>
         `).join('') : `<tr><td colspan="4">Начислений нет</td></tr>`;
@@ -161,7 +166,7 @@
           <div class="list-row inv-row" onclick="openInvoiceModal(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml(inv.invoice_number)}</div>
-              <div class="sub">${inv.period_from} — ${inv.period_to} · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
+              <div class="sub">${fmtDate(inv.period_from)} — ${fmtDate(inv.period_to)} · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
             </div>
             <div class="badge"><span>Сумма</span><div>${Number(inv.total_amount).toFixed(2)} ₽</div></div>
           </div>
@@ -176,7 +181,7 @@
       const inv = invoiceCache[idx];
       let detail;
       try { detail = await window.API.seller.billingInvoice(inv.id); } catch (e) { UI.notify.err(e.message); return; }
-      const rows = detail.charges.map(c => `<tr><td>${c.period_date}</td><td>${serviceLabel(c.service_type)}</td><td>${c.quantity}</td><td>${Number(c.total_amount).toFixed(2)}</td></tr>`).join('');
+      const rows = detail.charges.map(c => `<tr><td>${fmtDate(c.period_date)}</td><td>${serviceLabel(c.service_type)}</td><td>${fmtQty(c.quantity)}</td><td>${Number(c.total_amount).toFixed(2)}</td></tr>`).join('');
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">

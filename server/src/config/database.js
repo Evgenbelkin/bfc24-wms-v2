@@ -1,6 +1,6 @@
 'use strict';
 
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const config = require('./index');
 const logger = require('../utils/logger');
 
@@ -8,6 +8,17 @@ const logger = require('../utils/logger');
 // PostgreSQL connection pool
 // Единственное место, где создаётся Pool. Весь код импортирует отсюда.
 // =============================================================================
+
+// По умолчанию node-postgres превращает колонки типа `date` в JS Date-объект
+// на полночь ПО ЛОКАЛЬНОЙ ТАЙМЗОНЕ СЕРВЕРА, а не UTC. При сериализации в JSON
+// (res.json → toISOString) это даёт сдвинутую дату/время — например
+// period_date='2026-07-29' на сервере с TZ=Europe/Moscow (UTC+3) уходит на
+// фронт как "2026-07-28T21:00:00.000Z", и в интерфейсе показывается вчерашний
+// день с посторонним временем вместо чистой даты. Отдаём `date` как есть,
+// строкой 'YYYY-MM-DD' — без создания Date вообще, без сдвига по таймзоне.
+// Это глобальный парсер (действует на ЛЮБОЙ запрос через этот pool), поэтому
+// чинит проблему сразу везде: period_date, valid_from/valid_to и т.д.
+types.setTypeParser(types.builtins.DATE, (val) => val);
 
 const pool = new Pool({
   host:     config.db.host,
