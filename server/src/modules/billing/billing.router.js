@@ -43,7 +43,10 @@ router.get('/price-list', requireRole('tenant_admin','supervisor'), async (req, 
 
 router.post('/price-list', requireRole('tenant_admin'), async (req, res, next) => {
   try {
-    const { client_id, service_type, description, unit_price, min_charge, currency, valid_from, valid_to } = req.body;
+    const {
+      client_id, service_type, description, unit_price, min_charge, currency, valid_from, valid_to,
+      storage_mode, extra_unit_price,
+    } = req.body;
     const clientId = resolveClientScope(req, client_id);
     const row = await svc.upsertPrice({
       tenantId: req.user.tenantId,
@@ -55,6 +58,8 @@ router.post('/price-list', requireRole('tenant_admin'), async (req, res, next) =
       currency:   currency    || 'RUB',
       validFrom:  valid_from  || null,
       validTo:    valid_to    || null,
+      storageMode: storage_mode || null,
+      extraUnitPrice: extra_unit_price != null ? extra_unit_price : null,
     });
     res.status(201).json({ ok: true, row });
   } catch (e) { next(e); }

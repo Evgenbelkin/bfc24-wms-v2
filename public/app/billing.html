@@ -196,15 +196,17 @@
         priceCache = res.rows || [];
         document.getElementById('price-count').textContent = priceCache.length;
         if (!priceCache.length) { list.innerHTML = `<div class="empty-state">Прайс не настроен</div>`; return; }
-        list.innerHTML = priceCache.map((p, idx) => `
+        list.innerHTML = priceCache.map((p, idx) => {
+          const isVolume = p.service_type === 'storage' && p.storage_mode === 'volume';
+          return `
           <div class="list-row price-row" onclick="openPriceModal(${idx})">
             <div class="main">
-              <div class="title">${serviceLabel(p.service_type)}</div>
+              <div class="title">${serviceLabel(p.service_type)}${isVolume ? ' · по литражу' : ''}</div>
               <div class="sub">${UI.escHtml(p.description||'')} ${p.min_charge ? `· мин. ${p.min_charge} ₽` : ''}</div>
             </div>
-            <div class="badge"><span>Цена</span><div>${Number(p.unit_price).toFixed(2)} ₽</div></div>
+            <div class="badge"><span>${isVolume?'1-й л / след.':'Цена'}</span><div>${Number(p.unit_price).toFixed(2)}${isVolume?' / '+Number(p.extra_unit_price||0).toFixed(2):''} ₽</div></div>
           </div>
-        `).join('');
+        `; }).join('');
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);
@@ -213,15 +215,28 @@
 
     function openPriceModal(idx) {
       const p = idx !== null ? priceCache[idx] : null;
+      const isStorage = p ? p.service_type === 'storage' : false;
+      const isVolume = p ? p.storage_mode === 'volume' : false;
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
             <div class="card-title">${p ? serviceLabel(p.service_type) : 'Новая позиция прайса'}</div>
             <div class="field"><label>Тип услуги</label>
-              <select id="m-type" ${p?'disabled':''}>${SERVICE_TYPES.map(([v,l])=>`<option value="${v}" ${p&&p.service_type===v?'selected':''}>${l}</option>`).join('')}</select>
+              <select id="m-type" ${p?'disabled':''} onchange="onServiceTypeChange()">${SERVICE_TYPES.map(([v,l])=>`<option value="${v}" ${p&&p.service_type===v?'selected':''}>${l}</option>`).join('')}</select>
+            </div>
+            <div class="field" id="storage-mode-wrap" style="display:${isStorage?'block':'none'}">
+              <label>Режим тарификации хранения</label>
+              <select id="m-storage-mode" onchange="onStorageModeChange()">
+                <option value="slots" ${!isVolume?'selected':''}>По занятым ячейкам</option>
+                <option value="volume" ${isVolume?'selected':''}>По литражу (как у ВБ) — 1-й литр + доплата за каждый следующий, округление вверх</option>
+              </select>
             </div>
             <div class="field"><label>Описание</label><input id="m-desc" value="${p?UI.escHtml(p.description||''):''}"/></div>
-            <div class="field"><label>Цена за единицу, ₽</label><input id="m-price" type="number" step="0.01" value="${p?p.unit_price:''}"/></div>
+            <div class="field"><label id="m-price-label">${isVolume?'Цена за первый литр, ₽':'Цена за единицу, ₽'}</label><input id="m-price" type="number" step="0.01" value="${p?p.unit_price:''}"/></div>
+            <div class="field" id="extra-price-wrap" style="display:${isVolume?'block':'none'}">
+              <label>Цена за каждый следующий литр, ₽</label>
+              <input id="m-extra-price" type="number" step="0.01" value="${p&&p.extra_unit_price!=null?p.extra_unit_price:''}"/>
+            </div>
             <div class="field"><label>Минимальная сумма, ₽ (необязательно)</label><input id="m-min" type="number" step="0.01" value="${p&&p.min_charge?p.min_charge:''}"/></div>
             <div class="btn-row">
               <button class="btn-big btn-green" onclick="savePrice(${idx})">Сохранить</button>
@@ -233,17 +248,34 @@
       `;
     }
 
+    function onServiceTypeChange() {
+      const isStorage = UI.val('#m-type') === 'storage';
+      document.getElementById('storage-mode-wrap').style.display = isStorage ? 'block' : 'none';
+      onStorageModeChange();
+    }
+
+    function onStorageModeChange() {
+      const isStorage = UI.val('#m-type') === 'storage';
+      const isVolume = isStorage && UI.val('#m-storage-mode') === 'volume';
+      document.getElementById('extra-price-wrap').style.display = isVolume ? 'block' : 'none';
+      document.getElementById('m-price-label').textContent = isVolume ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽';
+    }
+
     async function savePrice(idx) {
       const clientId = currentClientId();
       if (!clientId) { UI.notify.err('Выберите клиента'); return; }
       const p = idx !== null ? priceCache[idx] : null;
+      const serviceType = p ? p.service_type : UI.val('#m-type');
+      const storageMode = serviceType === 'storage' ? UI.val('#m-storage-mode') : 'slots';
       try {
         await window.API.billing.priceList.upsert({
           client_id: clientId,
-          service_type: p ? p.service_type : UI.val('#m-type'),
+          service_type: serviceType,
           description: UI.val('#m-desc'),
           unit_price: Number(UI.val('#m-price')) || 0,
           min_charge: UI.val('#m-min') ? Number(UI.val('#m-min')) : null,
+          storage_mode: storageMode,
+          extra_unit_price: storageMode === 'volume' ? (Number(UI.val('#m-extra-price')) || 0) : null,
         });
         UI.notify.ok('Сохранено');
         closeModal();

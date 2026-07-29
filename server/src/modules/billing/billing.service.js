@@ -47,6 +47,7 @@ async function listPriceList({ tenantId, clientId = null }) {
   const r = await query(
     `SELECT pl.id, pl.client_id, pl.service_type, pl.description,
             pl.unit_price, pl.min_charge, pl.currency,
+            pl.storage_mode, pl.extra_unit_price,
             pl.valid_from, pl.valid_to, pl.is_active,
             c.client_name
      FROM billing.client_price_list pl
@@ -61,6 +62,7 @@ async function listPriceList({ tenantId, clientId = null }) {
 async function upsertPrice({
   tenantId, clientId, serviceType, description,
   unitPrice, minCharge, currency, validFrom, validTo,
+  storageMode, extraUnitPrice,
 }) {
   const VALID_TYPES = ['receiving','storage','placement','picking','packing','shipping','processing','returns','subscription'];
   if (!VALID_TYPES.includes(serviceType)) {
@@ -68,12 +70,21 @@ async function upsertPrice({
   }
   if (unitPrice === undefined || unitPrice === null) throw new ValidationError('unit_price is required');
 
+  // storage_mode/extra_unit_price имеют смысл только для service_type='storage' —
+  // для остальных типов услуг всегда пишем режим по умолчанию 'slots' и NULL,
+  // чтобы в прайсе на других услугах не осталось "мусорных" значений от
+  // предыдущей позиции хранения.
+  const mode = serviceType === 'storage' && storageMode === 'volume' ? 'volume' : 'slots';
+  if (mode === 'volume' && (extraUnitPrice === undefined || extraUnitPrice === null)) {
+    throw new ValidationError('extra_unit_price is required when storage_mode=volume');
+  }
+
   const from = validFrom || new Date().toISOString().slice(0, 10);
 
   const r = await query(
     `INSERT INTO billing.client_price_list
-       (tenant_id,client_id,service_type,description,unit_price,min_charge,currency,valid_from,valid_to,is_active)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE)
+       (tenant_id,client_id,service_type,description,unit_price,min_charge,currency,valid_from,valid_to,is_active,storage_mode,extra_unit_price)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,$10,$11)
      ON CONFLICT (tenant_id,client_id,service_type,valid_from)
      DO UPDATE SET
        description = EXCLUDED.description,
@@ -82,11 +93,14 @@ async function upsertPrice({
        currency    = EXCLUDED.currency,
        valid_to    = EXCLUDED.valid_to,
        is_active   = TRUE,
+       storage_mode     = EXCLUDED.storage_mode,
+       extra_unit_price = EXCLUDED.extra_unit_price,
        updated_at  = NOW()
      RETURNING *`,
     [tenantId, clientId, serviceType, description || null,
      Number(unitPrice), minCharge != null ? Number(minCharge) : null,
-     currency || 'RUB', from, validTo || null]
+     currency || 'RUB', from, validTo || null,
+     mode, mode === 'volume' ? Number(extraUnitPrice) : null]
   );
   return r.rows[0];
 }
@@ -367,10 +381,19 @@ async function listClientsWithActiveStoragePrice() {
 }
 
 /**
- * Начислить клиенту за хранение сегодняшним днём: количество = число занятых
- * грузомест (уникальных ячеек с положительным остатком). Идемпотентно — если
+ * Начислить клиенту за хранение сегодняшним днём. Идемпотентно — если
  * начисление за 'storage' на сегодня уже есть, повторно не создаёт (защита от
  * повторного/задвоенного запуска джобы в один день).
+ *
+ * Два режима, задаются в прайс-листе клиента (storage_mode):
+ *  - 'slots'  (по умолчанию) — unit_price × число занятых ячеек с остатком.
+ *  - 'volume' — как у самого Wildberries: unit_price за первый литр товара +
+ *    extra_unit_price за каждый следующий литр (округление литража ВВЕРХ
+ *    после вычитания первого литра), умноженное на количество единиц этого
+ *    товара на остатке, просуммированное по всем товарам клиента. Если у
+ *    товара не указан объём (volume_liters IS NULL) — считаем как 1 литр
+ *    (только базовая ставка), чтобы не потерять начисление из-за незаполненной
+ *    карточки, но и не придумывать объём из воздуха.
  */
 async function chargeStorageForClientToday({ tenantId, clientId }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -382,6 +405,54 @@ async function chargeStorageForClientToday({ tenantId, clientId }) {
   );
   if (existing.rowCount > 0) return null; // уже начислено сегодня
 
+  const priceRes = await query(
+    `SELECT unit_price, currency, storage_mode, extra_unit_price
+     FROM billing.client_price_list
+     WHERE tenant_id=$1 AND client_id=$2 AND service_type='storage' AND is_active=TRUE
+       AND valid_from <= CURRENT_DATE AND (valid_to IS NULL OR valid_to >= CURRENT_DATE)
+     ORDER BY valid_from DESC LIMIT 1`,
+    [tenantId, clientId]
+  );
+  if (priceRes.rowCount === 0) return null; // нет активного прайса на хранение
+  const price = priceRes.rows[0];
+
+  if (price.storage_mode === 'volume') {
+    const rowsRes = await query(
+      `SELECT i.volume_liters, SUM(sb.qty_on_hand)::numeric AS qty
+       FROM wms.stock_balances sb
+       JOIN wms.items i ON i.id = sb.item_id
+       WHERE sb.tenant_id=$1 AND sb.client_id=$2 AND sb.qty_on_hand > 0
+       GROUP BY i.id, i.volume_liters`,
+      [tenantId, clientId]
+    );
+    if (rowsRes.rowCount === 0) return null; // нечего хранить
+
+    const baseRate  = Number(price.unit_price) || 0;
+    const extraRate = Number(price.extra_unit_price) || 0;
+    let totalCost = 0, totalUnits = 0;
+    for (const row of rowsRes.rows) {
+      const qty = Number(row.qty);
+      const volume = row.volume_liters != null ? Number(row.volume_liters) : 1;
+      const extraLiters = volume > 1 ? Math.ceil(volume - 1) : 0;
+      totalCost  += (baseRate + extraRate * extraLiters) * qty;
+      totalUnits += qty;
+    }
+    if (totalCost <= 0) return null;
+
+    const r = await query(
+      `INSERT INTO billing.service_charges
+         (tenant_id, client_id, service_type, description, ref_type, ref_id,
+          quantity, unit_price, total_amount, currency, period_date)
+       VALUES ($1,$2,'storage','Хранение (по литражу)','storage_daily',NULL,$3,$4,$5,$6,$7)
+       RETURNING *`,
+      [tenantId, clientId, totalUnits,
+       (totalUnits > 0 ? totalCost / totalUnits : 0).toFixed(4),
+       totalCost.toFixed(2), price.currency || 'RUB', today]
+    );
+    return r.rows[0];
+  }
+
+  // Режим 'slots' — прежнее поведение: unit_price × число занятых ячеек
   const slotsRes = await query(
     `SELECT COUNT(DISTINCT location_id)::int AS slots
      FROM wms.stock_balances
