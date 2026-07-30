@@ -13,6 +13,7 @@ const stockSvc = require('../stock/stock.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const billingSvc = require('../billing/billing.service');
 const markingSvc = require('../marking/marking.service');
+const returnsSvc = require('../returns/returns.service');
 
 // =============================================================================
 // Seller Cabinet Router
@@ -259,6 +260,37 @@ router.patch('/items/:id/marking/settings', requireModule('marking'), async (req
     );
     if (r.rowCount === 0) throw new ValidationError('Item not found');
     res.json({ ok:true, item:r.rows[0] });
+  } catch(e){ next(e); }
+});
+
+// ─────────────── Returns (возвраты) ───────────────
+
+/** GET /seller/returns — история возвратов клиента */
+router.get('/returns', requireModule('returns'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const result = await returnsSvc.listReturns({
+      tenantId: req.user.tenantId, clientId,
+      disposition: req.query.disposition || null,
+      dateFrom: req.query.date_from || null,
+      dateTo:   req.query.date_to   || null,
+      limit:    Number(req.query.limit)  || 200,
+      offset:   Number(req.query.offset) || 0,
+    });
+    res.json({ ok:true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/returns/summary — счётчики (всего/в продажу/в утиль) для клиента */
+router.get('/returns/summary', requireModule('returns'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const summary = await returnsSvc.getReturnsSummary({
+      tenantId: req.user.tenantId, clientId,
+      dateFrom: req.query.date_from || null,
+      dateTo:   req.query.date_to   || null,
+    });
+    res.json({ ok:true, summary });
   } catch(e){ next(e); }
 });
 

@@ -81,6 +81,7 @@
       qr:           `<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z"/>`,
       billing:      `<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>`,
       wallet:       `<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M16 13h4v4h-4a2 2 0 0 1 0-4z"/>`,
+      undo:         `<path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v8h8"/>`,
     };
     function icon(name){ return `<svg viewBox="0 0 24 24">${ICONS[name]||''}</svg>`; }
 
@@ -106,6 +107,7 @@
       { href:'billing.html',          icon:'billing',   label:'Биллинг',         roles:['tenant_admin','supervisor'] },
       { href:'consumables.html',      icon:'box',       label:'Расходники',      roles:['tenant_admin','supervisor'] },
       { href:'payroll.html',          icon:'wallet',    label:'Сдельная ЗП',     roles:['tenant_admin','supervisor'] },
+      { href:'returns.html',          icon:'undo',      label:'Возвраты',        roles:['tenant_admin','supervisor','receiver'] },
       { href:'help.html',             icon:'help',      label:'Инструкция и поддержка', roles:['tenant_admin','supervisor','receiver','picker','packer','shipper','inventory_manager'] },
       { href:'checkin.html',          icon:'qr',        label:'Отметка на складе', roles:['receiver','picker','packer','shipper','inventory_manager'] },
       { href:'checkin-kiosk.html',    icon:'qr',        label:'QR для отметки (экран на входе)', roles:['tenant_admin','supervisor'] },

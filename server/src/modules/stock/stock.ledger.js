@@ -87,6 +87,7 @@ async function receiveStock({
   barcode, locationId, locationCode,
   qty, refType = 'receiving', refId = null,
   unitCost = null, userId = null, comment = null,
+  movementType = null,
   dbClient = null,
 }) {
   const b = validateBarcode(barcode);
@@ -108,7 +109,10 @@ async function receiveStock({
 
     const balance = await _writeLedgerEntry(client, {
       tenantId, warehouseId, clientId, itemId, barcode: b,
-      movementType: refType === 'inbound' ? 'inbound' : 'receiving',
+      // movementType можно передать явно (например 'return' для возвратов,
+      // см. returns.service.js) — если не передан, прежнее поведение
+      // ('inbound' для приёмки по заявке, иначе 'receiving').
+      movementType: movementType || (refType === 'inbound' ? 'inbound' : 'receiving'),
       qty: q,
       toLocationId:   locId,
       toLocationCode: locCode,

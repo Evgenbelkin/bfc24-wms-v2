@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Возвраты — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .balance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .balance-cell{background:var(--card2);border-radius:10px;padding:12px;text-align:center;}
+    .balance-cell .num{font-size:20px;font-weight:700;}
+    .balance-cell .lbl{font-size:12px;color:var(--muted2);margin-top:2px;}
+    .disp-pill{font-size:11px;padding:3px 8px;border-radius:20px;}
+    .disp-resale{background:rgba(46,204,113,.15);color:var(--green);}
+    .disp-writeoff{background:rgba(231,76,60,.15);color:var(--red);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v8h8"/></svg> Возвраты</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">Учёт возвратов пока не подключён для вашего склада.</div>
+  </div>
+
+  <div id="content">
+    <div class="card">
+      <div class="card-title">Сводка</div>
+      <div id="summary-box" class="balance-grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Период</div>
+      <div class="filters-row">
+        <input id="f-from" type="date"/>
+        <input id="f-to" type="date"/>
+        <select id="f-disposition">
+          <option value="">Все решения</option>
+          <option value="resale">В продажу</option>
+          <option value="writeoff">В утиль</option>
+        </select>
+      </div>
+      <button class="btn-big btn-blue btn-full" onclick="loadAll()">Показать</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Возвраты — всего <span id="r-total">0</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Решение</th><th>Заказ МП</th></tr></thead>
+          <tbody id="r-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('content').style.display = 'none';
+    }
+
+    const DISP_LABELS = { resale: 'В продажу', writeoff: 'В утиль' };
+
+    async function loadSummary() {
+      try {
+        const params = {};
+        const from = UI.val('#f-from'); if (from) params.date_from = from;
+        const to = UI.val('#f-to'); if (to) params.date_to = to;
+        const res = await window.API.seller.returnsSummary(params);
+        const s = res.summary;
+        document.getElementById('summary-box').innerHTML = `
+          <div class="balance-cell"><div class="num">${s.total_returns}</div><div class="lbl">Всего возвратов</div></div>
+          <div class="balance-cell"><div class="num">${Number(s.total_qty)}</div><div class="lbl">Кол-во, шт</div></div>
+          <div class="balance-cell"><div class="num" style="color:var(--green)">${s.resale_count}</div><div class="lbl">В продажу</div></div>
+          <div class="balance-cell"><div class="num" style="color:var(--red)">${s.writeoff_count}</div><div class="lbl">В утиль</div></div>
+        `;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadHistory() {
+      try {
+        const params = { limit: 300 };
+        const from = UI.val('#f-from'); if (from) params.date_from = from;
+        const to = UI.val('#f-to'); if (to) params.date_to = to;
+        const disposition = UI.val('#f-disposition'); if (disposition) params.disposition = disposition;
+        const res = await window.API.seller.returns(params);
+        const rows = res.returns || [];
+        document.getElementById('r-total').textContent = res.total;
+        document.getElementById('r-body').innerHTML = rows.length ? rows.map(r => `
+          <tr>
+            <td>${UI.fmtDateTime(r.created_at)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.fmtQty(r.qty)}</td>
+            <td><span class="disp-pill disp-${r.disposition}">${DISP_LABELS[r.disposition]||r.disposition}</span></td>
+            <td>${UI.escHtml(r.marketplace_order_no||'—')}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="5">Возвратов нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function loadAll() { loadSummary(); loadHistory(); }
+
+    loadAll();
+  </script>
+</body>
+</html>

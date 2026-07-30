@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Возвраты — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:120px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .scan-row{display:flex;gap:8px;}
+    .scan-input{flex:1;width:100%;padding:16px;background:var(--card2);border:3px solid var(--border);border-radius:12px;color:var(--text);font-size:17px;outline:none;}
+    .scan-camera-btn{padding:0 18px;border:1px solid var(--border);border-radius:12px;background:var(--card2);color:var(--accent);font-size:22px;cursor:pointer;}
+    .disp-pill{font-size:11px;padding:3px 8px;border-radius:20px;}
+    .disp-resale{background:rgba(46,204,113,.15);color:var(--green);}
+    .disp-writeoff{background:rgba(231,76,60,.15);color:var(--red);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v8h8"/></svg> Возвраты</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">Модуль возвратов не подключён для вашей компании.</div>
+  </div>
+
+  <div id="content">
+    <div class="tabs">
+      <button class="tab active" data-tab="register" onclick="switchTab('register')">Регистрация</button>
+      <button class="tab" data-tab="history" onclick="switchTab('history')">История</button>
+      <button class="tab" data-tab="byclient" onclick="switchTab('byclient')">По клиентам</button>
+    </div>
+
+    <!-- ============ Регистрация ============ -->
+    <div id="tab-register">
+      <div class="card">
+        <div class="card-title">Регистрация возврата</div>
+        <div class="field"><label>Клиент</label><select id="r-client"></select></div>
+        <div class="field">
+          <label>Штрихкод товара</label>
+          <div class="scan-row">
+            <input id="r-barcode" class="scan-input" placeholder="Штрихкод" inputmode="none" autocomplete="off"/>
+            <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#r-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          </div>
+        </div>
+        <div class="field-row2" style="display:flex;gap:10px;">
+          <div class="field" style="flex:1;"><label>Количество</label><input id="r-qty" type="number" step="1" min="1" value="1"/></div>
+          <div class="field" style="flex:1;">
+            <label>Решение</label>
+            <select id="r-disposition" onchange="onDispositionChange()">
+              <option value="resale">В продажу (в остатки)</option>
+              <option value="writeoff">В утиль (списание)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="r-location-wrap"><label>Ячейка (куда положить товар)</label><input id="r-location" placeholder="Код ячейки"/></div>
+        <div class="field"><label>Номер заказа маркетплейса (необязательно)</label><input id="r-order-no"/></div>
+        <div class="field"><label>Комментарий (необязательно)</label><input id="r-comment"/></div>
+        <button class="btn-big btn-green btn-full" onclick="registerReturn()"><svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Зарегистрировать возврат</button>
+      </div>
+    </div>
+
+    <!-- ============ История ============ -->
+    <div id="tab-history" style="display:none">
+      <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-row">
+          <select id="h-client"><option value="">Все клиенты</option></select>
+          <select id="h-disposition">
+            <option value="">Все решения</option>
+            <option value="resale">В продажу</option>
+            <option value="writeoff">В утиль</option>
+          </select>
+        </div>
+        <div class="filters-row">
+          <input id="h-from" type="date"/>
+          <input id="h-to" type="date"/>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadHistory()">Показать</button>
+      </div>
+      <div class="card">
+        <div class="card-title">
+          Возвраты — всего <span id="h-total">0</span>
+          (в продажу: <span id="h-resale">0</span>, в утиль: <span id="h-writeoff">0</span>)
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Когда</th><th>Клиент</th><th>Товар</th><th>Кол-во</th><th>Решение</th><th>Заказ МП</th><th>Кто принял</th></tr></thead>
+            <tbody id="h-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ По клиентам ============ -->
+    <div id="tab-byclient" style="display:none">
+      <div class="card">
+        <div class="card-title">Период</div>
+        <div class="filters-row">
+          <input id="bc-from" type="date"/>
+          <input id="bc-to" type="date"/>
+        </div>
+        <button class="btn-big btn-blue btn-full" onclick="loadByClient()">Показать</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Клиент</th><th>Всего возвратов</th><th>Кол-во, шт</th><th>В продажу</th><th>В утиль</th></tr></thead>
+            <tbody id="bc-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/scanner.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin','receiver'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('content').style.display = 'none';
+    }
+
+    const DISP_LABELS = { resale: 'В продажу', writeoff: 'В утиль' };
+
+    function switchTab(name) {
+      ['register','history','byclient'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'history')  loadHistory();
+      if (name === 'byclient') loadByClient();
+    }
+
+    function onDispositionChange() {
+      const isResale = UI.val('#r-disposition') === 'resale';
+      document.getElementById('r-location-wrap').style.display = isResale ? 'block' : 'none';
+    }
+
+    async function loadClientSelects() {
+      try {
+        const res = await window.API.clients.short();
+        const clients = res.clients || [];
+        UI.populateSelect('#r-client', clients, { valueKey:'id', labelKey:'client_name' });
+        UI.populateSelect('#h-client', clients, { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); }
+      }
+    }
+
+    UI.onScan('#r-barcode', (v) => { UI.setVal('#r-barcode', v); });
+
+    async function registerReturn() {
+      const clientId = UI.val('#r-client');
+      const barcode = UI.val('#r-barcode');
+      const qty = Number(UI.val('#r-qty'));
+      const disposition = UI.val('#r-disposition');
+      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+      if (!barcode) { UI.notify.err('Отсканируйте или введите штрихкод'); return; }
+      if (!qty || qty <= 0) { UI.notify.err('Укажите количество'); return; }
+      if (disposition === 'resale' && !UI.val('#r-location')) { UI.notify.err('Укажите ячейку, куда положить товар'); return; }
+
+      try {
+        const res = await window.API.returns.register({
+          client_id: clientId, barcode, qty, disposition,
+          location_code: UI.val('#r-location') || null,
+          marketplace_order_no: UI.val('#r-order-no') || null,
+          comment: UI.val('#r-comment') || null,
+        });
+        UI.beep('ok');
+        UI.notify.ok(`Возврат зарегистрирован${res.return.charge_id ? ' (начислено клиенту)' : ''}`);
+        UI.setVal('#r-barcode', ''); UI.setVal('#r-order-no', ''); UI.setVal('#r-comment', '');
+        document.getElementById('r-qty').value = 1;
+        document.getElementById('r-barcode').focus();
+      } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
+    }
+
+    async function loadHistory() {
+      try {
+        const params = {};
+        const clientId = UI.val('#h-client'); if (clientId) params.client_id = clientId;
+        const disposition = UI.val('#h-disposition'); if (disposition) params.disposition = disposition;
+        const from = UI.val('#h-from'); if (from) params.date_from = from;
+        const to = UI.val('#h-to'); if (to) params.date_to = to;
+        const res = await window.API.returns.history(params);
+        const rows = res.returns || [];
+        document.getElementById('h-total').textContent = res.total;
+        document.getElementById('h-resale').textContent = rows.filter(r => r.disposition==='resale').length;
+        document.getElementById('h-writeoff').textContent = rows.filter(r => r.disposition==='writeoff').length;
+        document.getElementById('h-body').innerHTML = rows.length ? rows.map(r => `
+          <tr>
+            <td>${UI.fmtDateTime(r.created_at)}</td>
+            <td>${UI.escHtml(r.client_name||'—')}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.fmtQty(r.qty)}</td>
+            <td><span class="disp-pill disp-${r.disposition}">${DISP_LABELS[r.disposition]||r.disposition}</span></td>
+            <td>${UI.escHtml(r.marketplace_order_no||'—')}</td>
+            <td>${UI.escHtml(r.received_by_name||'—')}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="7">Возвратов нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadByClient() {
+      try {
+        const params = {};
+        const from = UI.val('#bc-from'); if (from) params.date_from = from;
+        const to = UI.val('#bc-to'); if (to) params.date_to = to;
+        const res = await window.API.returns.byClient(params);
+        const rows = res.rows || [];
+        document.getElementById('bc-body').innerHTML = rows.length ? rows.map(r => `
+          <tr>
+            <td>${UI.escHtml(r.client_name)}</td>
+            <td>${r.total_returns}</td>
+            <td>${UI.fmtQty(r.total_qty)}</td>
+            <td>${r.resale_count}</td>
+            <td>${r.writeoff_count}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="5">Возвратов нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    onDispositionChange();
+    loadClientSelects();
+  </script>
+</body>
+</html>

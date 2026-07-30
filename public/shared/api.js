@@ -404,6 +404,15 @@
     report: (dateFrom, dateTo) => get('/payroll/report', { date_from: dateFrom, date_to: dateTo }),
   };
 
+  // ─────────────── Returns (возвраты) ───────────────
+
+  const returns = {
+    register: (d)   => post('/returns/register', d),
+    history:  (p)   => get('/returns/history', p),
+    summary:  (p)   => get('/returns/summary', p),
+    byClient: (p)   => get('/returns/by-client', p),
+  };
+
   // ─────────────── Seller ───────────────
 
   const seller = {
@@ -422,6 +431,8 @@
     markingSummary:      (itemId)           => get(`/seller/items/${itemId}/marking/summary`),
     importMarkingCodes:  (itemId, codesText)=> post(`/seller/items/${itemId}/marking/codes/import`, { codes_text: codesText }),
     updateMarkingSettings:(itemId, d)       => patch(`/seller/items/${itemId}/marking/settings`, d),
+    returns:        (p) => get('/seller/returns', p),
+    returnsSummary: (p) => get('/seller/returns/summary', p),
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
     billing:  (p)     => get('/seller/billing', p),
@@ -499,7 +510,7 @@
     wb, printing, overview,
     workstations,
     checkin,
-    billing, consumables, payroll, marking,
+    billing, consumables, payroll, marking, returns,
     seller, platform,
   };
 
