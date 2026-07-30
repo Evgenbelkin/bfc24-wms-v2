@@ -30,6 +30,11 @@
   <div id="content">
     <div class="card">
       <input id="f-search" placeholder="Поиск по названию или штрихкоду..." style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" oninput="renderItems()"/>
+      <select id="f-marking" style="width:100%;padding:12px 14px;margin-top:8px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" onchange="renderItems()">
+        <option value="">Все товары</option>
+        <option value="on">С маркировкой "Честный знак"</option>
+        <option value="off">Без маркировки</option>
+      </select>
       <p style="font-size:12px;color:var(--muted);margin:10px 0 0;">
         Товары, помеченные складом как требующие маркировки "Честный знак" — загрузите сюда коды,
         которые вы получили в личном кабинете ЦРПТ (по одному коду на строку). Склад будет печатать
@@ -73,9 +78,12 @@
 
     function renderItems() {
       const term = UI.val('#f-search').toLowerCase();
-      const filtered = term
+      const markingFilter = UI.val('#f-marking');
+      let filtered = term
         ? items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.barcode||'').includes(term))
         : items;
+      if (markingFilter === 'on')  filtered = filtered.filter(it => it.requires_marking);
+      if (markingFilter === 'off') filtered = filtered.filter(it => !it.requires_marking);
       document.getElementById('item-count').textContent = filtered.length;
 
       const list = document.getElementById('item-list');
