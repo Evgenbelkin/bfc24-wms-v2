@@ -228,6 +228,40 @@ router.post('/items/:id/marking/codes/import', requireModule('marking'), async (
   } catch(e){ next(e); }
 });
 
+/** PATCH /seller/items/:id/marking/settings { requires_marking, marking_trigger } —
+ *  клиент сам решает, какие его товары требуют маркировки "Честный знак" и на
+ *  каком этапе печатать код (приёмка/упаковка) — складу не нужно об этом
+ *  думать за клиента. Ранее это мог настраивать только склад в своей админке
+ *  (public/app/items.html) — та возможность осталась как запасной вариант. */
+router.patch('/items/:id/marking/settings', requireModule('marking'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const itemId = Number(req.params.id);
+    await assertOwnItem({ tenantId: req.user.tenantId, clientId, itemId });
+
+    const fields = []; const params = []; let idx = 1;
+    if (req.body.requires_marking !== undefined) {
+      fields.push(`requires_marking=$${idx++}`); params.push(!!req.body.requires_marking);
+    }
+    if (req.body.marking_trigger !== undefined) {
+      if (!['receiving','packing'].includes(req.body.marking_trigger)) {
+        throw new ValidationError(`marking_trigger must be 'receiving' or 'packing'`);
+      }
+      fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
+    }
+    if (fields.length === 0) throw new ValidationError('No fields to update');
+    fields.push('updated_at=NOW()');
+    params.push(itemId, req.user.tenantId, clientId);
+    const r = await query(
+      `UPDATE wms.items SET ${fields.join(', ')} WHERE id=$${idx++} AND tenant_id=$${idx++} AND client_id=$${idx}
+       RETURNING id, requires_marking, marking_trigger`,
+      params
+    );
+    if (r.rowCount === 0) throw new ValidationError('Item not found');
+    res.json({ ok:true, item:r.rows[0] });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Analytics ───────────────
 
 /** GET /seller/analytics/sales */

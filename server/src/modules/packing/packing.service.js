@@ -290,24 +290,19 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
     // 'packing' (по умолчанию). Печатается ЗДЕСЬ ЖЕ, в этом же скане, чтобы
     // упаковщик получил оба стикера (ВБ + ЧЗ) одним действием, как и просили —
     // не искать отдельно, что клеить. dbClient=client — используем ТУ ЖЕ
-    // транзакцию, что и весь остальной scanItem (см. marking.service.js:
-    // allocateAndPrint про необходимость атомарности SELECT FOR UPDATE + UPDATE).
+    // транзакцию, что и весь остальной scanItem.
+    // ВАЖНО (явное решение пользователя): в отличие от печати стикера ВБ выше,
+    // здесь НЕТ try/catch — если в пуле не хватает кодов или не настроен
+    // принтер для marking_code, allocateAndPrint бросает ValidationError,
+    // которая должна откатить ВСЮ транзакцию упаковки (упаковщик не может
+    // продолжить, пока в пуле не появятся коды/не настроят принтер).
     let markingJob = null;
-    try {
-      if (marking.shouldMarkAt(item, 'packing')) {
-        const markResult = await marking.allocateAndPrint({
-          tenantId, clientId: shipment.client_id, itemId, itemBarcode: barcode, itemName: item.item_name,
-          qty: 1, refType: 'packing', refId: shipment.id, userId: packerId, employeeId: packerId,
-          dbClient: client,
-        });
-        if (markResult.allocated === 0) {
-          logger.warn({ tenantId, itemId, barcode }, 'Marking at packing: пул кодов "Честный знак" пуст для товара');
-        }
-        markingJob = markResult;
-      }
-    } catch (markErr) {
-      // SOFT-FAIL: как и печать стикера ВБ выше — ошибка маркировки не ломает упаковку
-      logger.warn({ err: markErr, tenantId, barcode }, 'Marking print job creation failed (soft-fail)');
+    if (marking.shouldMarkAt(item, 'packing')) {
+      markingJob = await marking.allocateAndPrint({
+        tenantId, clientId: shipment.client_id, itemId, itemBarcode: barcode, itemName: item.item_name,
+        qty: 1, refType: 'packing', refId: shipment.id, userId: packerId, employeeId: packerId,
+        dbClient: client,
+      });
     }
 
     // Отдаём фронту именно тот стикер, который реально ушёл на печать для этой
@@ -325,7 +320,8 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
       print_job:   printJob,
       wb_sticker:      scannedSticker?.wb_sticker || null,
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
-      marking:     markingJob,
+      marking:           markingJob,
+      marking_remaining: markingJob ? markingJob.remaining : null,
     };
   });
 }

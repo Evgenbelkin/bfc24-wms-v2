@@ -99,26 +99,60 @@
     async function openMarkingModal(itemId) {
       const it = items.find(x => x.id === itemId);
       if (!it) return;
-      if (!it.requires_marking) {
-        UI.notify.err('Склад не отметил этот товар как требующий маркировки "Честный знак" — обратитесь к складу, если это нужно исправить');
-        return;
-      }
+      const on = !!it.requires_marking;
+      const trigger = it.marking_trigger || 'packing';
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
             <div class="card-title">${UI.escHtml(it.item_name)}</div>
             <div class="sub" style="color:var(--muted);font-size:13px;margin-bottom:10px;">${UI.escHtml(it.barcode)}</div>
-            <div id="marking-summary" style="font-size:14px;">Загрузка...</div>
-            <label style="display:block;margin-top:14px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
-            <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
-            <div class="btn-row" style="margin-top:12px;">
-              <button class="btn-big btn-green" onclick="uploadCodes(${itemId})">Загрузить</button>
+
+            <label style="display:inline;font-size:14px;">Требует маркировки "Честный знак"</label>
+            <input type="checkbox" id="m-req-marking" ${on ? 'checked':''} onchange="onMarkingToggle(${itemId})"/>
+
+            <div id="marking-fields" style="display:${on ? 'block':'none'};margin-top:10px;">
+              <label style="display:block;font-size:13px;color:var(--muted2);">Печатать код на этапе</label>
+              <select id="m-trigger" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;">
+                <option value="packing"   ${trigger==='packing'   ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
+                <option value="receiving" ${trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
+              </select>
+
+              <div id="marking-summary" style="font-size:14px;margin-top:12px;">Загрузка...</div>
+              <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
+              <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
+              <button class="btn-big btn-blue btn-full" style="margin-top:8px;" onclick="uploadCodes(${itemId})">Загрузить коды</button>
+            </div>
+
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn-big btn-green" onclick="saveMarkingSettings(${itemId})">Сохранить</button>
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
           </div>
         </div>
       `;
-      loadMarkingSummary(itemId);
+      if (on) loadMarkingSummary(itemId);
+    }
+
+    function onMarkingToggle(itemId) {
+      const on = document.getElementById('m-req-marking').checked;
+      document.getElementById('marking-fields').style.display = on ? 'block' : 'none';
+      if (on) loadMarkingSummary(itemId);
+    }
+
+    async function saveMarkingSettings(itemId) {
+      const requiresMarking = document.getElementById('m-req-marking').checked;
+      const data = { requires_marking: requiresMarking };
+      if (requiresMarking) data.marking_trigger = UI.val('#m-trigger') || 'packing';
+      try {
+        const res = await window.API.seller.updateMarkingSettings(itemId, data);
+        const it = items.find(x => x.id === itemId);
+        if (it) { it.requires_marking = res.item.requires_marking; it.marking_trigger = res.item.marking_trigger; }
+        UI.notify.ok('Сохранено');
+        renderItems();
+      } catch (e) {
+        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
     }
 
     async function loadMarkingSummary(itemId) {

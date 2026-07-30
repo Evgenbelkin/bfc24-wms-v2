@@ -4,7 +4,6 @@ const { query, transaction } = require('../../config/database');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { generateMarkingLabelSvg } = require('../../utils/qrcode');
 const { ValidationError } = require('../../utils/errors');
-const logger = require('../../utils/logger');
 
 // =============================================================================
 // Marking Service — локальный учёт кодов "Честный знак"
@@ -82,12 +81,18 @@ function shouldMarkAt(item, stage) {
  * Аллоцировать qty кодов из пула товара и создать print_job на каждый
  * (doc_type='marking_code') — рядом с обычным стикером товара/ВБ, чтобы оба
  * распечатывались одним и тем же действием сканирования.
+ *
+ * ЖЁСТКАЯ БЛОКИРОВКА (решение пользователя): если кодов в пуле не хватает,
+ * либо не настроен принтер для doc_type='marking_code' — операция (приёмка/
+ * упаковка) должна целиком блокироваться, а не продолжаться без стикера ЧЗ.
+ * Поэтому здесь бросаем ValidationError вместо soft-fail лога — вызывающий
+ * код (packing.service.js/receiving.service.js) НЕ оборачивает этот вызов в
+ * try/catch, чтобы ошибка откатила всю транзакцию приёмки/упаковки целиком.
+ *
  * dbClient — если передан (client внутри уже открытой транзакции, как в
- * packing.service.js:scanItem), используем его; иначе — обычный pool query
- * (для fire-and-forget вызова после коммита, как в receiving.service.js).
- * Soft-fail: любая ошибка здесь не должна ломать основную операцию — вызывающий
- * код сам оборачивает в try/catch, но на всякий случай не бросаем ничего
- * критичного дальше самих валидационных ошибок вызова.
+ * packing.service.js:scanItem, или receiving.service.js), используем его —
+ * тогда откат марки произойдёт вместе с откатом всей остальной операции.
+ * Если не передан — открываем свою транзакцию только на аллокацию+печать.
  */
 async function allocateAndPrint({
   tenantId, clientId, itemId, itemBarcode, itemName,
@@ -95,14 +100,10 @@ async function allocateAndPrint({
 }) {
   const q = Math.max(1, Math.round(Number(qty) || 1));
 
-  // SELECT ... FOR UPDATE SKIP LOCKED + UPDATE обязаны выполняться в ОДНОЙ
-  // транзакции — иначе между ними лок снимается (каждый query() вне
-  // transaction() — это своя неявная транзакция), и два параллельных вызова
-  // могут забрать один и тот же код. Если вызывающий код уже внутри своей
-  // транзакции (packing.service.js передаёт dbClient=client) — используем её.
-  // Если нет (receiving вызывает fire-and-forget после коммита) — открываем
-  // свою короткую транзакцию только на аллокацию.
-  const pickAndReserve = async (client) => {
+  const doAllocateAndPrint = async (client) => {
+    // SELECT ... FOR UPDATE SKIP LOCKED + UPDATE обязаны выполняться в ОДНОЙ
+    // транзакции — иначе лок снимается между запросами, и два параллельных
+    // скана могут забрать один и тот же код.
     const pickRes = await client.query(
       `SELECT id, code FROM wms.marking_codes
        WHERE tenant_id=$1 AND item_id=$2 AND status='available'
@@ -110,7 +111,26 @@ async function allocateAndPrint({
        FOR UPDATE SKIP LOCKED`,
       [tenantId, itemId, q]
     );
-    if (pickRes.rowCount === 0) return [];
+    if (pickRes.rowCount < q) {
+      // НИЧЕГО не резервируем при недостаче — коды остаются available,
+      // операция должна быть полностью отменена и повторена после пополнения пула.
+      throw new ValidationError(
+        `Товар помечен как требующий маркировки "Честный знак", но в пуле недостаточно кодов ` +
+        `(нужно ${q}, доступно ${pickRes.rowCount}). Загрузите коды в пул (в справочнике товара ` +
+        `или в кабинете клиента) и повторите операцию.`
+      );
+    }
+
+    const resolved = await resolvePrinter(client.query.bind(client), {
+      tenantId, docType: 'marking_code', employeeId: employeeId || userId, clientId,
+    });
+    if (!resolved) {
+      throw new ValidationError(
+        `Не найден принтер для печати кода маркировки "Честный знак" (doc_type=marking_code) — ` +
+        `настройте маршрут печати в панели принтеров или рабочее место сотрудника со своим принтером.`
+      );
+    }
+
     const ids = pickRes.rows.map(r => r.id);
     await client.query(
       `UPDATE wms.marking_codes SET status='used', used_at=NOW(),
@@ -118,51 +138,34 @@ async function allocateAndPrint({
        WHERE id = ANY($4::bigint[])`,
       [refType, refId, userId, ids]
     );
-    return pickRes.rows;
+
+    const jobIds = [];
+    for (const row of pickRes.rows) {
+      const svg = generateMarkingLabelSvg(row.code, itemName);
+      const jobCode = `MARK-${itemId}-${row.id}-${Date.now()}`;
+      const pjRes = await client.query(
+        `INSERT INTO wms.print_jobs
+           (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
+         VALUES($1,$2,$3,$4,'marking_code','item',$5,1,$6::jsonb,'new',$7)
+         RETURNING id`,
+        [
+          tenantId, jobCode, resolved.printerId, resolved.routeId, itemId,
+          JSON.stringify({ sticker: svg, code: row.code, barcode: itemBarcode, item_name: itemName }),
+          userId,
+        ]
+      );
+      jobIds.push(pjRes.rows[0].id);
+    }
+
+    const remainingRes = await client.query(
+      `SELECT COUNT(*)::int AS n FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND status='available'`,
+      [tenantId, itemId]
+    );
+
+    return { allocated: ids.length, shortfall: 0, printed: jobIds.length, jobIds, remaining: remainingRes.rows[0].n };
   };
 
-  const allocatedRows = dbClient
-    ? await pickAndReserve(dbClient)
-    : await transaction(pickAndReserve);
-
-  if (allocatedRows.length === 0) {
-    logger.warn({ tenantId, itemId }, 'Marking: нет свободных кодов в пуле для товара');
-    return { allocated: 0, shortfall: q, printed: 0, jobIds: [] };
-  }
-  const ids = allocatedRows.map(r => r.id);
-
-  const runQuery = dbClient ? dbClient.query.bind(dbClient) : (sql, params) => query(sql, params);
-  const resolved = await resolvePrinter(runQuery, {
-    tenantId, docType: 'marking_code', employeeId: employeeId || userId, clientId,
-  });
-
-  const jobIds = [];
-  if (resolved) {
-    for (const row of allocatedRows) {
-      try {
-        const svg = generateMarkingLabelSvg(row.code, itemName);
-        const jobCode = `MARK-${itemId}-${row.id}-${Date.now()}`;
-        const pjRes = await runQuery(
-          `INSERT INTO wms.print_jobs
-             (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
-           VALUES($1,$2,$3,$4,'marking_code','item',$5,1,$6::jsonb,'new',$7)
-           RETURNING id`,
-          [
-            tenantId, jobCode, resolved.printerId, resolved.routeId, itemId,
-            JSON.stringify({ sticker: svg, code: row.code, barcode: itemBarcode, item_name: itemName }),
-            userId,
-          ]
-        );
-        jobIds.push(pjRes.rows[0].id);
-      } catch (err) {
-        logger.warn({ err, tenantId, itemId, codeId: row.id }, 'Marking: print_job creation failed (soft-fail)');
-      }
-    }
-  } else {
-    logger.warn({ tenantId, itemId }, 'Marking: printer route для doc_type=marking_code не найден — коды зарезервированы, но не напечатаны');
-  }
-
-  return { allocated: ids.length, shortfall: q - ids.length, printed: jobIds.length, jobIds };
+  return dbClient ? doAllocateAndPrint(dbClient) : transaction(doAllocateAndPrint);
 }
 
 module.exports = {

@@ -421,6 +421,7 @@
     setItemCostPrice: (itemId, costPrice) => patch(`/seller/items/${itemId}/cost-price`, { cost_price: costPrice }),
     markingSummary:      (itemId)           => get(`/seller/items/${itemId}/marking/summary`),
     importMarkingCodes:  (itemId, codesText)=> post(`/seller/items/${itemId}/marking/codes/import`, { codes_text: codesText }),
+    updateMarkingSettings:(itemId, d)       => patch(`/seller/items/${itemId}/marking/settings`, d),
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
     billing:  (p)     => get('/seller/billing', p),
