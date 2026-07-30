@@ -57,6 +57,20 @@
         </table>
       </div>
     </div>
+
+    <div class="card">
+      <div class="card-title">Заявлено в WB (ещё не привезено на склад)</div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+        Заявки покупателей на возврат из WB (за последние 14 дней). Как только фулфилмент
+        физически привезёт товар и обработает его — он появится выше, в общей истории возвратов.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Товар (nmId)</th><th>Статус WB</th><th>Заказ</th><th>Комментарий</th></tr></thead>
+          <tbody id="wc-body"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script src="/shared/api.js"></script>
@@ -120,7 +134,25 @@
       }
     }
 
-    function loadAll() { loadSummary(); loadHistory(); }
+    async function loadWbClaims() {
+      try {
+        const res = await window.API.seller.wbReturnClaims();
+        const rows = res.claims || [];
+        document.getElementById('wc-body').innerHTML = rows.length ? rows.map(c => `
+          <tr>
+            <td>${UI.escHtml(c.nm_id != null ? String(c.nm_id) : '—')}</td>
+            <td>${UI.escHtml(c.status || '—')}</td>
+            <td>${UI.escHtml(c.order_srid || '—')}</td>
+            <td>${UI.escHtml(c.comment || '—')}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="4">Заявок нет</td></tr>`;
+      } catch (e) {
+        // Модуль wb_integration может быть не подключён клиенту - тогда просто не показываем блок
+        document.getElementById('wc-body').innerHTML = `<tr><td colspan="4">—</td></tr>`;
+      }
+    }
+
+    function loadAll() { loadSummary(); loadHistory(); loadWbClaims(); }
 
     loadAll();
   </script>

@@ -14,6 +14,7 @@ const logger = require('../../utils/logger');
 const WB_BASE = 'https://marketplace-api.wildberries.ru';
 const WB_STATISTICS_BASE = 'https://statistics-api.wildberries.ru';
 const WB_CONTENT_BASE = 'https://content-api.wildberries.ru';
+const WB_RETURNS_BASE = 'https://returns-api.wildberries.ru';
 
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_RETRIES = 5;
@@ -284,6 +285,29 @@ async function updateFbsStocks(token, warehouseId, stocks) {
   });
 }
 
+/**
+ * Заявки покупателей на возврат ("Честный знак" тут ни при чём — это Returns API,
+ * отдельный от marketplace-api хост). Отдаёт заявки за последние 14 дней (это
+ * ограничение самого WB, не наше). Только ДЛЯ ВИДИМОСТИ ("заявлено, но ещё не
+ * доехало до склада физически") — окончательное решение продажа/утиль всё
+ * равно принимается человеком при физической приёмке (см. returns.service.js).
+ * Поля по документации WB: claimId, nmId (товар), wbStatus, srid (номер
+ * заказа), userComment. Полную структуру ответа WB нигде публично не
+ * документирует построчно, поэтому дальше (wb.service.js) поля читаются
+ * с фолбэками, а не жёстко по одной схеме.
+ */
+async function fetchReturnClaims(token) {
+  const data = await wbRequest({
+    token,
+    baseUrl: WB_RETURNS_BASE,
+    path: '/api/v1/claims',
+  });
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.claims)) return data.claims;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
+}
+
 /** Нормализовать shipment code в формат WB-GI-XXXXX */
 function normalizeShipmentCode(rawId) {
   const s = String(rawId || '').trim();
@@ -318,5 +342,6 @@ module.exports = {
   deliverSupply,
   fetchOrderStatuses,
   fetchFbsStocks, updateFbsStocks,
+  fetchReturnClaims,
   normalizeShipmentCode, extractStickerCode,
 };

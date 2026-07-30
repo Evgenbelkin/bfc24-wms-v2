@@ -411,6 +411,7 @@
     history:  (p)   => get('/returns/history', p),
     summary:  (p)   => get('/returns/summary', p),
     byClient: (p)   => get('/returns/by-client', p),
+    wbClaims: (p)   => get('/wb/return-claims', p),
   };
 
   // ─────────────── Seller ───────────────
@@ -433,6 +434,7 @@
     updateMarkingSettings:(itemId, d)       => patch(`/seller/items/${itemId}/marking/settings`, d),
     returns:        (p) => get('/seller/returns', p),
     returnsSummary: (p) => get('/seller/returns/summary', p),
+    wbReturnClaims: (p) => get('/seller/wb-return-claims', p),
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
     billing:  (p)     => get('/seller/billing', p),

@@ -32,6 +32,7 @@
       <button class="tab active" data-tab="register" onclick="switchTab('register')">Регистрация</button>
       <button class="tab" data-tab="history" onclick="switchTab('history')">История</button>
       <button class="tab" data-tab="byclient" onclick="switchTab('byclient')">По клиентам</button>
+      <button class="tab" data-tab="wbclaims" onclick="switchTab('wbclaims')">Заявлено (WB)</button>
     </div>
 
     <!-- ============ Регистрация ============ -->
@@ -114,6 +115,28 @@
         </div>
       </div>
     </div>
+
+    <!-- ============ Заявлено (WB) ============ -->
+    <div id="tab-wbclaims" style="display:none">
+      <div class="card">
+        <div class="card-title">Клиент</div>
+        <select id="wc-client"></select>
+        <p style="font-size:12px;color:var(--muted);margin:10px 0 0;">
+          Заявки на возврат из WB (Returns API), которые покупатель уже оформил, но которые
+          ещё физически не привезены на склад. Когда товар физически приедет — регистрируй
+          его как обычно на вкладке «Регистрация». WB отдаёт заявки только за последние 14 дней.
+        </p>
+        <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadWbClaims()">Показать</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Товар (nmId)</th><th>Статус WB</th><th>Заказ</th><th>Комментарий покупателя</th><th>Кабинет WB</th></tr></thead>
+            <tbody id="wc-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/shared/api.js"></script>
@@ -136,7 +159,7 @@
     const DISP_LABELS = { resale: 'В продажу', writeoff: 'В утиль' };
 
     function switchTab(name) {
-      ['register','history','byclient'].forEach(t => {
+      ['register','history','byclient','wbclaims'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
@@ -155,6 +178,7 @@
         const clients = res.clients || [];
         UI.populateSelect('#r-client', clients, { valueKey:'id', labelKey:'client_name' });
         UI.populateSelect('#h-client', clients, { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
+        UI.populateSelect('#wc-client', clients, { valueKey:'id', labelKey:'client_name' });
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); }
       }
@@ -232,6 +256,27 @@
             <td>${r.writeoff_count}</td>
           </tr>
         `).join('') : `<tr><td colspan="5">Возвратов нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadWbClaims() {
+      const clientId = UI.val('#wc-client');
+      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+      try {
+        const res = await window.API.returns.wbClaims({ client_id: clientId });
+        const rows = res.claims || [];
+        document.getElementById('wc-body').innerHTML = rows.length ? rows.map(c => `
+          <tr>
+            <td>${UI.escHtml(c.nm_id != null ? String(c.nm_id) : '—')}</td>
+            <td>${UI.escHtml(c.status || '—')}</td>
+            <td>${UI.escHtml(c.order_srid || '—')}</td>
+            <td>${UI.escHtml(c.comment || '—')}</td>
+            <td>${UI.escHtml(c.account_name || '—')}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="5">Заявок нет (или модуль WB не подключён у клиента)</td></tr>`;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);

@@ -336,6 +336,45 @@ function triggerRedistributionForClient({ tenantId, clientId }) {
   });
 }
 
+/**
+ * Заявки на возврат от покупателей — ТОЛЬКО ВИДИМОСТЬ ("заявлено в WB, но ещё
+ * не доехало физически до склада"). Не создаёт и не трогает wms.returns —
+ * фактическая регистрация возврата остаётся ручной (см. returns.service.js),
+ * т.к. решение "продажа/утиль" может принять только человек, вскрывший короб.
+ * Один клиент может иметь несколько WB-кабинетов — собираем заявки по всем,
+ * soft-fail на каждый аккаунт отдельно (протухший токен одного кабинета не
+ * должен ронять весь список).
+ */
+async function listReturnClaimsForClient({ tenantId, clientId }) {
+  const accRes = await query(
+    `SELECT id, account_name, api_token FROM wms.mp_accounts
+     WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE
+       AND api_token IS NOT NULL AND length(trim(api_token))>0`,
+    [tenantId, clientId]
+  );
+
+  const claims = [];
+  for (const acc of accRes.rows) {
+    try {
+      const raw = await wbClient.fetchReturnClaims(acc.api_token);
+      for (const c of raw) {
+        claims.push({
+          claim_id:     c.claimId ?? c.claim_id ?? c.id ?? null,
+          nm_id:        c.nmId ?? c.nm_id ?? null,
+          order_srid:   c.srid ?? c.orderSrid ?? null,
+          status:       c.wbStatus ?? c.status ?? null,
+          comment:      c.userComment ?? c.comment ?? null,
+          created_at:   c.dt ?? c.createdAt ?? c.createDate ?? null,
+          account_name: acc.account_name,
+        });
+      }
+    } catch (e) {
+      logger.warn({ err: e.message, tenantId, clientId, mpAccountId: acc.id }, 'fetchReturnClaims failed (soft-fail)');
+    }
+  }
+  return claims;
+}
+
 /** tenant_id всех тенантов с включённым модулем wb_integration и активным доступом (для фонового джоба) */
 async function listTenantsWithWbIntegration() {
   const r = await query(
@@ -356,4 +395,5 @@ module.exports = {
   syncSellerWarehouses,
   distributeStockForAccount,
   triggerRedistributionForClient,
+  listReturnClaimsForClient,
 };

@@ -294,6 +294,16 @@ router.get('/returns/summary', requireModule('returns'), async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** GET /seller/wb-return-claims — заявки на возврат из WB Returns API (видимость,
+ *  ещё не пришли физически на склад) */
+router.get('/wb-return-claims', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const claims = await wbSvc.listReturnClaimsForClient({ tenantId: req.user.tenantId, clientId });
+    res.json({ ok:true, claims });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Analytics ───────────────
 
 /** GET /seller/analytics/sales */
