@@ -429,7 +429,8 @@ router.get('/return-claims', requireRole('tenant_admin','supervisor','receiver')
   try {
     const clientId = resolveClientScope(req, req.query.client_id);
     if (!clientId) return res.status(400).json({ ok:false, error:{code:'VALIDATION_ERROR',message:'client_id required'} });
-    const claims = await wbService.listReturnClaimsForClient({ tenantId: req.user.tenantId, clientId });
+    const isArchive = req.query.is_archive === 'true';
+    const claims = await wbService.listReturnClaimsForClient({ tenantId: req.user.tenantId, clientId, isArchive });
     res.json({ ok:true, claims });
   } catch(e){ next(e); }
 });

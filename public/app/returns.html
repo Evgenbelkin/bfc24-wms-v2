@@ -121,10 +121,14 @@
       <div class="card">
         <div class="card-title">Клиент</div>
         <select id="wc-client"></select>
+        <select id="wc-archive" style="margin-top:8px;">
+          <option value="false">Активные (ещё в пути/не забраны)</option>
+          <option value="true">История (уже выданы/закрыты)</option>
+        </select>
         <p style="font-size:12px;color:var(--muted);margin:10px 0 0;">
-          Заявки на возврат из WB (Returns API), которые покупатель уже оформил, но которые
-          ещё физически не привезены на склад. Когда товар физически приедет — регистрируй
-          его как обычно на вкладке «Регистрация». WB отдаёт заявки только за последние 14 дней.
+          Заявки на возврат из WB (Returns API), которые покупатель уже оформил. Когда товар
+          физически приедет на склад — регистрируй его как обычно на вкладке «Регистрация».
+          WB отдаёт заявки только за последние 14 дней.
         </p>
         <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadWbClaims()">Показать</button>
       </div>
@@ -266,7 +270,7 @@
       const clientId = UI.val('#wc-client');
       if (!clientId) { UI.notify.err('Выберите клиента'); return; }
       try {
-        const res = await window.API.returns.wbClaims({ client_id: clientId });
+        const res = await window.API.returns.wbClaims({ client_id: clientId, is_archive: UI.val('#wc-archive') });
         const rows = res.claims || [];
         document.getElementById('wc-body').innerHTML = rows.length ? rows.map(c => `
           <tr>

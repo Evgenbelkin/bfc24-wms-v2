@@ -295,12 +295,18 @@ async function updateFbsStocks(token, warehouseId, stocks) {
  * заказа), userComment. Полную структуру ответа WB нигде публично не
  * документирует построчно, поэтому дальше (wb.service.js) поля читаются
  * с фолбэками, а не жёстко по одной схеме.
+ *
+ * isArchive — ОБЯЗАТЕЛЬНЫЙ параметр (проверено на реальном аккаунте: без него
+ * WB отвечает 400 "missing field `is_archive`"). Судя по всему соответствует
+ * вкладкам в личном кабинете WB "Возвраты и перемещения товаров": false —
+ * "Активные" (ещё в пути/не забраны), true — "История" (уже выданы/закрыты).
  */
-async function fetchReturnClaims(token) {
+async function fetchReturnClaims(token, { isArchive = false } = {}) {
   const data = await wbRequest({
     token,
     baseUrl: WB_RETURNS_BASE,
     path: '/api/v1/claims',
+    params: { is_archive: isArchive },
   });
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.claims)) return data.claims;

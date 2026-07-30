@@ -345,7 +345,7 @@ function triggerRedistributionForClient({ tenantId, clientId }) {
  * soft-fail на каждый аккаунт отдельно (протухший токен одного кабинета не
  * должен ронять весь список).
  */
-async function listReturnClaimsForClient({ tenantId, clientId }) {
+async function listReturnClaimsForClient({ tenantId, clientId, isArchive = false }) {
   const accRes = await query(
     `SELECT id, account_name, api_token FROM wms.mp_accounts
      WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE
@@ -356,7 +356,7 @@ async function listReturnClaimsForClient({ tenantId, clientId }) {
   const claims = [];
   for (const acc of accRes.rows) {
     try {
-      const raw = await wbClient.fetchReturnClaims(acc.api_token);
+      const raw = await wbClient.fetchReturnClaims(acc.api_token, { isArchive });
       for (const c of raw) {
         claims.push({
           claim_id:     c.claimId ?? c.claim_id ?? c.id ?? null,

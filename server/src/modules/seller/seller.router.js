@@ -299,7 +299,8 @@ router.get('/returns/summary', requireModule('returns'), async (req,res,next)=>{
 router.get('/wb-return-claims', requireModule('wb_integration'), async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
-    const claims = await wbSvc.listReturnClaimsForClient({ tenantId: req.user.tenantId, clientId });
+    const isArchive = req.query.is_archive === 'true';
+    const claims = await wbSvc.listReturnClaimsForClient({ tenantId: req.user.tenantId, clientId, isArchive });
     res.json({ ok:true, claims });
   } catch(e){ next(e); }
 });
