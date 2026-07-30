@@ -336,6 +336,17 @@ function triggerRedistributionForClient({ tenantId, clientId }) {
   });
 }
 
+// Соответствие числового кода status_ex человекочитаемому статусу.
+// Официальной таблицы кодов WB не публикует, поэтому карта заполняется
+// ПОДТВЕРЖДЁННЫМИ значениями (сверенными вручную с личным кабинетом WB),
+// а не догадками. Код, которого нет в карте, показываем как есть ("код N"),
+// чтобы не вводить в заблуждение неверным текстом.
+// Подтверждено: status_ex=0 при is_archive=false соответствует статусу
+// "В пути в ПВЗ" в ЛК WB (Поставки и заказы → Возвраты и перемещения → Активные).
+const CLAIM_STATUS_MAP = {
+  0: 'В пути в ПВЗ',
+};
+
 /**
  * Заявки на возврат от покупателей — ТОЛЬКО ВИДИМОСТЬ ("заявлено в WB, но ещё
  * не доехало физически до склада"). Не создаёт и не трогает wms.returns —
@@ -357,27 +368,26 @@ async function listReturnClaimsForClient({ tenantId, clientId, isArchive = false
   for (const acc of accRes.rows) {
     try {
       const raw = await wbClient.fetchReturnClaims(acc.api_token, { isArchive });
-      // Диагностика: точная схема ответа WB Returns API нигде официально не
-      // задокументирована (проверено), поэтому логируем «сырую» первую заявку,
-      // чтобы по факту сверить реальные имена полей и убрать этот лог потом.
-      if (raw.length) {
-        logger.info({ tenantId, clientId, mpAccountId: acc.id, sample: raw[0] }, 'WB claim raw sample (diagnostic, remove after field mapping confirmed)');
-      }
       for (const c of raw) {
-        const rawSrid = c.srid ?? c.orderSrid ?? c.order_srid ?? null;
-        // WB иногда отдаёт srid обёрнутым в составную строку вида "eS.i<hex32>.0.0" —
+        const rawSrid = c.srid ?? null;
+        // WB отдаёт srid обёрнутым в составную строку вида "eS.i<hex32>.0.0" —
         // достаём чистый 32-символьный hex-идентификатор, как показывает сам ЛК WB.
         const hexMatch = typeof rawSrid === 'string' ? rawSrid.match(/[0-9a-f]{32}/i) : null;
+        // status_ex — числовой код без официальной документации; переводим по
+        // подтверждённой карте CLAIM_STATUS_MAP, для незнакомых кодов показываем
+        // "код N", а не гадаем текст.
+        const statusCode = c.status_ex ?? c.status ?? null;
         claims.push({
-          claim_id:     c.claimId ?? c.claim_id ?? c.id ?? null,
-          nm_id:        c.nmId ?? c.nm_id ?? null,
-          item_name:    c.subjectName ?? c.subject_name ?? c.imtName ?? c.imt_name ?? c.name ?? c.productName ?? c.product_name ?? null,
-          tech_size:    c.techSize ?? c.tech_size ?? c.size ?? null,
+          claim_id:     c.id ?? null,
+          nm_id:        c.nm_id ?? null,
+          item_name:    c.imt_name ?? null,
+          tech_size:    c.tech_size ?? c.size ?? null,
           order_srid:   hexMatch ? hexMatch[0] : rawSrid,
-          status:       c.statusEx ?? c.status_ex ?? c.wbStatus ?? c.status ?? null,
-          comment:      c.userComment ?? c.comment ?? c.user_comment ?? null,
-          photo:        c.photoLink ?? c.photo_link ?? (Array.isArray(c.photos) ? c.photos[0] : null) ?? null,
-          created_at:   c.dt ?? c.createdAt ?? c.createDate ?? c.create_dt ?? null,
+          status:       statusCode != null ? (CLAIM_STATUS_MAP[statusCode] ?? `код ${statusCode}`) : null,
+          comment:      c.user_comment ?? c.wb_comment ?? null,
+          photo:        Array.isArray(c.photos) ? c.photos[0] : null,
+          order_dt:     c.order_dt ?? null,
+          created_at:   c.dt ?? null,
           account_name: acc.account_name,
         });
       }

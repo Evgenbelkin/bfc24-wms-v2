@@ -70,7 +70,7 @@
       </p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>Размер</th><th>Статус WB</th><th>Заказ</th><th>Комментарий</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Размер</th><th>Статус WB</th><th>Дата заказа</th><th>Заказ</th><th>Комментарий</th></tr></thead>
           <tbody id="wc-body"></tbody>
         </table>
       </div>
@@ -149,10 +149,11 @@
             <td>${UI.escHtml(c.item_name || (c.nm_id != null ? ('nmId ' + c.nm_id) : '—'))}${c.nm_id != null && c.item_name ? '<div style="font-size:11px;color:var(--muted2)">nmId '+UI.escHtml(String(c.nm_id))+'</div>' : ''}</td>
             <td>${UI.escHtml(c.tech_size != null && c.tech_size !== '' ? String(c.tech_size) : '—')}</td>
             <td>${UI.escHtml(c.status || '—')}</td>
+            <td>${c.order_dt ? UI.fmtDateTime(c.order_dt) : '—'}</td>
             <td>${UI.escHtml(c.order_srid || '—')}</td>
             <td>${UI.escHtml(c.comment || '—')}</td>
           </tr>
-        `).join('') : `<tr><td colspan="5">Заявок нет</td></tr>`;
+        `).join('') : `<tr><td colspan="6">Заявок нет</td></tr>`;
         // Счётчик "заявлено в WB" в сводке считаем по активным (ещё не в архиве) заявкам
         if (isArchive === 'false' || !isArchive) {
           document.getElementById('wb-claims-count').textContent = rows.length;

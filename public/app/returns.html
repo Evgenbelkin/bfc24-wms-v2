@@ -136,7 +136,7 @@
         <div class="card-title">Заявлено (выбранный фильтр) — <span id="wc-count">0</span></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Товар</th><th>Размер</th><th>Статус WB</th><th>Заказ</th><th>Комментарий покупателя</th><th>Кабинет WB</th></tr></thead>
+            <thead><tr><th>Товар</th><th>Размер</th><th>Статус WB</th><th>Дата заказа</th><th>Заказ</th><th>Комментарий покупателя</th><th>Кабинет WB</th></tr></thead>
             <tbody id="wc-body"></tbody>
           </table>
         </div>
@@ -279,11 +279,12 @@
             <td>${UI.escHtml(c.item_name || (c.nm_id != null ? ('nmId ' + c.nm_id) : '—'))}${c.nm_id != null && c.item_name ? '<div style="font-size:11px;color:var(--muted2)">nmId '+UI.escHtml(String(c.nm_id))+'</div>' : ''}</td>
             <td>${UI.escHtml(c.tech_size != null && c.tech_size !== '' ? String(c.tech_size) : '—')}</td>
             <td>${UI.escHtml(c.status || '—')}</td>
+            <td>${c.order_dt ? UI.fmtDateTime(c.order_dt) : '—'}</td>
             <td>${UI.escHtml(c.order_srid || '—')}</td>
             <td>${UI.escHtml(c.comment || '—')}</td>
             <td>${UI.escHtml(c.account_name || '—')}</td>
           </tr>
-        `).join('') : `<tr><td colspan="6">Заявок нет (или модуль WB не подключён у клиента)</td></tr>`;
+        `).join('') : `<tr><td colspan="7">Заявок нет (или модуль WB не подключён у клиента)</td></tr>`;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);
