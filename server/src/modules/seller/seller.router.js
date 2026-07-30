@@ -12,6 +12,7 @@ const inboundSvc = require('../inbound/inbound.service');
 const stockSvc = require('../stock/stock.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const billingSvc = require('../billing/billing.service');
+const markingSvc = require('../marking/marking.service');
 
 // =============================================================================
 // Seller Cabinet Router
@@ -152,6 +153,7 @@ router.get('/items', async (req,res,next)=>{
     const r = await query(
       `SELECT i.id, i.barcode, i.item_name, i.vendor_code, i.wb_vendor_code,
          i.brand, i.unit, i.volume_liters, i.is_active, i.preview_url, i.cost_price,
+         i.requires_marking, i.marking_trigger,
          COALESCE(SUM(sb.qty_on_hand),0)::int AS total_on_hand,
          COALESCE(SUM(sb.qty_available),0)::int AS total_available,
          (COALESCE(SUM(sb.qty_on_hand),0) * COALESCE(i.cost_price,0))::numeric AS total_cost_value
@@ -186,6 +188,43 @@ router.patch('/items/:id/cost-price', async (req,res,next)=>{
     );
     if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Item not found'} });
     res.json({ ok:true, item:r.rows[0] });
+  } catch(e){ next(e); }
+});
+
+/** Проверить, что item принадлежит текущему клиенту — общий guard для двух
+ *  эндпоинтов ниже, чтобы клиент не мог загрузить/посмотреть коды чужого товара. */
+async function assertOwnItem({ tenantId, clientId, itemId }) {
+  const r = await query(`SELECT id FROM wms.items WHERE id=$1 AND tenant_id=$2 AND client_id=$3`, [itemId, tenantId, clientId]);
+  if (r.rowCount === 0) throw new ForbiddenError('Item not found or belongs to a different client');
+}
+
+/** GET /seller/items/:id/marking/summary — клиент сам заказывает коды в ЦРПТ и
+ *  знает, сколько уже загрузил / израсходовал склад. */
+router.get('/items/:id/marking/summary', requireModule('marking'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const itemId = Number(req.params.id);
+    await assertOwnItem({ tenantId: req.user.tenantId, clientId, itemId });
+    const summary = await markingSvc.getCodesSummary({ tenantId: req.user.tenantId, itemId });
+    res.json({ ok:true, summary });
+  } catch(e){ next(e); }
+});
+
+/** POST /seller/items/:id/marking/codes/import { codes_text } — клиент сам
+ *  запрашивает коды "Честный знак" на свой товар в ЦРПТ и подгружает их сюда
+ *  (по одному на строку) — склад дальше просто печатает их по одному при
+ *  приёмке/упаковке, не разбираясь, откуда какой код взялся. */
+router.post('/items/:id/marking/codes/import', requireModule('marking'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const itemId = Number(req.params.id);
+    await assertOwnItem({ tenantId: req.user.tenantId, clientId, itemId });
+    if (!req.body.codes_text) throw new ValidationError('codes_text required');
+    const result = await markingSvc.importCodes({
+      tenantId: req.user.tenantId, itemId, createdBy: req.user.id,
+      codesText: req.body.codes_text,
+    });
+    res.json({ ok:true, ...result });
   } catch(e){ next(e); }
 });
 

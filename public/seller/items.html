@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Товары и маркировка — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .item-row{cursor:pointer;}
+    .item-row:active{opacity:.7;}
+    .mark-pill{font-size:11px;padding:3px 8px;border-radius:20px;background:var(--card2);color:var(--muted2);}
+    .mark-pill.on{color:var(--accent);background:rgba(120,120,255,.12);}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .m-textarea{width:100%;padding:12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;margin-top:8px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z"/><circle cx="15.5" cy="7.5" r="1.4"/></svg> Товары и маркировка</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">Маркировка "Честный знак" пока не подключена для вашего склада.</div>
+  </div>
+
+  <div id="content">
+    <div class="card">
+      <input id="f-search" placeholder="Поиск по названию или штрихкоду..." style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" oninput="renderItems()"/>
+      <p style="font-size:12px;color:var(--muted);margin:10px 0 0;">
+        Товары, помеченные складом как требующие маркировки "Честный знак" — загрузите сюда коды,
+        которые вы получили в личном кабинете ЦРПТ (по одному коду на строку). Склад будет печатать
+        их по одному при приёмке/упаковке этого товара.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Товары (<span id="item-count">0</span>)</div>
+      <div id="item-list"></div>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('content').style.display = 'none';
+    }
+
+    let items = [];
+
+    async function loadItems() {
+      try {
+        const res = await window.API.seller.items({ limit: 500 });
+        items = res.items || [];
+        renderItems();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function renderItems() {
+      const term = UI.val('#f-search').toLowerCase();
+      const filtered = term
+        ? items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.barcode||'').includes(term))
+        : items;
+      document.getElementById('item-count').textContent = filtered.length;
+
+      const list = document.getElementById('item-list');
+      if (!filtered.length) {
+        list.innerHTML = `<div class="empty-state">Ничего не найдено</div>`;
+        return;
+      }
+      list.innerHTML = filtered.map((it) => `
+        <div class="list-row item-row" onclick="openMarkingModal(${it.id})">
+          <div class="main">
+            <div class="title">${UI.escHtml(it.item_name)}</div>
+            <div class="sub">${UI.escHtml(it.barcode)}</div>
+          </div>
+          <div class="badge">
+            <span class="mark-pill ${it.requires_marking ? 'on':''}">${it.requires_marking ? 'Честный знак' : 'без маркировки'}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function openMarkingModal(itemId) {
+      const it = items.find(x => x.id === itemId);
+      if (!it) return;
+      if (!it.requires_marking) {
+        UI.notify.err('Склад не отметил этот товар как требующий маркировки "Честный знак" — обратитесь к складу, если это нужно исправить');
+        return;
+      }
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">${UI.escHtml(it.item_name)}</div>
+            <div class="sub" style="color:var(--muted);font-size:13px;margin-bottom:10px;">${UI.escHtml(it.barcode)}</div>
+            <div id="marking-summary" style="font-size:14px;">Загрузка...</div>
+            <label style="display:block;margin-top:14px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
+            <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
+            <div class="btn-row" style="margin-top:12px;">
+              <button class="btn-big btn-green" onclick="uploadCodes(${itemId})">Загрузить</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+      loadMarkingSummary(itemId);
+    }
+
+    async function loadMarkingSummary(itemId) {
+      const el = document.getElementById('marking-summary');
+      try {
+        const res = await window.API.seller.markingSummary(itemId);
+        const s = res.summary;
+        el.textContent = `Загружено кодов: ${s.total}. Свободно (ещё не напечатано складом): ${s.available}. Использовано: ${s.used}.`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
+        el.textContent = 'Не удалось загрузить сводку: ' + e.message;
+      }
+    }
+
+    async function uploadCodes(itemId) {
+      const text = UI.val('#m-codes-text');
+      if (!text || !text.trim()) { UI.notify.err('Вставьте хотя бы один код'); return; }
+      try {
+        const res = await window.API.seller.importMarkingCodes(itemId, text);
+        UI.notify.ok(`Загружено: ${res.imported} шт.${res.duplicates ? ` (дублей пропущено: ${res.duplicates})` : ''}`);
+        UI.setVal('#m-codes-text', '');
+        await loadMarkingSummary(itemId);
+      } catch (e) {
+        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    loadItems();
+  </script>
+</body>
+</html>
