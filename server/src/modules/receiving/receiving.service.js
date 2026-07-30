@@ -10,7 +10,54 @@ const { validateBarcode, validateQty } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
 const { chargeForOperation } = require('../billing/billing.service');
+const marking = require('../marking/marking.service');
+const { generateItemLabelSvg } = require('../../utils/qrcode');
+const { resolvePrinter } = require('../printing/printerResolver');
 const logger = require('../../utils/logger');
+
+/**
+ * Если у товара включена маркировка "Честный знак" с триггером 'receiving' —
+ * после приёмки: (1) аллоцировать и напечатать по одному коду на каждую
+ * принятую единицу, (2) напечатать столько же обычных штрихкодовых стикеров
+ * товара (item_barcode) — той же операцией, чтобы у приёмщика сразу были ОБА
+ * стикера на руках, а не только код маркировки. Fire-and-forget: вызывается
+ * без await из acceptFree/acceptByInbound (после коммита транзакции), сама
+ * ловит все ошибки — сбой печати не должен ломать приёмку.
+ */
+async function maybeHandleMarkingAtReceiving({ tenantId, clientId, itemId, barcode, qty, refId, userId }) {
+  try {
+    const itemRes = await query(
+      `SELECT id, item_name, vendor_code, requires_marking, marking_trigger FROM wms.items WHERE id=$1 AND tenant_id=$2`,
+      [itemId, tenantId]
+    );
+    if (itemRes.rowCount === 0) return;
+    const item = itemRes.rows[0];
+    if (!marking.shouldMarkAt(item, 'receiving')) return;
+
+    await marking.allocateAndPrint({
+      tenantId, clientId, itemId, itemBarcode: barcode, itemName: item.item_name,
+      qty, refType: 'receiving', refId, userId,
+    });
+
+    const resolved = await resolvePrinter(query, { tenantId, docType: 'item_barcode', employeeId: userId, clientId });
+    if (resolved) {
+      const svg = generateItemLabelSvg(barcode, item.item_name, { vendorCode: item.vendor_code });
+      const copies = Math.max(1, Math.round(Number(qty) || 1));
+      for (let i = 0; i < copies; i++) {
+        const jobCode = `ITEMLBL-${itemId}-${Date.now()}-${i}`;
+        await query(
+          `INSERT INTO wms.print_jobs
+             (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
+           VALUES($1,$2,$3,$4,'item_barcode','item',$5,1,$6::jsonb,'new',$7)`,
+          [tenantId, jobCode, resolved.printerId, resolved.routeId, itemId,
+           JSON.stringify({ sticker: svg, barcode, item_name: item.item_name }), userId]
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, tenantId, itemId, barcode }, 'Marking at receiving: soft-fail (не блокирует приёмку)');
+  }
+}
 
 // =============================================================================
 // Receiving Service
@@ -59,6 +106,13 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
   // Начисление клиенту за приёмку (silent no-op, если для клиента не настроен
   // прайс на 'receiving' — см. billing.service.js:chargeForOperation).
   chargeForOperation({ tenantId, clientId, serviceType: 'receiving', quantity: q, refType: 'receiving', refId: receiveResult.itemId });
+
+  // Маркировка "Честный знак" (если включена у товара с триггером 'receiving') —
+  // fire-and-forget, soft-fail внутри самой функции.
+  maybeHandleMarkingAtReceiving({
+    tenantId, clientId, itemId: receiveResult.itemId, barcode: b, qty: q,
+    refId: receiveResult.itemId, userId,
+  });
 
   return receiveResult;
 }
@@ -170,6 +224,7 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
       orderId:    ord.id,
       orderNumber: ord.order_number,
       orderStatus,
+      itemId,
       barcode:    itemB,
       qty,
       locationCode: loc.location_code,
@@ -180,6 +235,11 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
   triggerRedistributionForClient({ tenantId, clientId });
 
   chargeForOperation({ tenantId, clientId, serviceType: 'receiving', quantity: q, refType: 'inbound', refId: receiveResult.orderId });
+
+  maybeHandleMarkingAtReceiving({
+    tenantId, clientId, itemId: receiveResult.itemId, barcode: itemB, qty: q,
+    refId: receiveResult.orderId, userId,
+  });
 
   return receiveResult;
 }

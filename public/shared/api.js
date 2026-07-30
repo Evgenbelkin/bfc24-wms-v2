@@ -182,6 +182,15 @@
     printLabel:(id,copies=1)=>post(`/items/${id}/print-label`, { copies }),
   };
 
+  // ─────────────── Marking (Честный знак) ───────────────
+
+  const marking = {
+    summary:    (itemId)          => get(`/marking/items/${itemId}/codes/summary`),
+    listCodes:  (itemId, p)       => get(`/marking/items/${itemId}/codes`, p),
+    importCodes:(itemId, codesText) => post(`/marking/items/${itemId}/codes/import`, { codes_text: codesText }),
+    updateSettings:(itemId, d)    => patch(`/marking/items/${itemId}/settings`, d),
+  };
+
   // ─────────────── Locations ───────────────
 
   const locations = {
@@ -487,7 +496,7 @@
     wb, printing, overview,
     workstations,
     checkin,
-    billing, consumables, payroll,
+    billing, consumables, payroll, marking,
     seller, platform,
   };
 

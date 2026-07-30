@@ -150,6 +150,23 @@
             </div>
             <div class="field"><label style="display:inline;">Требует упаковки</label> <input type="checkbox" id="m-needspkg" ${it && it.needs_packaging ? 'checked':''}/></div>
             <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!it || it.is_active ? 'checked':''}/></div>
+            <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+              <label style="display:inline;">Требует маркировки "Честный знак"</label> <input type="checkbox" id="m-marking" onchange="document.getElementById('marking-trigger-wrap').style.display=this.checked?'block':'none'" ${it && it.requires_marking ? 'checked':''}/>
+              <div class="field" id="marking-trigger-wrap" style="display:${it && it.requires_marking ? 'block':'none'};margin-top:6px;">
+                <label>Печатать код на этапе</label>
+                <select id="m-marking-trigger">
+                  <option value="packing" ${!it || (it.marking_trigger||'packing')==='packing' ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
+                  <option value="receiving" ${it && it.marking_trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
+                </select>
+              </div>
+              ${it ? `
+              <div style="margin-top:10px;font-size:13px;color:var(--muted);" id="marking-summary">Коды: загрузка…</div>
+              <div class="field-row2" style="margin-top:6px;">
+                <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"></textarea>
+              </div>
+              <button class="btn-big btn-blue btn-full" style="margin-top:6px;" onclick="importMarkingCodes(${idx})">Загрузить коды в пул</button>
+              ` : ''}
+            </div>
             ${it ? `
             <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
               <label>Печать этикетки (штрихкод + название)</label>
@@ -181,6 +198,31 @@
           </div>
         </div>
       `;
+      if (it) loadMarkingSummary(it.id);
+    }
+
+    async function loadMarkingSummary(itemId) {
+      const el = document.getElementById('marking-summary');
+      if (!el) return;
+      try {
+        const res = await window.API.marking.summary(itemId);
+        const s = res.summary;
+        el.textContent = `Коды: свободно ${s.available}, использовано ${s.used} (всего ${s.total})`;
+      } catch (e) {
+        el.textContent = 'Модуль маркировки не подключен для этого склада';
+      }
+    }
+
+    async function importMarkingCodes(idx) {
+      const it = itemCache[idx];
+      const text = UI.val('#m-marking-codes-text');
+      if (!text || !text.trim()) { UI.notify.err('Вставьте хотя бы один код'); return; }
+      try {
+        const res = await window.API.marking.importCodes(it.id, text);
+        UI.notify.ok(`Загружено: ${res.imported} шт.${res.duplicates ? ` (дублей пропущено: ${res.duplicates})` : ''}`);
+        UI.setVal('#m-marking-codes-text', '');
+        await loadMarkingSummary(it.id);
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     async function printItemLabel(idx) {
@@ -224,6 +266,8 @@
         volume_liters: UI.val('#m-volume') || null,
         needs_packaging: document.getElementById('m-needspkg').checked,
         is_active: document.getElementById('m-active').checked,
+        requires_marking: document.getElementById('m-marking').checked,
+        marking_trigger: UI.val('#m-marking-trigger') || 'packing',
       };
       if (it) {
         const kitBase = UI.val('#m-kit-base');

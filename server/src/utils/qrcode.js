@@ -102,4 +102,46 @@ function generateItemLabelSvg(barcode, itemName, { vendorCode = null, width = 40
     `</svg>`;
 }
 
-module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg };
+/**
+ * Стикер "Честный знак" — код маркировки как Data Matrix (bwip-js bcid:
+ * 'datamatrix') + название товара текстом сверху, для наклейки на физическую
+ * единицу товара. Та же проблема и то же решение, что и в generateItemLabelSvg
+ * выше: bwip-js отдаёт СВОЙ вложенный <svg width height viewBox>, а
+ * svg-to-pdfkit (которым печатает printer-agent) не умеет авто-масштабировать
+ * вложенные SVG по viewBox, как это делает браузер — поэтому вытаскиваем
+ * внутреннее содержимое регуляркой и оборачиваем в <g transform="translate()
+ * scale()">, а не в новый вложенный <svg>.
+ */
+function generateMarkingLabelSvg(code, itemName, { width = 400, height = 260 } = {}) {
+  const dmSvg = bwipjs.toSVG({
+    bcid: 'datamatrix',
+    text: String(code),
+    scale: 3,
+  });
+  const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(dmSvg);
+  const dw = vbMatch ? Number(vbMatch[1]) : 100;
+  const dh = vbMatch ? Number(vbMatch[2]) : 100;
+
+  // Data Matrix квадратный — вписываем по высоте (после текста заголовка),
+  // по центру ширины этикетки.
+  const titleLine = escapeXml(itemName || '');
+  const topMargin = 70; // место под заголовок сверху
+  const bottomMargin = 14;
+  const availH = height - topMargin - bottomMargin;
+  const scale = Math.min(availH / dh, (width - 40) / dw);
+  const dmW = dw * scale;
+  const dmH = dh * scale;
+  const dmX = (width - dmW) / 2;
+  const dmY = topMargin;
+
+  const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(dmSvg);
+  const dmInner = innerMatch ? innerMatch[1] : dmSvg;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
+    `<text x="${width / 2}" y="34" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="24">${titleLine}</text>` +
+    `<text x="${width / 2}" y="58" text-anchor="middle" font-family="sans-serif" font-size="16">Честный знак</text>` +
+    `<g transform="translate(${dmX}, ${dmY}) scale(${scale})">${dmInner}</g>` +
+    `</svg>`;
+}
+
+module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg };

@@ -5,6 +5,7 @@ const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/
 const { validatePositiveInt } = require('../../utils/validators');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
+const marking = require('../marking/marking.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -173,15 +174,17 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
       throw new ValidationError(`Barcode '${barcode}' already fully packed (${alreadyPacked}/${qtyPlan})`);
     }
 
-    // Ищем item_id явно — нужен для INSERT
+    // Ищем item_id явно — нужен для INSERT. Заодно тянем item_name/маркировку —
+    // пригодится ниже для печати кода "Честный знак" вместе со стикером ВБ.
     const itemRes = await client.query(
-      `SELECT id FROM wms.items WHERE tenant_id=$1 AND barcode=$2 AND client_id=$3 LIMIT 1`,
+      `SELECT id, item_name, requires_marking, marking_trigger FROM wms.items WHERE tenant_id=$1 AND barcode=$2 AND client_id=$3 LIMIT 1`,
       [tenantId, barcode, shipment.client_id]
     );
     if (itemRes.rowCount === 0) {
       throw new ValidationError(`Item with barcode '${barcode}' not found in masterdata for this client`);
     }
-    const itemId = itemRes.rows[0].id;
+    const item = itemRes.rows[0];
+    const itemId = item.id;
 
     // Локация для движения: CHECK-ограничение movement_has_location требует
     // from_location_id ИЛИ to_location_id — эта запись не может быть с обеими
@@ -283,6 +286,30 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
       logger.warn({ err: printErr, tenantId, barcode }, 'Print job creation failed (soft-fail)');
     }
 
+    // Код "Честный знак" — если у товара включена маркировка с триггером
+    // 'packing' (по умолчанию). Печатается ЗДЕСЬ ЖЕ, в этом же скане, чтобы
+    // упаковщик получил оба стикера (ВБ + ЧЗ) одним действием, как и просили —
+    // не искать отдельно, что клеить. dbClient=client — используем ТУ ЖЕ
+    // транзакцию, что и весь остальной scanItem (см. marking.service.js:
+    // allocateAndPrint про необходимость атомарности SELECT FOR UPDATE + UPDATE).
+    let markingJob = null;
+    try {
+      if (marking.shouldMarkAt(item, 'packing')) {
+        const markResult = await marking.allocateAndPrint({
+          tenantId, clientId: shipment.client_id, itemId, itemBarcode: barcode, itemName: item.item_name,
+          qty: 1, refType: 'packing', refId: shipment.id, userId: packerId, employeeId: packerId,
+          dbClient: client,
+        });
+        if (markResult.allocated === 0) {
+          logger.warn({ tenantId, itemId, barcode }, 'Marking at packing: пул кодов "Честный знак" пуст для товара');
+        }
+        markingJob = markResult;
+      }
+    } catch (markErr) {
+      // SOFT-FAIL: как и печать стикера ВБ выше — ошибка маркировки не ломает упаковку
+      logger.warn({ err: markErr, tenantId, barcode }, 'Marking print job creation failed (soft-fail)');
+    }
+
     // Отдаём фронту именно тот стикер, который реально ушёл на печать для этой
     // конкретной единицы (не просто "какой-то стикер по этому штрихкоду" —
     // при нескольких заказах на один и тот же товар у каждой физической
@@ -298,6 +325,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
       print_job:   printJob,
       wb_sticker:      scannedSticker?.wb_sticker || null,
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
+      marking:     markingJob,
     };
   });
 }
