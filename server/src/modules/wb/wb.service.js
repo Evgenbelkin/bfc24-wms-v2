@@ -336,16 +336,22 @@ function triggerRedistributionForClient({ tenantId, clientId }) {
   });
 }
 
-// Соответствие числового кода status_ex человекочитаемому статусу.
-// Официальной таблицы кодов WB не публикует, поэтому карта заполняется
-// ПОДТВЕРЖДЁННЫМИ значениями (сверенными вручную с личным кабинетом WB),
-// а не догадками. Код, которого нет в карте, показываем как есть ("код N"),
-// чтобы не вводить в заблуждение неверным текстом.
-// Подтверждено: status_ex=0 при is_archive=false соответствует статусу
-// "В пути в ПВЗ" в ЛК WB (Поставки и заказы → Возвраты и перемещения → Активные).
-const CLAIM_STATUS_MAP = {
-  0: 'В пути в ПВЗ',
-};
+// Числовой код status_ex нигде официально не задокументирован, а прямое
+// сопоставление "код N = такой-то текст" на практике оказалось ОШИБОЧНЫМ:
+// две заявки с status_ex=0 у одного клиента были фактически "ожидают решения
+// продавца" (ещё не одобрены), хотя ЛК WB в разделе "Активные" в это же время
+// показывал под тем же кодом совсем другую заявку со статусом "В пути в ПВЗ" —
+// т.е. один и тот же код не гарантирует один и тот же текстовый статус.
+// Поэтому статус выводим не по коду, а по составу поля actions (какие решения
+// доступны прямо сейчас) — это единственное, что подтверждено напрямую самим
+// продавцом ("эти товары я ещё не одобрил").
+function deriveClaimStatusLabel(c) {
+  const actions = Array.isArray(c.actions) ? c.actions : [];
+  const needsDecision = actions.some(a => /^(approve|reject)/i.test(String(a)));
+  if (needsDecision) return 'Ожидает вашего решения (одобрить/отклонить в ЛК WB)';
+  const code = c.status_ex ?? c.status ?? null;
+  return code != null ? `Статус WB: код ${code}` : null;
+}
 
 /**
  * Заявки на возврат от покупателей — ТОЛЬКО ВИДИМОСТЬ ("заявлено в WB, но ещё
@@ -373,17 +379,13 @@ async function listReturnClaimsForClient({ tenantId, clientId, isArchive = false
         // WB отдаёт srid обёрнутым в составную строку вида "eS.i<hex32>.0.0" —
         // достаём чистый 32-символьный hex-идентификатор, как показывает сам ЛК WB.
         const hexMatch = typeof rawSrid === 'string' ? rawSrid.match(/[0-9a-f]{32}/i) : null;
-        // status_ex — числовой код без официальной документации; переводим по
-        // подтверждённой карте CLAIM_STATUS_MAP, для незнакомых кодов показываем
-        // "код N", а не гадаем текст.
-        const statusCode = c.status_ex ?? c.status ?? null;
         claims.push({
           claim_id:     c.id ?? null,
           nm_id:        c.nm_id ?? null,
           item_name:    c.imt_name ?? null,
           tech_size:    c.tech_size ?? c.size ?? null,
           order_srid:   hexMatch ? hexMatch[0] : rawSrid,
-          status:       statusCode != null ? (CLAIM_STATUS_MAP[statusCode] ?? `код ${statusCode}`) : null,
+          status:       deriveClaimStatusLabel(c),
           comment:      c.user_comment ?? c.wb_comment ?? null,
           photo:        Array.isArray(c.photos) ? c.photos[0] : null,
           order_dt:     c.order_dt ?? null,
