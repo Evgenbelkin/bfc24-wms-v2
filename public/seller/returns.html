@@ -70,7 +70,7 @@
       </p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар (nmId)</th><th>Статус WB</th><th>Заказ</th><th>Комментарий</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Размер</th><th>Статус WB</th><th>Заказ</th><th>Комментарий</th></tr></thead>
           <tbody id="wc-body"></tbody>
         </table>
       </div>
@@ -107,6 +107,7 @@
           <div class="balance-cell"><div class="num">${Number(s.total_qty)}</div><div class="lbl">Кол-во, шт</div></div>
           <div class="balance-cell"><div class="num" style="color:var(--green)">${s.resale_count}</div><div class="lbl">В продажу</div></div>
           <div class="balance-cell"><div class="num" style="color:var(--red)">${s.writeoff_count}</div><div class="lbl">В утиль</div></div>
+          <div class="balance-cell" style="grid-column:1 / -1;"><div class="num" id="wb-claims-count" style="color:var(--yellow,#e6a23c)">…</div><div class="lbl">Заявлено в WB, ещё не привезено</div></div>
         `;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
@@ -140,19 +141,25 @@
 
     async function loadWbClaims() {
       try {
-        const res = await window.API.seller.wbReturnClaims({ is_archive: UI.val('#wc-archive') });
+        const isArchive = UI.val('#wc-archive');
+        const res = await window.API.seller.wbReturnClaims({ is_archive: isArchive });
         const rows = res.claims || [];
         document.getElementById('wc-body').innerHTML = rows.length ? rows.map(c => `
           <tr>
-            <td>${UI.escHtml(c.nm_id != null ? String(c.nm_id) : '—')}</td>
+            <td>${UI.escHtml(c.item_name || (c.nm_id != null ? ('nmId ' + c.nm_id) : '—'))}${c.nm_id != null && c.item_name ? '<div style="font-size:11px;color:var(--muted2)">nmId '+UI.escHtml(String(c.nm_id))+'</div>' : ''}</td>
+            <td>${UI.escHtml(c.tech_size || '—')}</td>
             <td>${UI.escHtml(c.status || '—')}</td>
             <td>${UI.escHtml(c.order_srid || '—')}</td>
             <td>${UI.escHtml(c.comment || '—')}</td>
           </tr>
-        `).join('') : `<tr><td colspan="4">Заявок нет</td></tr>`;
+        `).join('') : `<tr><td colspan="5">Заявок нет</td></tr>`;
+        // Счётчик "заявлено в WB" в сводке считаем по активным (ещё не в архиве) заявкам
+        if (isArchive === 'false' || !isArchive) {
+          document.getElementById('wb-claims-count').textContent = rows.length;
+        }
       } catch (e) {
         // Модуль wb_integration может быть не подключён клиенту - тогда просто не показываем блок
-        document.getElementById('wc-body').innerHTML = `<tr><td colspan="4">—</td></tr>`;
+        document.getElementById('wc-body').innerHTML = `<tr><td colspan="5">—</td></tr>`;
       }
     }
 

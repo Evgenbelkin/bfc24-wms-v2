@@ -357,14 +357,23 @@ async function listReturnClaimsForClient({ tenantId, clientId, isArchive = false
   for (const acc of accRes.rows) {
     try {
       const raw = await wbClient.fetchReturnClaims(acc.api_token, { isArchive });
+      // Диагностика: точная схема ответа WB Returns API нигде официально не
+      // задокументирована (проверено), поэтому логируем «сырую» первую заявку,
+      // чтобы по факту сверить реальные имена полей и убрать этот лог потом.
+      if (raw.length) {
+        logger.info({ tenantId, clientId, mpAccountId: acc.id, sample: raw[0] }, 'WB claim raw sample (diagnostic, remove after field mapping confirmed)');
+      }
       for (const c of raw) {
         claims.push({
           claim_id:     c.claimId ?? c.claim_id ?? c.id ?? null,
           nm_id:        c.nmId ?? c.nm_id ?? null,
-          order_srid:   c.srid ?? c.orderSrid ?? null,
-          status:       c.wbStatus ?? c.status ?? null,
-          comment:      c.userComment ?? c.comment ?? null,
-          created_at:   c.dt ?? c.createdAt ?? c.createDate ?? null,
+          item_name:    c.subjectName ?? c.subject_name ?? c.imtName ?? c.imt_name ?? c.name ?? c.productName ?? c.product_name ?? null,
+          tech_size:    c.techSize ?? c.tech_size ?? c.size ?? null,
+          order_srid:   c.srid ?? c.orderSrid ?? c.order_srid ?? null,
+          status:       c.statusEx ?? c.status_ex ?? c.wbStatus ?? c.status ?? null,
+          comment:      c.userComment ?? c.comment ?? c.user_comment ?? null,
+          photo:        c.photoLink ?? c.photo_link ?? (Array.isArray(c.photos) ? c.photos[0] : null) ?? null,
+          created_at:   c.dt ?? c.createdAt ?? c.createDate ?? c.create_dt ?? null,
           account_name: acc.account_name,
         });
       }
