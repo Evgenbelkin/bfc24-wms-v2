@@ -37,7 +37,7 @@
     </p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Товар</th><th>Штрихкод</th><th>На складе</th><th>Резерв</th><th>Доступно</th><th>Себестоимость, ₽/шт</th></tr></thead>
+        <thead><tr><th>Товар</th><th>Артикул</th><th>Штрихкод</th><th>На складе</th><th>Резерв</th><th>Доступно</th><th>Себестоимость, ₽/шт</th></tr></thead>
         <tbody id="stock-body"></tbody>
       </table>
     </div>
@@ -103,13 +103,14 @@
 
       const body = document.getElementById('stock-body');
       if (!filtered.length) {
-        body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
         return;
       }
       body.innerHTML = filtered.map(s => {
         const rows = [`
           <tr class="stock-row">
             <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.escHtml(s.item_name || s.vendor_code || '—')}</td>
+            <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.escHtml(s.vendor_code || '—')}</td>
             <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.escHtml(s.barcode)}</td>
             <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.fmtQty(s.total_on_hand)}</td>
             <td onclick="toggleLocations('${UI.escHtml(s.barcode)}')">${UI.fmtQty(s.total_reserved)}</td>
@@ -124,7 +125,7 @@
         if (expandedBarcode === s.barcode) {
           const locs = locationsCache[s.barcode] || [];
           rows.push(`
-            <tr><td colspan="6" style="padding:0;border-bottom:none;">
+            <tr><td colspan="7" style="padding:0;border-bottom:none;">
               <div class="locations-box">
                 ${locs.length ? locs.map(l => `
                   <div class="loc-row">
