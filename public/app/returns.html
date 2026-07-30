@@ -277,7 +277,7 @@
         document.getElementById('wc-body').innerHTML = rows.length ? rows.map(c => `
           <tr>
             <td>${UI.escHtml(c.item_name || (c.nm_id != null ? ('nmId ' + c.nm_id) : '—'))}${c.nm_id != null && c.item_name ? '<div style="font-size:11px;color:var(--muted2)">nmId '+UI.escHtml(String(c.nm_id))+'</div>' : ''}</td>
-            <td>${UI.escHtml(c.tech_size || '—')}</td>
+            <td>${UI.escHtml(c.tech_size != null && c.tech_size !== '' ? String(c.tech_size) : '—')}</td>
             <td>${UI.escHtml(c.status || '—')}</td>
             <td>${UI.escHtml(c.order_srid || '—')}</td>
             <td>${UI.escHtml(c.comment || '—')}</td>

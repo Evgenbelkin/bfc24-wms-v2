@@ -364,12 +364,16 @@ async function listReturnClaimsForClient({ tenantId, clientId, isArchive = false
         logger.info({ tenantId, clientId, mpAccountId: acc.id, sample: raw[0] }, 'WB claim raw sample (diagnostic, remove after field mapping confirmed)');
       }
       for (const c of raw) {
+        const rawSrid = c.srid ?? c.orderSrid ?? c.order_srid ?? null;
+        // WB иногда отдаёт srid обёрнутым в составную строку вида "eS.i<hex32>.0.0" —
+        // достаём чистый 32-символьный hex-идентификатор, как показывает сам ЛК WB.
+        const hexMatch = typeof rawSrid === 'string' ? rawSrid.match(/[0-9a-f]{32}/i) : null;
         claims.push({
           claim_id:     c.claimId ?? c.claim_id ?? c.id ?? null,
           nm_id:        c.nmId ?? c.nm_id ?? null,
           item_name:    c.subjectName ?? c.subject_name ?? c.imtName ?? c.imt_name ?? c.name ?? c.productName ?? c.product_name ?? null,
           tech_size:    c.techSize ?? c.tech_size ?? c.size ?? null,
-          order_srid:   c.srid ?? c.orderSrid ?? c.order_srid ?? null,
+          order_srid:   hexMatch ? hexMatch[0] : rawSrid,
           status:       c.statusEx ?? c.status_ex ?? c.wbStatus ?? c.status ?? null,
           comment:      c.userComment ?? c.comment ?? c.user_comment ?? null,
           photo:        c.photoLink ?? c.photo_link ?? (Array.isArray(c.photos) ? c.photos[0] : null) ?? null,
