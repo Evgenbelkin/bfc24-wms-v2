@@ -32,7 +32,11 @@
       <button class="tab active" data-tab="register" onclick="switchTab('register')">Регистрация</button>
       <button class="tab" data-tab="history" onclick="switchTab('history')">История</button>
       <button class="tab" data-tab="byclient" onclick="switchTab('byclient')">По клиентам</button>
-      <button class="tab" data-tab="wbclaims" onclick="switchTab('wbclaims')">Заявлено (WB)</button>
+      <!-- Скрыто: WB Returns API (/api/v1/claims) отдаёт только заявки, требующие
+           решения продавца, а не все физические возвраты (автовозврат без заявки
+           WB не отдаёт вообще никаким публичным API — проверено). Возвращаемся к
+           этому разделу, когда решим, как показывать это без искажения картины. -->
+      <button class="tab" data-tab="wbclaims" onclick="switchTab('wbclaims')" style="display:none">Заявлено (WB)</button>
     </div>
 
     <!-- ============ Регистрация ============ -->

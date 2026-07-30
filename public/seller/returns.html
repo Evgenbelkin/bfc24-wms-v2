@@ -58,7 +58,10 @@
       </div>
     </div>
 
-    <div class="card">
+    <!-- Скрыто: WB Returns API отдаёт только заявки, требующие решения продавца,
+         а не все физические возвраты (автовозврат WB не отдаёт публичным API —
+         проверено). Возвращаемся, когда решим, как показывать это без искажений. -->
+    <div class="card" style="display:none">
       <div class="card-title">Заявлено в WB</div>
       <select id="wc-archive" onchange="loadWbClaims()">
         <option value="false">Активные (ещё в пути/не забраны)</option>
@@ -107,7 +110,7 @@
           <div class="balance-cell"><div class="num">${Number(s.total_qty)}</div><div class="lbl">Кол-во, шт</div></div>
           <div class="balance-cell"><div class="num" style="color:var(--green)">${s.resale_count}</div><div class="lbl">В продажу</div></div>
           <div class="balance-cell"><div class="num" style="color:var(--red)">${s.writeoff_count}</div><div class="lbl">В утиль</div></div>
-          <div class="balance-cell" style="grid-column:1 / -1;"><div class="num" id="wb-claims-count" style="color:var(--yellow,#e6a23c)">…</div><div class="lbl">Заявлено в WB, ещё не привезено</div></div>
+          <!-- Счётчик "Заявлено в WB" скрыт вместе с разделом ниже (см. коммент там) -->
         `;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
@@ -164,7 +167,8 @@
       }
     }
 
-    function loadAll() { loadSummary(); loadHistory(); loadWbClaims(); }
+    // loadWbClaims() временно не вызываем — раздел "Заявлено в WB" скрыт (см. коммент выше)
+    function loadAll() { loadSummary(); loadHistory(); }
 
     loadAll();
   </script>
