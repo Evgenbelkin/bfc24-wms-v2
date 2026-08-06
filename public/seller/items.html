@@ -109,6 +109,7 @@
       if (!it) return;
       const on = !!it.requires_marking;
       const trigger = it.marking_trigger || 'packing';
+      const mode = it.marking_mode || 'print';
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
@@ -119,16 +120,29 @@
             <input type="checkbox" id="m-req-marking" ${on ? 'checked':''} onchange="onMarkingToggle(${itemId})"/>
 
             <div id="marking-fields" style="display:${on ? 'block':'none'};margin-top:10px;">
-              <label style="display:block;font-size:13px;color:var(--muted2);">Печатать код на этапе</label>
+              <label style="display:block;font-size:13px;color:var(--muted2);">Кто клеит код на товар</label>
+              <select id="m-mode" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" onchange="onMarkingModeChange()">
+                <option value="print" ${mode==='print' ? 'selected':''}>Фулфилмент печатает код из своего пула</option>
+                <option value="scan"  ${mode==='scan'  ? 'selected':''}>Мы сами клеим DataMatrix на производстве</option>
+              </select>
+
+              <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Когда фиксировать код</label>
               <select id="m-trigger" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;">
                 <option value="packing"   ${trigger==='packing'   ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
                 <option value="receiving" ${trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
               </select>
 
-              <div id="marking-summary" style="font-size:14px;margin-top:12px;">Загрузка...</div>
-              <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
-              <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
-              <button class="btn-big btn-blue btn-full" style="margin-top:8px;" onclick="uploadCodes(${itemId})">Загрузить коды</button>
+              <p id="m-scan-hint" style="display:${mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:8px;">
+                Фулфилмент отсканирует ваш код при приёмке и сборке и сам отправит его в WB — вам ничего
+                вручную в кабинете WB вводить не нужно.
+              </p>
+
+              <div id="marking-summary" style="font-size:14px;margin-top:12px;display:${mode==='print' ? 'block':'none'};">Загрузка...</div>
+              <div id="marking-codes-wrap" style="display:${mode==='print' ? 'block':'none'};">
+                <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
+                <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
+                <button class="btn-big btn-blue btn-full" style="margin-top:8px;" onclick="uploadCodes(${itemId})">Загрузить коды</button>
+              </div>
             </div>
 
             <div class="btn-row" style="margin-top:14px;">
@@ -138,23 +152,37 @@
           </div>
         </div>
       `;
-      if (on) loadMarkingSummary(itemId);
+      if (on && mode === 'print') loadMarkingSummary(itemId);
     }
 
     function onMarkingToggle(itemId) {
       const on = document.getElementById('m-req-marking').checked;
       document.getElementById('marking-fields').style.display = on ? 'block' : 'none';
-      if (on) loadMarkingSummary(itemId);
+      if (on && UI.val('#m-mode') === 'print') loadMarkingSummary(itemId);
+    }
+
+    function onMarkingModeChange() {
+      const isPrint = UI.val('#m-mode') === 'print';
+      document.getElementById('marking-summary').style.display = isPrint ? 'block' : 'none';
+      document.getElementById('marking-codes-wrap').style.display = isPrint ? 'block' : 'none';
+      document.getElementById('m-scan-hint').style.display = isPrint ? 'none' : 'block';
     }
 
     async function saveMarkingSettings(itemId) {
       const requiresMarking = document.getElementById('m-req-marking').checked;
       const data = { requires_marking: requiresMarking };
-      if (requiresMarking) data.marking_trigger = UI.val('#m-trigger') || 'packing';
+      if (requiresMarking) {
+        data.marking_trigger = UI.val('#m-trigger') || 'packing';
+        data.marking_mode = UI.val('#m-mode') || 'print';
+      }
       try {
         const res = await window.API.seller.updateMarkingSettings(itemId, data);
         const it = items.find(x => x.id === itemId);
-        if (it) { it.requires_marking = res.item.requires_marking; it.marking_trigger = res.item.marking_trigger; }
+        if (it) {
+          it.requires_marking = res.item.requires_marking;
+          it.marking_trigger = res.item.marking_trigger;
+          it.marking_mode = res.item.marking_mode;
+        }
         UI.notify.ok('Сохранено');
         renderItems();
       } catch (e) {

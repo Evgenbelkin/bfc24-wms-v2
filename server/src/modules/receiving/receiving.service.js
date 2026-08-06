@@ -28,20 +28,37 @@ const logger = require('../../utils/logger');
  * item_barcode стикера ниже — отдельная забота, не связанная с дефицитом
  * кодов ЧЗ, поэтому она остаётся soft-fail (как и раньше у WB-стикера).
  */
-async function handleMarkingAtReceiving(client, { tenantId, clientId, itemId, barcode, qty, refType, refId, userId }) {
+async function handleMarkingAtReceiving(client, { tenantId, clientId, itemId, barcode, qty, refType, refId, userId, dataMatrixCodes = null }) {
   const itemRes = await client.query(
-    `SELECT id, item_name, vendor_code, requires_marking, marking_trigger FROM wms.items WHERE id=$1 AND tenant_id=$2`,
+    `SELECT id, item_name, vendor_code, requires_marking, marking_trigger, marking_mode
+     FROM wms.items WHERE id=$1 AND tenant_id=$2`,
     [itemId, tenantId]
   );
   if (itemRes.rowCount === 0) return;
   const item = itemRes.rows[0];
   if (!marking.shouldMarkAt(item, 'receiving')) return;
 
-  // Жёсткий блок: бросает ValidationError, если кодов не хватает или нет принтера.
-  await marking.allocateAndPrint({
-    tenantId, clientId, itemId, itemBarcode: barcode, itemName: item.item_name,
-    qty, refType, refId, userId, employeeId: userId, dbClient: client,
-  });
+  if (item.marking_mode === 'scan') {
+    // Товар промаркирован клиентом заранее — печатать код ЧЗ нечего,
+    // регистрируем уже существующие на товаре коды DataMatrix в пул.
+    // Жёсткий блок: по одному коду на каждую принимаемую единицу.
+    // Обычный item_barcode стикер (ниже по функции) всё равно может
+    // понадобиться складу для внутренних операций — не пропускаем его.
+    const codes = Array.isArray(dataMatrixCodes) ? dataMatrixCodes.filter(Boolean) : [];
+    if (codes.length !== qty) {
+      throw new ValidationError(
+        `Товар промаркирован клиентом (Честный знак) — нужно отсканировать ровно ${qty} код(ов) ` +
+        `DataMatrix (по одному на каждую единицу), отсканировано: ${codes.length}.`
+      );
+    }
+    await marking.registerScannedCodes({ tenantId, itemId, codes, userId, dbClient: client });
+  } else {
+    // Жёсткий блок: бросает ValidationError, если кодов не хватает или нет принтера.
+    await marking.allocateAndPrint({
+      tenantId, clientId, itemId, itemBarcode: barcode, itemName: item.item_name,
+      qty, refType, refId, userId, employeeId: userId, dbClient: client,
+    });
+  }
 
   try {
     const resolved = await resolvePrinter(client.query.bind(client), { tenantId, docType: 'item_barcode', employeeId: userId, clientId });
@@ -74,7 +91,7 @@ async function handleMarkingAtReceiving(client, { tenantId, clientId, itemId, ba
 /**
  * Свободная приёмка — оприходовать товар напрямую
  */
-async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCode, qty, unitCost, userId, comment }) {
+async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCode, qty, unitCost, userId, comment, dataMatrixCodes = null }) {
   const b = validateBarcode(barcode);
   const q = validateQty(qty, 'qty');
 
@@ -102,7 +119,7 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
     // handleMarkingAtReceiving) — нехватка кодов/принтера откатывает всю приёмку.
     await handleMarkingAtReceiving(client, {
       tenantId, clientId, itemId, barcode: b, qty: q,
-      refType: 'receiving', refId: itemId, userId,
+      refType: 'receiving', refId: itemId, userId, dataMatrixCodes,
     });
 
     logger.info({ tenantId, clientId, barcode: b, qty: q, locationCode }, 'Free receiving completed');
@@ -126,7 +143,7 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
  * Приёмка по заявке (inbound order)
  * barcode — штрихкод заявки, scannedBarcode — штрихкод товара
  */
-async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBarcode, scannedBarcode, locationCode, qty, userId }) {
+async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBarcode, scannedBarcode, locationCode, qty, userId, dataMatrixCodes = null }) {
   const inboundB = String(inboundOrderBarcode || '').trim();
   const itemB    = validateBarcode(scannedBarcode);
   const q        = validateQty(qty, 'qty');
@@ -227,7 +244,7 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
     // handleMarkingAtReceiving) — нехватка кодов/принтера откатывает всю приёмку.
     await handleMarkingAtReceiving(client, {
       tenantId, clientId, itemId, barcode: itemB, qty: q,
-      refType: 'inbound', refId: ord.id, userId,
+      refType: 'inbound', refId: ord.id, userId, dataMatrixCodes,
     });
 
     logger.info({ tenantId, clientId, orderId: ord.id, barcode: itemB, qty: q }, 'Inbound receiving completed');

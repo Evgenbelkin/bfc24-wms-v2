@@ -126,6 +126,20 @@
             <div id="scan-status" class="refresh-note"></div>
           </div>
 
+          <!-- Товар промаркирован клиентом (marking_mode='scan') — после скана
+               штрихкода ждём ещё скан DataMatrix именно с этой единицы, потом
+               уходит запрос с обоими кодами (см. handlePackDataMatrix). -->
+          <div class="card" id="pack-dm-card" style="display:none;">
+            <div class="card-title">Код "Честный знак" (DataMatrix)</div>
+            <div class="refresh-note">Отсканируйте код с этой же единицы товара — уйдёт в WB автоматически.</div>
+            <div class="scan-row">
+              <input id="pack-dm-input" class="scan-input" placeholder="Код DataMatrix" inputmode="none" autocomplete="off"/>
+              <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#pack-dm-input','Скан DataMatrix')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+            </div>
+            <div id="pack-dm-error" style="display:none;margin-top:10px;padding:10px;border-radius:10px;background:rgba(231,76,60,.12);color:var(--red);font-size:13px;"></div>
+            <button id="pack-dm-override-btn" class="btn-sm btn-back" style="display:none;margin-top:8px;" onclick="openMarkingOverrideModal()">Не удаётся отправить в WB — провести без КИЗ (супервайзер)</button>
+          </div>
+
           <div class="card" id="lines-card">
             <div class="card-title">Состав отгрузки</div>
             <div id="lines-list"></div>
@@ -366,6 +380,9 @@
       pickupConfirmed = false;
       lastScannedBarcode = null;
       lastScanSticker = null;
+      pendingDmBarcode = null;
+      const dmCard = document.getElementById('pack-dm-card');
+      if (dmCard) dmCard.style.display = 'none';
       renderTaskUI();
     }
 
@@ -385,12 +402,46 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    // Если товар в режиме маркировки 'scan' (клиент клеит DataMatrix сам) —
+    // после скана штрихкода не отправляем запрос сразу, а ждём ещё скан
+    // DataMatrix именно с этой единицы (см. #pack-dm-card ниже).
+    let pendingDmBarcode = null;
+
+    function findLineByBarcode(barcode) {
+      return currentLines.find(l => l.barcode === barcode);
+    }
+    function lineNeedsDataMatrixScan(line) {
+      return !!(line && line.requires_marking &&
+        (line.marking_trigger || 'packing') === 'packing' &&
+        line.marking_mode === 'scan');
+    }
+
     async function handleScan(barcode) {
       if (!currentTask || !pickupConfirmed) return;
+      const line = findLineByBarcode(barcode);
+      if (lineNeedsDataMatrixScan(line)) {
+        pendingDmBarcode = barcode;
+        document.getElementById('pack-dm-card').style.display = 'block';
+        document.getElementById('pack-dm-error').style.display = 'none';
+        document.getElementById('pack-dm-override-btn').style.display = 'none';
+        UI.setVal('#pack-dm-input', '');
+        setTimeout(() => document.getElementById('pack-dm-input').focus(), 100);
+        return;
+      }
+      await submitScan(barcode, null, null);
+    }
+
+    async function submitScan(barcode, dataMatrixCode, markingOverride) {
       const shipmentCode = currentShipment?.external_id || currentTask.shipment_code;
       const statusEl = document.getElementById('scan-status');
+      const errEl = document.getElementById('pack-dm-error');
+      const overrideBtn = document.getElementById('pack-dm-override-btn');
       try {
-        const res = await window.API.packing.scanItem({ shipment_code: shipmentCode, scan_code: barcode });
+        const res = await window.API.packing.scanItem({
+          shipment_code: shipmentCode, scan_code: barcode,
+          data_matrix_code: dataMatrixCode || undefined,
+          marking_override: markingOverride || undefined,
+        });
         const line = currentLines.find(l => l.barcode === res.barcode);
         if (line) line.qty_packed = res.qty_packed;
         lastScannedBarcode = res.barcode;
@@ -400,12 +451,82 @@
         renderStickerCard();
         statusEl.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> ${UI.escHtml(res.barcode)}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '');
         renderMarkingCounter(res);
-        UI.notify.ok(`Упаковано: ${res.qty_packed}/${res.qty_plan}`);
+        UI.notify.ok(res.marking && res.marking.manual_override
+          ? `Упаковано БЕЗ отправки КИЗ в WB (обход супервайзера): ${res.qty_packed}/${res.qty_plan}`
+          : `Упаковано: ${res.qty_packed}/${res.qty_plan}`);
+        // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
+        pendingDmBarcode = null;
+        document.getElementById('pack-dm-card').style.display = 'none';
+        document.getElementById('scan-barcode').focus();
+        return true;
       } catch (e) {
-        statusEl.textContent = '';
         UI.beep('err');
-        UI.notify.err(e.message);
+        if (dataMatrixCode) {
+          // Ошибка именно на шаге DataMatrix (нет в пуле / WB API отклонил и т.п.) —
+          // не прячем карточку, даём возможность повторить скан или вызвать супервайзера.
+          errEl.textContent = e.message;
+          errEl.style.display = 'block';
+          overrideBtn.style.display = 'block';
+        } else {
+          statusEl.textContent = '';
+          UI.notify.err(e.message);
+        }
+        return false;
       }
+    }
+
+    UI.onScan('#pack-dm-input', async (v) => {
+      if (!pendingDmBarcode) return;
+      await submitScan(pendingDmBarcode, String(v || '').trim(), null);
+    });
+
+    // Аварийный обход супервайзером — см. marking.service.js:overrideMarkingAtPacking.
+    // Права проверяются на бэкенде по логину/паролю, введённым в этой форме,
+    // а не по роли текущей сессии упаковщика.
+    function openMarkingOverrideModal() {
+      if (document.getElementById('mo-overlay')) return;
+      const overlay = document.createElement('div');
+      overlay.id = 'mo-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+      const inputCss = 'width:100%;padding:12px 14px;background:var(--card2,#f1f5f9);border:2px solid var(--border,#e2e8f0);border-radius:10px;font-size:15px;outline:none;color:var(--text,#0f172a);box-sizing:border-box;';
+      const labelCss = 'display:block;font-size:12px;font-weight:600;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;';
+      overlay.innerHTML = `
+        <div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:380px;box-sizing:border-box;">
+          <div style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text,#0f172a);">Провести без отправки КИЗ в WB</div>
+          <div style="font-size:13px;color:var(--muted,#64748b);margin-bottom:16px;">Только супервайзер или администратор. Единица будет упакована, но код нужно будет вручную привязать в кабинете WB позже.</div>
+          <div style="margin-bottom:12px;">
+            <label style="${labelCss}">Логин супервайзера</label>
+            <input id="mo-username" autocomplete="off" style="${inputCss}"/>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="${labelCss}">Пароль</label>
+            <input id="mo-password" type="password" autocomplete="off" style="${inputCss}"/>
+          </div>
+          <div style="margin-bottom:16px;">
+            <label style="${labelCss}">Причина</label>
+            <input id="mo-reason" placeholder="Например: WB API недоступен" style="${inputCss}"/>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn-big btn-yellow" style="flex:1;" onclick="document.getElementById('mo-overlay').remove()">Отмена</button>
+            <button class="btn-big btn-red" style="flex:1;" onclick="submitMarkingOverride()">Провести</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+      setTimeout(() => document.getElementById('mo-username')?.focus(), 100);
+    }
+
+    async function submitMarkingOverride() {
+      const username = UI.val('#mo-username');
+      const password = UI.val('#mo-password');
+      const reason = UI.val('#mo-reason');
+      if (!username || !password) { UI.notify.err('Укажите логин и пароль супервайзера'); return; }
+      if (!reason || !reason.trim()) { UI.notify.err('Укажите причину'); return; }
+      const dmCode = UI.val('#pack-dm-input') || '';
+      if (!dmCode) { UI.notify.err('В поле DataMatrix должен остаться отсканированный код'); return; }
+      const ok = await submitScan(pendingDmBarcode, dmCode, {
+        reason: reason.trim(), supervisor_username: username, supervisor_password: password,
+      });
+      if (ok) document.getElementById('mo-overlay')?.remove();
     }
 
     // Счётчик оставшихся кодов "Честный знак" для товара из последнего скана.

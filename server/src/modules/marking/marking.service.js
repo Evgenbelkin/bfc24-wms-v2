@@ -1,9 +1,12 @@
 'use strict';
 
+const bcrypt = require('bcryptjs');
 const { query, transaction } = require('../../config/database');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { generateMarkingLabelSvg } = require('../../utils/qrcode');
-const { ValidationError } = require('../../utils/errors');
+const { ValidationError, ForbiddenError } = require('../../utils/errors');
+const wbClient = require('../wb/wb.client');
+const logger = require('../../utils/logger');
 
 // =============================================================================
 // Marking Service — локальный учёт кодов "Честный знак"
@@ -75,6 +78,221 @@ async function listCodes({ tenantId, itemId, status = null, limit = 200, offset 
 /** Нужно ли маркировать этот товар на данном этапе ('receiving' | 'packing') */
 function shouldMarkAt(item, stage) {
   return !!(item && item.requires_marking && (item.marking_trigger || 'packing') === stage);
+}
+
+// =============================================================================
+// Режим 'scan' — клиент маркирует товар сам (DataMatrix уже на товаре до
+// поступления на ФФ). ФФ не печатает и не выделяет коды из пула — сканирует
+// уже существующий код: на приёмке регистрирует его в пул, на сборке FBS-
+// заказа сверяет с пулом и ОТПРАВЛЯЕТ В WB через meta/sgtin.
+// Таблица wms.marking_codes и её пул (available/used) переиспользуются как
+// есть — отличается только способ пополнения (скан вместо CSV-импорта) и
+// способ расходования (сверка+отправка в WB вместо печати стикера).
+// =============================================================================
+
+/**
+ * Зарегистрировать в пуле коды, отсканированные на приёмке (режим 'scan').
+ * Каждый код — уникальная физическая единица, уже промаркированная клиентом.
+ * ЖЁСТКАЯ БЛОКИРОВКА: код не передан, пуст, или уже существует в системе
+ * (повторный скан ИЛИ реальное нарушение — один код не может быть на двух
+ * разных единицах) — throw откатывает всю операцию приёмки.
+ */
+async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient = null }) {
+  const list = (Array.isArray(codes) ? codes : [codes])
+    .map(c => String(c || '').trim())
+    .filter(Boolean);
+
+  if (list.length === 0) {
+    throw new ValidationError(
+      `Товар промаркирован клиентом (Честный знак) — отсканируйте код DataMatrix ` +
+      `с каждой принимаемой единицы, прежде чем продолжить приёмку.`
+    );
+  }
+
+  const doRegister = async (client) => {
+    const insertedIds = [];
+    for (const code of list) {
+      const r = await client.query(
+        `INSERT INTO wms.marking_codes (tenant_id, item_id, code, status, source, created_by)
+         VALUES ($1,$2,$3,'available','scanned',$4)
+         ON CONFLICT (tenant_id, code) DO NOTHING
+         RETURNING id`,
+        [tenantId, itemId, code, userId]
+      );
+      if (r.rowCount === 0) {
+        throw new ValidationError(
+          `Код "Честный знак" уже зарегистрирован в системе: ${code}. Один код маркировки ` +
+          `может принадлежать только одной физической единице — проверьте, не отсканирован ли он повторно, ` +
+          `или сообщите клиенту о возможном дублировании кода на производстве.`
+        );
+      }
+      insertedIds.push(r.rows[0].id);
+    }
+
+    const remainingRes = await client.query(
+      `SELECT COUNT(*)::int AS n FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND status='available'`,
+      [tenantId, itemId]
+    );
+    return { registered: insertedIds.length, remaining: remainingRes.rows[0].n };
+  };
+
+  return dbClient ? doRegister(dbClient) : transaction(doRegister);
+}
+
+/**
+ * Сверить отсканированный на сборке DataMatrix с пулом и ОТПРАВИТЬ В WB
+ * (PUT .../orders/{orderId}/meta/sgtin) — замена ручного ввода кода в
+ * кабинете WB. ЖЁСТКАЯ БЛОКИРОВКА: throw откатывает всю транзакцию упаковки,
+ * если код не найден в пуле/уже использован, либо WB API не принял код —
+ * см. marking.overrideMarkingAtPacking() для аварийного обхода супервайзером.
+ */
+async function consumeScannedCodeAtPacking({
+  tenantId, itemId, code, wbOrderId, apiToken, refType, refId, userId, dbClient = null,
+}) {
+  const doConsume = async (client) => {
+    const codeStr = String(code || '').trim();
+    if (!codeStr) {
+      throw new ValidationError(
+        `Товар промаркирован клиентом (Честный знак) — отсканируйте код DataMatrix ` +
+        `именно той единицы, которую кладёте в этот заказ.`
+      );
+    }
+
+    const codeRes = await client.query(
+      `SELECT id, status FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND code=$3 FOR UPDATE`,
+      [tenantId, itemId, codeStr]
+    );
+    if (codeRes.rowCount === 0) {
+      throw new ValidationError(
+        `Код "Честный знак" (${codeStr}) не найден в пуле этого товара. Убедитесь, что единица была ` +
+        `принята на склад (код регистрируется сканом при приёмке) и что отсканирован код именно с неё.`
+      );
+    }
+    const row = codeRes.rows[0];
+    if (row.status !== 'available') {
+      throw new ValidationError(`Код "Честный знак" (${codeStr}) уже использован — повторно применить нельзя.`);
+    }
+    if (!wbOrderId) {
+      throw new ValidationError(
+        `Не найден номер заказа WB для этой единицы — невозможно привязать код маркировки к заказу.`
+      );
+    }
+    if (!apiToken) {
+      throw new ValidationError(
+        `Не найден токен WB API для отправки кода маркировки — проверьте подключение кабинета WB у клиента.`
+      );
+    }
+
+    // Отправляем в WB ДО пометки кода использованным: если WB API вернёт
+    // ошибку, throw откатит и это UPDATE, и всю остальную упаковку —
+    // код останется available для повторной попытки.
+    await wbClient.setOrderKiz(apiToken, wbOrderId, [codeStr]);
+
+    await client.query(
+      `UPDATE wms.marking_codes
+       SET status='used', used_at=NOW(), used_ref_type=$1, used_ref_id=$2, used_by=$3,
+           wb_order_id=$4, wb_submit_status='sent', wb_submitted_at=NOW()
+       WHERE id=$5`,
+      [refType, refId, userId, wbOrderId, row.id]
+    );
+
+    const remainingRes = await client.query(
+      `SELECT COUNT(*)::int AS n FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND status='available'`,
+      [tenantId, itemId]
+    );
+    return { code: codeStr, wb_submitted: true, remaining: remainingRes.rows[0].n };
+  };
+
+  return dbClient ? doConsume(dbClient) : transaction(doConsume);
+}
+
+/**
+ * Аварийный обход (решение пользователя): если WB API недоступен и упаковку
+ * нельзя продолжать без завершения строки — супервайзер/админ может провести
+ * единицу БЕЗ отправки в WB, указав причину. Код помечается использованным
+ * с wb_submit_status='manual_override' и попадает в список "требует ручной
+ * привязки КИЗ" (см. listPendingManualOverrides) — ничего не теряется молча.
+ *
+ * Права проверяются здесь же по логину/паролю супервайзера (а не по роли
+ * текущей сессии упаковщика) — на полу склада обычно один терминал на
+ * упаковщика, и супервайзер подтверждает действие своими кредами прямо на
+ * этом же экране, не переlogинивая упаковщика.
+ */
+async function overrideMarkingAtPacking({
+  tenantId, itemId, code, refType, refId, packerId,
+  supervisorUsername, supervisorPassword, reason, dbClient = null,
+}) {
+  const codeStr = String(code || '').trim();
+  if (!codeStr) throw new ValidationError('Не указан код "Честный знак" для проведения без отправки в WB');
+  if (!reason || !String(reason).trim()) {
+    throw new ValidationError('Укажите причину проведения без отправки кода в WB');
+  }
+
+  const userRes = await query(
+    `SELECT id, password_hash, role, is_active FROM wms.users WHERE tenant_id=$1 AND username=$2`,
+    [tenantId, supervisorUsername]
+  );
+  if (userRes.rowCount === 0 || !userRes.rows[0].is_active) {
+    throw new ForbiddenError('Неверный логин или пароль супервайзера');
+  }
+  const supervisor = userRes.rows[0];
+  if (!['supervisor', 'tenant_admin'].includes(supervisor.role)) {
+    throw new ForbiddenError('Проводить упаковку без отправки КИЗ в WB может только супервайзер или администратор');
+  }
+  const passOk = await bcrypt.compare(String(supervisorPassword || ''), supervisor.password_hash);
+  if (!passOk) throw new ForbiddenError('Неверный логин или пароль супервайзера');
+
+  const doOverride = async (client) => {
+    const codeRes = await client.query(
+      `SELECT id, status FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND code=$3 FOR UPDATE`,
+      [tenantId, itemId, codeStr]
+    );
+    if (codeRes.rowCount === 0) {
+      throw new ValidationError(`Код "Честный знак" (${codeStr}) не найден в пуле этого товара.`);
+    }
+    const row = codeRes.rows[0];
+    if (row.status !== 'available') {
+      throw new ValidationError(`Код "Честный знак" (${codeStr}) уже использован.`);
+    }
+
+    await client.query(
+      `UPDATE wms.marking_codes
+       SET status='used', used_at=NOW(), used_ref_type=$1, used_ref_id=$2, used_by=$3,
+           wb_submit_status='manual_override', wb_override_reason=$4, wb_override_by=$5
+       WHERE id=$6`,
+      [refType, refId, packerId, String(reason).trim(), supervisor.id, row.id]
+    );
+
+    logger.warn(
+      { tenantId, itemId, code: codeStr, packerId, supervisorId: supervisor.id, reason },
+      'Marking code packed WITHOUT WB submission (supervisor override)'
+    );
+
+    const remainingRes = await client.query(
+      `SELECT COUNT(*)::int AS n FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND status='available'`,
+      [tenantId, itemId]
+    );
+    return { code: codeStr, wb_submitted: false, manual_override: true, remaining: remainingRes.rows[0].n };
+  };
+
+  return dbClient ? doOverride(dbClient) : transaction(doOverride);
+}
+
+/** Список кодов, проведённых в обход отправки в WB — требуют ручной привязки в кабинете WB */
+async function listPendingManualOverrides({ tenantId, limit = 200 }) {
+  const r = await query(
+    `SELECT mc.id, mc.code, mc.item_id, i.item_name, mc.used_at, mc.wb_override_reason,
+            u1.full_name AS packed_by_name, u2.full_name AS override_by_name
+     FROM wms.marking_codes mc
+     JOIN wms.items i ON i.id = mc.item_id
+     LEFT JOIN wms.users u1 ON u1.id = mc.used_by
+     LEFT JOIN wms.users u2 ON u2.id = mc.wb_override_by
+     WHERE mc.tenant_id=$1 AND mc.wb_submit_status='manual_override'
+     ORDER BY mc.used_at DESC
+     LIMIT $2`,
+    [tenantId, Math.min(Number(limit) || 200, 1000)]
+  );
+  return r.rows;
 }
 
 /**
@@ -171,4 +389,6 @@ async function allocateAndPrint({
 module.exports = {
   parseCodesText, importCodes, getCodesSummary, listCodes,
   shouldMarkAt, allocateAndPrint,
+  registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
+  listPendingManualOverrides,
 };

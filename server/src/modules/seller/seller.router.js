@@ -154,7 +154,7 @@ router.get('/items', async (req,res,next)=>{
     const r = await query(
       `SELECT i.id, i.barcode, i.item_name, i.vendor_code, i.wb_vendor_code,
          i.brand, i.unit, i.volume_liters, i.is_active, i.preview_url, i.cost_price,
-         i.requires_marking, i.marking_trigger,
+         i.requires_marking, i.marking_trigger, i.marking_mode,
          COALESCE(SUM(sb.qty_on_hand),0)::int AS total_on_hand,
          COALESCE(SUM(sb.qty_available),0)::int AS total_available,
          (COALESCE(SUM(sb.qty_on_hand),0) * COALESCE(i.cost_price,0))::numeric AS total_cost_value
@@ -229,11 +229,14 @@ router.post('/items/:id/marking/codes/import', requireModule('marking'), async (
   } catch(e){ next(e); }
 });
 
-/** PATCH /seller/items/:id/marking/settings { requires_marking, marking_trigger } —
+/** PATCH /seller/items/:id/marking/settings { requires_marking, marking_trigger, marking_mode } —
  *  клиент сам решает, какие его товары требуют маркировки "Честный знак" и на
  *  каком этапе печатать код (приёмка/упаковка) — складу не нужно об этом
  *  думать за клиента. Ранее это мог настраивать только склад в своей админке
- *  (public/app/items.html) — та возможность осталась как запасной вариант. */
+ *  (public/app/items.html) — та возможность осталась как запасной вариант.
+ *  marking_mode: 'print' — ФФ печатает код из своего пула (как раньше);
+ *  'scan' — клиент клеит DataMatrix сам на производстве, ФФ только сканирует
+ *  и отправляет в WB на сборке FBS-заказа (для клиентов, перешедших на FBS). */
 router.patch('/items/:id/marking/settings', requireModule('marking'), async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
@@ -250,12 +253,18 @@ router.patch('/items/:id/marking/settings', requireModule('marking'), async (req
       }
       fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
     }
+    if (req.body.marking_mode !== undefined) {
+      if (!['print','scan'].includes(req.body.marking_mode)) {
+        throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
+      }
+      fields.push(`marking_mode=$${idx++}`); params.push(req.body.marking_mode);
+    }
     if (fields.length === 0) throw new ValidationError('No fields to update');
     fields.push('updated_at=NOW()');
     params.push(itemId, req.user.tenantId, clientId);
     const r = await query(
       `UPDATE wms.items SET ${fields.join(', ')} WHERE id=$${idx++} AND tenant_id=$${idx++} AND client_id=$${idx}
-       RETURNING id, requires_marking, marking_trigger`,
+       RETURNING id, requires_marking, marking_trigger, marking_mode`,
       params
     );
     if (r.rowCount === 0) throw new ValidationError('Item not found');

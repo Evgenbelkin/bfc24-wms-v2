@@ -66,6 +66,16 @@
       <input id="free-comment" class="scan-input" style="font-size:15px;padding:12px;" placeholder="Например: пересорт, повреждена упаковка..."/>
     </div>
 
+    <div class="card" id="free-dm-card" style="display:none;">
+      <div class="card-title">Код "Честный знак" (DataMatrix)</div>
+      <div class="mode-note">Товар промаркирован клиентом — отсканируйте код с каждой единицы (нужно: <span id="free-dm-need">1</span>, отсканировано: <span id="free-dm-count">0</span>).</div>
+      <div class="scan-row">
+        <input id="free-dm-input" class="scan-input" placeholder="Код DataMatrix" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-dm-input','Скан DataMatrix')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      </div>
+      <ul id="free-dm-list" style="margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--muted2);"></ul>
+    </div>
+
     <button class="btn-big btn-green btn-full" onclick="submitFree()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Оприходовать</button>
     <div id="free-status" class="refresh-note"></div>
   </div>
@@ -113,6 +123,16 @@
           <input type="number" class="qty-val" id="inb-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQtyInbound(this.value)" onfocus="this.select()"/>
           <button class="qty-btn" onclick="stepQtyInbound(1)">+</button>
         </div>
+      </div>
+
+      <div class="card" id="inb-dm-card" style="display:none;">
+        <div class="card-title">Код "Честный знак" (DataMatrix)</div>
+        <div class="mode-note">Товар промаркирован клиентом — отсканируйте код с каждой единицы (нужно: <span id="inb-dm-need">1</span>, отсканировано: <span id="inb-dm-count">0</span>).</div>
+        <div class="scan-row">
+          <input id="inb-dm-input" class="scan-input" placeholder="Код DataMatrix" inputmode="none" autocomplete="off"/>
+          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-dm-input','Скан DataMatrix')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+        </div>
+        <ul id="inb-dm-list" style="margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--muted2);"></ul>
       </div>
 
       <button class="btn-big btn-green btn-full" onclick="submitInbound()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Принять строку</button>
@@ -191,14 +211,62 @@
 
     // ---------- Свободная приёмка ----------
     let freeQty = 1;
+    let freeMarkingItem = null;   // { requires_marking, marking_trigger, marking_mode } — по текущему штрихкоду
+    let freeDmCodes = [];
+
+    function freeNeedsDataMatrix() {
+      return !!(freeMarkingItem && freeMarkingItem.requires_marking &&
+        (freeMarkingItem.marking_trigger || 'packing') === 'receiving' &&
+        freeMarkingItem.marking_mode === 'scan');
+    }
+
+    function renderFreeDmCard() {
+      const card = document.getElementById('free-dm-card');
+      if (!freeNeedsDataMatrix()) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('free-dm-need').textContent = freeQty;
+      document.getElementById('free-dm-count').textContent = freeDmCodes.length;
+      document.getElementById('free-dm-list').innerHTML = freeDmCodes.map((c, i) =>
+        `<li>${UI.escHtml(c)} <a href="#" onclick="removeFreeDmCode(${i});return false;" style="color:var(--red);">убрать</a></li>`
+      ).join('');
+    }
+    function removeFreeDmCode(i) { freeDmCodes.splice(i, 1); renderFreeDmCard(); }
+
+    async function lookupFreeMarkingItem() {
+      const barcode = UI.val('#free-barcode');
+      const clientId = Number(UI.val('#client-select')) || null;
+      freeMarkingItem = null;
+      freeDmCodes = [];
+      if (barcode && clientId) {
+        try {
+          const res = await window.API.items.byBarcode(barcode, clientId);
+          freeMarkingItem = res.item || null;
+        } catch (e) { /* товар ещё не заведён - не блокируем, обычная приёмка резолвит его сама */ }
+      }
+      renderFreeDmCard();
+    }
+
     function stepQty(delta) {
       freeQty = Math.max(1, freeQty + delta);
       document.getElementById('free-qty-val').value = freeQty;
+      if (freeDmCodes.length > freeQty) freeDmCodes = freeDmCodes.slice(0, freeQty);
+      renderFreeDmCard();
     }
     function setQty(val) {
       freeQty = Math.max(1, Math.round(Number(val)) || 1);
       document.getElementById('free-qty-val').value = freeQty;
+      if (freeDmCodes.length > freeQty) freeDmCodes = freeDmCodes.slice(0, freeQty);
+      renderFreeDmCard();
     }
+
+    UI.onScan('#free-dm-input', (v) => {
+      const code = String(v || '').trim();
+      if (!code) return;
+      if (freeDmCodes.length >= freeQty) { UI.notify.err(`Уже отсканировано ${freeQty} код(ов) — этого достаточно`); return; }
+      if (freeDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
+      freeDmCodes.push(code);
+      renderFreeDmCard();
+    });
 
     async function submitFree() {
       const barcode  = UI.val('#free-barcode');
@@ -209,15 +277,21 @@
       if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
       const clientId = getClientId();
       if (!clientId) return;
+      if (freeNeedsDataMatrix() && freeDmCodes.length !== freeQty) {
+        UI.notify.err(`Отсканируйте код "Честный знак" с каждой единицы (нужно ${freeQty}, отсканировано ${freeDmCodes.length})`);
+        return;
+      }
       try {
         const res = await window.API.receiving.accept({
           barcode, location_code: location, qty: freeQty, comment: comment || undefined,
           client_id: clientId,
+          data_matrix_codes: freeNeedsDataMatrix() ? freeDmCodes : undefined,
         });
         UI.notify.ok(`Принято: ${barcode} × ${freeQty} → ${location}`);
         statusEl.textContent = `Остаток в ячейке: ${res.balance?.qty_on_hand ?? '—'}`;
         UI.setVal('#free-barcode',''); UI.setVal('#free-comment','');
         freeQty = 1; document.getElementById('free-qty-val').value = 1;
+        freeMarkingItem = null; freeDmCodes = []; renderFreeDmCard();
         document.getElementById('free-barcode').focus();
       } catch (e) { UI.notify.err(e.message); }
     }
@@ -225,7 +299,7 @@
     // UI.onScan() чистит поле сразу после Enter (рассчитано на "скан -> тут же обработали",
     // как в сборке) — а здесь значение должно остаться видимым в поле до кнопки "Оприходовать".
     // Поэтому в колбэке явно возвращаем значение обратно в поле.
-    UI.onScan('#free-barcode', (v) => { UI.setVal('#free-barcode', v); document.getElementById('free-location').focus(); });
+    UI.onScan('#free-barcode', (v) => { UI.setVal('#free-barcode', v); lookupFreeMarkingItem(); document.getElementById('free-location').focus(); });
     UI.onScan('#free-location', (v) => UI.setVal('#free-location', v));
 
     // ---------- По заявке ----------
@@ -251,14 +325,60 @@
     UI.onScan('#inb-order-barcode', (v) => { UI.setVal('#inb-order-barcode', v); loadOrderByBarcode(v); });
 
     let inbQty = 1;
+    let inbMarkingItem = null;
+    let inbDmCodes = [];
+
+    function inbNeedsDataMatrix() {
+      return !!(inbMarkingItem && inbMarkingItem.requires_marking &&
+        (inbMarkingItem.marking_trigger || 'packing') === 'receiving' &&
+        inbMarkingItem.marking_mode === 'scan');
+    }
+    function renderInbDmCard() {
+      const card = document.getElementById('inb-dm-card');
+      if (!inbNeedsDataMatrix()) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('inb-dm-need').textContent = inbQty;
+      document.getElementById('inb-dm-count').textContent = inbDmCodes.length;
+      document.getElementById('inb-dm-list').innerHTML = inbDmCodes.map((c, i) =>
+        `<li>${UI.escHtml(c)} <a href="#" onclick="removeInbDmCode(${i});return false;" style="color:var(--red);">убрать</a></li>`
+      ).join('');
+    }
+    function removeInbDmCode(i) { inbDmCodes.splice(i, 1); renderInbDmCard(); }
+
+    async function lookupInbMarkingItem() {
+      const barcode = UI.val('#inb-barcode');
+      inbMarkingItem = null;
+      inbDmCodes = [];
+      if (barcode && currentOrder) {
+        try {
+          const res = await window.API.items.byBarcode(barcode, currentOrder.client_id);
+          inbMarkingItem = res.item || null;
+        } catch (e) { /* не блокируем - строка заявки сама провалидирует штрихкод */ }
+      }
+      renderInbDmCard();
+    }
+
     function stepQtyInbound(delta) {
       inbQty = Math.max(1, inbQty + delta);
       document.getElementById('inb-qty-val').value = inbQty;
+      if (inbDmCodes.length > inbQty) inbDmCodes = inbDmCodes.slice(0, inbQty);
+      renderInbDmCard();
     }
     function setQtyInbound(val) {
       inbQty = Math.max(1, Math.round(Number(val)) || 1);
       document.getElementById('inb-qty-val').value = inbQty;
+      if (inbDmCodes.length > inbQty) inbDmCodes = inbDmCodes.slice(0, inbQty);
+      renderInbDmCard();
     }
+
+    UI.onScan('#inb-dm-input', (v) => {
+      const code = String(v || '').trim();
+      if (!code) return;
+      if (inbDmCodes.length >= inbQty) { UI.notify.err(`Уже отсканировано ${inbQty} код(ов) — этого достаточно`); return; }
+      if (inbDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
+      inbDmCodes.push(code);
+      renderInbDmCard();
+    });
 
     async function submitInbound() {
       if (!currentOrder) { UI.notify.err('Сначала отсканируйте заявку'); return; }
@@ -266,6 +386,10 @@
       const location = UI.val('#inb-location');
       if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
       if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      if (inbNeedsDataMatrix() && inbDmCodes.length !== inbQty) {
+        UI.notify.err(`Отсканируйте код "Честный знак" с каждой единицы (нужно ${inbQty}, отсканировано ${inbDmCodes.length})`);
+        return;
+      }
       try {
         // client_id берём из самой заявки (currentOrder.client_id), а не из верхнего селектора —
         // заявка однозначно привязана к клиенту, так надёжнее чем полагаться что оператор
@@ -274,14 +398,16 @@
           inbound_order_barcode: UI.val('#inb-order-barcode') || currentOrder.order_code,
           barcode, location_code: location, qty: inbQty,
           client_id: currentOrder.client_id,
+          data_matrix_codes: inbNeedsDataMatrix() ? inbDmCodes : undefined,
         });
         UI.notify.ok(`Принято: ${barcode} × ${inbQty}`);
         UI.setVal('#inb-barcode','');
         inbQty = 1; document.getElementById('inb-qty-val').value = 1;
+        inbMarkingItem = null; inbDmCodes = []; renderInbDmCard();
         document.getElementById('inb-barcode').focus();
       } catch (e) { UI.notify.err(e.message); }
     }
-    UI.onScan('#inb-barcode', (v) => { UI.setVal('#inb-barcode', v); document.getElementById('inb-location').focus(); });
+    UI.onScan('#inb-barcode', (v) => { UI.setVal('#inb-barcode', v); lookupInbMarkingItem(); document.getElementById('inb-location').focus(); });
     UI.onScan('#inb-location', (v) => UI.setVal('#inb-location', v));
 
     // ---------- История ----------

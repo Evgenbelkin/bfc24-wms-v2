@@ -47,7 +47,7 @@ router.post('/items/:itemId/codes/import', requireRole('tenant_admin', 'supervis
   } catch (e) { next(e); }
 });
 
-/** PATCH /marking/items/:itemId/settings { requires_marking, marking_trigger } */
+/** PATCH /marking/items/:itemId/settings { requires_marking, marking_trigger, marking_mode } */
 router.patch('/items/:itemId/settings', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {
     const itemId = validatePositiveInt(req.params.itemId, 'itemId');
@@ -63,15 +63,33 @@ router.patch('/items/:itemId/settings', requireRole('tenant_admin', 'supervisor'
       }
       fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
     }
+    if (req.body.marking_mode !== undefined) {
+      if (!['print', 'scan'].includes(req.body.marking_mode)) {
+        throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
+      }
+      fields.push(`marking_mode=$${idx++}`); params.push(req.body.marking_mode);
+    }
     if (fields.length === 0) throw new ValidationError('No fields to update');
     fields.push('updated_at=NOW()');
     params.push(itemId, req.user.tenantId);
     const r = await query(
-      `UPDATE wms.items SET ${fields.join(', ')} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING id, requires_marking, marking_trigger`,
+      `UPDATE wms.items SET ${fields.join(', ')} WHERE id=$${idx++} AND tenant_id=$${idx}
+       RETURNING id, requires_marking, marking_trigger, marking_mode`,
       params
     );
     if (r.rowCount === 0) throw new ValidationError('Item not found');
     res.json({ ok: true, item: r.rows[0] });
+  } catch (e) { next(e); }
+});
+
+/** GET /marking/pending-manual-overrides — коды, проведённые без отправки в WB (требуют ручной привязки) */
+router.get('/pending-manual-overrides', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const rows = await svc.listPendingManualOverrides({
+      tenantId: req.user.tenantId,
+      limit: Number(req.query.limit) || 200,
+    });
+    res.json({ ok: true, rows });
   } catch (e) { next(e); }
 });
 

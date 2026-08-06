@@ -314,6 +314,24 @@ async function fetchReturnClaims(token, { isArchive = false } = {}) {
   return [];
 }
 
+/**
+ * Закрепить коды маркировки "Честный знак" (DataMatrix/КИЗ) за сборочным
+ * заданием FBS — замена ручного ввода кода в кабинете WB на этапе сборки.
+ * Работает только для заданий в статусе confirm (см. доку WB); до 100 кодов
+ * за один вызов — для наших объёмов (штуки на один заказ) с большим запасом.
+ */
+async function setOrderKiz(token, orderId, sgtins) {
+  const codes = (Array.isArray(sgtins) ? sgtins : [sgtins]).map(String).filter(Boolean);
+  if (!codes.length) throw new Error('setOrderKiz: не передано ни одного кода');
+  if (codes.length > 100) throw new Error('setOrderKiz: WB принимает не более 100 кодов за один вызов');
+  await wbRequest({
+    token, method: 'PUT',
+    path: `/api/v3/orders/${encodeURIComponent(orderId)}/meta/sgtin`,
+    data: { sgtins: codes },
+  });
+  return true;
+}
+
 /** Нормализовать shipment code в формат WB-GI-XXXXX */
 function normalizeShipmentCode(rawId) {
   const s = String(rawId || '').trim();
@@ -349,5 +367,6 @@ module.exports = {
   fetchOrderStatuses,
   fetchFbsStocks, updateFbsStocks,
   fetchReturnClaims,
+  setOrderKiz,
   normalizeShipmentCode, extractStickerCode,
 };

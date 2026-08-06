@@ -45,12 +45,18 @@ router.get('/current', requireRole('tenant_admin','supervisor','packer'), async 
 /** POST /packing/scan-item */
 router.post('/scan-item', requireRole('tenant_admin','supervisor','packer'), async (req,res,next)=>{
   try {
-    const { shipment_code, scan_code } = req.body;
+    const { shipment_code, scan_code, data_matrix_code, marking_override } = req.body;
     const result = await svc.scanItem({
       tenantId:     req.user.tenantId,
       packerId:     req.user.id,
       shipmentCode: shipment_code,
       barcode:      scan_code,
+      dataMatrixCode: data_matrix_code || null,
+      markingOverride: marking_override && marking_override.reason ? {
+        reason: marking_override.reason,
+        supervisorUsername: marking_override.supervisor_username,
+        supervisorPassword: marking_override.supervisor_password,
+      } : null,
     });
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }

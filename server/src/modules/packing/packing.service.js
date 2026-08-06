@@ -80,11 +80,13 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
        pt.barcode,
        MAX(pt.location_code) AS location_code,
        SUM(pt.qty)::int AS qty_plan,
-       i.item_name, i.vendor_code, i.unit, i.preview_url
+       i.item_name, i.vendor_code, i.unit, i.preview_url,
+       i.requires_marking, i.marking_trigger, i.marking_mode
      FROM wms.picking_tasks pt
      LEFT JOIN wms.items i ON i.id=pt.item_id
      WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.status IN ('new','in_progress','done')
-     GROUP BY pt.barcode, i.item_name, i.vendor_code, i.unit, i.preview_url
+     GROUP BY pt.barcode, i.item_name, i.vendor_code, i.unit, i.preview_url,
+       i.requires_marking, i.marking_trigger, i.marking_mode
      ORDER BY i.item_name, pt.barcode`,
     [tenantId, shipment.external_id]
   );
@@ -143,7 +145,7 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
 }
 
 /** Скан товара на упаковке */
-async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
+async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixCode = null, markingOverride = null }) {
   return transaction(async (client) => {
     // Находим shipment
     const shipRes = await client.query(
@@ -177,7 +179,8 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
     // Ищем item_id явно — нужен для INSERT. Заодно тянем item_name/маркировку —
     // пригодится ниже для печати кода "Честный знак" вместе со стикером ВБ.
     const itemRes = await client.query(
-      `SELECT id, item_name, requires_marking, marking_trigger FROM wms.items WHERE tenant_id=$1 AND barcode=$2 AND client_id=$3 LIMIT 1`,
+      `SELECT id, item_name, requires_marking, marking_trigger, marking_mode
+       FROM wms.items WHERE tenant_id=$1 AND barcode=$2 AND client_id=$3 LIMIT 1`,
       [tenantId, barcode, shipment.client_id]
     );
     if (itemRes.rowCount === 0) {
@@ -240,10 +243,15 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
     // же на все единицы нельзя. Берём стикер по порядку (ORDER BY id), сдвигаясь
     // на alreadyPacked — т.е. 1-й скан этого штрихкода берёт 1-й ещё не
     // выданный заказ, 2-й скан — 2-й, и так далее.
+    // wo.wb_order_id + ma.api_token — нужны, только если товар в режиме
+    // маркировки 'scan' (отправка КИЗ в WB по конкретному orderId ниже),
+    // но тянем всегда заодно — дешёвый JOIN, не усложняем запрос условно.
     const stickerRes = await client.query(
-      `SELECT wb_sticker, wb_sticker_code FROM wms.wb_orders
-       WHERE tenant_id=$1 AND wb_supply_id=$2 AND barcode=$3 AND wb_sticker IS NOT NULL
-       ORDER BY id
+      `SELECT wo.wb_sticker, wo.wb_sticker_code, wo.wb_order_id, ma.api_token
+       FROM wms.wb_orders wo
+       LEFT JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+       WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND wo.barcode=$3 AND wo.wb_sticker IS NOT NULL
+       ORDER BY wo.id
        OFFSET $4 LIMIT 1`,
       [tenantId, shipmentCode, barcode, alreadyPacked]
     );
@@ -298,11 +306,41 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode }) {
     // продолжить, пока в пуле не появятся коды/не настроят принтер).
     let markingJob = null;
     if (marking.shouldMarkAt(item, 'packing')) {
-      markingJob = await marking.allocateAndPrint({
-        tenantId, clientId: shipment.client_id, itemId, itemBarcode: barcode, itemName: item.item_name,
-        qty: 1, refType: 'packing', refId: shipment.id, userId: packerId, employeeId: packerId,
-        dbClient: client,
-      });
+      if (item.marking_mode === 'scan') {
+        // Товар промаркирован клиентом заранее (DataMatrix уже на единице) —
+        // не печатаем, а сверяем отсканированный код с пулом и ОТПРАВЛЯЕМ
+        // ЕГО В WB, привязывая к конкретному orderId этой единицы (замена
+        // ручного ввода кода в кабинете WB на сборке). Жёсткая блокировка
+        // (нет try/catch) — см. marking.consumeScannedCodeAtPacking.
+        const wbOrderRow = stickerRes.rows[0] || null;
+        if (markingOverride && markingOverride.reason) {
+          // Аварийный обход супервайзером/админом — WB API недоступен и т.п.
+          // Права проверяются внутри по логину/паролю супервайзера, не по
+          // роли текущей сессии упаковщика.
+          markingJob = await marking.overrideMarkingAtPacking({
+            tenantId, itemId, code: dataMatrixCode,
+            refType: 'packing', refId: shipment.id, packerId,
+            supervisorUsername: markingOverride.supervisorUsername,
+            supervisorPassword: markingOverride.supervisorPassword,
+            reason: markingOverride.reason,
+            dbClient: client,
+          });
+        } else {
+          markingJob = await marking.consumeScannedCodeAtPacking({
+            tenantId, itemId, code: dataMatrixCode,
+            wbOrderId: wbOrderRow ? wbOrderRow.wb_order_id : null,
+            apiToken: wbOrderRow ? wbOrderRow.api_token : null,
+            refType: 'packing', refId: shipment.id, userId: packerId,
+            dbClient: client,
+          });
+        }
+      } else {
+        markingJob = await marking.allocateAndPrint({
+          tenantId, clientId: shipment.client_id, itemId, itemBarcode: barcode, itemName: item.item_name,
+          qty: 1, refType: 'packing', refId: shipment.id, userId: packerId, employeeId: packerId,
+          dbClient: client,
+        });
+      }
     }
 
     // Отдаём фронту именно тот стикер, который реально ушёл на печать для этой

@@ -27,6 +27,17 @@
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
+  <div class="card" id="pending-override-card" style="display:none;border:2px solid var(--red);">
+    <div class="card-title" style="color:var(--red);">Требует ручной привязки КИЗ в WB (<span id="pending-override-count">0</span>)</div>
+    <div class="refresh-note" style="margin-bottom:8px;">Эти единицы упакованы без отправки кода в WB (обход супервайзера) — привяжите код к заказу вручную в кабинете WB.</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Товар</th><th>Код</th><th>Когда</th><th>Кто провёл</th><th>Причина</th></tr></thead>
+        <tbody id="pending-override-body"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">Клиент</div>
     <select id="f-client" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
@@ -153,18 +164,30 @@
             <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
               <label style="display:inline;">Требует маркировки "Честный знак"</label> <input type="checkbox" id="m-marking" onchange="document.getElementById('marking-trigger-wrap').style.display=this.checked?'block':'none'" ${it && it.requires_marking ? 'checked':''}/>
               <div class="field" id="marking-trigger-wrap" style="display:${it && it.requires_marking ? 'block':'none'};margin-top:6px;">
-                <label>Печатать код на этапе</label>
+                <label>Кто маркирует товар</label>
+                <select id="m-marking-mode" onchange="document.getElementById('marking-print-wrap').style.display=this.value==='print'?'block':'none'; document.getElementById('marking-scan-hint').style.display=this.value==='scan'?'block':'none';">
+                  <option value="print" ${!it || (it.marking_mode||'print')==='print' ? 'selected':''}>Мы (ФФ) печатаем код из своего пула</option>
+                  <option value="scan" ${it && it.marking_mode==='scan' ? 'selected':''}>Клиент уже клеит DataMatrix на производстве — мы только сканируем</option>
+                </select>
+                <label style="margin-top:6px;">Когда фиксировать код</label>
                 <select id="m-marking-trigger">
                   <option value="packing" ${!it || (it.marking_trigger||'packing')==='packing' ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
                   <option value="receiving" ${it && it.marking_trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
                 </select>
+                <p id="marking-scan-hint" style="display:${it && it.marking_mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:6px;">
+                  На приёмке нужно будет отсканировать DataMatrix каждой единицы (код уже на товаре).
+                  На сборке FBS-заказа код сверяется и автоматически отправляется в WB через API — вручную
+                  в кабинете WB вводить не нужно.
+                </p>
               </div>
               ${it ? `
               <div style="margin-top:10px;font-size:13px;color:var(--muted);" id="marking-summary">Коды: загрузка…</div>
-              <div class="field-row2" style="margin-top:6px;">
-                <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"></textarea>
+              <div id="marking-print-wrap" style="display:${!it.marking_mode || it.marking_mode==='print' ? 'block':'none'};">
+                <div class="field-row2" style="margin-top:6px;">
+                  <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"></textarea>
+                </div>
+                <button class="btn-big btn-blue btn-full" style="margin-top:6px;" onclick="importMarkingCodes(${idx})">Загрузить коды в пул</button>
               </div>
-              <button class="btn-big btn-blue btn-full" style="margin-top:6px;" onclick="importMarkingCodes(${idx})">Загрузить коды в пул</button>
               ` : ''}
             </div>
             ${it ? `
@@ -268,6 +291,7 @@
         is_active: document.getElementById('m-active').checked,
         requires_marking: document.getElementById('m-marking').checked,
         marking_trigger: UI.val('#m-marking-trigger') || 'packing',
+        marking_mode: UI.val('#m-marking-mode') || 'print',
       };
       if (it) {
         const kitBase = UI.val('#m-kit-base');
@@ -291,7 +315,27 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    (async () => { await loadClients(); await loadItems(); })();
+    async function loadPendingOverrides() {
+      try {
+        const res = await window.API.marking.pendingOverrides({ limit: 100 });
+        const rows = res.rows || [];
+        const card = document.getElementById('pending-override-card');
+        if (!rows.length) { card.style.display = 'none'; return; }
+        card.style.display = 'block';
+        document.getElementById('pending-override-count').textContent = rows.length;
+        document.getElementById('pending-override-body').innerHTML = rows.map(r => `
+          <tr>
+            <td>${UI.escHtml(r.item_name || '—')}</td>
+            <td style="font-family:monospace;">${UI.escHtml(r.code)}</td>
+            <td>${UI.fmtDateTime(r.used_at)}</td>
+            <td>${UI.escHtml(r.override_by_name || '—')}</td>
+            <td>${UI.escHtml(r.wb_override_reason || '—')}</td>
+          </tr>
+        `).join('');
+      } catch (e) { /* модуль marking может быть не подключён - просто не показываем */ }
+    }
+
+    (async () => { await loadClients(); await loadItems(); await loadPendingOverrides(); })();
   </script>
 </body>
 </html>

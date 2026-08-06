@@ -37,7 +37,7 @@ async function listItems({ tenantId, clientId = null, search = null, isActive = 
        i.length_cm, i.width_cm, i.height_cm, i.weight_grams,
        i.cost_price, i.processing_fee, i.needs_packaging,
        i.is_active, i.source, i.wb_nm_id, i.preview_url,
-       i.requires_marking, i.marking_trigger,
+       i.requires_marking, i.marking_trigger, i.marking_mode,
        i.created_at, i.kit_of_item_id, i.kit_multiplier,
        base.item_name AS kit_of_item_name, base.barcode AS kit_of_barcode,
        c.client_name
@@ -117,14 +117,18 @@ async function createItem({ tenantId, clientId, createdById, data }) {
   if (!['receiving', 'packing'].includes(markingTrigger)) {
     throw new ValidationError(`Invalid marking_trigger. Allowed: receiving, packing`);
   }
+  const markingMode = data.marking_mode || 'print';
+  if (!['print', 'scan'].includes(markingMode)) {
+    throw new ValidationError(`Invalid marking_mode. Allowed: print, scan`);
+  }
 
   const res = await query(
     `INSERT INTO wms.items
        (tenant_id, client_id, barcode, item_name, vendor_code, wb_vendor_code,
         brand, unit, volume_liters, length_cm, width_cm, height_cm, weight_grams,
         cost_price, processing_fee, needs_packaging, is_active, source, wb_nm_id, preview_url, created_by,
-        kit_of_item_id, kit_multiplier, requires_marking, marking_trigger)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+        kit_of_item_id, kit_multiplier, requires_marking, marking_trigger, marking_mode)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
      RETURNING *`,
     [
       tenantId, cid, barcode, itemName,
@@ -149,6 +153,7 @@ async function createItem({ tenantId, clientId, createdById, data }) {
       kitMultiplier,
       parseBool(data.requires_marking, false),
       markingTrigger,
+      markingMode,
     ]
   );
 
@@ -194,6 +199,10 @@ async function updateItem({ tenantId, itemId, data }) {
   if (data.marking_trigger !== undefined) {
     if (!['receiving', 'packing'].includes(data.marking_trigger)) throw new ValidationError(`Invalid marking_trigger. Allowed: receiving, packing`);
     fields.push(`marking_trigger = $${idx++}`); params.push(data.marking_trigger);
+  }
+  if (data.marking_mode !== undefined) {
+    if (!['print', 'scan'].includes(data.marking_mode)) throw new ValidationError(`Invalid marking_mode. Allowed: print, scan`);
+    fields.push(`marking_mode = $${idx++}`); params.push(data.marking_mode);
   }
 
   // Комплект: kit_of_item_id=null явно снимает связь (делает товар обычным),
