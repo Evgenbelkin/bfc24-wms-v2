@@ -146,37 +146,44 @@ function generateMarkingLabelSvg(code, itemName, { width = 400, height = 260 } =
 
 /**
  * Компактный штрихкод ячейки хранения (Code128) для массовой печати наклеек
- * на стеллаж — только сам код (bwip-js includetext сам подписывает его под
- * штрихкодом своим шрифтом), без отдельного заголовка сверху, как у
- * generateItemLabelSvg — там заголовок нужен под название товара, здесь
- * печатают сразу пачками по 50-300 штук, и лишняя пустая строка сверху на
- * каждой только тратит место на листе.
+ * на стеллаж, без отдельного заголовка сверху, как у generateItemLabelSvg —
+ * там заголовок нужен под название товара, здесь печатают сразу пачками по
+ * 50-300 штук, и лишняя пустая строка сверху на каждой только тратит место
+ * на листе. Код под штрихкодом рисуем СВОИМ жирным <text> (а не встроенной
+ * подписью bwip-js через includetext) — родной шрифт bwip-js для
+ * человекочитаемой подписи тонкий и мелкий, плохо читается на наклейке
+ * издалека; так толщину/размер можно задать явно.
  */
-function generateLocationLabelSvg(locationCode, { width = 300, height = 130, barcodeHeightMm = 12 } = {}) {
+function generateLocationLabelSvg(locationCode, { width = 300, height = 150, barcodeHeightMm = 12, fontSize = 34 } = {}) {
+  const code = String(locationCode);
   const barcodeSvg = bwipjs.toSVG({
     bcid: 'code128',
-    text: String(locationCode),
+    text: code,
     scale: 2,
     height: barcodeHeightMm,
-    includetext: true,
-    textxalign: 'center',
+    includetext: false,
   });
   const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(barcodeSvg);
   const bw = vbMatch ? Number(vbMatch[1]) : 300;
-  const bh = vbMatch ? Number(vbMatch[2]) : 100;
+  const bh = vbMatch ? Number(vbMatch[2]) : 80;
 
   const marginX = 16;
+  const textAreaH = fontSize + 18; // место под жирный код снизу
+  const barcodeAreaH = height - textAreaH;
   const barcodeW = width - marginX * 2;
-  const scale = barcodeW / bw;
-  const barcodeH = Math.round(bh * scale);
-  const barcodeX = marginX;
-  const barcodeY = Math.round((height - barcodeH) / 2);
+  const scale = Math.min(barcodeW / bw, barcodeAreaH / bh);
+  const barcodeH = bh * scale;
+  const barcodeX = (width - bw * scale) / 2;
+  const barcodeY = Math.round((barcodeAreaH - barcodeH) / 2);
 
   const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(barcodeSvg);
   const barcodeInner = innerMatch ? innerMatch[1] : barcodeSvg;
 
+  const textY = barcodeAreaH + fontSize;
+
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
     `<g transform="translate(${barcodeX}, ${barcodeY}) scale(${scale})">${barcodeInner}</g>` +
+    `<text x="${width / 2}" y="${textY}" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="${fontSize}">${escapeXml(code)}</text>` +
     `</svg>`;
 }
 
