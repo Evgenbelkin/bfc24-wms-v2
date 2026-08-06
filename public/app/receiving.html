@@ -281,6 +281,9 @@
       if (freeDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       freeDmCodes.push(code);
       renderFreeDmCard();
+      // Набрали нужное количество кодов — не заставляем ещё и на кнопку жать,
+      // сразу оприходуем (важно при приёмке пачками, чтобы не переключаться руками).
+      if (freeDmCodes.length === freeQty) submitFree();
     });
 
     async function submitFree() {
@@ -322,7 +325,17 @@
     // как в сборке) — а здесь значение должно остаться видимым в поле до кнопки "Оприходовать".
     // Поэтому в колбэке явно возвращаем значение обратно в поле.
     UI.onScan('#free-barcode', (v) => { UI.setVal('#free-barcode', v); lookupFreeMarkingItem(); document.getElementById('free-location').focus(); });
-    UI.onScan('#free-location', (v) => UI.setVal('#free-location', v));
+    UI.onScan('#free-location', (v) => {
+      UI.setVal('#free-location', v);
+      // Дальше по цепочке без рук: если товар маркирован — переходим сразу на скан
+      // DataMatrix (карточка уже должна быть видна к этому моменту); если нет — сразу
+      // оприходуем, не заставляя жать кнопку на каждую единицу/пачку.
+      if (freeNeedsDataMatrix()) {
+        document.getElementById('free-dm-input')?.focus();
+      } else {
+        submitFree();
+      }
+    });
 
     // ---------- По заявке ----------
     let currentOrder = null;
@@ -406,6 +419,7 @@
       if (inbDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       inbDmCodes.push(code);
       renderInbDmCard();
+      if (inbDmCodes.length === inbQty) submitInbound();
     });
 
     async function submitInbound() {
@@ -439,7 +453,14 @@
       } catch (e) { UI.notify.err(e.message); }
     }
     UI.onScan('#inb-barcode', (v) => { UI.setVal('#inb-barcode', v); lookupInbMarkingItem(); document.getElementById('inb-location').focus(); });
-    UI.onScan('#inb-location', (v) => UI.setVal('#inb-location', v));
+    UI.onScan('#inb-location', (v) => {
+      UI.setVal('#inb-location', v);
+      if (inbNeedsDataMatrix()) {
+        document.getElementById('inb-dm-input')?.focus();
+      } else {
+        submitInbound();
+      }
+    });
 
     // ---------- История ----------
     async function loadHistory() {
