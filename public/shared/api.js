@@ -431,6 +431,7 @@
     items:    (p)     => get('/seller/items', p),
     setItemCostPrice: (itemId, costPrice) => patch(`/seller/items/${itemId}/cost-price`, { cost_price: costPrice }),
     markingSummary:      (itemId)           => get(`/seller/items/${itemId}/marking/summary`),
+    markingCodes:        (itemId, p)        => get(`/seller/items/${itemId}/marking/codes`, p),
     importMarkingCodes:  (itemId, codesText)=> post(`/seller/items/${itemId}/marking/codes/import`, { codes_text: codesText }),
     updateMarkingSettings:(itemId, d)       => patch(`/seller/items/${itemId}/marking/settings`, d),
     returns:        (p) => get('/seller/returns', p),

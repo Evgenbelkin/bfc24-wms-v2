@@ -211,6 +211,23 @@ router.get('/items/:id/marking/summary', requireModule('marking'), async (req,re
   } catch(e){ next(e); }
 });
 
+/** GET /seller/items/:id/marking/codes — список кодов пула (какие ещё свободны,
+ *  какие уже использованы/отправлены в WB) — чтобы клиент мог сам проверить остаток. */
+router.get('/items/:id/marking/codes', requireModule('marking'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const itemId = Number(req.params.id);
+    await assertOwnItem({ tenantId: req.user.tenantId, clientId, itemId });
+    const codes = await markingSvc.listCodes({
+      tenantId: req.user.tenantId, itemId,
+      status: req.query.status || null,
+      limit: Number(req.query.limit) || 500,
+      offset: Number(req.query.offset) || 0,
+    });
+    res.json({ ok:true, codes });
+  } catch(e){ next(e); }
+});
+
 /** POST /seller/items/:id/marking/codes/import { codes_text } — клиент сам
  *  запрашивает коды "Честный знак" на свой товар в ЦРПТ и подгружает их сюда
  *  (по одному на строку) — склад дальше просто печатает их по одному при

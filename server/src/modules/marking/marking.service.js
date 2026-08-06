@@ -52,6 +52,7 @@ async function getCodesSummary({ tenantId, itemId }) {
     `SELECT
        COUNT(*) FILTER (WHERE status='available')::int AS available,
        COUNT(*) FILTER (WHERE status='used')::int       AS used,
+       COUNT(*) FILTER (WHERE wb_submit_status='manual_override')::int AS manual_override,
        COUNT(*)::int AS total
      FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2`,
     [tenantId, itemId]
@@ -59,14 +60,15 @@ async function getCodesSummary({ tenantId, itemId }) {
   return r.rows[0];
 }
 
-/** Список кодов (для просмотра/отладки) */
+/** Список кодов пула (для просмотра — какие коды ещё свободны, какие уже ушли) */
 async function listCodes({ tenantId, itemId, status = null, limit = 200, offset = 0 }) {
   const params = [tenantId, itemId];
   let cond = 'tenant_id=$1 AND item_id=$2';
   if (status) { cond += ` AND status=$3`; params.push(status); }
   params.push(Math.min(limit, 1000), Math.max(offset, 0));
   const r = await query(
-    `SELECT id, code, status, used_at, used_ref_type, used_ref_id, created_at
+    `SELECT id, code, status, source, used_at, used_ref_type, used_ref_id,
+            wb_order_id, wb_submit_status, wb_submitted_at, wb_override_reason, created_at
      FROM wms.marking_codes WHERE ${cond}
      ORDER BY id
      LIMIT $${params.length - 1} OFFSET $${params.length}`,

@@ -182,12 +182,16 @@
                 </div>
                 <p id="marking-scan-hint" style="display:${it && it.marking_mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:6px;">
                   Для этого режима код сканируется на ОБОИХ этапах всегда (выбор "когда фиксировать" здесь не действует):
-                  на приёмке DataMatrix каждой единицы заносится в пул, на сборке FBS-заказа он сверяется с конкретной
+                  на приёмке DataMatrix каждой единицы заносится в пул, на упаковке он сверяется с конкретной
                   единицей и автоматически уходит в WB через API — вручную в кабинете WB вводить не нужно.
                 </p>
               </div>
               ${it ? `
               <div style="margin-top:10px;font-size:13px;color:var(--muted);" id="marking-summary">Коды: загрузка…</div>
+              <div style="margin-top:4px;">
+                <a href="javascript:void(0)" style="font-size:12px;color:var(--blue);" onclick="toggleMarkingCodesList(${it.id})">Показать коды пула ▾</a>
+              </div>
+              <div id="marking-codes-list" style="display:none;margin-top:6px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
               <div id="marking-print-wrap" style="display:${!it.marking_mode || it.marking_mode==='print' ? 'block':'none'};">
                 <div class="field-row2" style="margin-top:6px;">
                   <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"></textarea>
@@ -227,6 +231,7 @@
           </div>
         </div>
       `;
+      markingCodesListOpen = false;
       if (it) loadMarkingSummary(it.id);
     }
 
@@ -236,9 +241,51 @@
       try {
         const res = await window.API.marking.summary(itemId);
         const s = res.summary;
-        el.textContent = `Коды: свободно ${s.available}, использовано ${s.used} (всего ${s.total})`;
+        let txt = `Коды: свободно ${s.available}, использовано ${s.used} (всего ${s.total})`;
+        if (s.manual_override > 0) txt += ` · без КИЗ вручную: ${s.manual_override}`;
+        el.textContent = txt;
       } catch (e) {
         el.textContent = 'Модуль маркировки не подключен для этого склада';
+      }
+    }
+
+    const MARKING_STATUS_PILL = {
+      available: { label: 'Свободен', color: 'var(--green)' },
+      used_sent: { label: 'Использован → отправлен в WB', color: 'var(--blue)' },
+      used_override: { label: 'Использован → ручной обход (не отправлен)', color: 'var(--orange, #e08a2b)' },
+      used_plain: { label: 'Использован', color: 'var(--muted2)' },
+    };
+    function markingCodeStatusKey(c) {
+      if (c.status === 'available') return 'available';
+      if (c.wb_submit_status === 'manual_override') return 'used_override';
+      if (c.wb_submit_status === 'sent') return 'used_sent';
+      return 'used_plain';
+    }
+    let markingCodesListOpen = false;
+    async function toggleMarkingCodesList(itemId) {
+      const box = document.getElementById('marking-codes-list');
+      if (!box) return;
+      markingCodesListOpen = !markingCodesListOpen;
+      box.style.display = markingCodesListOpen ? 'block' : 'none';
+      if (!markingCodesListOpen) return;
+      box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Загрузка…</div>';
+      try {
+        const res = await window.API.marking.listCodes(itemId, { limit: 500 });
+        const rows = res.codes || [];
+        if (!rows.length) {
+          box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Кодов пока нет</div>';
+          return;
+        }
+        box.innerHTML = rows.map(c => {
+          const p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
+          return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex:0 0 auto;"></span>
+            <span style="font-family:monospace;flex:1;word-break:break-all;">${UI.escHtml(c.code)}</span>
+            <span style="color:${p.color};white-space:nowrap;">${p.label}</span>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
       }
     }
 

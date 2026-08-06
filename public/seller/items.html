@@ -136,11 +136,15 @@
 
               <p id="m-scan-hint" style="display:${mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:8px;">
                 Для этого режима код сканируется на обоих этапах всегда: фулфилмент отсканирует ваш код
-                и при приёмке, и при сборке заказа, и сам отправит его в WB — вам ничего вручную в кабинете WB
+                и при приёмке, и при упаковке заказа, и сам отправит его в WB — вам ничего вручную в кабинете WB
                 вводить не нужно.
               </p>
 
-              <div id="marking-summary" style="font-size:14px;margin-top:12px;display:${mode==='print' ? 'block':'none'};">Загрузка...</div>
+              <div id="marking-summary" style="font-size:14px;margin-top:12px;">Загрузка...</div>
+              <div style="margin-top:4px;">
+                <a href="javascript:void(0)" style="font-size:12px;color:var(--accent);" onclick="toggleMarkingCodesList(${itemId})">Показать коды пула ▾</a>
+              </div>
+              <div id="marking-codes-list" style="display:none;margin-top:6px;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
               <div id="marking-codes-wrap" style="display:${mode==='print' ? 'block':'none'};">
                 <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
                 <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
@@ -155,18 +159,18 @@
           </div>
         </div>
       `;
-      if (on && mode === 'print') loadMarkingSummary(itemId);
+      markingCodesListOpen = false;
+      if (on) loadMarkingSummary(itemId);
     }
 
     function onMarkingToggle(itemId) {
       const on = document.getElementById('m-req-marking').checked;
       document.getElementById('marking-fields').style.display = on ? 'block' : 'none';
-      if (on && UI.val('#m-mode') === 'print') loadMarkingSummary(itemId);
+      if (on) loadMarkingSummary(itemId);
     }
 
     function onMarkingModeChange() {
       const isPrint = UI.val('#m-mode') === 'print';
-      document.getElementById('marking-summary').style.display = isPrint ? 'block' : 'none';
       document.getElementById('marking-codes-wrap').style.display = isPrint ? 'block' : 'none';
       document.getElementById('m-trigger-wrap').style.display = isPrint ? 'block' : 'none';
       document.getElementById('m-scan-hint').style.display = isPrint ? 'none' : 'block';
@@ -200,10 +204,52 @@
       try {
         const res = await window.API.seller.markingSummary(itemId);
         const s = res.summary;
-        el.textContent = `Загружено кодов: ${s.total}. Свободно (ещё не напечатано складом): ${s.available}. Использовано: ${s.used}.`;
+        let txt = `Загружено кодов: ${s.total}. Свободно: ${s.available}. Использовано: ${s.used}.`;
+        if (s.manual_override > 0) txt += ` Без КИЗ вручную: ${s.manual_override}.`;
+        el.textContent = txt;
       } catch (e) {
         if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
         el.textContent = 'Не удалось загрузить сводку: ' + e.message;
+      }
+    }
+
+    const MARKING_STATUS_PILL = {
+      available: { label: 'Свободен', color: 'var(--green)' },
+      used_sent: { label: 'Использован → отправлен в WB', color: 'var(--accent)' },
+      used_override: { label: 'Использован → ручной обход (не отправлен)', color: '#e08a2b' },
+      used_plain: { label: 'Использован', color: 'var(--muted2)' },
+    };
+    function markingCodeStatusKey(c) {
+      if (c.status === 'available') return 'available';
+      if (c.wb_submit_status === 'manual_override') return 'used_override';
+      if (c.wb_submit_status === 'sent') return 'used_sent';
+      return 'used_plain';
+    }
+    let markingCodesListOpen = false;
+    async function toggleMarkingCodesList(itemId) {
+      const box = document.getElementById('marking-codes-list');
+      if (!box) return;
+      markingCodesListOpen = !markingCodesListOpen;
+      box.style.display = markingCodesListOpen ? 'block' : 'none';
+      if (!markingCodesListOpen) return;
+      box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Загрузка…</div>';
+      try {
+        const res = await window.API.seller.markingCodes(itemId, { limit: 500 });
+        const rows = res.codes || [];
+        if (!rows.length) {
+          box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Кодов пока нет</div>';
+          return;
+        }
+        box.innerHTML = rows.map(c => {
+          const p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
+          return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex:0 0 auto;"></span>
+            <span style="font-family:monospace;flex:1;word-break:break-all;">${UI.escHtml(c.code)}</span>
+            <span style="color:${p.color};white-space:nowrap;">${p.label}</span>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
       }
     }
 
