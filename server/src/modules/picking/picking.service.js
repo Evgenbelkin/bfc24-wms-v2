@@ -15,6 +15,35 @@ const logger = require('../../utils/logger');
 // Picking Service — Waves + Tasks + Scan flows
 // =============================================================================
 
+/**
+ * Порядок обхода склада по коду ячейки вида "A-<ряд>-<позиция>" (например
+ * A-01-01 .. A-01-20) — где буква это стеллаж/зона, второе число это ряд
+ * (уровень полки по высоте, набор для одной точки прохода), третье число —
+ * позиция ВДОЛЬ стеллажа. Идти нужно по позиции (это и есть ходьба вдоль
+ * стеллажа), а ряд (высоту полки) можно взять "по пути" не отходя в сторону —
+ * поэтому позиция первична, ряд вторичен. Простая сортировка по строке кода
+ * дала бы обратный эффект (сначала весь ряд 01 по всем позициям, потом
+ * заново от начала ряд 02) — то самое хождение туда-обратно, от которого
+ * уходим. Коды, не подходящие под этот шаблон (буферные/технические ячейки
+ * вроде SBORKA-01, PRM-01) сортируются как есть, отдельным блоком после
+ * "настоящих" стеллажных ячеек.
+ */
+function locationWalkKey(code) {
+  const raw = String(code || '').trim().toUpperCase();
+  const m = /^([A-ZА-Я]+)-(\d+)-(\d+)$/.exec(raw);
+  if (!m) return { pattern: false, raw };
+  return { pattern: true, zone: m[1], row: parseInt(m[2], 10), position: parseInt(m[3], 10) };
+}
+function compareWalkKeys(a, b) {
+  if (a.pattern && b.pattern) {
+    if (a.zone !== b.zone) return a.zone < b.zone ? -1 : 1;
+    if (a.position !== b.position) return a.position - b.position;
+    return a.row - b.row;
+  }
+  if (a.pattern !== b.pattern) return a.pattern ? -1 : 1;
+  return a.raw < b.raw ? -1 : (a.raw > b.raw ? 1 : 0);
+}
+
 // ===== WAVES =====
 
 async function listWaves({ tenantId, warehouseId = null, status = null, pickerId = null, limit = 50 }) {
@@ -147,22 +176,47 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     return task;
   }
 
-  // Берём новую задачу
+  // Берём новую задачу — среди ВСЕХ ещё не взятых задач этой волны (не только
+  // самой старой по порядку создания), чтобы выбрать физически ближайшую по
+  // ходу склада, а не следующую по порядку строк в заказе. См. locationWalkKey()
+  // выше — идём по одному стеллажу от начала до конца, не возвращаясь.
   return transaction(async (client) => {
-    const newTask = await client.query(
-      `SELECT t.id FROM wms.picking_tasks t
+    const candidates = await client.query(
+      `SELECT t.id, t.item_id, t.client_id, t.warehouse_id, t.location_code, t.priority
+       FROM wms.picking_tasks t
        WHERE t.tenant_id=$1 AND t.status='new'
          AND ($2::int IS NULL OR t.picker_id=$2)
          AND ($3::text IS NULL OR t.shipment_code=$3)
        ORDER BY t.priority ASC, t.id ASC
-       FOR UPDATE SKIP LOCKED LIMIT 1`,
+       FOR UPDATE SKIP LOCKED LIMIT 500`,
       [tenantId, pickerId||null, shipmentCode||null]
     );
-    if (newTask.rowCount === 0) return null;
+    if (candidates.rowCount === 0) return null;
 
-    const taskId = newTask.rows[0].id;
+    // Для задач без заранее известной ячейки подбираем лучшую (read-only,
+    // без резерва — резервируем только ту задачу, которую реально выберем
+    // ниже) — чтобы можно было сравнить их всех по физическому расположению.
+    // Идут по отдельным (не транзакционным) коннектам из пула — параллельно,
+    // чтобы не держать блокировку кандидатов дольше необходимого.
+    const resolvedById = new Map();
+    await Promise.all(candidates.rows.map(async (c) => {
+      if (c.location_code) { resolvedById.set(c.id, { code: c.location_code, id: null }); return; }
+      if (!c.item_id) { resolvedById.set(c.id, { code: null, id: null }); return; }
+      const best = await findBestPickLocation({
+        tenantId, warehouseId: c.warehouse_id, itemId: c.item_id, clientId: c.client_id,
+      });
+      resolvedById.set(c.id, best ? { code: best.location_code, id: best.location_id } : { code: null, id: null });
+    }));
 
-    // Ищем лучшую ячейку если не заполнена
+    let best = candidates.rows[0];
+    let bestKey = locationWalkKey(resolvedById.get(best.id).code);
+    for (const c of candidates.rows.slice(1)) {
+      if (c.priority !== best.priority) continue; // приоритет главнее маршрута
+      const key = locationWalkKey(resolvedById.get(c.id).code);
+      if (compareWalkKeys(key, bestKey) < 0) { best = c; bestKey = key; }
+    }
+    const taskId = best.id;
+
     const taskRes = await client.query(
       `SELECT t.*, i.item_name, i.preview_url FROM wms.picking_tasks t
        LEFT JOIN wms.items i ON i.id=t.item_id
@@ -170,15 +224,9 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     );
     const task = taskRes.rows[0];
 
-    let locCode = task.location_code;
-    let locId = null;
-    if (!locCode && task.item_id) {
-      const best = await findBestPickLocation({
-        tenantId, warehouseId: task.warehouse_id,
-        itemId: task.item_id, clientId: task.client_id,
-      });
-      if (best) { locCode = best.location_code; locId = best.location_id; }
-    }
+    const preResolved = resolvedById.get(taskId);
+    let locCode = task.location_code || preResolved?.code || null;
+    let locId = preResolved?.id || null;
     if (locCode && !locId) {
       const loc = await getLocationByCode({ tenantId, warehouseId: task.warehouse_id, locationCode: locCode }).catch(() => null);
       locId = loc?.id || null;
