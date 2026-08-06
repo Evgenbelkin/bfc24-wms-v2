@@ -188,7 +188,13 @@
         sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
         const saved = localStorage.getItem(LAST_CLIENT_KEY);
         if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
-        sel.addEventListener('change', () => localStorage.setItem(LAST_CLIENT_KEY, sel.value));
+        sel.addEventListener('change', () => {
+          localStorage.setItem(LAST_CLIENT_KEY, sel.value);
+          // Клиента могли сменить уже ПОСЛЕ скана штрихкода товара (или список
+          // клиентов догрузился только сейчас) - перечитываем метаданные маркировки,
+          // не теряя уже отсканированные коды DataMatrix.
+          if (UI.val('#free-barcode')) refreshFreeMarkingItemMeta();
+        });
       } catch (e) {
         sel.innerHTML = `<option value="">Ошибка загрузки клиентов</option>`;
         UI.notify.err(e.message);
@@ -234,10 +240,18 @@
     function removeFreeDmCode(i) { freeDmCodes.splice(i, 1); renderFreeDmCard(); }
 
     async function lookupFreeMarkingItem() {
+      // Новый скан штрихкода товара - это точно другой товар (или тот же заново),
+      // поэтому список уже отсканированных кодов DataMatrix обнуляем.
+      freeDmCodes = [];
+      await refreshFreeMarkingItemMeta();
+    }
+    // Перечитать метаданные товара (marking_mode и т.п.) БЕЗ сброса уже
+    // отсканированных кодов - используется для перепроверки прямо перед
+    // отправкой (см. submitFree), чтобы не терять то, что уже отсканировано.
+    async function refreshFreeMarkingItemMeta() {
       const barcode = UI.val('#free-barcode');
       const clientId = Number(UI.val('#client-select')) || null;
       freeMarkingItem = null;
-      freeDmCodes = [];
       if (barcode && clientId) {
         try {
           const res = await window.API.items.byBarcode(barcode, clientId);
@@ -278,8 +292,15 @@
       if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
       const clientId = getClientId();
       if (!clientId) return;
+      // Перепроверяем маркировку прямо перед отправкой (не полагаемся на скан-колбэк
+      // выше — если товар был отсканирован раньше, чем прогрузился список клиентов,
+      // или клиент сменился после скана штрихкода, старые данные могли быть неверными).
+      // Коды, уже отсканированные оператором, при этом не теряются.
+      await refreshFreeMarkingItemMeta();
       if (freeNeedsDataMatrix() && freeDmCodes.length !== freeQty) {
-        UI.notify.err(`Отсканируйте код "Честный знак" с каждой единицы (нужно ${freeQty}, отсканировано ${freeDmCodes.length})`);
+        UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${freeQty}, отсканировано ${freeDmCodes.length})`);
+        document.getElementById('free-dm-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('free-dm-input')?.focus();
         return;
       }
       try {
@@ -348,9 +369,14 @@
     function removeInbDmCode(i) { inbDmCodes.splice(i, 1); renderInbDmCard(); }
 
     async function lookupInbMarkingItem() {
+      inbDmCodes = [];
+      await refreshInbMarkingItemMeta();
+    }
+    // Аналог refreshFreeMarkingItemMeta() для вкладки "По заявке" - перечитать
+    // метаданные товара без сброса уже отсканированных кодов DataMatrix.
+    async function refreshInbMarkingItemMeta() {
       const barcode = UI.val('#inb-barcode');
       inbMarkingItem = null;
-      inbDmCodes = [];
       if (barcode && currentOrder) {
         try {
           const res = await window.API.items.byBarcode(barcode, currentOrder.client_id);
@@ -388,8 +414,11 @@
       const location = UI.val('#inb-location');
       if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
       if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      await refreshInbMarkingItemMeta();
       if (inbNeedsDataMatrix() && inbDmCodes.length !== inbQty) {
-        UI.notify.err(`Отсканируйте код "Честный знак" с каждой единицы (нужно ${inbQty}, отсканировано ${inbDmCodes.length})`);
+        UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${inbQty}, отсканировано ${inbDmCodes.length})`);
+        document.getElementById('inb-dm-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('inb-dm-input')?.focus();
         return;
       }
       try {
