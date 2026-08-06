@@ -6,6 +6,8 @@ const { authRequired } = require('../../../middleware/auth');
 const { tenantMiddleware } = require('../../../middleware/tenant');
 const { requireRole } = require('../../../middleware/requireRole');
 const { validatePositiveInt } = require('../../../utils/validators');
+const { ValidationError } = require('../../../utils/errors');
+const { generateLocationLabelSvg } = require('../../../utils/qrcode');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -47,6 +49,39 @@ router.post('/', requireRole('tenant_admin','supervisor'), async (req,res,next)=
   try {
     const loc = await svc.createLocation({ tenantId: req.user.tenantId, warehouseId: null, createdById: req.user.id, data: req.body });
     res.status(201).json({ ok: true, location: loc });
+  } catch(e){ next(e); }
+});
+
+/** POST /locations/bulk — сгенерировать ячейки по шаблону "<зона>-<ряд>-<позиция>"
+ *  (например A-01-01..A-06-50) вместо создания по одной руками. */
+router.post('/bulk', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkCreateLocations({
+      tenantId: req.user.tenantId,
+      createdById: req.user.id,
+      warehouseId: req.body.warehouse_id,
+      zone: req.body.zone,
+      rowFrom: req.body.row_from,
+      rowTo: req.body.row_to,
+      positionFrom: req.body.position_from,
+      positionTo: req.body.position_to,
+      locationType: req.body.location_type || 'rack',
+      padWidth: req.body.pad_width,
+    });
+    res.status(201).json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** POST /locations/labels { location_ids } — SVG-наклейки (штрихкод ячейки)
+ *  для массовой печати пачкой, вместо печати по одной. */
+router.post('/labels', async (req,res,next)=>{
+  try {
+    const ids = Array.isArray(req.body.location_ids) ? req.body.location_ids : [];
+    if (!ids.length) throw new ValidationError('location_ids is required');
+    if (ids.length > 500) throw new ValidationError('Слишком много ячеек за один раз (максимум 500)');
+    const locs = await svc.getLocationsByIds({ tenantId: req.user.tenantId, ids });
+    const labels = locs.map(l => ({ location_id: l.id, location_code: l.location_code, svg: generateLocationLabelSvg(l.location_code) }));
+    res.json({ ok: true, labels });
   } catch(e){ next(e); }
 });
 

@@ -200,6 +200,8 @@
     get:     (id)=> get(`/locations/${id}`),
     create:  (d) => post('/locations', d),
     update:  (id,d)=>patch(`/locations/${id}`, d),
+    bulkCreate: (d) => post('/locations/bulk', d),
+    printLabels: (locationIds) => post('/locations/labels', { location_ids: locationIds }),
   };
 
   // ─────────────── Stock ───────────────

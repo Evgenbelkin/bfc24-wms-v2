@@ -144,4 +144,40 @@ function generateMarkingLabelSvg(code, itemName, { width = 400, height = 260 } =
     `</svg>`;
 }
 
-module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg };
+/**
+ * Компактный штрихкод ячейки хранения (Code128) для массовой печати наклеек
+ * на стеллаж — только сам код (bwip-js includetext сам подписывает его под
+ * штрихкодом своим шрифтом), без отдельного заголовка сверху, как у
+ * generateItemLabelSvg — там заголовок нужен под название товара, здесь
+ * печатают сразу пачками по 50-300 штук, и лишняя пустая строка сверху на
+ * каждой только тратит место на листе.
+ */
+function generateLocationLabelSvg(locationCode, { width = 300, height = 130, barcodeHeightMm = 12 } = {}) {
+  const barcodeSvg = bwipjs.toSVG({
+    bcid: 'code128',
+    text: String(locationCode),
+    scale: 2,
+    height: barcodeHeightMm,
+    includetext: true,
+    textxalign: 'center',
+  });
+  const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(barcodeSvg);
+  const bw = vbMatch ? Number(vbMatch[1]) : 300;
+  const bh = vbMatch ? Number(vbMatch[2]) : 100;
+
+  const marginX = 16;
+  const barcodeW = width - marginX * 2;
+  const scale = barcodeW / bw;
+  const barcodeH = Math.round(bh * scale);
+  const barcodeX = marginX;
+  const barcodeY = Math.round((height - barcodeH) / 2);
+
+  const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(barcodeSvg);
+  const barcodeInner = innerMatch ? innerMatch[1] : barcodeSvg;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
+    `<g transform="translate(${barcodeX}, ${barcodeY}) scale(${scale})">${barcodeInner}</g>` +
+    `</svg>`;
+}
+
+module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg, generateLocationLabelSvg };

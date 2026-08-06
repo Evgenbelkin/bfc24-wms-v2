@@ -152,6 +152,69 @@ async function updateLocation({ tenantId, locationId, data }) {
   return res.rows[0];
 }
 
+const MAX_BULK_CELLS = 2000;
+
+/**
+ * Массово создать ячейки по шаблону "<зона>-<ряд>-<позиция>" (например
+ * A-01-01 .. A-06-50) — вместо того, чтобы заводить их по одной руками через
+ * форму. Пропускает уже существующие коды (не ошибка, просто skip) — так
+ * можно спокойно перезапускать с расширенным диапазоном, не боясь дублей.
+ */
+async function bulkCreateLocations({
+  tenantId, warehouseId, createdById, zone,
+  rowFrom, rowTo, positionFrom, positionTo,
+  locationType = 'rack', padWidth = 2,
+}) {
+  const z = validateNonEmptyString(zone, 'zone', 10).trim().toUpperCase();
+  const wid = validatePositiveInt(warehouseId, 'warehouse_id');
+  const rFrom = validatePositiveInt(rowFrom, 'row_from');
+  const rTo = validatePositiveInt(rowTo, 'row_to');
+  const pFrom = validatePositiveInt(positionFrom, 'position_from');
+  const pTo = validatePositiveInt(positionTo, 'position_to');
+  if (rTo < rFrom) throw new ValidationError('row_to must be >= row_from');
+  if (pTo < pFrom) throw new ValidationError('position_to must be >= position_from');
+  if (!VALID_TYPES.includes(locationType)) throw new ValidationError(`Invalid location_type. Allowed: ${VALID_TYPES.join(', ')}`);
+  const pad = Math.min(Math.max(Number(padWidth) || 2, 1), 6);
+
+  const total = (rTo - rFrom + 1) * (pTo - pFrom + 1);
+  if (total > MAX_BULK_CELLS) {
+    throw new ValidationError(`Слишком много ячеек за один раз (${total}) — максимум ${MAX_BULK_CELLS}. Разбейте диапазон на несколько запросов.`);
+  }
+
+  const codes = [];
+  for (let row = rFrom; row <= rTo; row++) {
+    for (let pos = pFrom; pos <= pTo; pos++) {
+      codes.push(`${z}-${String(row).padStart(pad, '0')}-${String(pos).padStart(pad, '0')}`);
+    }
+  }
+
+  let created = 0;
+  const createdCodes = [];
+  for (const code of codes) {
+    const r = await query(
+      `INSERT INTO wms.locations (tenant_id, warehouse_id, location_code, location_type, zone_code, is_active, is_pick_location, created_by)
+       VALUES ($1,$2,$3,$4,$5,TRUE,TRUE,$6)
+       ON CONFLICT (tenant_id, warehouse_id, location_code) DO NOTHING
+       RETURNING id, location_code`,
+      [tenantId, wid, code, locationType, z, createdById]
+    );
+    if (r.rowCount > 0) { created++; createdCodes.push(r.rows[0].location_code); }
+  }
+
+  return { total: codes.length, created, skipped: codes.length - created, codes: createdCodes };
+}
+
+/** Ячейки по списку id (для массовой печати наклеек) — строго в рамках тенанта. */
+async function getLocationsByIds({ tenantId, ids }) {
+  const list = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!list.length) return [];
+  const r = await query(
+    `SELECT id, location_code FROM wms.locations WHERE tenant_id=$1 AND id = ANY($2::int[]) ORDER BY location_code`,
+    [tenantId, list]
+  );
+  return r.rows;
+}
+
 /** Найти лучшую ячейку для SKU (с максимальным остатком) */
 async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId }) {
   const res = await query(
@@ -176,4 +239,5 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId })
 module.exports = {
   listLocations, getLocationById, getLocationByCode,
   createLocation, updateLocation, findBestPickLocation,
+  bulkCreateLocations, getLocationsByIds,
 };

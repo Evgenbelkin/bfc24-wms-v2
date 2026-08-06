@@ -40,13 +40,24 @@
     <button class="btn-big btn-blue btn-full" onclick="loadLocations()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
   </div>
 
+  <div class="card" id="select-bar" style="display:none;position:sticky;top:0;z-index:10;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"/> Выбрать все на странице</label>
+      <span style="font-size:13px;color:var(--muted);">Выбрано: <b id="selected-count">0</b></span>
+      <button class="btn-sm btn-blue" style="margin-left:auto;" onclick="printSelectedLabels()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Печать выбранных</button>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">Ячейки (<span id="loc-count">0</span> из <span id="loc-total">0</span>)</div>
     <div id="loc-list"></div>
     <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadMore()">↓ Ещё</button>
   </div>
 
-  <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая ячейка</button>
+  <div class="btn-row" id="add-btn" style="display:none">
+    <button class="btn-big btn-green" style="flex:1;" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая ячейка</button>
+    <button class="btn-big btn-blue" style="flex:1;" onclick="openBulkModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Создать пачкой</button>
+  </div>
 
   <div id="modal-root"></div>
 
@@ -73,6 +84,127 @@
     let locOffset = 0;
     const PAGE_SIZE = 100;
     let locCache = [];
+    const selectedIds = new Set();
+
+    function onLocCheck(id, checked) {
+      if (checked) selectedIds.add(id); else selectedIds.delete(id);
+      updateSelectBar();
+    }
+    function toggleSelectAll(checked) {
+      document.querySelectorAll('.loc-cb').forEach(cb => {
+        const id = Number(cb.dataset.id);
+        cb.checked = checked;
+        if (checked) selectedIds.add(id); else selectedIds.delete(id);
+      });
+      updateSelectBar();
+    }
+    function updateSelectBar() {
+      document.getElementById('selected-count').textContent = selectedIds.size;
+      document.getElementById('select-bar').style.display = canEdit ? 'block' : 'none';
+      const allOnPage = locCache.length > 0 && locCache.every(l => selectedIds.has(l.id));
+      document.getElementById('select-all-cb').checked = allOnPage;
+    }
+
+    async function printSelectedLabels() {
+      if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы одну ячейку'); return; }
+      // Открываем окно СРАЗУ, синхронно по клику (см. printStationSticker в
+      // printer-panel.html — та же причина: иначе мобильный браузер молча
+      // блокирует всплывающее окно, если открыть его после await).
+      const w = window.open('', '_blank');
+      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этого сайта'); return; }
+      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Готовим наклейки…</p>');
+      try {
+        const res = await window.API.locations.printLabels(Array.from(selectedIds));
+        const labels = res.labels || [];
+        w.document.open();
+        w.document.write(`
+          <html><head><title>Наклейки ячеек (${labels.length})</title>
+          <style>
+            @page { margin: 8mm; }
+            html,body{margin:0;padding:0;}
+            body{font-family:sans-serif;}
+            .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm;padding:6mm;}
+            .cell{border:1px dashed #ccc;padding:4mm;text-align:center;page-break-inside:avoid;}
+            .cell svg{width:100%;height:auto;display:block;}
+          </style></head><body>
+          <div class="grid">
+            ${labels.map(l => `<div class="cell">${l.svg}</div>`).join('')}
+          </div>
+          <script>window.onload = () => window.print();<\/script>
+          </body></html>
+        `);
+        w.document.close();
+      } catch (e) {
+        w.document.open();
+        w.document.write(`<p style="font-family:sans-serif;color:red;padding:40px;">${UI.escHtml(e.message)}</p>`);
+        w.document.close();
+      }
+    }
+
+    function openBulkModal() {
+      const whOptions = warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Создать ячейки пачкой</div>
+            <div class="field"><label>Склад</label><select id="b-warehouse">${whOptions}</select></div>
+            <div class="field"><label>Зона/стеллаж (буква)</label><input id="b-zone" placeholder="A" maxlength="10" oninput="this.value=this.value.toUpperCase(); updateBulkPreview();"/></div>
+            <div class="field-row2">
+              <div class="field"><label>Ряд от</label><input id="b-row-from" type="number" min="1" value="1" oninput="updateBulkPreview()"/></div>
+              <div class="field"><label>Ряд до</label><input id="b-row-to" type="number" min="1" value="1" oninput="updateBulkPreview()"/></div>
+            </div>
+            <div class="field-row2">
+              <div class="field"><label>Позиция от</label><input id="b-pos-from" type="number" min="1" value="1" oninput="updateBulkPreview()"/></div>
+              <div class="field"><label>Позиция до</label><input id="b-pos-to" type="number" min="1" value="20" oninput="updateBulkPreview()"/></div>
+            </div>
+            <div class="field"><label>Тип ячейки</label><select id="b-type">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${k==='rack'?'selected':''}>${v}</option>`).join('')}</select></div>
+            <p id="b-preview" style="font-size:13px;color:var(--muted);margin:6px 0 0;"></p>
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn-big btn-green" onclick="submitBulkCreate()">Создать</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
+            </div>
+          </div>
+        </div>
+      `;
+      updateBulkPreview();
+    }
+
+    function updateBulkPreview() {
+      const el = document.getElementById('b-preview');
+      if (!el) return;
+      const zone = (UI.val('#b-zone') || '').trim().toUpperCase();
+      const rFrom = Number(UI.val('#b-row-from')) || 0;
+      const rTo = Number(UI.val('#b-row-to')) || 0;
+      const pFrom = Number(UI.val('#b-pos-from')) || 0;
+      const pTo = Number(UI.val('#b-pos-to')) || 0;
+      if (!zone || rFrom < 1 || rTo < rFrom || pFrom < 1 || pTo < pFrom) {
+        el.textContent = 'Заполните диапазоны корректно';
+        return;
+      }
+      const total = (rTo - rFrom + 1) * (pTo - pFrom + 1);
+      const pad = (n) => String(n).padStart(2, '0');
+      el.innerHTML = `Будет создано (или пропущено, если уже есть): <b>${total}</b> ячеек. ` +
+        `Пример: <code>${zone}-${pad(rFrom)}-${pad(pFrom)}</code> … <code>${zone}-${pad(rTo)}-${pad(pTo)}</code>` +
+        (total > 2000 ? `<br><span style="color:var(--red)">Слишком много за раз (максимум 2000) — уменьшите диапазон.</span>` : '');
+    }
+
+    async function submitBulkCreate() {
+      const data = {
+        warehouse_id: UI.val('#b-warehouse'),
+        zone: UI.val('#b-zone'),
+        row_from: UI.val('#b-row-from'),
+        row_to: UI.val('#b-row-to'),
+        position_from: UI.val('#b-pos-from'),
+        position_to: UI.val('#b-pos-to'),
+        location_type: UI.val('#b-type'),
+      };
+      try {
+        const res = await window.API.locations.bulkCreate(data);
+        UI.notify.ok(`Создано: ${res.created}${res.skipped ? `, уже было: ${res.skipped}` : ''} (всего в диапазоне: ${res.total})`);
+        closeModal();
+        await loadLocations();
+      } catch (e) { UI.notify.err(e.message); }
+    }
 
     async function loadWarehouses() {
       try {
@@ -99,14 +231,16 @@
           return;
         }
         list.innerHTML = locCache.map((l, idx) => `
-          <div class="list-row loc-row" onclick="openModal(${idx})">
-            <div class="main">
+          <div class="list-row loc-row" style="display:flex;align-items:center;gap:10px;" onclick="openModal(${idx})">
+            ${canEdit ? `<input type="checkbox" class="loc-cb" data-id="${l.id}" onclick="event.stopPropagation(); onLocCheck(${l.id}, this.checked);" ${selectedIds.has(l.id) ? 'checked' : ''}/>` : ''}
+            <div class="main" style="flex:1;">
               <div class="title">${UI.escHtml(l.location_code)}</div>
               <div class="sub">${UI.escHtml(TYPE_LABELS[l.location_type]||l.location_type)} · ${UI.escHtml(l.warehouse_name)} ${l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>'}</div>
             </div>
             <div class="badge"><span>На руках</span><div>${UI.fmtQty(l.qty_on_hand)}</div></div>
           </div>
         `).join('');
+        updateSelectBar();
       } catch (e) { UI.notify.err(e.message); }
     }
 
