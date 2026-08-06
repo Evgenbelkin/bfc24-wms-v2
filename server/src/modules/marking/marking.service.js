@@ -75,9 +75,22 @@ async function listCodes({ tenantId, itemId, status = null, limit = 200, offset 
   return r.rows;
 }
 
-/** Нужно ли маркировать этот товар на данном этапе ('receiving' | 'packing') */
+/**
+ * Нужно ли маркировать этот товар на данном этапе ('receiving' | 'packing').
+ *
+ * Для marking_mode='print' — выбор пользователя marking_trigger (печатаем
+ * ЛИБО на приёмке, ЛИБО на упаковке — одно из двух).
+ *
+ * Для marking_mode='scan' — marking_trigger не применяется вообще: скан
+ * DataMatrix обязателен на ОБОИХ этапах всегда — на приёмке код заносится
+ * в локальный пул (иначе взять код на сборке будет неоткуда), а на упаковке
+ * код сверяется с конкретной физической единицей и уходит в WB API (только
+ * там известен orderId). Одно без другого не работает.
+ */
 function shouldMarkAt(item, stage) {
-  return !!(item && item.requires_marking && (item.marking_trigger || 'packing') === stage);
+  if (!item || !item.requires_marking) return false;
+  if (item.marking_mode === 'scan') return true;
+  return (item.marking_trigger || 'packing') === stage;
 }
 
 // =============================================================================

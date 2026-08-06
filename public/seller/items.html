@@ -126,15 +126,18 @@
                 <option value="scan"  ${mode==='scan'  ? 'selected':''}>Мы сами клеим DataMatrix на производстве</option>
               </select>
 
-              <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Когда фиксировать код</label>
-              <select id="m-trigger" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;">
-                <option value="packing"   ${trigger==='packing'   ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
-                <option value="receiving" ${trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
-              </select>
+              <div id="m-trigger-wrap" style="display:${mode==='scan' ? 'none':'block'};">
+                <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Когда фиксировать код</label>
+                <select id="m-trigger" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;">
+                  <option value="packing"   ${trigger==='packing'   ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
+                  <option value="receiving" ${trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
+                </select>
+              </div>
 
               <p id="m-scan-hint" style="display:${mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:8px;">
-                Фулфилмент отсканирует ваш код при приёмке и сборке и сам отправит его в WB — вам ничего
-                вручную в кабинете WB вводить не нужно.
+                Для этого режима код сканируется на обоих этапах всегда: фулфилмент отсканирует ваш код
+                и при приёмке, и при сборке заказа, и сам отправит его в WB — вам ничего вручную в кабинете WB
+                вводить не нужно.
               </p>
 
               <div id="marking-summary" style="font-size:14px;margin-top:12px;display:${mode==='print' ? 'block':'none'};">Загрузка...</div>
@@ -165,6 +168,7 @@
       const isPrint = UI.val('#m-mode') === 'print';
       document.getElementById('marking-summary').style.display = isPrint ? 'block' : 'none';
       document.getElementById('marking-codes-wrap').style.display = isPrint ? 'block' : 'none';
+      document.getElementById('m-trigger-wrap').style.display = isPrint ? 'block' : 'none';
       document.getElementById('m-scan-hint').style.display = isPrint ? 'none' : 'block';
     }
 

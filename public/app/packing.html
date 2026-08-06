@@ -411,9 +411,9 @@
       return currentLines.find(l => l.barcode === barcode);
     }
     function lineNeedsDataMatrixScan(line) {
-      return !!(line && line.requires_marking &&
-        (line.marking_trigger || 'packing') === 'packing' &&
-        line.marking_mode === 'scan');
+      // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на упаковке
+      // (независимо от marking_trigger — тот применяется только к печати).
+      return !!(line && line.requires_marking && line.marking_mode === 'scan');
     }
 
     async function handleScan(barcode) {

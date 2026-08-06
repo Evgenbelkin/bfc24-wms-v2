@@ -215,8 +215,9 @@
     let freeDmCodes = [];
 
     function freeNeedsDataMatrix() {
+      // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на приёмке
+      // (независимо от marking_trigger — тот применяется только к печати).
       return !!(freeMarkingItem && freeMarkingItem.requires_marking &&
-        (freeMarkingItem.marking_trigger || 'packing') === 'receiving' &&
         freeMarkingItem.marking_mode === 'scan');
     }
 
@@ -329,8 +330,9 @@
     let inbDmCodes = [];
 
     function inbNeedsDataMatrix() {
+      // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на приёмке
+      // (независимо от marking_trigger — тот применяется только к печати).
       return !!(inbMarkingItem && inbMarkingItem.requires_marking &&
-        (inbMarkingItem.marking_trigger || 'packing') === 'receiving' &&
         inbMarkingItem.marking_mode === 'scan');
     }
     function renderInbDmCard() {
