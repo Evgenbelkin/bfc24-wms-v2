@@ -379,6 +379,7 @@
     charges: {
       list: (p) => get('/billing/charges', p),
       add:  (d) => post('/billing/charges', d),
+      bulkDelete: (chargeIds) => post('/billing/charges/bulk-delete', { charge_ids: chargeIds }),
     },
     clientBalance: (clientId) => get(`/billing/clients/${clientId}/balance`),
     invoices: {

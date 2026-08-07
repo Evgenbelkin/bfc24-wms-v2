@@ -76,16 +76,27 @@
           <input id="ch-from" type="date"/>
           <input id="ch-to" type="date"/>
         </div>
+        <div class="filters-row">
+          <select id="ch-service"><option value="">Все услуги</option></select>
+          <select id="ch-invoiced">
+            <option value="">Все</option>
+            <option value="false">Не выставлено</option>
+            <option value="true">Выставлено</option>
+          </select>
+        </div>
         <button class="btn-big btn-blue btn-full" onclick="loadCharges()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
       </div>
       <div class="card">
         <div class="card-title">Начисления (<span id="charge-count">0</span>) — итого <span id="charge-total">0</span> ₽</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th>Счёт</th></tr></thead>
+            <thead><tr><th style="width:28px;"><input type="checkbox" id="ch-select-all" onclick="toggleSelectAllCharges(this.checked)"/></th><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Цена</th><th>Сумма</th><th>Счёт</th></tr></thead>
             <tbody id="charge-body"></tbody>
           </table>
         </div>
+      </div>
+      <div id="charge-select-bar" style="display:none;margin-top:8px;">
+        <button class="btn-big btn-red btn-full" onclick="bulkDeleteSelectedCharges()">Удалить выбранные (<span id="charge-selected-count">0</span>) — на сумму <span id="charge-selected-total">0</span> ₽</button>
       </div>
       <button class="btn-sm btn-back btn-full" onclick="openManualChargeModal()">+ Ручное начисление</button>
     </div>
@@ -299,22 +310,38 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    let selectedChargeIds = new Set();
+
+    function initChargeServiceFilter() {
+      const sel = document.getElementById('ch-service');
+      if (sel.options.length > 1) return; // уже заполнено
+      sel.innerHTML = '<option value="">Все услуги</option>' +
+        ALL_SERVICE_TYPES.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+    }
+
     async function loadCharges() {
+      initChargeServiceFilter();
+      document.getElementById('ch-select-all').style.display = canEdit ? '' : 'none';
       const clientId = currentClientId();
       const body = document.getElementById('charge-body');
+      selectedChargeIds = new Set();
+      updateChargeSelectBar();
       if (!clientId) { body.innerHTML = ''; return; }
       try {
         const params = { client_id: clientId, limit: 300 };
         const from = UI.val('#ch-from'); if (from) params.date_from = from;
         const to = UI.val('#ch-to'); if (to) params.date_to = to;
+        const serviceType = UI.val('#ch-service'); if (serviceType) params.service_type = serviceType;
+        const invoiced = UI.val('#ch-invoiced'); if (invoiced) params.is_invoiced = invoiced;
         const res = await window.API.billing.charges.list(params);
         chargeCache = res.charges || [];
         document.getElementById('charge-count').textContent = res.total || chargeCache.length;
         const total = chargeCache.reduce((s,c)=>s+Number(c.total_amount||0), 0);
         document.getElementById('charge-total').textContent = total.toFixed(2);
-        if (!chargeCache.length) { body.innerHTML = `<tr><td colspan="6">Начислений нет</td></tr>`; return; }
+        if (!chargeCache.length) { body.innerHTML = `<tr><td colspan="7">Начислений нет</td></tr>`; return; }
         body.innerHTML = chargeCache.map(c => `
           <tr>
+            <td>${(!c.is_invoiced && canEdit) ? `<input type="checkbox" class="charge-cb" data-id="${c.id}" data-amount="${c.total_amount}" onclick="onChargeCheck(${c.id}, ${c.total_amount}, this.checked)"/>` : ''}</td>
             <td>${fmtDate(c.period_date)}</td>
             <td>${serviceLabel(c.service_type)}${c.description?' · '+UI.escHtml(c.description):''}</td>
             <td>${fmtQty(c.quantity)}</td>
@@ -327,6 +354,45 @@
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);
       }
+    }
+
+    function onChargeCheck(id, amount, checked) {
+      if (checked) selectedChargeIds.add(id); else selectedChargeIds.delete(id);
+      updateChargeSelectBar();
+    }
+
+    function toggleSelectAllCharges(checked) {
+      document.querySelectorAll('.charge-cb').forEach(cb => {
+        cb.checked = checked;
+        const id = Number(cb.dataset.id);
+        if (checked) selectedChargeIds.add(id); else selectedChargeIds.delete(id);
+      });
+      updateChargeSelectBar();
+    }
+
+    function updateChargeSelectBar() {
+      const bar = document.getElementById('charge-select-bar');
+      const count = selectedChargeIds.size;
+      bar.style.display = count ? 'block' : 'none';
+      document.getElementById('charge-selected-count').textContent = count;
+      let total = 0;
+      document.querySelectorAll('.charge-cb').forEach(cb => {
+        if (selectedChargeIds.has(Number(cb.dataset.id))) total += Number(cb.dataset.amount);
+      });
+      document.getElementById('charge-selected-total').textContent = total.toFixed(2);
+    }
+
+    async function bulkDeleteSelectedCharges() {
+      if (!selectedChargeIds.size) return;
+      const count = selectedChargeIds.size;
+      const total = document.getElementById('charge-selected-total').textContent;
+      if (!UI.confirm(`Удалить ${count} начислени${count===1?'е':'й'} на сумму ${total} ₽? Отменить будет нельзя.`)) return;
+      try {
+        const res = await window.API.billing.charges.bulkDelete([...selectedChargeIds]);
+        UI.notify.ok(`Удалено: ${res.deleted_count} на сумму ${Number(res.deleted_total).toFixed(2)} ₽`);
+        await loadCharges();
+        await loadBalance();
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     function openManualChargeModal() {

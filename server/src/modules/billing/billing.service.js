@@ -224,6 +224,32 @@ async function chargeForOperation({ tenantId, clientId, serviceType, quantity, r
   }
 }
 
+/**
+ * Массово удалить ЕЩЁ НЕ ВЫСТАВЛЕННЫЕ начисления — для исправления ошибочно
+ * заведённого тарифа задним числом (например, услугу давно сделали бесплатной
+ * по договорённости, но прайс-лист вовремя не поменяли, и старые операции
+ * успели начислить по старой цене). Начисления, уже попавшие в счёт
+ * (is_invoiced=TRUE), трогать нельзя — тот счёт уже мог быть отправлен/оплачен
+ * клиенту, для его правки нужен отдельный сценарий (отмена/пересоздание счёта),
+ * а не тихое удаление составляющих его строк задним числом.
+ */
+async function bulkDeleteCharges({ tenantId, chargeIds }) {
+  if (!Array.isArray(chargeIds) || !chargeIds.length) {
+    throw new ValidationError('charge_ids must be a non-empty array');
+  }
+  const ids = chargeIds.map(id => Number(id)).filter(Number.isInteger).slice(0, 2000);
+  if (!ids.length) throw new ValidationError('No valid charge_ids provided');
+
+  const r = await query(
+    `DELETE FROM billing.service_charges
+     WHERE tenant_id=$1 AND id=ANY($2::bigint[]) AND is_invoiced=FALSE
+     RETURNING id, total_amount`,
+    [tenantId, ids]
+  );
+  const deletedTotal = r.rows.reduce((s, row) => s + Number(row.total_amount), 0);
+  return { deleted_count: r.rowCount, deleted_total: deletedTotal };
+}
+
 // ─────────────── Invoices ───────────────
 
 async function listInvoices({ tenantId, clientId = null, status = null, limit = 100, offset = 0 }) {
@@ -491,6 +517,7 @@ module.exports = {
   deletePrice,
   listCharges,
   addCharge,
+  bulkDeleteCharges,
   chargeForOperation,
   listInvoices,
   getInvoice,

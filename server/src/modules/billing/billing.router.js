@@ -114,6 +114,19 @@ router.post('/charges', requireRole('tenant_admin','supervisor'), async (req, re
   } catch (e) { next(e); }
 });
 
+/** POST /billing/charges/bulk-delete { charge_ids } — удалить ещё не
+ *  выставленные начисления (исправление ошибочного тарифа задним числом).
+ *  Только tenant_admin — это правка финансовых записей. */
+router.post('/charges/bulk-delete', requireRole('tenant_admin'), async (req, res, next) => {
+  try {
+    const result = await svc.bulkDeleteCharges({
+      tenantId:  req.user.tenantId,
+      chargeIds: req.body.charge_ids,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 router.get('/clients/:clientId/balance', requireRole('tenant_admin','supervisor'), async (req, res, next) => {
   try {
     const clientId = validatePositiveInt(req.params.clientId, 'clientId');
