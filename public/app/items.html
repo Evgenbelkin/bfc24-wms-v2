@@ -54,6 +54,14 @@
     <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadItems()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
   </div>
 
+  <div class="card" id="select-bar" style="display:none;position:sticky;top:0;z-index:10;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"/> Выбрать все на странице</label>
+      <span style="font-size:13px;color:var(--muted);">Выбрано: <b id="selected-count">0</b></span>
+      <button class="btn-sm btn-blue" style="margin-left:auto;" onclick="openBulkMarkingModal()"><svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Маркировка для выбранных</button>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-title">Товары (<span id="item-count">0</span> из <span id="item-total">0</span>)</div>
     <div id="item-list"></div>
@@ -85,6 +93,72 @@
     let itemOffset = 0;
     const PAGE_SIZE = 100;
     let itemCache = [];
+    const selectedItemIds = new Set();
+
+    function onItemCheck(id, checked) {
+      if (checked) selectedItemIds.add(id); else selectedItemIds.delete(id);
+      updateSelectBar();
+    }
+    function toggleSelectAll(checked) {
+      document.querySelectorAll('.item-cb').forEach(cb => {
+        const id = Number(cb.dataset.id);
+        cb.checked = checked;
+        if (checked) selectedItemIds.add(id); else selectedItemIds.delete(id);
+      });
+      updateSelectBar();
+    }
+    function updateSelectBar() {
+      document.getElementById('selected-count').textContent = selectedItemIds.size;
+      document.getElementById('select-bar').style.display = canEdit ? 'block' : 'none';
+      const allOnPage = itemCache.length > 0 && itemCache.every(it => selectedItemIds.has(it.id));
+      const allCb = document.getElementById('select-all-cb');
+      if (allCb) allCb.checked = allOnPage;
+    }
+
+    function openBulkMarkingModal() {
+      if (!selectedItemIds.size) { UI.notify.err('Отметьте хотя бы один товар'); return; }
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Маркировка "Честный знак" для ${selectedItemIds.size} товар(ов)</div>
+            <div class="field">
+              <label style="display:inline;">Требует маркировки</label>
+              <input type="checkbox" id="bm-required" checked onchange="document.getElementById('bm-mode-wrap').style.display=this.checked?'block':'none'"/>
+            </div>
+            <div id="bm-mode-wrap">
+              <div class="field">
+                <label>Кто маркирует товар</label>
+                <select id="bm-mode">
+                  <option value="print">Мы (ФФ) печатаем код из своего пула</option>
+                  <option value="scan">Клиент уже клеит DataMatrix на производстве — мы только сканируем</option>
+                </select>
+              </div>
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin-top:6px;">
+              Применится сразу ко всем выбранным товарам, текущие настройки перезапишутся.
+              Загруженные ранее коды маркировки (если были) не удаляются.
+            </p>
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn-big btn-green" onclick="submitBulkMarking()">Применить к ${selectedItemIds.size}</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function submitBulkMarking() {
+      const required = document.getElementById('bm-required').checked;
+      const data = { requires_marking: required };
+      if (required) data.marking_mode = UI.val('#bm-mode') || 'print';
+      try {
+        const res = await window.API.marking.bulkUpdateSettings(Array.from(selectedItemIds), data);
+        UI.notify.ok(`Обновлено товаров: ${res.updated}`);
+        closeModal();
+        selectedItemIds.clear();
+        await loadItems();
+      } catch (e) { UI.notify.err(e.message); }
+    }
 
     async function loadClients() {
       try {
@@ -113,14 +187,16 @@
           return;
         }
         list.innerHTML = itemCache.map((it, idx) => `
-          <div class="list-row item-row" onclick="openModal(${idx})">
-            <div class="main">
+          <div class="list-row item-row" style="display:flex;align-items:center;gap:10px;" onclick="openModal(${idx})">
+            ${canEdit ? `<input type="checkbox" class="item-cb" data-id="${it.id}" onclick="event.stopPropagation(); onItemCheck(${it.id}, this.checked);" ${selectedItemIds.has(it.id) ? 'checked' : ''}/>` : ''}
+            <div class="main" style="flex:1;">
               <div class="title">${UI.escHtml(it.item_name)}</div>
               <div class="sub">${UI.escHtml(it.barcode)} · ${UI.escHtml(it.client_name||'')} ${it.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
             </div>
             <div class="badge"><span>Ед.</span><div>${UI.escHtml(it.unit)}</div></div>
           </div>
         `).join('');
+        updateSelectBar();
       } catch (e) { UI.notify.err(e.message); }
     }
 

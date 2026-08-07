@@ -82,6 +82,48 @@ router.patch('/items/:itemId/settings', requireRole('tenant_admin', 'supervisor'
   } catch (e) { next(e); }
 });
 
+/** PATCH /marking/items/bulk-settings { item_ids, requires_marking, marking_trigger, marking_mode } —
+ *  та же настройка, что и одиночный PATCH выше, но сразу на пачку товаров —
+ *  чтобы не открывать карточку каждого из сотен SKU по одному при подключении
+ *  нового клиента на маркировку. */
+router.patch('/items/bulk-settings', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const itemIds = Array.isArray(req.body.item_ids)
+      ? req.body.item_ids.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+      : [];
+    if (!itemIds.length) throw new ValidationError('item_ids is required');
+    if (itemIds.length > 1000) throw new ValidationError('Слишком много товаров за один раз (максимум 1000)');
+
+    const fields = [];
+    const params = [];
+    let idx = 1;
+    if (req.body.requires_marking !== undefined) {
+      fields.push(`requires_marking=$${idx++}`); params.push(!!req.body.requires_marking);
+    }
+    if (req.body.marking_trigger !== undefined) {
+      if (!['receiving', 'packing'].includes(req.body.marking_trigger)) {
+        throw new ValidationError(`marking_trigger must be 'receiving' or 'packing'`);
+      }
+      fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
+    }
+    if (req.body.marking_mode !== undefined) {
+      if (!['print', 'scan'].includes(req.body.marking_mode)) {
+        throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
+      }
+      fields.push(`marking_mode=$${idx++}`); params.push(req.body.marking_mode);
+    }
+    if (fields.length === 0) throw new ValidationError('No fields to update');
+    fields.push('updated_at=NOW()');
+    params.push(itemIds, req.user.tenantId);
+    const r = await query(
+      `UPDATE wms.items SET ${fields.join(', ')} WHERE id = ANY($${idx++}::int[]) AND tenant_id=$${idx}
+       RETURNING id`,
+      params
+    );
+    res.json({ ok: true, updated: r.rowCount });
+  } catch (e) { next(e); }
+});
+
 /** GET /marking/pending-manual-overrides — коды, проведённые без отправки в WB (требуют ручной привязки) */
 router.get('/pending-manual-overrides', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {

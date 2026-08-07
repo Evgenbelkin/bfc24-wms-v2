@@ -189,6 +189,7 @@
     listCodes:  (itemId, p)       => get(`/marking/items/${itemId}/codes`, p),
     importCodes:(itemId, codesText) => post(`/marking/items/${itemId}/codes/import`, { codes_text: codesText }),
     updateSettings:(itemId, d)    => patch(`/marking/items/${itemId}/settings`, d),
+    bulkUpdateSettings: (itemIds, d) => patch('/marking/items/bulk-settings', { item_ids: itemIds, ...d }),
     pendingOverrides: (p)          => get('/marking/pending-manual-overrides', p),
   };
 
