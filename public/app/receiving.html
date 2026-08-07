@@ -98,6 +98,7 @@
           <div class="badge"><span>Статус</span><div id="inb-order-status">—</div></div>
           <div class="badge"><span>Строк</span><div id="inb-order-lines-count">0</div></div>
         </div>
+        <button class="btn-sm btn-yellow" id="inb-close-short-btn" style="display:none;margin-top:10px;" onclick="closeInboundOrderShort()">Закрыть как есть (недопоставка)</button>
       </div>
 
       <div class="card">
@@ -142,7 +143,7 @@
         <div class="card-title">Строки заявки (план / принято)</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Товар</th><th>Штрихкод</th><th>План</th></tr></thead>
+            <thead><tr><th>Товар</th><th>Штрихкод</th><th>План</th><th>Принято</th></tr></thead>
             <tbody id="inb-lines-body"></tbody>
           </table>
         </div>
@@ -340,16 +341,26 @@
     // ---------- По заявке ----------
     let currentOrder = null;
 
+    const INB_STATUS_LABELS = {
+      draft:'черновик', confirmed:'отправлена складу', scheduled:'назначена дата приёмки',
+      in_progress:'приёмка началась', completed:'принята', partial:'принята частично (закрыта)', cancelled:'отменена',
+    };
+    // Заявку можно закрыть "как есть", пока она не в терминальном статусе -
+    // терминальные (completed/partial/cancelled) уже финал, там кнопке делать нечего.
+    const INB_TERMINAL_STATUSES = ['completed', 'partial', 'cancelled'];
+
     async function loadOrderByBarcode(barcode) {
       try {
         const res = await window.API.inbound.byBarcode(barcode);
         currentOrder = res.order;
         document.getElementById('inbound-order-card').style.display = 'block';
-        document.getElementById('inb-order-code').textContent = currentOrder.order_code || currentOrder.id;
-        document.getElementById('inb-order-status').textContent = currentOrder.status || '—';
+        document.getElementById('inb-order-code').textContent = currentOrder.order_number || currentOrder.id;
+        document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status || '—';
         document.getElementById('inb-order-lines-count').textContent = (res.lines||[]).length;
+        document.getElementById('inb-close-short-btn').style.display =
+          INB_TERMINAL_STATUSES.includes(currentOrder.status) ? 'none' : 'inline-block';
         UI.renderTable('#inb-lines-body', res.lines, (l) => `
-          <tr><td>${UI.escHtml(l.item_name||'—')}</td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_plan ?? l.qty)}</td></tr>
+          <tr><td>${UI.escHtml(l.item_name_master || l.item_name || '—')}</td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_expected)}</td><td>${UI.fmtQty(l.qty_received||0)}</td></tr>
         `);
         setTimeout(() => document.getElementById('inb-barcode').focus(), 150);
       } catch (e) {
@@ -358,6 +369,20 @@
       }
     }
     UI.onScan('#inb-order-barcode', (v) => { UI.setVal('#inb-order-barcode', v); loadOrderByBarcode(v); });
+
+    async function closeInboundOrderShort() {
+      if (!currentOrder) return;
+      const reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
+      if (reason === null) return; // отмена диалога
+      if (!UI.confirm(`Закрыть заявку ${currentOrder.order_number || currentOrder.id} как есть? Уже принятый товар останется на складе, заявка станет финальной.`)) return;
+      try {
+        const res = await window.API.inbound.closeShort(currentOrder.id, reason);
+        currentOrder = res.order;
+        UI.notify.ok('Заявка закрыта');
+        document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status;
+        document.getElementById('inb-close-short-btn').style.display = 'none';
+      } catch (e) { UI.notify.err(e.message); }
+    }
 
     let inbQty = 1;
     let inbMarkingItem = null;
@@ -439,8 +464,11 @@
         // client_id берём из самой заявки (currentOrder.client_id), а не из верхнего селектора —
         // заявка однозначно привязана к клиенту, так надёжнее чем полагаться что оператор
         // не забудет переключить клиента наверху перед сканированием.
+        // currentOrder.barcode — это и есть штрихкод ЗАЯВКИ (по нему её искали) - раньше тут
+        // был запасной currentOrder.order_code, которого не существует в ответе API (реальное
+        // поле order_number), из-за чего запасной вариант никогда бы не сработал.
         await window.API.receiving.acceptByInbound({
-          inbound_order_barcode: UI.val('#inb-order-barcode') || currentOrder.order_code,
+          inbound_order_barcode: UI.val('#inb-order-barcode') || currentOrder.barcode,
           barcode, location_code: location, qty: inbQty,
           client_id: currentOrder.client_id,
           data_matrix_codes: inbNeedsDataMatrix() ? inbDmCodes : undefined,
@@ -449,7 +477,10 @@
         UI.setVal('#inb-barcode','');
         inbQty = 1; document.getElementById('inb-qty-val').value = 1;
         inbMarkingItem = null; inbDmCodes = []; renderInbDmCard();
-        document.getElementById('inb-barcode').focus();
+        // Обновляем карточку заявки (План/Принято по строкам, статус, видимость
+        // кнопки "Закрыть как есть") - без этого оператор не видел прогресс приёмки
+        // до перезагрузки страницы.
+        await loadOrderByBarcode(currentOrder.barcode);
       } catch (e) { UI.notify.err(e.message); }
     }
     UI.onScan('#inb-barcode', (v) => { UI.setVal('#inb-barcode', v); lookupInbMarkingItem(); document.getElementById('inb-location').focus(); });

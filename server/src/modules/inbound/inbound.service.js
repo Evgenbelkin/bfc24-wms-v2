@@ -173,7 +173,40 @@ async function cancelInboundOrder({ tenantId, orderId, userId }) {
   });
 }
 
+/**
+ * Закрыть заявку "как есть" — поставщик привёз меньше, чем заявлено, и
+ * больше уже не довезёт. В отличие от cancel(), НЕ откатывает и никак не
+ * трогает уже принятый товар (он давно на складе через ledger.receiveStock) —
+ * только переводит саму заявку-документ в статус 'partial' (терминальный,
+ * как completed/cancelled), чтобы она не висела вечно в 'in_progress' и не
+ * маячила в списке ожидающих действий.
+ */
+async function closeInboundOrderShort({ tenantId, orderId, userId, reason = null }) {
+  return transaction(async (client) => {
+    const r = await client.query(
+      `SELECT id, status, order_number FROM wms.inbound_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [orderId, tenantId]
+    );
+    if (r.rowCount === 0) throw new NotFoundError('InboundOrder', orderId);
+
+    const order = r.rows[0];
+    if (['completed', 'cancelled', 'partial'].includes(order.status)) {
+      throw new ValidationError(`Cannot close order in status '${order.status}' — it's already final`);
+    }
+
+    const updated = await client.query(
+      `UPDATE wms.inbound_orders
+       SET status='partial', closed_at=NOW(), closed_reason=$1, closed_by=$2, updated_at=NOW()
+       WHERE id=$3
+       RETURNING *`,
+      [reason || null, userId, orderId]
+    );
+    return updated.rows[0];
+  });
+}
+
 module.exports = {
   listInboundOrders, getInboundOrderById, getInboundOrderByBarcode,
   getInboundOrderLines, createInboundOrder, confirmInboundOrder, cancelInboundOrder,
+  closeInboundOrderShort,
 };

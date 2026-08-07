@@ -225,6 +225,7 @@
     create:     (d) => post('/inbound', d),
     confirm:    (id)=> post(`/inbound/${id}/confirm`),
     cancel:     (id)=> post(`/inbound/${id}/cancel`),
+    closeShort: (id, reason) => post(`/inbound/${id}/close-short`, { reason: reason || undefined }),
   };
 
   // ─────────────── Receiving ───────────────

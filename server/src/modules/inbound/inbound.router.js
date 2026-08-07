@@ -70,4 +70,18 @@ router.post('/:id/cancel', requireRole('tenant_admin','supervisor'), async (req,
   } catch(e){ next(e); }
 });
 
+/** POST /inbound/:id/close-short { reason } — закрыть как есть (недопоставка),
+ *  не трогая уже принятый товар. См. inbound.service.js closeInboundOrderShort. */
+router.post('/:id/close-short', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {
+  try {
+    const order = await svc.closeInboundOrderShort({
+      tenantId: req.user.tenantId,
+      orderId: validatePositiveInt(req.params.id,'id'),
+      userId: req.user.id,
+      reason: req.body.reason || null,
+    });
+    res.json({ ok:true, order });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;

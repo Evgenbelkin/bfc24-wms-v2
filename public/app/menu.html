@@ -82,12 +82,14 @@
       billing:      `<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>`,
       wallet:       `<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M16 13h4v4h-4a2 2 0 0 1 0-4z"/>`,
       undo:         `<path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v8h8"/>`,
+      clipboard:    `<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/>`,
     };
     function icon(name){ return `<svg viewBox="0 0 24 24">${ICONS[name]||''}</svg>`; }
 
     // Все возможные разделы. roles=null означает "доступно всем ролям склада" (кроме seller).
     const ALL_TILES = [
       { href:'receiving.html',        icon:'inbox',     label:'Приёмка',        roles:['tenant_admin','supervisor','receiver'] },
+      { href:'inbound-orders.html',   icon:'clipboard', label:'Заявки на поставку', roles:['tenant_admin','supervisor','receiver'] },
       { href:'placement.html',        icon:'pin',       label:'Размещение',      roles:['tenant_admin','supervisor','receiver'] },
       { href:'picking.html',          icon:'cart',      label:'Сборка',          roles:['tenant_admin','supervisor','picker'] },
       { href:'packing.html',          icon:'box',       label:'Упаковка',        roles:['tenant_admin','supervisor','packer'] },

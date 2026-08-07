@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Заявки на поставку — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select{flex:1;min-width:160px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .order-row{cursor:pointer;}
+    .order-row:active{opacity:.7;}
+    .barcode-box{font-family:monospace;font-size:14px;background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;word-break:break-all;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> Заявки на поставку</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <!-- ============ LIST ============ -->
+  <div id="list-view">
+    <div class="card">
+      <div class="card-title">Фильтры</div>
+      <div class="filters-row">
+        <select id="f-client"><option value="">Все клиенты</option></select>
+        <select id="f-status" onchange="loadOrders()">
+          <option value="">Все статусы</option>
+          <option value="draft">Черновик</option>
+          <option value="confirmed">Отправлена складу</option>
+          <option value="scheduled">Назначена дата приёмки</option>
+          <option value="in_progress">Приёмка началась</option>
+          <option value="completed">Принята полностью</option>
+          <option value="partial">Принята частично (закрыта)</option>
+          <option value="cancelled">Отменена</option>
+        </select>
+      </div>
+      <button class="btn-big btn-blue btn-full" onclick="loadOrders()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Заявки (<span id="orders-count">0</span>)</div>
+      <div id="orders-list"></div>
+    </div>
+  </div>
+
+  <!-- ============ DETAIL ============ -->
+  <div id="detail-view" style="display:none">
+    <button class="btn-sm btn-back" onclick="backToList()" style="margin-bottom:12px;">← К списку</button>
+    <div class="card">
+      <div class="card-title">Заявка <span id="d-number"></span></div>
+      <div class="badge-row">
+        <div class="badge"><span>Статус</span><div id="d-status">—</div></div>
+        <div class="badge"><span>Клиент</span><div id="d-client">—</div></div>
+        <div class="badge"><span>Ожидается</span><div id="d-expected">—</div></div>
+        <div class="badge"><span>Всего единиц</span><div id="d-total">0</div></div>
+      </div>
+      <div style="margin-top:10px;">
+        <label style="font-size:12px;color:var(--muted);">Штрихкод заявки (сканируется на приёмке)</label>
+        <div class="barcode-box" id="d-barcode">—</div>
+      </div>
+      <div id="d-notes" class="refresh-note" style="text-align:left;margin-top:10px;"></div>
+      <div id="d-closed-info" class="refresh-note" style="text-align:left;margin-top:6px;color:var(--muted);display:none;"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Состав</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Товар</th><th>Штрихкод</th><th>Ожидается</th><th>Принято</th><th>Статус</th></tr></thead>
+          <tbody id="detail-lines-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-big btn-green" id="confirm-btn" style="display:none;flex:1;" onclick="confirmOrder()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтвердить</button>
+      <button class="btn-big btn-yellow" id="close-short-btn" style="display:none;flex:1;" onclick="closeOrderShort()">Закрыть как есть</button>
+      <button class="btn-big btn-red" id="cancel-btn" style="display:none;flex:1;" onclick="cancelOrder()">Отменить</button>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin','supervisor','receiver'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    const user = window.API.getUser();
+    const canCancel = user?.role === 'tenant_admin' || user?.role === 'supervisor';
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    const STATUS_LABELS = {
+      draft:'черновик', confirmed:'отправлена складу', scheduled:'назначена дата приёмки',
+      in_progress:'приёмка началась', completed:'принята полностью', partial:'принята частично (закрыта)', cancelled:'отменена',
+    };
+    const STATUS_PILL = {
+      draft:'pill-gray', confirmed:'pill-blue', scheduled:'pill-blue',
+      in_progress:'pill-yellow', completed:'pill-green', partial:'pill-yellow', cancelled:'pill-red',
+    };
+    const LINE_STATUS_LABELS = { pending:'ожидает', partial:'частично', received:'принято', excess:'больше плана', cancelled:'отменена' };
+    const TERMINAL_STATUSES = ['completed', 'partial', 'cancelled'];
+
+    let currentOrderId = null;
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        const sel = document.getElementById('f-client');
+        sel.innerHTML = '<option value="">Все клиенты</option>' +
+          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        sel.addEventListener('change', () => loadOrders());
+      } catch (e) { /* фильтр не критичен, просто не подгрузится список клиентов */ }
+    }
+
+    async function loadOrders() {
+      const list = document.getElementById('orders-list');
+      try {
+        const params = { limit: 200 };
+        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
+        const status = UI.val('#f-status'); if (status) params.status = status;
+        const res = await window.API.inbound.list(params);
+        const orders = res.orders || [];
+        document.getElementById('orders-count').textContent = orders.length;
+        if (!orders.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Заявок нет</div>`;
+          return;
+        }
+        list.innerHTML = orders.map(o => `
+          <div class="list-row order-row" onclick="openOrder(${o.id})">
+            <div class="main">
+              <div class="title">${UI.escHtml(o.order_number)}</div>
+              <div class="sub">${UI.escHtml(o.client_name||'')} · Ожидается: ${o.expected_date ? UI.fmtDate(o.expected_date) : 'не указано'} · Единиц: ${o.total_expected_qty||0}</div>
+            </div>
+            <span class="pill ${STATUS_PILL[o.status]||'pill-gray'}">${STATUS_LABELS[o.status]||o.status}</span>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function openOrder(id) {
+      try {
+        currentOrderId = id;
+        const res = await window.API.inbound.get(id);
+        const o = res.order;
+        document.getElementById('list-view').style.display = 'none';
+        document.getElementById('detail-view').style.display = 'block';
+
+        document.getElementById('d-number').textContent = o.order_number;
+        document.getElementById('d-status').textContent = STATUS_LABELS[o.status] || o.status;
+        document.getElementById('d-client').textContent = o.client_name || '—';
+        document.getElementById('d-expected').textContent = o.expected_date ? UI.fmtDate(o.expected_date) : '—';
+        document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
+        document.getElementById('d-barcode').textContent = o.barcode;
+        document.getElementById('d-notes').textContent = o.notes || '';
+
+        const closedInfo = document.getElementById('d-closed-info');
+        if (o.closed_at) {
+          closedInfo.style.display = 'block';
+          closedInfo.textContent = `Закрыта как есть ${UI.fmtDateTime(o.closed_at)}${o.closed_reason ? ' — ' + o.closed_reason : ''}`;
+        } else {
+          closedInfo.style.display = 'none';
+        }
+
+        const lines = res.lines || [];
+        document.getElementById('detail-lines-body').innerHTML = lines.length
+          ? lines.map(l => `
+              <tr>
+                <td>${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}</td>
+                <td>${UI.escHtml(l.barcode)}</td>
+                <td>${UI.fmtQty(l.qty_expected)}</td>
+                <td>${UI.fmtQty(l.qty_received||0)}</td>
+                <td>${LINE_STATUS_LABELS[l.status]||l.status||'—'}</td>
+              </tr>
+            `).join('')
+          : `<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет строк</td></tr>`;
+
+        document.getElementById('confirm-btn').style.display = (o.status === 'draft') ? 'block' : 'none';
+        document.getElementById('close-short-btn').style.display = !TERMINAL_STATUSES.includes(o.status) && o.status !== 'draft' ? 'block' : 'none';
+        document.getElementById('cancel-btn').style.display = (canCancel && !TERMINAL_STATUSES.includes(o.status)) ? 'block' : 'none';
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function confirmOrder() {
+      if (!currentOrderId) return;
+      try {
+        await window.API.inbound.confirm(currentOrderId);
+        UI.notify.ok('Заявка подтверждена');
+        await openOrder(currentOrderId);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function closeOrderShort() {
+      if (!currentOrderId) return;
+      const reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
+      if (reason === null) return;
+      if (!UI.confirm('Закрыть заявку как есть? Уже принятый товар останется на складе, заявка станет финальной.')) return;
+      try {
+        await window.API.inbound.closeShort(currentOrderId, reason);
+        UI.notify.ok('Заявка закрыта');
+        await openOrder(currentOrderId);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function cancelOrder() {
+      if (!currentOrderId) return;
+      if (!UI.confirm('Отменить заявку целиком? Если товар уже частично принят — используйте вместо этого "Закрыть как есть".')) return;
+      try {
+        await window.API.inbound.cancel(currentOrderId);
+        UI.notify.ok('Заявка отменена');
+        await openOrder(currentOrderId);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function backToList() {
+      document.getElementById('detail-view').style.display = 'none';
+      document.getElementById('list-view').style.display = 'block';
+      currentOrderId = null;
+      loadOrders();
+    }
+
+    (async () => { await loadClients(); await loadOrders(); })();
+  </script>
+</body>
+</html>
