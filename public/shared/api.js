@@ -437,6 +437,7 @@
     markingCodes:        (itemId, p)        => get(`/seller/items/${itemId}/marking/codes`, p),
     importMarkingCodes:  (itemId, codesText)=> post(`/seller/items/${itemId}/marking/codes/import`, { codes_text: codesText }),
     updateMarkingSettings:(itemId, d)       => patch(`/seller/items/${itemId}/marking/settings`, d),
+    bulkUpdateMarkingSettings:(itemIds, d)  => patch('/seller/items/marking/bulk-settings', { item_ids: itemIds, ...d }),
     returns:        (p) => get('/seller/returns', p),
     returnsSummary: (p) => get('/seller/returns/summary', p),
     wbReturnClaims: (p) => get('/seller/wb-return-claims', p),
