@@ -45,6 +45,7 @@
         <div class="badge"><span>Всего единиц</span><div id="d-total">0</div></div>
       </div>
       <div id="d-notes" class="refresh-note" style="text-align:left;margin-top:10px;"></div>
+      <div id="d-delivery-info" class="refresh-note" style="text-align:left;margin-top:6px;display:none;"></div>
     </div>
     <div class="card">
       <div class="card-title">Состав</div>
@@ -65,6 +66,10 @@
     <div class="card">
       <div class="field-row" style="display:flex;gap:10px;flex-wrap:wrap;">
         <div class="field" style="flex:1;min-width:160px;"><label>Ожидаемая дата</label><input id="c-expected-date" type="date"/></div>
+      </div>
+      <div class="field-row" style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:160px;"><label>ФИО водителя</label><input id="c-driver-name" placeholder="Необязательно, если уже известен"/></div>
+        <div class="field" style="flex:1;min-width:160px;"><label>Марка машины / гос. номер</label><input id="c-vehicle-make" placeholder="Необязательно"/></div>
       </div>
       <div class="field"><label>Комментарий</label><textarea id="c-notes" rows="2" placeholder="Необязательно"></textarea></div>
     </div>
@@ -161,6 +166,14 @@
         document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
         document.getElementById('d-notes').textContent = o.notes || '';
 
+        const deliveryInfo = document.getElementById('d-delivery-info');
+        if (o.driver_name || o.vehicle_make) {
+          deliveryInfo.style.display = 'block';
+          deliveryInfo.textContent = ['Водитель: ' + (o.driver_name || '—'), 'Машина: ' + (o.vehicle_make || '—')].join(' · ');
+        } else {
+          deliveryInfo.style.display = 'none';
+        }
+
         const lines = res.lines || [];
         document.getElementById('detail-lines-body').innerHTML = lines.length
           ? lines.map(l => `
@@ -202,6 +215,8 @@
       document.getElementById('create-view').style.display = 'block';
       UI.setVal('#c-expected-date', '');
       UI.setVal('#c-notes', '');
+      UI.setVal('#c-driver-name', '');
+      UI.setVal('#c-vehicle-make', '');
       orderLines = [];
       renderLines();
     }
@@ -296,6 +311,8 @@
         const res = await window.API.seller.inbound.create({
           expected_date: UI.val('#c-expected-date') || null,
           notes: UI.val('#c-notes') || null,
+          driver_name: UI.val('#c-driver-name') || null,
+          vehicle_make: UI.val('#c-vehicle-make') || null,
           lines: orderLines.map(l => ({ barcode: l.barcode, qty_expected: l.qty })),
         });
         UI.notify.ok(`Заявка ${res.order.order_number} создана (черновик)`);

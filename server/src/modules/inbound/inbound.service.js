@@ -67,7 +67,10 @@ async function getInboundOrderLines({ orderId }) {
 }
 
 async function createInboundOrder({ tenantId, clientId, warehouseId, createdByUserId, data }) {
-  const { expected_date, notes, lines = [] } = data;
+  // driver_name/vehicle_make необязательны на этом шаге — клиент может знать
+  // заранее, кто повезёт (заполняет сам), а склад при приёмке сверяет и,
+  // если нужно, поправит через updateDeliveryInfo (см. ниже).
+  const { expected_date, notes, driver_name, vehicle_make, lines = [] } = data;
   if (!lines.length) throw new ValidationError('Order must have at least one line');
 
   return transaction(async (client) => {
@@ -80,10 +83,13 @@ async function createInboundOrder({ tenantId, clientId, warehouseId, createdByUs
     const orderRes = await client.query(
       `INSERT INTO wms.inbound_orders
          (tenant_id,warehouse_id,client_id,order_number,barcode,status,expected_date,notes,
-          total_expected_qty,created_by_user_id)
-       VALUES($1,$2,$3,$4,$5,'draft',$6,$7,0,$8)
+          driver_name,vehicle_make,total_expected_qty,created_by_user_id)
+       VALUES($1,$2,$3,$4,$5,'draft',$6,$7,$8,$9,0,$10)
        RETURNING *`,
-      [tenantId, warehouseId, clientId, orderNumber, barcode, expected_date||null, notes||null, createdByUserId]
+      [tenantId, warehouseId, clientId, orderNumber, barcode, expected_date||null, notes||null,
+       driver_name ? String(driver_name).trim().slice(0,200) : null,
+       vehicle_make ? String(vehicle_make).trim().slice(0,200) : null,
+       createdByUserId]
     );
     const order = orderRes.rows[0];
 
