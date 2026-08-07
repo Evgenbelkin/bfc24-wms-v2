@@ -226,6 +226,8 @@
     confirm:    (id)=> post(`/inbound/${id}/confirm`),
     cancel:     (id)=> post(`/inbound/${id}/cancel`),
     closeShort: (id, reason) => post(`/inbound/${id}/close-short`, { reason: reason || undefined }),
+    updateDeliveryInfo: (id, d) => patch(`/inbound/${id}/delivery-info`, d),
+    label:      (id) => get(`/inbound/${id}/label`),
   };
 
   // ─────────────── Receiving ───────────────

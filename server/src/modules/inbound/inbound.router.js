@@ -7,6 +7,7 @@ const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenan
 const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const { generateInboundOrderLabelSvg } = require('../../utils/qrcode');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -81,6 +82,30 @@ router.post('/:id/close-short', requireRole('tenant_admin','supervisor','receive
       reason: req.body.reason || null,
     });
     res.json({ ok:true, order });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /inbound/:id/delivery-info { driver_name, vehicle_make } — склад
+ *  вносит ФИО водителя и марку машины при физическом приезде поставки. */
+router.patch('/:id/delivery-info', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {
+  try {
+    const order = await svc.updateDeliveryInfo({
+      tenantId: req.user.tenantId,
+      orderId: validatePositiveInt(req.params.id,'id'),
+      driverName: req.body.driver_name,
+      vehicleMake: req.body.vehicle_make,
+    });
+    res.json({ ok:true, order });
+  } catch(e){ next(e); }
+});
+
+/** GET /inbound/:id/label — печатный штрихкод заявки (для водителя без своей
+ *  распечатки), QR кодирует order.barcode, подпись — order_number. */
+router.get('/:id/label', async (req,res,next) => {
+  try {
+    const order = await svc.getInboundOrderById({ tenantId: req.user.tenantId, orderId: validatePositiveInt(req.params.id,'id') });
+    const svg = await generateInboundOrderLabelSvg(order.barcode, order.order_number);
+    res.json({ ok:true, svg, order_number: order.order_number, barcode: order.barcode });
   } catch(e){ next(e); }
 });
 

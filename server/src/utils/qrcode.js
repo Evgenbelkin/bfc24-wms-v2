@@ -145,6 +145,29 @@ function generateMarkingLabelSvg(code, itemName, { width = 400, height = 260 } =
 }
 
 /**
+ * Штрихкод заявки на поставку — печатается со склада для водителя, у которого
+ * нет собственной распечатки (штрихкод сканируется на приёмке через
+ * "По заявке" вместо ручного ввода). В отличие от generateShipmentLabelSvg,
+ * где в QR/тексте кодируется ОДНА и та же строка, здесь два РАЗНЫХ значения:
+ * в сам QR зашивается длинный технический barcode (то, что реально сканирует
+ * receiving.html), а под ним человекочитаемым текстом — короткий order_number
+ * (то, по чему кладовщик и водитель узнают заявку глазами). Печать QR, а не
+ * Code128 (как у ячеек) — потому что barcode заявки длинный
+ * буквенно-цифровой (IN29D7F576BAC04C12AEFCAA74735DED71), и Code128 на него
+ * получился бы неоправданно широким для этикетки.
+ */
+async function generateInboundOrderLabelSvg(barcode, orderNumber, { qrSize = 260, width = 320, height = 360, fontSize = 30 } = {}) {
+  const qrSvg = await QRCode.toString(String(barcode), { type: 'svg', margin: 1, width: qrSize });
+  const qrX = Math.round((width - qrSize) / 2);
+  const textY = qrSize + 40;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
+    `<svg x="${qrX}" y="10" width="${qrSize}" height="${qrSize}">${qrSvg}</svg>` +
+    `<text x="${width / 2}" y="${textY}" text-anchor="middle" font-family="sans-serif" ` +
+    `font-weight="bold" font-size="${fontSize}">${escapeXml(orderNumber)}</text>` +
+    `</svg>`;
+}
+
+/**
  * Компактный штрихкод ячейки хранения (Code128) для массовой печати наклеек
  * на стеллаж, без отдельного заголовка сверху, как у generateItemLabelSvg —
  * там заголовок нужен под название товара, здесь печатают сразу пачками по
@@ -187,4 +210,4 @@ function generateLocationLabelSvg(locationCode, { width = 300, height = 150, bar
     `</svg>`;
 }
 
-module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg, generateLocationLabelSvg };
+module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg, generateLocationLabelSvg, generateInboundOrderLabelSvg };

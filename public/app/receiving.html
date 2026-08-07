@@ -98,6 +98,7 @@
           <div class="badge"><span>Статус</span><div id="inb-order-status">—</div></div>
           <div class="badge"><span>Строк</span><div id="inb-order-lines-count">0</div></div>
         </div>
+        <div id="inb-delivery-info" class="refresh-note" style="text-align:left;margin-top:8px;display:none;"></div>
         <button class="btn-sm btn-yellow" id="inb-close-short-btn" style="display:none;margin-top:10px;" onclick="closeInboundOrderShort()">Закрыть как есть (недопоставка)</button>
       </div>
 
@@ -357,6 +358,13 @@
         document.getElementById('inb-order-code').textContent = currentOrder.order_number || currentOrder.id;
         document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status || '—';
         document.getElementById('inb-order-lines-count').textContent = (res.lines||[]).length;
+        const deliveryInfo = document.getElementById('inb-delivery-info');
+        if (currentOrder.driver_name || currentOrder.vehicle_make) {
+          deliveryInfo.style.display = 'block';
+          deliveryInfo.textContent = ['Водитель: ' + (currentOrder.driver_name || '—'), 'Машина: ' + (currentOrder.vehicle_make || '—')].join(' · ');
+        } else {
+          deliveryInfo.style.display = 'none';
+        }
         document.getElementById('inb-close-short-btn').style.display =
           INB_TERMINAL_STATUSES.includes(currentOrder.status) ? 'none' : 'inline-block';
         UI.renderTable('#inb-lines-body', res.lines, (l) => `

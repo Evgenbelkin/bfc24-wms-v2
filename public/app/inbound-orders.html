@@ -65,6 +65,21 @@
       <div id="d-closed-info" class="refresh-note" style="text-align:left;margin-top:6px;color:var(--muted);display:none;"></div>
     </div>
     <div class="card">
+      <div class="card-title">Доставка</div>
+      <div class="field-row">
+        <label style="font-size:12px;color:var(--muted);">ФИО водителя</label>
+        <input type="text" id="d-driver-name" placeholder="Иванов Иван Иванович" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;margin-top:4px;"/>
+      </div>
+      <div class="field-row" style="margin-top:10px;">
+        <label style="font-size:12px;color:var(--muted);">Марка машины</label>
+        <input type="text" id="d-vehicle-make" placeholder="ГАЗель, гос. номер" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;margin-top:4px;"/>
+      </div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn-big btn-blue" style="flex:1;" onclick="saveDeliveryInfo()">Сохранить</button>
+        <button class="btn-big" style="flex:1;" onclick="printOrderLabel()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Напечатать штрихкод</button>
+      </div>
+    </div>
+    <div class="card">
       <div class="card-title">Состав</div>
       <div class="table-wrap">
         <table>
@@ -156,6 +171,8 @@
         document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
         document.getElementById('d-barcode').textContent = o.barcode;
         document.getElementById('d-notes').textContent = o.notes || '';
+        document.getElementById('d-driver-name').value = o.driver_name || '';
+        document.getElementById('d-vehicle-make').value = o.vehicle_make || '';
 
         const closedInfo = document.getElementById('d-closed-info');
         if (o.closed_at) {
@@ -203,6 +220,39 @@
         UI.notify.ok('Заявка закрыта');
         await openOrder(currentOrderId);
       } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function saveDeliveryInfo() {
+      if (!currentOrderId) return;
+      try {
+        await window.API.inbound.updateDeliveryInfo(currentOrderId, {
+          driver_name: UI.val('#d-driver-name'),
+          vehicle_make: UI.val('#d-vehicle-make'),
+        });
+        UI.notify.ok('Сохранено');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function printOrderLabel() {
+      if (!currentOrderId) return;
+      // Открываем окно печати СИНХРОННО, до await — иначе мобильные браузеры
+      // блокируют popup, открытый уже после асинхронного запроса.
+      const win = window.open('', '_blank');
+      if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим этикетку...</p>');
+      try {
+        const res = await window.API.inbound.label(currentOrderId);
+        if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); return; }
+        win.document.open();
+        win.document.write(`
+          <html><head><title>${UI.escHtml(res.order_number)}</title>
+          <style>body{margin:0;display:flex;align-items:center;justify-content:center;} svg{max-width:100%;}</style>
+          </head><body onload="window.print()">${res.svg}</body></html>
+        `);
+        win.document.close();
+      } catch (e) {
+        if (win) win.close();
+        UI.notify.err(e.message);
+      }
     }
 
     async function cancelOrder() {

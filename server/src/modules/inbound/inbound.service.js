@@ -205,8 +205,35 @@ async function closeInboundOrderShort({ tenantId, orderId, userId, reason = null
   });
 }
 
+/**
+ * ФИО водителя и марка машины — заполняет склад при физическом приезде
+ * поставки (сверяет, кто привёз, до начала приёмки). Оба поля необязательны
+ * и независимы — можно сохранить одно без другого.
+ */
+async function updateDeliveryInfo({ tenantId, orderId, driverName, vehicleMake }) {
+  const fields = []; const params = []; let idx = 1;
+  if (driverName !== undefined) {
+    fields.push(`driver_name=$${idx++}`);
+    params.push(driverName ? String(driverName).trim().slice(0, 200) : null);
+  }
+  if (vehicleMake !== undefined) {
+    fields.push(`vehicle_make=$${idx++}`);
+    params.push(vehicleMake ? String(vehicleMake).trim().slice(0, 200) : null);
+  }
+  if (!fields.length) throw new ValidationError('No fields to update');
+  fields.push('updated_at=NOW()');
+  params.push(orderId, tenantId);
+
+  const r = await query(
+    `UPDATE wms.inbound_orders SET ${fields.join(', ')} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`,
+    params
+  );
+  if (r.rowCount === 0) throw new NotFoundError('InboundOrder', orderId);
+  return r.rows[0];
+}
+
 module.exports = {
   listInboundOrders, getInboundOrderById, getInboundOrderByBarcode,
   getInboundOrderLines, createInboundOrder, confirmInboundOrder, cancelInboundOrder,
-  closeInboundOrderShort,
+  closeInboundOrderShort, updateDeliveryInfo,
 };
