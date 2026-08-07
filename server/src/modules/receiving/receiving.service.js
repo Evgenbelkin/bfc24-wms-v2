@@ -2,7 +2,7 @@
 
 const { query, transaction } = require('../../config/database');
 const ledger = require('../stock/stock.ledger');
-const { resolveOrCreateItem } = require('../masterdata/items/items.service');
+const { resolveOrCreateItem, resolveExistingItem } = require('../masterdata/items/items.service');
 const { getLocationByCode } = require('../masterdata/locations/locations.service');
 const { getInboundOrderByBarcode, getInboundOrderLines } = require('../inbound/inbound.service');
 const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/errors');
@@ -96,7 +96,10 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
   const q = validateQty(qty, 'qty');
 
   const receiveResult = await transaction(async (client) => {
-    const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
+    // Свободная приёмка - товар должен быть заранее заведён в каталоге клиента
+    // (см. resolveExistingItem) - раньше здесь стоял resolveOrCreateItem, который
+    // тихо заводил новый товар на любой отсканированный штрихкод.
+    const itemId = await resolveExistingItem({ tenantId, clientId, barcode: b, dbClient: client });
     const loc = await getLocationByCode({ tenantId, warehouseId, locationCode });
 
     const result = await ledger.receiveStock({

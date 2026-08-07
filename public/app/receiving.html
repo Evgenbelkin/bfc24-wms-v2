@@ -37,18 +37,20 @@
   <!-- ============ Свободная приёмка ============ -->
   <div id="tab-free">
     <div class="card">
+      <div class="card-title">Ячейка приёмки</div>
+      <div class="mode-note" id="free-location-note">Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.</div>
+      <div class="scan-row">
+        <input id="free-location" class="scan-input" placeholder="Код ячейки (например PRM-01)" inputmode="none" autocomplete="off"/>
+        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      </div>
+      <button type="button" class="btn-sm btn-yellow" id="free-change-location-btn" style="display:none;margin-top:8px;" onclick="changeFreeLocation()">Сменить ячейку</button>
+    </div>
+
+    <div class="card">
       <div class="card-title">Товар</div>
       <div class="scan-row">
         <input id="free-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
         <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Ячейка приёмки</div>
-      <div class="scan-row">
-        <input id="free-location" class="scan-input" placeholder="Код ячейки (например PRM-01)" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
     </div>
 
@@ -103,18 +105,20 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Ячейка приёмки</div>
+        <div class="mode-note">Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.</div>
+        <div class="scan-row">
+          <input id="inb-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
+          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+        </div>
+        <button type="button" class="btn-sm btn-yellow" id="inb-change-location-btn" style="display:none;margin-top:8px;" onclick="changeInbLocation()">Сменить ячейку</button>
+      </div>
+
+      <div class="card">
         <div class="card-title">Товар</div>
         <div class="scan-row">
           <input id="inb-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
           <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Ячейка приёмки</div>
-        <div class="scan-row">
-          <input id="inb-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
         </div>
       </div>
 
@@ -294,7 +298,7 @@
       const comment  = UI.val('#free-comment');
       const statusEl = document.getElementById('free-status');
       if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
-      if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      if (!location) { UI.notify.err('Сначала отсканируйте ячейку'); document.getElementById('free-location').focus(); return; }
       const clientId = getClientId();
       if (!clientId) return;
       // Перепроверяем маркировку прямо перед отправкой (не полагаемся на скан-колбэк
@@ -316,6 +320,8 @@
         });
         UI.notify.ok(`Принято: ${barcode} × ${freeQty} → ${location}`);
         statusEl.textContent = `Остаток в ячейке: ${res.balance?.qty_on_hand ?? '—'}`;
+        // Ячейку НЕ сбрасываем — по задаче склада принимают весь товар в одну
+        // ячейку подряд, меняют её только явно кнопкой "Сменить ячейку".
         UI.setVal('#free-barcode',''); UI.setVal('#free-comment','');
         freeQty = 1; document.getElementById('free-qty-val').value = 1;
         freeMarkingItem = null; freeDmCodes = []; renderFreeDmCard();
@@ -323,20 +329,53 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    // ---------- Ячейка приёмки: сканируется ОДИН раз, дальше не сбрасывается,
+    // меняется только явной кнопкой "Сменить ячейку" ----------
+    function lockFreeLocation() {
+      const input = document.getElementById('free-location');
+      input.readOnly = true;
+      document.getElementById('free-change-location-btn').style.display = 'inline-block';
+      document.getElementById('free-location-note').textContent = 'Ячейка зафиксирована — сканируйте товар. Чтобы сменить ячейку, нажмите кнопку ниже.';
+    }
+    function changeFreeLocation() {
+      const input = document.getElementById('free-location');
+      input.readOnly = false;
+      UI.setVal('#free-location', '');
+      document.getElementById('free-change-location-btn').style.display = 'none';
+      document.getElementById('free-location-note').textContent = 'Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.';
+      input.focus();
+    }
+
     // UI.onScan() чистит поле сразу после Enter (рассчитано на "скан -> тут же обработали",
     // как в сборке) — а здесь значение должно остаться видимым в поле до кнопки "Оприходовать".
-    // Поэтому в колбэке явно возвращаем значение обратно в поле.
-    UI.onScan('#free-barcode', (v) => { UI.setVal('#free-barcode', v); lookupFreeMarkingItem(); document.getElementById('free-location').focus(); });
-    UI.onScan('#free-location', (v) => {
-      UI.setVal('#free-location', v);
-      // Дальше по цепочке без рук: если товар маркирован — переходим сразу на скан
-      // DataMatrix (карточка уже должна быть видна к этому моменту); если нет — сразу
-      // оприходуем, не заставляя жать кнопку на каждую единицу/пачку.
+    // Поэтому в колбэке явно возвращаем значение обратно в поле. Штрихкод/код ячейки
+    // дополнительно чистим от ЛЮБЫХ пробелов (не только по краям) - иногда сканер
+    // или гонка фокуса на странице добавляет лишний пробел внутри значения, из-за
+    // чего товар/ячейка потом "не находятся" при в общем-то верном штрихкоде.
+    function stripWs(v) { return String(v || '').replace(/\s+/g, ''); }
+
+    UI.onScan('#free-barcode', async (v) => {
+      const code = stripWs(v);
+      UI.setVal('#free-barcode', code);
+      const location = UI.val('#free-location');
+      if (!location) {
+        UI.notify.err('Сначала отсканируйте ячейку');
+        document.getElementById('free-location').focus();
+        return;
+      }
+      // Ждём метаданные маркировки ПЕРЕД тем как решать куда вести фокус дальше -
+      // иначе freeNeedsDataMatrix() мог бы сработать по ещё не загруженным данным.
+      await lookupFreeMarkingItem();
       if (freeNeedsDataMatrix()) {
         document.getElementById('free-dm-input')?.focus();
       } else {
         submitFree();
       }
+    });
+    UI.onScan('#free-location', (v) => {
+      UI.setVal('#free-location', stripWs(v));
+      lockFreeLocation();
+      document.getElementById('free-barcode').focus();
     });
 
     // ---------- По заявке ----------
@@ -370,13 +409,19 @@
         UI.renderTable('#inb-lines-body', res.lines, (l) => `
           <tr><td>${UI.escHtml(l.item_name_master || l.item_name || '—')}</td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_expected)}</td><td>${UI.fmtQty(l.qty_received||0)}</td></tr>
         `);
-        setTimeout(() => document.getElementById('inb-barcode').focus(), 150);
       } catch (e) {
         UI.notify.err(e.message);
         document.getElementById('inbound-order-card').style.display = 'none';
       }
     }
-    UI.onScan('#inb-order-barcode', (v) => { UI.setVal('#inb-order-barcode', v); loadOrderByBarcode(v); });
+    UI.onScan('#inb-order-barcode', (v) => {
+      UI.setVal('#inb-order-barcode', v);
+      loadOrderByBarcode(v).then(() => {
+        // Новая заявка - сбрасываем зафиксированную ячейку с прошлой заявки,
+        // если она была, и ведём фокус на ячейку (сканируется первой).
+        changeInbLocation();
+      });
+    });
 
     async function closeInboundOrderShort() {
       if (!currentOrder) return;
@@ -445,6 +490,21 @@
       renderInbDmCard();
     }
 
+    // ---------- Ячейка приёмки (по заявке): та же логика, что и в свободной
+    // приёмке — сканируется один раз, дальше не сбрасывается ----------
+    function lockInbLocation() {
+      const input = document.getElementById('inb-location');
+      input.readOnly = true;
+      document.getElementById('inb-change-location-btn').style.display = 'inline-block';
+    }
+    function changeInbLocation() {
+      const input = document.getElementById('inb-location');
+      input.readOnly = false;
+      UI.setVal('#inb-location', '');
+      document.getElementById('inb-change-location-btn').style.display = 'none';
+      input.focus();
+    }
+
     UI.onScan('#inb-dm-input', (v) => {
       const code = String(v || '').trim();
       if (!code) return;
@@ -460,7 +520,7 @@
       const barcode  = UI.val('#inb-barcode');
       const location = UI.val('#inb-location');
       if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
-      if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
+      if (!location) { UI.notify.err('Сначала отсканируйте ячейку'); document.getElementById('inb-location').focus(); return; }
       await refreshInbMarkingItemMeta();
       if (inbNeedsDataMatrix() && inbDmCodes.length !== inbQty) {
         UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${inbQty}, отсканировано ${inbDmCodes.length})`);
@@ -482,6 +542,8 @@
           data_matrix_codes: inbNeedsDataMatrix() ? inbDmCodes : undefined,
         });
         UI.notify.ok(`Принято: ${barcode} × ${inbQty}`);
+        // Ячейку НЕ сбрасываем - как и в свободной приёмке, следующий товар по
+        // умолчанию идёт в ту же ячейку, пока не нажали "Сменить ячейку".
         UI.setVal('#inb-barcode','');
         inbQty = 1; document.getElementById('inb-qty-val').value = 1;
         inbMarkingItem = null; inbDmCodes = []; renderInbDmCard();
@@ -489,16 +551,29 @@
         // кнопки "Закрыть как есть") - без этого оператор не видел прогресс приёмки
         // до перезагрузки страницы.
         await loadOrderByBarcode(currentOrder.barcode);
+        document.getElementById('inb-barcode').focus();
       } catch (e) { UI.notify.err(e.message); }
     }
-    UI.onScan('#inb-barcode', (v) => { UI.setVal('#inb-barcode', v); lookupInbMarkingItem(); document.getElementById('inb-location').focus(); });
-    UI.onScan('#inb-location', (v) => {
-      UI.setVal('#inb-location', v);
+    UI.onScan('#inb-barcode', async (v) => {
+      const code = stripWs(v);
+      UI.setVal('#inb-barcode', code);
+      const location = UI.val('#inb-location');
+      if (!location) {
+        UI.notify.err('Сначала отсканируйте ячейку');
+        document.getElementById('inb-location').focus();
+        return;
+      }
+      await lookupInbMarkingItem();
       if (inbNeedsDataMatrix()) {
         document.getElementById('inb-dm-input')?.focus();
       } else {
         submitInbound();
       }
+    });
+    UI.onScan('#inb-location', (v) => {
+      UI.setVal('#inb-location', stripWs(v));
+      lockInbLocation();
+      document.getElementById('inb-barcode').focus();
     });
 
     // ---------- История ----------
@@ -516,7 +591,9 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    document.getElementById('free-barcode').focus();
+    // Стартуем с фокуса на ячейке — новый порядок сканирования: ячейка один раз,
+    // потом товар подряд (см. lockFreeLocation/changeFreeLocation).
+    document.getElementById('free-location').focus();
   </script>
 </body>
 </html>

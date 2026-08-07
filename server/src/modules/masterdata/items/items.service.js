@@ -275,7 +275,38 @@ async function resolveOrCreateItem({ tenantId, clientId, barcode, dbClient = nul
   return itemId;
 }
 
+/**
+ * Найти УЖЕ ЗАВЕДЁННЫЙ товар клиента по штрихкоду — без автосоздания.
+ * В отличие от resolveOrCreateItem (используется в доверенных источниках вроде
+ * синхронизации WB, где неизвестный барcode - это легитимный новый товар с
+ * маркетплейса), здесь источник - ручной скан приёмщиком, и раньше та же
+ * resolveOrCreateItem тихо заводила новый товар на ЛЮБОЙ отсканированный
+ * штрихкод - то есть приёмщик мог "принять" вообще что угодно, включая
+ * опечатку сканера. Требуем, чтобы товар был заранее заведён в каталоге
+ * (клиентом в его кабинете или админом) - иначе понятная ошибка вместо
+ * тихого создания.
+ */
+async function resolveExistingItem({ tenantId, clientId, barcode, dbClient = null }) {
+  const db = dbClient || { query: (sql, params) => query(sql, params) };
+  const b = validateBarcode(barcode);
+
+  const res = await db.query(
+    `SELECT id, is_active FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+    [tenantId, clientId, b]
+  );
+  if (res.rowCount === 0) {
+    throw new ValidationError(
+      `Товар со штрихкодом '${b}' не найден в каталоге этого клиента. ` +
+      `Сначала заведите товар в справочнике (в админке или в кабинете клиента), затем принимайте.`
+    );
+  }
+  if (!res.rows[0].is_active) {
+    throw new ValidationError(`Товар со штрихкодом '${b}' есть в каталоге, но отключён (неактивен).`);
+  }
+  return res.rows[0].id;
+}
+
 module.exports = {
   listItems, getItemById, getItemByBarcode,
-  createItem, updateItem, resolveOrCreateItem,
+  createItem, updateItem, resolveOrCreateItem, resolveExistingItem,
 };

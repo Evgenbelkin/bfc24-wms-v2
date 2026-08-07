@@ -60,7 +60,9 @@ async function getLocationById({ tenantId, locationId }) {
 }
 
 async function getLocationByCode({ tenantId, warehouseId, locationCode }) {
-  const code = String(locationCode || '').trim();
+  // Как и в validateBarcode - убираем весь whitespace, не только края (сканер
+  // иногда добавляет лишний пробел, код ячейки пробелов не содержит).
+  const code = String(locationCode || '').replace(/\s+/g, '');
   if (!code) throw new ValidationError('location_code is required');
 
   const params = [tenantId, code];

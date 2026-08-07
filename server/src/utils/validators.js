@@ -58,7 +58,11 @@ function validateDateRange(dateFrom, dateTo) {
  * Нормализовать и проверить barcode
  */
 function validateBarcode(value, fieldName = 'barcode') {
-  const s = String(value || '').trim();
+  // Убираем ВЕСЬ whitespace, а не только края - штрихкод не может легитимно
+  // содержать пробел/таб/перенос строки, а сканеры иногда добавляют лишний
+  // пробел (настройки префикса/суффикса, гонка фокуса на странице и т.п.),
+  // что раньше приводило к "не найден товар" при, казалось бы, верном штрихкоде.
+  const s = String(value || '').replace(/\s+/g, '');
   if (!s) {
     throw new ValidationError(`Field '${fieldName}' is required and cannot be empty`);
   }
