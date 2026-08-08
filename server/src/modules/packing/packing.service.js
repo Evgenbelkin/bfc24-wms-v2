@@ -402,6 +402,20 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
     );
     const totalPacked = packedRes.rows[0].total_packed;
 
+    // Начисляем за упаковку ТОЛЬКО те единицы, у чьего товара стоит галочка
+    // "Требует упаковки" (wms.items.needs_packaging) - раньше billableQty
+    // всегда равнялся totalPacked, то есть клиенту считали упаковку даже за
+    // товары, которые физически не упаковывали (нет фасовки/доп. материалов).
+    const billableRes = await client.query(
+      `SELECT COALESCE(SUM(sm.qty),0)::int AS billable_qty
+       FROM wms.stock_movements sm
+       JOIN wms.items i ON i.id = sm.item_id
+       WHERE sm.tenant_id=$1 AND sm.movement_type='packing' AND sm.ref_type='shipment' AND sm.ref_id=$2
+         AND i.needs_packaging = TRUE`,
+      [tenantId, shipmentId]
+    );
+    const billablePackedQty = billableRes.rows[0].billable_qty;
+
     if (totalPacked < totalPlan) {
       throw new ValidationError(
         `Not all items packed: plan=${totalPlan}, packed=${totalPacked}`
@@ -449,14 +463,17 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
     );
 
     chargeClientId = shipment.client_id;
-    chargeQty = totalPacked;
+    chargeQty = billablePackedQty;
 
     return { ok: true, shipmentId, status: 'ready_to_ship', totalPlan, totalPacked, packingLocationCode: code };
   });
 
   // chargeClientId остаётся null, если ветка была идемпотентной (уже ready_to_ship) —
-  // так повторный вызов confirmPacking не начисляет клиенту дважды.
-  if (chargeClientId) {
+  // так повторный вызов confirmPacking не начисляет клиенту дважды. chargeQty может
+  // быть 0, если в отгрузке не было ни одного товара с галочкой "Требует упаковки" —
+  // тогда начислять нечего (min_charge из прайса тут не при чём: сама услуга не
+  // оказывалась).
+  if (chargeClientId && chargeQty > 0) {
     chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'packing', quantity: chargeQty, refType: 'shipment', refId: shipmentId });
   }
 
