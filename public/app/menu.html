@@ -83,6 +83,7 @@
       wallet:       `<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M16 13h4v4h-4a2 2 0 0 1 0-4z"/>`,
       undo:         `<path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v8h8"/>`,
       clipboard:    `<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/>`,
+      trending:     `<path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/>`,
     };
     function icon(name){ return `<svg viewBox="0 0 24 24">${ICONS[name]||''}</svg>`; }
 
@@ -107,6 +108,7 @@
       { href:'printer-panel.html',    icon:'printer',   label:'Панель принтеров',roles:['tenant_admin','supervisor'] },
       { href:'users.html',            icon:'users',     label:'Пользователи',    roles:['tenant_admin','supervisor'] },
       { href:'billing.html',          icon:'billing',   label:'Биллинг',         roles:['tenant_admin','supervisor'] },
+      { href:'finance.html',          icon:'trending',  label:'Финансы',         roles:['tenant_admin','supervisor'] },
       { href:'consumables.html',      icon:'box',       label:'Расходники',      roles:['tenant_admin','supervisor'] },
       { href:'payroll.html',          icon:'wallet',    label:'Сдельная ЗП',     roles:['tenant_admin','supervisor'] },
       { href:'returns.html',          icon:'undo',      label:'Возвраты',        roles:['tenant_admin','supervisor','receiver'] },

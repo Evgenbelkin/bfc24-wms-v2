@@ -62,4 +62,16 @@ router.get('/report', requireRole('tenant_admin', 'supervisor'), async (req, res
   } catch (e) { next(e); }
 });
 
+router.get('/analytics', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await svc.getPayrollAnalytics({
+      tenantId:    req.user.tenantId,
+      dateFrom:    req.query.date_from,
+      dateTo:      req.query.date_to,
+      granularity: req.query.granularity || 'day',
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

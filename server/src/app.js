@@ -78,8 +78,12 @@ app.use(helmet({
   contentSecurityPolicy: config.isProd ? {
     useDefaults: false,
     directives: {
+      // cdnjs.cloudflare.com — единственное внешнее исключение, только под Chart.js
+      // для страницы "Финансы" (public/app/finance.html). Библиотеку сознательно НЕ
+      // вендорим в репозиторий (минифицированный сторонний бандл в git — плохая
+      // практика, сложно обновлять/аудировать), а грузим с CDN в браузере клиента.
       defaultSrc:     ["'self'"],
-      scriptSrc:      ["'self'", "'unsafe-inline'"],
+      scriptSrc:      ["'self'", "'unsafe-inline'", 'https://cdnjs.cloudflare.com'],
       scriptSrcAttr:  ["'unsafe-inline'"],
       styleSrc:       ["'self'", "'unsafe-inline'"],
       styleSrcAttr:   ["'unsafe-inline'"],

@@ -137,10 +137,89 @@ async function getPayrollReport({ tenantId, dateFrom, dateTo }) {
   return { period_from: dateFrom, period_to: dateTo, employees, grand_total: grandTotal };
 }
 
+const PAYROLL_GRANULARITIES = ['day', 'week', 'month'];
+
+/**
+ * Динамика начислений ЗП за период — для графика на странице "Финансы".
+ * Та же логика расчёта, что и в getPayrollReport (ставки × выработка из
+ * wms.stock_movements), но с группировкой ещё и по периоду (день/неделя/
+ * месяц), чтобы видеть тренд, а не только итог за весь диапазон.
+ */
+async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = 'day' }) {
+  if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
+  if (!PAYROLL_GRANULARITIES.includes(granularity)) {
+    throw new ValidationError(`granularity must be one of: ${PAYROLL_GRANULARITIES.join(', ')}`);
+  }
+
+  // 1) Ставки - как в getPayrollReport
+  const ratesRes = await query(
+    `SELECT role, employee_id, movement_type, rate FROM billing.employee_rates WHERE tenant_id=$1`,
+    [tenantId]
+  );
+  const roleRate = new Map();
+  const empRate  = new Map();
+  for (const r of ratesRes.rows) {
+    if (r.employee_id) empRate.set(`${r.employee_id}:${r.movement_type}`, Number(r.rate));
+    else roleRate.set(`${r.role}:${r.movement_type}`, Number(r.rate));
+  }
+
+  // 2) Роли активных складских сотрудников - нужны, чтобы матчить ставку роли
+  // там, где нет персонального override.
+  const usersRes = await query(
+    `SELECT id, role FROM wms.users
+     WHERE tenant_id=$1 AND is_active=TRUE AND role IN ('receiver','picker','packer','shipper','inventory_manager')`,
+    [tenantId]
+  );
+  const userRole = new Map(usersRes.rows.map(u => [u.id, u.role]));
+
+  // 3) Выработка по периоду × сотруднику × типу операции
+  const unionParts = RATEABLE_MOVEMENT_TYPES.map(mt =>
+    `SELECT date_trunc($4, m.created_at)::date AS period, m.user_id, '${mt}'::text AS movement_type, ${unitsExprFor(mt)} AS units
+     FROM wms.stock_movements m
+     WHERE m.tenant_id=$1 AND m.movement_type='${mt}'
+       AND m.created_at>=$2::date AND m.created_at<($3::date+interval '1 day')
+     GROUP BY period, m.user_id`
+  ).join('\nUNION ALL\n');
+
+  const workRes = await query(unionParts, [tenantId, dateFrom, dateTo, granularity]);
+
+  const seriesMap = new Map();   // period -> total
+  const byTypeMap  = new Map();  // movement_type -> total
+  let grandTotal = 0;
+
+  for (const row of workRes.rows) {
+    const role = userRole.get(row.user_id);
+    if (!role) continue; // сотрудник неактивен/уволен/не складская роль - выработку не платим
+    const units = Number(row.units) || 0;
+    if (units === 0) continue;
+
+    const rate = empRate.get(`${row.user_id}:${row.movement_type}`)
+             ?? roleRate.get(`${role}:${row.movement_type}`)
+             ?? 0;
+    const amount = units * rate;
+    if (amount === 0) continue;
+
+    const periodKey = row.period instanceof Date ? row.period.toISOString().slice(0, 10) : String(row.period);
+    seriesMap.set(periodKey, (seriesMap.get(periodKey) || 0) + amount);
+    byTypeMap.set(row.movement_type, (byTypeMap.get(row.movement_type) || 0) + amount);
+    grandTotal += amount;
+  }
+
+  const series = [...seriesMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([period, total]) => ({ period, total }));
+  const byType = [...byTypeMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([movement_type, total]) => ({ movement_type, total }));
+
+  return { period_from: dateFrom, period_to: dateTo, granularity, series, by_movement_type: byType, grand_total: grandTotal };
+}
+
 module.exports = {
   listRates,
   upsertRate,
   deleteRate,
   getPayrollReport,
+  getPayrollAnalytics,
   RATEABLE_MOVEMENT_TYPES,
 };

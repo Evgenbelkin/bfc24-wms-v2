@@ -494,6 +494,76 @@ async function chargeStorageForClientToday({ tenantId, clientId }) {
   });
 }
 
+// ─────────────── Analytics (страница "Финансы") ───────────────
+
+const REVENUE_GRANULARITIES = ['day', 'week', 'month'];
+
+/**
+ * Динамика выручки за период — для графика на странице "Финансы".
+ * Возвращает три среза одних и тех же начислений (billing.service_charges):
+ *  - series      — сумма по периодам (день/неделя/месяц), и если client_id не
+ *    задан - ЕЩЁ и с разбивкой по client_id внутри каждого периода (чтобы
+ *    фронт мог нарисовать несколько линий "по каждому клиенту отдельно"
+ *    поверх общей суммы).
+ *  - by_service_type — разбивка по типу услуги ("по операциям") за весь период.
+ *  - by_client        — рейтинг клиентов по выручке за весь период.
+ * Considers billing начислений НЕЗАВИСИМО от is_invoiced - это факт оказанной
+ * услуги/её стоимости, а не факт оплаты, так что для "сколько зарабатываю"
+ * это правильнее, чем ждать выставления счёта.
+ */
+async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo, granularity = 'day' }) {
+  if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
+  if (!REVENUE_GRANULARITIES.includes(granularity)) {
+    throw new ValidationError(`granularity must be one of: ${REVENUE_GRANULARITIES.join(', ')}`);
+  }
+
+  const baseParams = [tenantId, dateFrom, dateTo];
+  const clientCond = clientId ? ` AND sc.client_id=$4` : '';
+  if (clientId) baseParams.push(clientId);
+
+  const seriesRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
+            sc.client_id, c.client_name, SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     JOIN wms.clients c ON c.id = sc.client_id
+     WHERE sc.tenant_id=$1 AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+     GROUP BY period, sc.client_id, c.client_name
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
+  const byTypeRes = await query(
+    `SELECT sc.service_type, SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     WHERE sc.tenant_id=$1 AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+     GROUP BY sc.service_type
+     ORDER BY total DESC`,
+    baseParams
+  );
+
+  const byClientRes = await query(
+    `SELECT sc.client_id, c.client_name, SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     JOIN wms.clients c ON c.id = sc.client_id
+     WHERE sc.tenant_id=$1 AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+     GROUP BY sc.client_id, c.client_name
+     ORDER BY total DESC`,
+    baseParams
+  );
+
+  const grandTotal = byTypeRes.rows.reduce((s, r) => s + Number(r.total), 0);
+
+  return {
+    period_from: dateFrom, period_to: dateTo, granularity,
+    series: seriesRes.rows.map(r => ({
+      period: r.period, client_id: r.client_id, client_name: r.client_name, total: Number(r.total),
+    })),
+    by_service_type: byTypeRes.rows.map(r => ({ service_type: r.service_type, total: Number(r.total) })),
+    by_client: byClientRes.rows.map(r => ({ client_id: r.client_id, client_name: r.client_name, total: Number(r.total) })),
+    grand_total: grandTotal,
+  };
+}
+
 // ─────────────── Summary ───────────────
 
 async function getClientBalance({ tenantId, clientId }) {
@@ -524,6 +594,7 @@ module.exports = {
   createInvoice,
   updateInvoiceStatus,
   getClientBalance,
+  getRevenueAnalytics,
   listClientsWithActiveStoragePrice,
   chargeStorageForClientToday,
 };

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Финансы — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:140px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .kpi-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+    @media (max-width:520px){ .kpi-grid{grid-template-columns:1fr;} }
+    .kpi-cell{background:var(--card2);border-radius:10px;padding:14px;text-align:center;}
+    .kpi-cell .num{font-size:20px;font-weight:700;}
+    .kpi-cell .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+    .chart-wrap{position:relative;height:260px;}
+    .rank-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;}
+    .rank-row:last-child{border-bottom:none;}
+    .rank-row .name{color:var(--text);}
+    .rank-row .amt{font-weight:700;}
+    .module-off{color:var(--muted);font-size:13px;text-align:center;padding:16px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg> Финансы</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Фильтры</div>
+    <div class="filters-row">
+      <select id="f-client"><option value="">Все клиенты</option></select>
+    </div>
+    <div class="filters-row">
+      <input id="f-from" type="date"/>
+      <input id="f-to" type="date"/>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-g="day" onclick="setGranularity('day')">По дням</button>
+      <button class="tab" data-g="week" onclick="setGranularity('week')">По неделям</button>
+      <button class="tab" data-g="month" onclick="setGranularity('month')">По месяцам</button>
+    </div>
+    <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadAll()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="kpi-grid">
+      <div class="kpi-cell"><div class="num" id="kpi-revenue" style="color:var(--green)">—</div><div class="lbl">Выручка за период</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-payroll" style="color:var(--red)">—</div><div class="lbl">Начислено сотрудникам</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-diff">—</div><div class="lbl">Выручка − ЗП</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Динамика выручки</div>
+    <div id="revenue-series-note" class="refresh-note" style="margin-bottom:8px;"></div>
+    <div class="chart-wrap"><canvas id="chart-revenue-series"></canvas></div>
+    <div id="revenue-module-off" class="module-off" style="display:none;">Модуль биллинга не подключён.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Выручка по операциям</div>
+    <div class="chart-wrap" style="height:220px;"><canvas id="chart-revenue-type"></canvas></div>
+  </div>
+
+  <div class="card" id="revenue-by-client-card" style="display:none;">
+    <div class="card-title">Выручка по клиентам</div>
+    <div id="revenue-by-client-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Динамика ЗП</div>
+    <div class="chart-wrap"><canvas id="chart-payroll-series"></canvas></div>
+    <div id="payroll-module-off" class="module-off" style="display:none;">Модуль сдельной ЗП не подключён.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">ЗП по операциям</div>
+    <div class="chart-wrap" style="height:220px;"><canvas id="chart-payroll-type"></canvas></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+
+    const SERVICE_LABELS = {
+      receiving:'Приёмка', storage:'Хранение', placement:'Размещение', picking:'Сборка',
+      packing:'Упаковка', shipping:'Отгрузка', processing:'Обработка', returns:'Возврат',
+      subscription:'Подписка', materials:'Расходники',
+    };
+    const MOVEMENT_LABELS = {
+      receiving:'Приёмка', placement:'Размещение', picking:'Сборка', packing:'Упаковка', shipping:'Отгрузка',
+    };
+
+    // Палитра под тему приложения (первые 4 — переменные темы, дальше — доп. цвета
+    // для линий по клиентам, если их больше четырёх).
+    const cs = getComputedStyle(document.documentElement);
+    const PALETTE = [
+      cs.getPropertyValue('--accent').trim()  || '#0284c7',
+      cs.getPropertyValue('--green').trim()   || '#16a34a',
+      cs.getPropertyValue('--yellow').trim()  || '#d97706',
+      cs.getPropertyValue('--red').trim()     || '#dc2626',
+      '#7c3aed', '#0891b2', '#db2777', '#65a30d',
+    ];
+
+    function fmtMoney(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'; }
+
+    let granularity = 'day';
+    function setGranularity(g) {
+      granularity = g;
+      document.querySelectorAll('.tab[data-g]').forEach(t => t.classList.toggle('active', t.dataset.g === g));
+      loadAll();
+    }
+
+    function currentClientId() { return Number(UI.val('#f-client')) || null; }
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        const sel = document.getElementById('f-client');
+        sel.innerHTML = '<option value="">Все клиенты</option>' +
+          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+      } catch (e) { /* фильтр не критичен */ }
+    }
+
+    function defaultDates() {
+      const to = new Date();
+      const from = new Date(); from.setDate(from.getDate() - 29);
+      const iso = (d) => d.toISOString().slice(0, 10);
+      UI.setVal('#f-from', iso(from));
+      UI.setVal('#f-to', iso(to));
+    }
+
+    let chartRevenueSeries = null, chartRevenueType = null, chartPayrollSeries = null, chartPayrollType = null;
+    function destroyChart(c) { if (c) c.destroy(); return null; }
+
+    async function loadRevenue(params) {
+      document.getElementById('revenue-module-off').style.display = 'none';
+      document.getElementById('revenue-by-client-card').style.display = 'none';
+      try {
+        const res = await window.API.billing.analytics.revenue(params);
+        document.getElementById('kpi-revenue').textContent = fmtMoney(res.grand_total);
+
+        // Сводим series (period, client_id, total) в датасеты по клиентам поверх
+        // общего списка периодов - если выбран конкретный клиент, там будет всего
+        // один client_id и получится одна линия; если "все клиенты" - несколько.
+        const periods = [...new Set(res.series.map(r => r.period))].sort();
+        const clientIds = [...new Set(res.series.map(r => r.client_id))];
+        const noteEl = document.getElementById('revenue-series-note');
+        let datasets;
+        if (!params.client_id && clientIds.length > 1) {
+          // "Все клиенты" - берём топ-6 по итоговой выручке отдельными линиями,
+          // остальное сворачиваем в "Остальные", чтобы график не превратился в кашу.
+          const totals = res.by_client.slice();
+          const top = totals.slice(0, 6);
+          const topIds = new Set(top.map(c => c.client_id));
+          const hasRest = totals.length > top.length;
+          noteEl.textContent = hasRest
+            ? `Показаны топ-${top.length} клиентов по выручке из ${totals.length}, остальные объединены в "Остальные"`
+            : '';
+          datasets = top.map((c, i) => ({
+            label: c.client_name,
+            data: periods.map(p => {
+              const row = res.series.find(r => r.period === p && r.client_id === c.client_id);
+              return row ? row.total : 0;
+            }),
+            borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length],
+            tension: 0.25, fill: false,
+          }));
+          if (hasRest) {
+            datasets.push({
+              label: 'Остальные',
+              data: periods.map(p => res.series.filter(r => r.period === p && !topIds.has(r.client_id))
+                .reduce((s, r) => s + r.total, 0)),
+              borderColor: '#94a3b8', backgroundColor: '#94a3b8', borderDash: [4,4],
+              tension: 0.25, fill: false,
+            });
+          }
+        } else {
+          noteEl.textContent = '';
+          const clientName = clientIds.length ? res.series.find(r=>r.client_id===clientIds[0])?.client_name : 'Выручка';
+          datasets = [{
+            label: clientName || 'Выручка',
+            data: periods.map(p => {
+              const row = res.series.find(r => r.period === p);
+              return row ? row.total : 0;
+            }),
+            borderColor: PALETTE[0], backgroundColor: PALETTE[0], tension: 0.25, fill: true,
+          }];
+        }
+
+        chartRevenueSeries = destroyChart(chartRevenueSeries);
+        chartRevenueSeries = new Chart(document.getElementById('chart-revenue-series'), {
+          type: 'line',
+          data: { labels: periods, datasets },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: datasets.length > 1 } },
+            scales: { y: { beginAtZero: true } } },
+        });
+
+        chartRevenueType = destroyChart(chartRevenueType);
+        chartRevenueType = new Chart(document.getElementById('chart-revenue-type'), {
+          type: 'bar',
+          data: {
+            labels: res.by_service_type.map(r => SERVICE_LABELS[r.service_type] || r.service_type),
+            datasets: [{ data: res.by_service_type.map(r => r.total), backgroundColor: PALETTE[0] }],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } } },
+        });
+
+        if (!params.client_id && res.by_client.length > 1) {
+          document.getElementById('revenue-by-client-card').style.display = 'block';
+          document.getElementById('revenue-by-client-list').innerHTML = res.by_client.map(c => `
+            <div class="rank-row"><span class="name">${UI.escHtml(c.client_name)}</span><span class="amt">${fmtMoney(c.total)}</span></div>
+          `).join('');
+        }
+      } catch (e) {
+        if (isModuleDisabled(e)) { document.getElementById('revenue-module-off').style.display = 'block'; return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    async function loadPayroll(params) {
+      document.getElementById('payroll-module-off').style.display = 'none';
+      try {
+        const res = await window.API.payroll.analytics(params);
+        document.getElementById('kpi-payroll').textContent = fmtMoney(res.grand_total);
+
+        chartPayrollSeries = destroyChart(chartPayrollSeries);
+        chartPayrollSeries = new Chart(document.getElementById('chart-payroll-series'), {
+          type: 'line',
+          data: {
+            labels: res.series.map(r => r.period),
+            datasets: [{ label: 'ЗП', data: res.series.map(r => r.total),
+              borderColor: PALETTE[3], backgroundColor: PALETTE[3], tension: 0.25, fill: true }],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } } },
+        });
+
+        chartPayrollType = destroyChart(chartPayrollType);
+        chartPayrollType = new Chart(document.getElementById('chart-payroll-type'), {
+          type: 'bar',
+          data: {
+            labels: res.by_movement_type.map(r => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
+            datasets: [{ data: res.by_movement_type.map(r => r.total), backgroundColor: PALETTE[3] }],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } } },
+        });
+      } catch (e) {
+        if (isModuleDisabled(e)) { document.getElementById('payroll-module-off').style.display = 'block'; return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function updateDiffKpi() {
+      const revText = document.getElementById('kpi-revenue').textContent;
+      const payText = document.getElementById('kpi-payroll').textContent;
+      const rev = Number(revText.replace(/[^\d.-]/g, '')) || 0;
+      const pay = Number(payText.replace(/[^\d.-]/g, '')) || 0;
+      const diff = rev - pay;
+      const el = document.getElementById('kpi-diff');
+      el.textContent = fmtMoney(diff);
+      el.style.color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+    }
+
+    async function loadAll() {
+      const dateFrom = UI.val('#f-from'), dateTo = UI.val('#f-to');
+      if (!dateFrom || !dateTo) { UI.notify.err('Укажите период'); return; }
+      const clientId = currentClientId();
+      document.getElementById('kpi-revenue').textContent = '—';
+      document.getElementById('kpi-payroll').textContent = '—';
+      document.getElementById('kpi-diff').textContent = '—';
+      // ВАЖНО: не кладём client_id в объект параметров вовсе, если клиент не выбран —
+      // new URLSearchParams({client_id: undefined, ...}) превратит его в буквальную
+      // строку "client_id=undefined" (а не пропустит ключ), и бэкенд воспримет её
+      // как невалидный client_id вместо "все клиенты".
+      const revenueParams = { date_from: dateFrom, date_to: dateTo, granularity };
+      if (clientId) revenueParams.client_id = clientId;
+      await Promise.all([
+        loadRevenue(revenueParams),
+        loadPayroll({ date_from: dateFrom, date_to: dateTo, granularity }),
+      ]);
+      updateDiffKpi();
+    }
+
+    (async () => {
+      await loadClients();
+      defaultDates();
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>

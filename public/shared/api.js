@@ -382,6 +382,9 @@
       bulkDelete: (chargeIds) => post('/billing/charges/bulk-delete', { charge_ids: chargeIds }),
     },
     clientBalance: (clientId) => get(`/billing/clients/${clientId}/balance`),
+    analytics: {
+      revenue: (p) => get('/billing/analytics/revenue', p),
+    },
     invoices: {
       list:         (p)      => get('/billing/invoices', p),
       get:          (id)     => get(`/billing/invoices/${id}`),
@@ -410,6 +413,7 @@
       delete: (id)     => del(`/payroll/rates/${id}`),
     },
     report: (dateFrom, dateTo) => get('/payroll/report', { date_from: dateFrom, date_to: dateTo }),
+    analytics: (p) => get('/payroll/analytics', p),
   };
 
   // ─────────────── Returns (возвраты) ───────────────

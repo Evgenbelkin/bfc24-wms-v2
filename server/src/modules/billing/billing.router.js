@@ -135,6 +135,22 @@ router.get('/clients/:clientId/balance', requireRole('tenant_admin','supervisor'
   } catch (e) { next(e); }
 });
 
+// ─────────────── Analytics ───────────────
+
+router.get('/analytics/revenue', requireRole('tenant_admin', 'supervisor', 'analyst'), async (req, res, next) => {
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const result = await svc.getRevenueAnalytics({
+      tenantId:    req.user.tenantId,
+      clientId:    clientId || null,
+      dateFrom:    req.query.date_from,
+      dateTo:      req.query.date_to,
+      granularity: req.query.granularity || 'day',
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 // ─────────────── Invoices ───────────────
 
 router.get('/invoices', requireRole('tenant_admin','supervisor','analyst'), async (req, res, next) => {
