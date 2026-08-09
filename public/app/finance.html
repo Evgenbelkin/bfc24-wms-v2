@@ -158,7 +158,11 @@
         // Сводим series (period, client_id, total) в датасеты по клиентам поверх
         // общего списка периодов - если выбран конкретный клиент, там будет всего
         // один client_id и получится одна линия; если "все клиенты" - несколько.
-        const periods = [...new Set(res.series.map(r => r.period))].sort();
+        // period_grid - ПОЛНЫЙ календарный список периодов от бэка (см. комментарий
+        // в billing.service.js:getRevenueAnalytics), а не список "только те периоды,
+        // где что-то начислено" - иначе дни без выручки выпадали бы из оси X, и
+        // график склеивал бы несмежные даты как соседние, искажая форму линии.
+        const periods = res.period_grid;
         const clientIds = [...new Set(res.series.map(r => r.client_id))];
         const noteEl = document.getElementById('revenue-series-note');
         let datasets;
@@ -242,12 +246,18 @@
         const res = await window.API.payroll.analytics(params);
         document.getElementById('kpi-payroll').textContent = fmtMoney(res.grand_total);
 
+        // Тот же приём, что и в loadRevenue() - полная сетка периодов, а не только
+        // те, где реально что-то начислено.
+        const payrollPeriods = res.period_grid;
         chartPayrollSeries = destroyChart(chartPayrollSeries);
         chartPayrollSeries = new Chart(document.getElementById('chart-payroll-series'), {
           type: 'line',
           data: {
-            labels: res.series.map(r => r.period),
-            datasets: [{ label: 'ЗП', data: res.series.map(r => r.total),
+            labels: payrollPeriods,
+            datasets: [{ label: 'ЗП', data: payrollPeriods.map(p => {
+                const row = res.series.find(r => r.period === p);
+                return row ? row.total : 0;
+              }),
               borderColor: PALETTE[3], backgroundColor: PALETTE[3], tension: 0.25, fill: true }],
           },
           options: { responsive: true, maintainAspectRatio: false,

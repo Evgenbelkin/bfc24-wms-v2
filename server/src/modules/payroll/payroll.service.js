@@ -183,6 +183,17 @@ async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = '
 
   const workRes = await query(unionParts, [tenantId, dateFrom, dateTo, granularity]);
 
+  // Полная сетка периодов - см. подробный комментарий у аналогичного места в
+  // billing.service.js:getRevenueAnalytics. Без неё дни без начислений ЗП
+  // пропадали с оси графика вместо того, чтобы показать там ноль, и линия
+  // "склеивала" несмежные даты как соседние.
+  const gridRes = await query(
+    `SELECT DISTINCT date_trunc($3, d)::date AS period
+     FROM generate_series($1::date, $2::date, interval '1 day') AS d
+     ORDER BY period`,
+    [dateFrom, dateTo, granularity]
+  );
+
   const seriesMap = new Map();   // period -> total
   const byTypeMap  = new Map();  // movement_type -> total
   let grandTotal = 0;
@@ -212,7 +223,11 @@ async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = '
     .sort((a, b) => b[1] - a[1])
     .map(([movement_type, total]) => ({ movement_type, total }));
 
-  return { period_from: dateFrom, period_to: dateTo, granularity, series, by_movement_type: byType, grand_total: grandTotal };
+  return {
+    period_from: dateFrom, period_to: dateTo, granularity,
+    period_grid: gridRes.rows.map(r => r.period),
+    series, by_movement_type: byType, grand_total: grandTotal,
+  };
 }
 
 module.exports = {

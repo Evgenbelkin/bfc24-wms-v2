@@ -521,6 +521,20 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
   const clientCond = clientId ? ` AND sc.client_id=$4` : '';
   if (clientId) baseParams.push(clientId);
 
+  // Полная сетка периодов между датами - ВАЖНО отдельно от seriesRes ниже:
+  // seriesRes группирует по факту начисления, то есть содержит период ТОЛЬКО
+  // если в нём что-то начислено. Без этой сетки график динамики молча
+  // "склеивал" дни без начислений с соседними (ось X превращалась в список
+  // дат-с-деньгами вместо реального календаря, искажая форму линии). Truncуем
+  // КАЖДЫЙ календарный день в диапазоне той же date_trunc(), что и period в
+  // seriesRes, чтобы границы недели/месяца совпадали один в один.
+  const gridRes = await query(
+    `SELECT DISTINCT date_trunc($3, d)::date AS period
+     FROM generate_series($1::date, $2::date, interval '1 day') AS d
+     ORDER BY period`,
+    [dateFrom, dateTo, granularity]
+  );
+
   const seriesRes = await query(
     `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
             sc.client_id, c.client_name, SUM(sc.total_amount)::numeric AS total
@@ -555,6 +569,7 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
 
   return {
     period_from: dateFrom, period_to: dateTo, granularity,
+    period_grid: gridRes.rows.map(r => r.period),
     series: seriesRes.rows.map(r => ({
       period: r.period, client_id: r.client_id, client_name: r.client_name, total: Number(r.total),
     })),
