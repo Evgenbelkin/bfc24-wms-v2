@@ -81,7 +81,12 @@
     <div class="chart-wrap" style="height:220px;"><canvas id="chart-payroll-type"></canvas></div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+  <!-- Chart.js подключён локальным файлом, а не с CDN - у части пользователей
+       (в т.ч. в РФ) домены на Cloudflare (cdnjs, jsdelivr и т.п.) периодически
+       недоступны/блокируются провайдером, и график молча не рисовался
+       ("Chart is not defined"). vendored-копия v4.4.4, минифицирована terser'ом
+       из официального npm-пакета chart.js, без правок содержимого. -->
+  <script src="/shared/chart.umd.min.js"></script>
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script>
