@@ -232,6 +232,10 @@
               <div class="field"><label>Ед. изм.</label><select id="m-unit">${unitOptions}</select></div>
             </div>
             <div class="field-row2">
+              <div class="field"><label>Размер</label><input id="m-size" placeholder="128, 42, L..." value="${it && it.size ? UI.escHtml(it.size):''}"/></div>
+              <div class="field"></div>
+            </div>
+            <div class="field-row2">
               <div class="field"><label>Вес, г</label><input id="m-weight" type="number" value="${it && it.weight_grams!=null ? it.weight_grams:''}"/></div>
               <div class="field"><label>Объём, л</label><input id="m-volume" type="number" value="${it && it.volume_liters!=null ? it.volume_liters:''}"/></div>
             </div>
@@ -414,6 +418,7 @@
         wb_vendor_code: UI.val('#m-wbvendor'),
         brand: UI.val('#m-brand'),
         unit: UI.val('#m-unit'),
+        size: UI.val('#m-size'),
         weight_grams: UI.val('#m-weight') || null,
         volume_liters: UI.val('#m-volume') || null,
         needs_packaging: document.getElementById('m-needspkg').checked,

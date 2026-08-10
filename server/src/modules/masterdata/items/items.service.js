@@ -33,7 +33,7 @@ async function listItems({ tenantId, clientId = null, search = null, isActive = 
   const res = await query(
     `SELECT
        i.id, i.client_id, i.barcode, i.item_name, i.vendor_code,
-       i.wb_vendor_code, i.brand, i.unit, i.volume_liters,
+       i.wb_vendor_code, i.brand, i.unit, i.volume_liters, i.size,
        i.length_cm, i.width_cm, i.height_cm, i.weight_grams,
        i.cost_price, i.processing_fee, i.needs_packaging,
        i.is_active, i.source, i.wb_nm_id, i.preview_url,
@@ -127,8 +127,8 @@ async function createItem({ tenantId, clientId, createdById, data }) {
        (tenant_id, client_id, barcode, item_name, vendor_code, wb_vendor_code,
         brand, unit, volume_liters, length_cm, width_cm, height_cm, weight_grams,
         cost_price, processing_fee, needs_packaging, is_active, source, wb_nm_id, preview_url, created_by,
-        kit_of_item_id, kit_multiplier, requires_marking, marking_trigger, marking_mode)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+        kit_of_item_id, kit_multiplier, requires_marking, marking_trigger, marking_mode, size)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
      RETURNING *`,
     [
       tenantId, cid, barcode, itemName,
@@ -154,6 +154,7 @@ async function createItem({ tenantId, clientId, createdById, data }) {
       parseBool(data.requires_marking, false),
       markingTrigger,
       markingMode,
+      data.size            ? String(data.size).trim().slice(0, 50) : null,
     ]
   );
 
@@ -179,6 +180,7 @@ async function updateItem({ tenantId, itemId, data }) {
   str('wb_vendor_code', 'wb_vendor_code');
   str('brand',          'brand');
   str('preview_url',    'preview_url', 1000);
+  str('size',           'size', 50);
 
   if (data.unit !== undefined) {
     if (!VALID_UNITS.includes(data.unit)) throw new ValidationError(`Invalid unit`);
