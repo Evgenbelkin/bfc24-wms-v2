@@ -12,6 +12,15 @@
     .qty-val::-webkit-outer-spin-button,.qty-val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
     .qty-val:focus{outline:none;border-color:var(--accent);}
     .mode-note{font-size:12px;color:var(--muted);margin-bottom:10px;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;}
+    @media (min-width:680px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .act-warn{background:rgba(230,160,30,.12);border:1px solid rgba(230,160,30,.4);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px;}
+    .act-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    @media (max-width:480px){ .act-2col{grid-template-columns:1fr;} }
+    .act-lines-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .act-lines-table th,.act-lines-table td{border:1px solid var(--border);padding:6px 8px;text-align:left;}
+    .act-lines-table input{width:100%;box-sizing:border-box;padding:6px 8px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;}
   </style>
 </head>
 <body>
@@ -80,7 +89,11 @@
 
     <button class="btn-big btn-green btn-full" onclick="submitFree()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Оприходовать</button>
     <div id="free-status" class="refresh-note"></div>
+
+    <button class="btn-big btn-full" style="margin-top:10px;" onclick="openFreeActModal()"><svg class="i" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg> Сформировать акт (без заявки)</button>
   </div>
+
+  <div id="act-modal-root"></div>
 
   <!-- ============ Приёмка по заявке ============ -->
   <div id="tab-inbound" style="display:none">
@@ -172,6 +185,7 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
+  <script src="/shared/act-print.js"></script>
   <script>
     if (!UI.requireAuth()) throw new Error('Not logged in');
     if (!UI.requireRole(['receiver','supervisor','tenant_admin'])) {
@@ -377,6 +391,213 @@
       lockFreeLocation();
       document.getElementById('free-barcode').focus();
     });
+
+    // ---------- Акт приёмки товара (без заявки) ----------
+    let freeActLines = []; // [{item_id, barcode, item_name, qty_received, qty_damaged, notes}]
+
+    function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+    async function openFreeActModal() {
+      const clientId = getClientId();
+      if (!clientId) return;
+      const dateFrom = todayStr(), dateTo = todayStr();
+      let client = null, tenant = null;
+      try {
+        const [clientRes, tenantRes, freeLinesRes] = await Promise.all([
+          window.API.clients.get(clientId),
+          window.API.tenant.profile(),
+          window.API.acts.freeLines({ client_id: clientId, date_from: dateFrom, date_to: dateTo }),
+        ]);
+        client = clientRes.client;
+        tenant = tenantRes.profile;
+        freeActLines = (freeLinesRes.lines || []).map(l => ({
+          item_id: l.item_id, barcode: l.barcode, item_name: l.item_name,
+          qty_received: l.qty_received, qty_damaged: 0, notes: '',
+        }));
+      } catch (e) { UI.notify.err(e.message); return; }
+
+      window.__actClient = client;
+      window.__actTenant = tenant;
+      window.__actClientId = clientId;
+      window.__actDateFrom = dateFrom;
+      window.__actDateTo = dateTo;
+      renderFreeActModal();
+    }
+
+    async function refreshFreeActLines() {
+      const dateFrom = UI.val('#fact-date-from') || todayStr();
+      const dateTo = UI.val('#fact-date-to') || todayStr();
+      window.__actDateFrom = dateFrom;
+      window.__actDateTo = dateTo;
+      try {
+        const res = await window.API.acts.freeLines({ client_id: window.__actClientId, date_from: dateFrom, date_to: dateTo });
+        freeActLines = (res.lines || []).map(l => ({
+          item_id: l.item_id, barcode: l.barcode, item_name: l.item_name,
+          qty_received: l.qty_received, qty_damaged: 0, notes: '',
+        }));
+        renderFreeActModal();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function addManualActLine() {
+      const barcode = UI.val('#fact-add-barcode');
+      const qty = Number(UI.val('#fact-add-qty')) || 1;
+      if (!barcode) { UI.notify.err('Укажите штрихкод'); return; }
+      try {
+        const res = await window.API.items.byBarcode(barcode, window.__actClientId);
+        const item = res.item;
+        if (!item) { UI.notify.err('Товар не найден в каталоге клиента'); return; }
+        freeActLines.push({ item_id: item.id, barcode, item_name: item.item_name || barcode, qty_received: qty, qty_damaged: 0, notes: '' });
+        renderFreeActModal();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function removeActLine(idx) {
+      freeActLines.splice(idx, 1);
+      renderFreeActModal();
+    }
+
+    function collectFreeActLinesFromForm() {
+      return freeActLines.map((l, i) => ({
+        item_id: l.item_id || null,
+        barcode: l.barcode,
+        item_name: l.item_name,
+        qty_received: UI.val(`#fact-line-qty-${i}`) || 0,
+        qty_damaged: UI.val(`#fact-line-dmg-${i}`) || 0,
+        notes: UI.val(`#fact-line-note-${i}`),
+      }));
+    }
+
+    function renderFreeActModal() {
+      const client = window.__actClient, tenant = window.__actTenant;
+      const missingClientReq = !client.legal_name || !client.inn;
+      const missingTenantReq = !tenant.legal_name || !tenant.inn;
+
+      const linesRows = freeActLines.map((l, i) => `
+        <tr>
+          <td>${i + 1}. ${UI.escHtml(l.item_name || l.barcode)}</td>
+          <td><input type="number" min="0" id="fact-line-qty-${i}" value="${Number(l.qty_received || 0)}"/></td>
+          <td><input type="number" min="0" id="fact-line-dmg-${i}" value="${Number(l.qty_damaged || 0)}"/></td>
+          <td><input type="text" id="fact-line-note-${i}" value="${UI.escHtml(l.notes || '')}" placeholder="без замечаний"/></td>
+          <td><a href="#" onclick="removeActLine(${i});return false;" style="color:var(--red);">убрать</a></td>
+        </tr>
+      `).join('');
+
+      document.getElementById('act-modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeFreeActModal()">
+          <div class="modal-card">
+            <div class="card-title">Акт приёмки товара — без заявки</div>
+
+            ${missingClientReq ? `<div class="act-warn">У клиента «${UI.escHtml(client.client_name)}» не заполнены юр. реквизиты (наименование/ИНН). Можно сформировать акт и без них, но лучше <a href="/app/clients.html" target="_blank">заполнить</a>.</div>` : ''}
+            ${missingTenantReq ? `<div class="act-warn">У вашей компании не заполнены юр. реквизиты. Можно сформировать акт и без них, но лучше <a href="/app/company-profile.html" target="_blank">заполнить</a>.</div>` : ''}
+
+            <div class="act-2col">
+              <div class="field"><label>Период приёмки (для подбора позиций)</label>
+                <div style="display:flex;gap:6px;">
+                  <input type="date" id="fact-date-from" value="${window.__actDateFrom}" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:8px;color:var(--text);"/>
+                  <input type="date" id="fact-date-to" value="${window.__actDateTo}" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:8px;color:var(--text);"/>
+                </div>
+              </div>
+              <div class="field" style="display:flex;align-items:flex-end;">
+                <button class="btn-sm" style="width:100%;" onclick="refreshFreeActLines()">↻ Обновить список позиций</button>
+              </div>
+            </div>
+
+            <div class="act-2col">
+              <div class="field"><label>Город</label><input id="fact-city" value=""/></div>
+              <div class="field"><label>Поставщик/отправитель</label><input id="fact-supplier" value="${UI.escHtml(client.client_name || '')}"/></div>
+            </div>
+            <div class="act-2col">
+              <div class="field"><label>ФИО водителя</label><input id="fact-driver-name" value=""/></div>
+              <div class="field"><label>Марка машины</label><input id="fact-vehicle-make" value=""/></div>
+            </div>
+            <div class="act-2col">
+              <div class="field"><label>Кол-во грузовых мест (коробов)</label><input type="number" min="0" id="fact-boxes" value=""/></div>
+              <div class="field"><label>Кол-во паллет</label><input type="number" min="0" id="fact-pallets" value=""/></div>
+            </div>
+            <div class="act-2col">
+              <div class="field"><label>Вес, кг</label><input type="number" min="0" step="0.1" id="fact-weight" value=""/></div>
+              <div class="field"><label>Перевозчик</label><input id="fact-carrier" value=""/></div>
+            </div>
+            <div class="field"><label>Товарная накладная / УПД №</label><input id="fact-source-doc" value="" placeholder="УПД № ___ от ___"/></div>
+
+            <div class="field">
+              <label>Внешнее состояние упаковки и Товара</label>
+              <div style="display:flex;gap:16px;margin-top:6px;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="radio" name="fact-pkg-ok" id="fact-pkg-ok-yes" checked/> без замечаний</label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="radio" name="fact-pkg-ok" id="fact-pkg-ok-no"/> с замечаниями</label>
+              </div>
+            </div>
+            <div class="field"><label>Текст замечаний</label><textarea id="fact-remarks" rows="2"></textarea></div>
+
+            <div class="card-title" style="margin-top:14px;font-size:14px;">Перечень и состояние товара</div>
+            <div class="mode-note">Позиции подтянуты из свободной приёмки за выбранный период. Можно поправить количество или добавить позицию вручную.</div>
+            <div class="table-wrap">
+              <table class="act-lines-table">
+                <thead><tr><th>Наименование</th><th>Кол-во</th><th>Повреждено</th><th>Примечание</th><th></th></tr></thead>
+                <tbody>${linesRows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет позиций за период — добавьте вручную ниже</td></tr>'}</tbody>
+              </table>
+            </div>
+            <div class="act-2col" style="margin-top:8px;">
+              <div class="field"><label>Штрихкод товара</label><input id="fact-add-barcode" placeholder="Штрихкод"/></div>
+              <div class="field"><label>Кол-во</label><input type="number" min="1" id="fact-add-qty" value="1"/></div>
+            </div>
+            <button class="btn-sm" onclick="addManualActLine()">+ Добавить позицию</button>
+
+            <div class="act-2col" style="margin-top:12px;">
+              <div class="field"><label>ФИО — Сдал (Заказчик)</label><input id="fact-client-signer" value=""/></div>
+              <div class="field"><label>ФИО — Принял (Исполнитель)</label><input id="fact-operator-signer" value=""/></div>
+            </div>
+
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn-big btn-green" onclick="saveAndPrintFreeAct()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Сохранить и напечатать</button>
+              <button class="btn-big btn-yellow" onclick="closeFreeActModal()">Отмена</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeFreeActModal() {
+      document.getElementById('act-modal-root').innerHTML = '';
+    }
+
+    async function saveAndPrintFreeAct() {
+      const lines = collectFreeActLinesFromForm().filter(l => Number(l.qty_received) > 0);
+      if (!lines.length) { UI.notify.err('Добавьте хотя бы одну позицию с количеством больше 0'); return; }
+
+      // Открываем окно печати СИНХРОННО - до await, иначе мобильные браузеры
+      // блокируют popup (см. тот же приём в inbound-orders.html).
+      const win = window.open('', '_blank');
+      if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим акт...</p>');
+
+      const act = {
+        act_city: UI.val('#fact-city'),
+        act_supplier: UI.val('#fact-supplier'),
+        act_boxes_count: UI.val('#fact-boxes'),
+        act_pallets_count: UI.val('#fact-pallets'),
+        act_weight_kg: UI.val('#fact-weight'),
+        act_carrier: UI.val('#fact-carrier'),
+        act_source_doc: UI.val('#fact-source-doc'),
+        act_packaging_ok: document.getElementById('fact-pkg-ok-no').checked ? false : true,
+        act_remarks: UI.val('#fact-remarks'),
+        act_client_signer: UI.val('#fact-client-signer'),
+        act_operator_signer: UI.val('#fact-operator-signer'),
+        driver_name: UI.val('#fact-driver-name'),
+        vehicle_make: UI.val('#fact-vehicle-make'),
+      };
+
+      try {
+        const res = await window.API.acts.create({ client_id: window.__actClientId, inbound_order_id: null, act, lines });
+        if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); closeFreeActModal(); return; }
+        ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+        closeFreeActModal();
+        UI.notify.ok('Акт сохранён');
+      } catch (e) {
+        if (win) win.close();
+        UI.notify.err(e.message);
+      }
+    }
 
     // ---------- По заявке ----------
     let currentOrder = null;

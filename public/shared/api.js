@@ -228,7 +228,6 @@
     closeShort: (id, reason) => post(`/inbound/${id}/close-short`, { reason: reason || undefined }),
     updateDeliveryInfo: (id, d) => patch(`/inbound/${id}/delivery-info`, d),
     label:      (id) => get(`/inbound/${id}/label`),
-    saveAct:    (id, d) => post(`/inbound/${id}/act`, d),
   };
 
   // ─────────────── Tenant (реквизиты своей компании) ───────────────
@@ -236,6 +235,16 @@
   const tenant = {
     profile:       ()   => get('/tenant/profile'),
     updateProfile: (d)  => patch('/tenant/profile', d),
+  };
+
+  // ─────────────── Acceptance Acts (Акт приёмки товара) ───────────────
+
+  const acts = {
+    list:      (p)      => get('/acts', p),
+    get:       (id)      => get(`/acts/${id}`),
+    create:    (d)       => post('/acts', d),
+    update:    (id, d)   => patch(`/acts/${id}`, d),
+    freeLines: (p)        => get('/acts/free-lines', p),
   };
 
   // ─────────────── Receiving ───────────────
@@ -535,7 +544,7 @@
     workstations,
     checkin,
     billing, consumables, payroll, marking, returns,
-    seller, platform, tenant,
+    seller, platform, tenant, acts,
   };
 
 })(window);

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Акты приёмки — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select,.filters-row input{flex:1;min-width:160px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .act-row{cursor:pointer;}
+    .act-row:active{opacity:.7;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg> Акты приёмки</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Фильтры</div>
+    <div class="filters-row">
+      <select id="f-client"><option value="">Все клиенты</option></select>
+    </div>
+    <div class="filters-row">
+      <input type="date" id="f-date-from"/>
+      <input type="date" id="f-date-to"/>
+    </div>
+    <button class="btn-big btn-blue btn-full" onclick="loadActs()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Акты (<span id="acts-count">0</span>)</div>
+    <div id="acts-list"></div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script src="/shared/act-print.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin','supervisor','receiver'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        const sel = document.getElementById('f-client');
+        sel.innerHTML = '<option value="">Все клиенты</option>' +
+          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+      } catch (e) { /* фильтр не критичен */ }
+    }
+
+    async function loadActs() {
+      const list = document.getElementById('acts-list');
+      try {
+        const params = {};
+        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
+        const dateFrom = UI.val('#f-date-from'); if (dateFrom) params.date_from = dateFrom;
+        const dateTo = UI.val('#f-date-to'); if (dateTo) params.date_to = dateTo;
+        const res = await window.API.acts.list(params);
+        const acts = res.acts || [];
+        document.getElementById('acts-count').textContent = acts.length;
+        if (!acts.length) {
+          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/></svg></div>Актов нет</div>`;
+          return;
+        }
+        list.innerHTML = acts.map(a => `
+          <div class="list-row act-row" onclick="reprintAct(${a.id})">
+            <div class="main">
+              <div class="title">${UI.escHtml(a.act_number)}</div>
+              <div class="sub">${UI.escHtml(a.client_name||'')} · ${UI.fmtDateTime(a.created_at)} · ${a.order_number ? 'заявка ' + UI.escHtml(a.order_number) : 'без заявки'} · позиций: ${a.lines_count||0}</div>
+            </div>
+            <span class="pill pill-blue">Печать</span>
+          </div>
+        `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function reprintAct(id) {
+      // Открываем окно печати СИНХРОННО (см. тот же приём в inbound-orders.html) -
+      // до await, иначе мобильные браузеры блокируют popup.
+      const win = window.open('', '_blank');
+      if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим акт...</p>');
+      (async () => {
+        try {
+          const [actRes, tenantRes] = await Promise.all([
+            window.API.acts.get(id),
+            window.API.tenant.profile(),
+          ]);
+          const act = actRes.act;
+          const client = {
+            client_name: act.client_name,
+            legal_name: act.client_legal_name,
+            inn: act.client_inn,
+            legal_address: act.client_legal_address,
+          };
+          if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); return; }
+          ActPrint.printInto(win, act, client, tenantRes.profile, actRes.lines);
+        } catch (e) {
+          if (win) win.close();
+          UI.notify.err(e.message);
+        }
+      })();
+    }
+
+    (async () => {
+      await loadClients();
+      const today = new Date().toISOString().slice(0, 10);
+      const monthAgo = new Date(Date.now() - 30*24*3600*1000).toISOString().slice(0, 10);
+      UI.setVal('#f-date-from', monthAgo);
+      UI.setVal('#f-date-to', today);
+      await loadActs();
+    })();
+  </script>
+</body>
+</html>
