@@ -104,6 +104,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
 
   let shipmentId = null;
   let chargeClientId = null, chargeQty = 0;
+  let chargeItemRows = []; // для прогрессивной тарификации 'processing' по объёму — см. ниже после commit
 
   const txResult = await transaction(async (client) => {
     // Находим shipment
@@ -163,10 +164,12 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     // раньше) невозможна — пишем одну документальную запись 'shipping' на
     // каждый товар.
     const shippedByItemRes = await client.query(
-      `SELECT pt.item_id, pt.barcode, COALESCE(SUM(pt.qty_picked), 0)::int AS shipped_qty
+      `SELECT pt.item_id, pt.barcode, i.volume_liters,
+              COALESCE(SUM(pt.qty_picked), 0)::int AS shipped_qty
        FROM wms.picking_tasks pt
+       LEFT JOIN wms.items i ON i.id = pt.item_id
        WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.status='done'
-       GROUP BY pt.item_id, pt.barcode
+       GROUP BY pt.item_id, pt.barcode, i.volume_liters
        HAVING COALESCE(SUM(pt.qty_picked), 0) > 0`,
       [tenantId, shipmentCode]
     );
@@ -216,6 +219,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     shipmentId = shipment.id;
     chargeClientId = shipment.client_id;
     chargeQty = totalShipped;
+    chargeItemRows = shippedByItemRes.rows;
 
     return {
       ok: true,
@@ -231,6 +235,22 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
   // повторный скан не начисляет клиенту дважды.
   if (chargeClientId && chargeQty > 0) {
     chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'shipping', quantity: chargeQty, refType: 'shipment', refId: shipmentId });
+
+    // Прогрессивная тарификация "Обработка" по объёму товара (30₽ первый литр +
+    // 2₽ каждый следующий, например) — альтернатива фиксированным сборке/отгрузке.
+    // Начисляется ПОШТУЧНО по каждой позиции (у каждого товара свой объём),
+    // поэтому не через общий chargeQty, а по строкам shippedByItemRes. Если для
+    // клиента прайс на service_type='processing' не настроен — silent no-op
+    // (см. chargeForOperation), как и для остальных услуг. Если настроен ещё и
+    // старый прайс на picking/shipping — начислится и то, и другое, поэтому
+    // для клиентов на новой схеме нужно убрать/не заводить прайс на picking/shipping.
+    for (const row of chargeItemRows) {
+      chargeForOperation({
+        tenantId, clientId: chargeClientId, serviceType: 'processing',
+        quantity: row.shipped_qty, volumeLiters: row.volume_liters,
+        refType: 'shipment_item', refId: shipmentId,
+      });
+    }
   }
 
   // ВАЖНО: порядок здесь принципиален. WB отдаёт РЕАЛЬНЫЙ QR/штрихкод поставки

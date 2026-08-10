@@ -70,14 +70,21 @@ async function upsertPrice({
   }
   if (unitPrice === undefined || unitPrice === null) throw new ValidationError('unit_price is required');
 
-  // storage_mode/extra_unit_price имеют смысл только для service_type='storage' —
-  // для остальных типов услуг всегда пишем режим по умолчанию 'slots' и NULL,
-  // чтобы в прайсе на других услугах не осталось "мусорных" значений от
-  // предыдущей позиции хранения.
-  const mode = serviceType === 'storage' && storageMode === 'volume' ? 'volume' : 'slots';
-  if (mode === 'volume' && (extraUnitPrice === undefined || extraUnitPrice === null)) {
+  // storage_mode имеет смысл только для service_type='storage' — для остальных
+  // типов услуг всегда пишем режим по умолчанию 'slots' (он там ни на что не
+  // влияет). extra_unit_price же (прогрессивная цена: unit_price за первую
+  // единицу объёма + extra_unit_price за каждую следующую) актуальна и для
+  // 'storage' (в режиме volume), и для 'processing' (обработка по литражу
+  // товара) — см. chargeForOperation в billing.service.js. Для остальных
+  // типов услуг extra_unit_price всегда NULL, чтобы не осталось "мусорных"
+  // значений от предыдущей позиции хранения.
+  const isStorage = serviceType === 'storage';
+  const mode = isStorage && storageMode === 'volume' ? 'volume' : 'slots';
+  if (isStorage && mode === 'volume' && (extraUnitPrice === undefined || extraUnitPrice === null)) {
     throw new ValidationError('extra_unit_price is required when storage_mode=volume');
   }
+  const allowExtra = isStorage ? mode === 'volume' : serviceType === 'processing';
+  const extraValue = allowExtra && extraUnitPrice != null ? Number(extraUnitPrice) : null;
 
   const from = validFrom || new Date().toISOString().slice(0, 10);
 
@@ -100,7 +107,7 @@ async function upsertPrice({
     [tenantId, clientId, serviceType, description || null,
      Number(unitPrice), minCharge != null ? Number(minCharge) : null,
      currency || 'RUB', from, validTo || null,
-     mode, mode === 'volume' ? Number(extraUnitPrice) : null]
+     mode, extraValue]
   );
   return r.rows[0];
 }
@@ -185,12 +192,20 @@ async function addCharge({
 /**
  * Начислить по прайс-листу — вызывается из receiving/picking/shipping
  * Если нет прайс-листа — ничего не делает (silent)
+ *
+ * volumeLiters (опционально) — объём ОДНОЙ единицы товара в литрах. Если он
+ * передан И в прайсе для этой услуги задана extra_unit_price — цена считается
+ * прогрессивно, как в chargeStorageForClientToday(): unit_price трактуется
+ * как цена за первый литр, extra_unit_price — за каждый следующий (округление
+ * литража вверх после вычитания первого литра), а не как простая ставка за
+ * штуку. Так одна и та же схема тарификации (раньше — только для 'storage')
+ * доступна для любой услуги, например 'processing' — обработка по объёму.
  */
-async function chargeForOperation({ tenantId, clientId, serviceType, quantity, refType, refId, periodDate }) {
+async function chargeForOperation({ tenantId, clientId, serviceType, quantity, refType, refId, periodDate, volumeLiters }) {
   try {
     // Ищем актуальный прайс
     const priceRes = await query(
-      `SELECT unit_price, min_charge, currency, description
+      `SELECT unit_price, extra_unit_price, min_charge, currency, description
        FROM billing.client_price_list
        WHERE tenant_id=$1 AND client_id=$2 AND service_type=$3
          AND is_active=TRUE
@@ -203,7 +218,15 @@ async function chargeForOperation({ tenantId, clientId, serviceType, quantity, r
 
     const p    = priceRes.rows[0];
     const qty  = Number(quantity) || 1;
-    let total  = qty * Number(p.unit_price);
+    const baseRate = Number(p.unit_price) || 0;
+    let unitCost = baseRate;
+    if (p.extra_unit_price != null && volumeLiters != null) {
+      const extraRate = Number(p.extra_unit_price) || 0;
+      const volume = Number(volumeLiters) || 1;
+      const extraUnits = volume > 1 ? Math.ceil(volume - 1) : 0;
+      unitCost = baseRate + extraRate * extraUnits;
+    }
+    let total  = qty * unitCost;
     if (p.min_charge && total < Number(p.min_charge)) total = Number(p.min_charge);
 
     const r = await query(
@@ -214,7 +237,7 @@ async function chargeForOperation({ tenantId, clientId, serviceType, quantity, r
        RETURNING id`,
       [tenantId, clientId, serviceType, p.description,
        refType || null, refId ? Number(refId) : null,
-       qty, Number(p.unit_price), total, p.currency || 'RUB',
+       qty, unitCost, total, p.currency || 'RUB',
        periodDate || new Date().toISOString().slice(0, 10)]
     );
     return r.rows[0].id;

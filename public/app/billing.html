@@ -215,7 +215,8 @@
         document.getElementById('price-count').textContent = priceCache.length;
         if (!priceCache.length) { list.innerHTML = `<div class="empty-state">Прайс не настроен</div>`; return; }
         list.innerHTML = priceCache.map((p, idx) => {
-          const isVolume = p.service_type === 'storage' && p.storage_mode === 'volume';
+          const isVolume = (p.service_type === 'storage' && p.storage_mode === 'volume')
+            || (p.service_type === 'processing' && p.extra_unit_price != null);
           return `
           <div class="list-row price-row" onclick="openPriceModal(${idx})">
             <div class="main">
@@ -234,7 +235,9 @@
     function openPriceModal(idx) {
       const p = idx !== null ? priceCache[idx] : null;
       const isStorage = p ? p.service_type === 'storage' : false;
+      const isProcessing = p ? p.service_type === 'processing' : false;
       const isVolume = p ? p.storage_mode === 'volume' : false;
+      const showExtra = isVolume || isProcessing;
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
@@ -250,9 +253,9 @@
               </select>
             </div>
             <div class="field"><label>Описание</label><input id="m-desc" value="${p?UI.escHtml(p.description||''):''}"/></div>
-            <div class="field"><label id="m-price-label">${isVolume?'Цена за первый литр, ₽':'Цена за единицу, ₽'}</label><input id="m-price" type="number" step="0.01" value="${p?p.unit_price:''}"/></div>
-            <div class="field" id="extra-price-wrap" style="display:${isVolume?'block':'none'}">
-              <label>Цена за каждый следующий литр, ₽</label>
+            <div class="field"><label id="m-price-label">${showExtra?'Цена за первый литр, ₽':'Цена за единицу, ₽'}</label><input id="m-price" type="number" step="0.01" value="${p?p.unit_price:''}"/></div>
+            <div class="field" id="extra-price-wrap" style="display:${showExtra?'block':'none'}">
+              <label>Цена за каждый следующий литр, ₽${isProcessing?' (необязательно — если не задано, цена фиксированная за штуку)':''}</label>
               <input id="m-extra-price" type="number" step="0.01" value="${p&&p.extra_unit_price!=null?p.extra_unit_price:''}"/>
             </div>
             <div class="field"><label>Минимальная сумма, ₽ (необязательно)</label><input id="m-min" type="number" step="0.01" value="${p&&p.min_charge?p.min_charge:''}"/></div>
@@ -267,9 +270,13 @@
     }
 
     function onServiceTypeChange() {
-      const isStorage = UI.val('#m-type') === 'storage';
+      const t = UI.val('#m-type');
+      const isStorage = t === 'storage';
+      const isProcessing = t === 'processing';
       document.getElementById('storage-mode-wrap').style.display = isStorage ? 'block' : 'none';
-      onStorageModeChange();
+      document.getElementById('extra-price-wrap').style.display = isProcessing ? 'block' : 'none';
+      document.getElementById('m-price-label').textContent = isProcessing ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽';
+      if (isStorage) onStorageModeChange();
     }
 
     function onStorageModeChange() {
@@ -284,7 +291,11 @@
       if (!clientId) { UI.notify.err('Выберите клиента'); return; }
       const p = idx !== null ? priceCache[idx] : null;
       const serviceType = p ? p.service_type : UI.val('#m-type');
-      const storageMode = serviceType === 'storage' ? UI.val('#m-storage-mode') : 'slots';
+      const isStorage = serviceType === 'storage';
+      const isProcessing = serviceType === 'processing';
+      const storageMode = isStorage ? UI.val('#m-storage-mode') : 'slots';
+      const useExtra = (isStorage && storageMode === 'volume') || isProcessing;
+      const extraVal = UI.val('#m-extra-price');
       try {
         await window.API.billing.priceList.upsert({
           client_id: clientId,
@@ -293,7 +304,7 @@
           unit_price: Number(UI.val('#m-price')) || 0,
           min_charge: UI.val('#m-min') ? Number(UI.val('#m-min')) : null,
           storage_mode: storageMode,
-          extra_unit_price: storageMode === 'volume' ? (Number(UI.val('#m-extra-price')) || 0) : null,
+          extra_unit_price: useExtra && extraVal ? (Number(extraVal) || 0) : null,
         });
         UI.notify.ok('Сохранено');
         closeModal();
