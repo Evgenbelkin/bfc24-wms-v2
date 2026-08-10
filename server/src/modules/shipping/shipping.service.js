@@ -68,6 +68,13 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
   const shipment = shipRes.rows[0];
 
   // Строки
+  // ВАЖНО: джойн на wms.wb_orders раньше матчился по (wb_supply_id, barcode) —
+  // если в ОДНОЙ поставке два разных заказа брали один и тот же штрихкод
+  // (обычное дело, ничего страшного), такой join фанаутил одну строку
+  // picking_tasks в несколько результатов (по числу совпавших заказов),
+  // и "Собрано X/Y" на карточке отгрузки завышалось. У picking_tasks уже
+  // есть точный wb_order_id конкретного заказа, под который создана
+  // задача — джойним по нему, а не по штрихкоду, чтобы строго 1:1.
   const linesRes = await query(
     `SELECT
        pt.id AS task_id, pt.barcode, pt.qty, pt.status AS picking_status,
@@ -77,7 +84,7 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
        COALESCE(pm.packed_qty, 0)::int AS qty_packed
      FROM wms.picking_tasks pt
      LEFT JOIN wms.items i ON i.id=pt.item_id
-     LEFT JOIN wms.wb_orders wo ON wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND wo.barcode=pt.barcode AND wo.wb_sticker IS NOT NULL
+     LEFT JOIN wms.wb_orders wo ON wo.tenant_id=$1 AND wo.wb_order_id=pt.wb_order_id AND wo.wb_sticker IS NOT NULL
      LEFT JOIN LATERAL (
        SELECT SUM(m.qty)::int AS packed_qty FROM wms.stock_movements m
        WHERE m.tenant_id=$1 AND m.movement_type='packing' AND m.ref_type='shipment' AND m.ref_id=$3 AND m.barcode=pt.barcode
