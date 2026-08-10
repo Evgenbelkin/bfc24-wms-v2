@@ -228,6 +228,14 @@
     closeShort: (id, reason) => post(`/inbound/${id}/close-short`, { reason: reason || undefined }),
     updateDeliveryInfo: (id, d) => patch(`/inbound/${id}/delivery-info`, d),
     label:      (id) => get(`/inbound/${id}/label`),
+    saveAct:    (id, d) => post(`/inbound/${id}/act`, d),
+  };
+
+  // ─────────────── Tenant (реквизиты своей компании) ───────────────
+
+  const tenant = {
+    profile:       ()   => get('/tenant/profile'),
+    updateProfile: (d)  => patch('/tenant/profile', d),
   };
 
   // ─────────────── Receiving ───────────────
@@ -527,7 +535,7 @@
     workstations,
     checkin,
     billing, consumables, payroll, marking, returns,
-    seller, platform,
+    seller, platform, tenant,
   };
 
 })(window);

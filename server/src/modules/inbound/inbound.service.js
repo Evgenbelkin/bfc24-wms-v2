@@ -238,8 +238,111 @@ async function updateDeliveryInfo({ tenantId, orderId, driverName, vehicleMake }
   return r.rows[0];
 }
 
+/**
+ * Сформировать/пересохранить Акт приёмки товара по заявке — доступно с
+ * момента, когда приёмка уже началась (хотя бы одна строка что-то приняла),
+ * иначе печатать акт не с чем сверять. Поля акта сохраняются на самой
+ * заявке (не одноразовая печать), чтобы акт можно было пересмотреть или
+ * перепечатать позже без повторного ввода. По этой же причине допускаем
+ * пересохранение уже сформированного акта — act_generated_at не трогаем
+ * при повторном сохранении, обновляем только сами данные.
+ */
+async function saveInboundAct({ tenantId, orderId, userId, act = {}, lines = [] }) {
+  return transaction(async (client) => {
+    const orderRes = await client.query(
+      `SELECT id, status, order_number, total_received_qty
+       FROM wms.inbound_orders WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [orderId, tenantId]
+    );
+    if (orderRes.rowCount === 0) throw new NotFoundError('InboundOrder', orderId);
+    const order = orderRes.rows[0];
+    if (Number(order.total_received_qty) <= 0) {
+      throw new ValidationError('Нельзя сформировать акт — по заявке ещё ничего не принято');
+    }
+
+    const trim = (v, max) => (v ? String(v).trim().slice(0, max) : null);
+    const toIntOrNull = (v) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    };
+    const toNumOrNull = (v) => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const alreadyGenerated = await client.query(
+      `SELECT act_generated_at FROM wms.inbound_orders WHERE id=$1`, [orderId]
+    );
+    const firstTime = !alreadyGenerated.rows[0].act_generated_at;
+
+    const updated = await client.query(
+      `UPDATE wms.inbound_orders SET
+         act_number          = $1,
+         act_supplier         = $2,
+         act_boxes_count       = $3,
+         act_pallets_count     = $4,
+         act_weight_kg         = $5,
+         act_carrier            = $6,
+         act_source_doc        = $7,
+         act_packaging_ok      = $8,
+         act_remarks            = $9,
+         act_client_signer     = $10,
+         act_operator_signer   = $11,
+         act_city                = $12,
+         act_generated_at = COALESCE(act_generated_at, NOW()),
+         act_generated_by = COALESCE(act_generated_by, $13),
+         updated_at = NOW()
+       WHERE id=$14
+       RETURNING *`,
+      [
+        trim(act.act_number, 100) || order.order_number,
+        trim(act.act_supplier, 300),
+        toIntOrNull(act.act_boxes_count),
+        toIntOrNull(act.act_pallets_count),
+        toNumOrNull(act.act_weight_kg),
+        trim(act.act_carrier, 300),
+        trim(act.act_source_doc, 300),
+        act.act_packaging_ok === undefined || act.act_packaging_ok === null ? null : Boolean(act.act_packaging_ok),
+        trim(act.act_remarks, 2000),
+        trim(act.act_client_signer, 200),
+        trim(act.act_operator_signer, 200),
+        trim(act.act_city, 100),
+        userId,
+        orderId,
+      ]
+    );
+
+    for (const line of lines) {
+      const lineId = Number(line.id);
+      if (!Number.isInteger(lineId) || lineId <= 0) continue;
+      const fields = []; const params = []; let idx = 1;
+      if (line.qty_damaged !== undefined) {
+        const qd = toIntOrNull(line.qty_damaged);
+        fields.push(`qty_damaged=$${idx++}`);
+        params.push(qd !== null && qd >= 0 ? qd : 0);
+      }
+      if (line.notes !== undefined) {
+        fields.push(`notes=$${idx++}`);
+        params.push(trim(line.notes, 500));
+      }
+      if (!fields.length) continue;
+      fields.push('updated_at=NOW()');
+      params.push(lineId, orderId);
+      await client.query(
+        `UPDATE wms.inbound_order_lines SET ${fields.join(', ')}
+         WHERE id=$${idx++} AND inbound_order_id=$${idx}`,
+        params
+      );
+    }
+
+    return { order: updated.rows[0], firstTime };
+  });
+}
+
 module.exports = {
   listInboundOrders, getInboundOrderById, getInboundOrderByBarcode,
   getInboundOrderLines, createInboundOrder, confirmInboundOrder, cancelInboundOrder,
-  closeInboundOrderShort, updateDeliveryInfo,
+  closeInboundOrderShort, updateDeliveryInfo, saveInboundAct,
 };

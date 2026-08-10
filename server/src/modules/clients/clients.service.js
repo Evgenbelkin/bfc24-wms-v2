@@ -42,6 +42,7 @@ async function getClientById({ tenantId, clientId }) {
     `SELECT
        c.id, c.client_code, c.client_name, c.contact_name,
        c.contact_email, c.contact_phone, c.telegram_chat_id,
+       c.legal_name, c.inn, c.legal_address,
        c.is_active, c.settings, c.notes, c.created_at
      FROM wms.clients c
      WHERE c.id = $1 AND c.tenant_id = $2`,
@@ -65,8 +66,9 @@ async function createClient({ tenantId, createdById, data }) {
   const res = await query(
     `INSERT INTO wms.clients
        (tenant_id, client_code, client_name, contact_name, contact_email,
-        contact_phone, telegram_chat_id, is_active, notes, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        contact_phone, telegram_chat_id, legal_name, inn, legal_address,
+        is_active, notes, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING id, client_code, client_name, is_active, created_at`,
     [
       tenantId, clientCode, clientName,
@@ -74,6 +76,9 @@ async function createClient({ tenantId, createdById, data }) {
       data.contact_email || null,
       data.contact_phone || null,
       data.telegram_chat_id || null,
+      data.legal_name ? String(data.legal_name).trim().slice(0, 300) : null,
+      data.inn ? String(data.inn).trim().slice(0, 20) : null,
+      data.legal_address ? String(data.legal_address).trim().slice(0, 500) : null,
       parseBool(data.is_active, true),
       data.notes || null,
       createdById,
@@ -101,6 +106,9 @@ async function updateClient({ tenantId, clientId, data }) {
   strField('contact_email', 'contact_email');
   strField('contact_phone', 'contact_phone');
   strField('telegram_chat_id', 'telegram_chat_id');
+  strField('legal_name', 'legal_name', 300);
+  strField('inn', 'inn', 20);
+  strField('legal_address', 'legal_address', 500);
   strField('notes', 'notes', 2000);
 
   if (data.is_active !== undefined) {

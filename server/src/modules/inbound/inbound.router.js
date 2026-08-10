@@ -99,6 +99,22 @@ router.patch('/:id/delivery-info', requireRole('tenant_admin','supervisor','rece
   } catch(e){ next(e); }
 });
 
+/** POST /inbound/:id/act { act:{...}, lines:[{id,qty_damaged,notes}] } —
+ *  сохранить/пересохранить данные Акта приёмки товара (поля хранятся на
+ *  заявке для повторной печати). См. inbound.service.js saveInboundAct. */
+router.post('/:id/act', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {
+  try {
+    const result = await svc.saveInboundAct({
+      tenantId: req.user.tenantId,
+      orderId: validatePositiveInt(req.params.id,'id'),
+      userId: req.user.id,
+      act: req.body.act || {},
+      lines: Array.isArray(req.body.lines) ? req.body.lines : [],
+    });
+    res.json({ ok:true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** GET /inbound/:id/label — печатный штрихкод заявки (для водителя без своей
  *  распечатки), QR кодирует order.barcode, подпись — order_number. */
 router.get('/:id/label', async (req,res,next) => {
