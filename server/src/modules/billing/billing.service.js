@@ -588,7 +588,25 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     baseParams
   );
 
+  // Отгружено, шт — по периодам, для графика "Динамика выручки" (вторая линия,
+  // чтобы видеть не только деньги, но и физический объём отгрузок). Берём
+  // именно service_type='shipping' — это факт того, что реально уехало со
+  // склада, самая понятная и однозначная метрика "сколько товаров обработано"
+  // (в отличие от суммы по всем операциям, где одна и та же единица товара
+  // считалась бы несколько раз — на приёмке, сборке, упаковке и отгрузке).
+  const shippedQtyRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
+            SUM(sc.quantity)::numeric AS qty
+     FROM billing.service_charges sc
+     WHERE sc.tenant_id=$1 AND sc.service_type='shipping'
+       AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+     GROUP BY period
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
   const grandTotal = byTypeRes.rows.reduce((s, r) => s + Number(r.total), 0);
+  const shippedQtyTotal = shippedQtyRes.rows.reduce((s, r) => s + Number(r.qty), 0);
 
   return {
     period_from: dateFrom, period_to: dateTo, granularity,
@@ -598,6 +616,8 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     })),
     by_service_type: byTypeRes.rows.map(r => ({ service_type: r.service_type, total: Number(r.total) })),
     by_client: byClientRes.rows.map(r => ({ client_id: r.client_id, client_name: r.client_name, total: Number(r.total) })),
+    shipped_qty_series: shippedQtyRes.rows.map(r => ({ period: r.period, qty: Number(r.qty) })),
+    shipped_qty_total: shippedQtyTotal,
     grand_total: grandTotal,
   };
 }

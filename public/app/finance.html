@@ -8,8 +8,7 @@
   <style>
     .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
     .filters-row select, .filters-row input{flex:1;min-width:140px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
-    .kpi-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
-    @media (max-width:520px){ .kpi-grid{grid-template-columns:1fr;} }
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
     .kpi-cell{background:var(--card2);border-radius:10px;padding:14px;text-align:center;}
     .kpi-cell .num{font-size:20px;font-weight:700;}
     .kpi-cell .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
@@ -50,6 +49,7 @@
       <div class="kpi-cell"><div class="num" id="kpi-revenue" style="color:var(--green)">—</div><div class="lbl">Выручка за период</div></div>
       <div class="kpi-cell"><div class="num" id="kpi-payroll" style="color:var(--red)">—</div><div class="lbl">Начислено сотрудникам</div></div>
       <div class="kpi-cell"><div class="num" id="kpi-diff">—</div><div class="lbl">Выручка − ЗП</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-shipped-qty" style="color:var(--text)">—</div><div class="lbl">Отгружено, шт</div></div>
     </div>
   </div>
 
@@ -118,6 +118,7 @@
     ];
 
     function fmtMoney(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'; }
+    function fmtInt(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }); }
 
     let granularity = 'day';
     function setGranularity(g) {
@@ -154,6 +155,7 @@
       try {
         const res = await window.API.billing.analytics.revenue(params);
         document.getElementById('kpi-revenue').textContent = fmtMoney(res.grand_total);
+        document.getElementById('kpi-shipped-qty').textContent = fmtInt(res.shipped_qty_total);
 
         // Сводим series (period, client_id, total) в датасеты по клиентам поверх
         // общего списка периодов - если выбран конкретный клиент, там будет всего
@@ -207,13 +209,30 @@
           }];
         }
 
+        // Вторая линия — "Отгружено, шт" (сколько товаров реально уехало со
+        // склада), на отдельной оси Y справа: масштаб штук и рублей обычно
+        // сильно разный, на одной оси одна из линий превратилась бы в плоскую
+        // черту. Пунктир и своя ось сразу отличают её от линий выручки.
+        datasets = [...datasets, {
+          label: 'Отгружено, шт',
+          data: periods.map(p => {
+            const row = (res.shipped_qty_series || []).find(r => r.period === p);
+            return row ? row.qty : 0;
+          }),
+          borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderDash: [5,3],
+          tension: 0.25, fill: false, yAxisID: 'y1',
+        }];
+
         chartRevenueSeries = destroyChart(chartRevenueSeries);
         chartRevenueSeries = new Chart(document.getElementById('chart-revenue-series'), {
           type: 'line',
           data: { labels: periods, datasets },
           options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: datasets.length > 1 } },
-            scales: { y: { beginAtZero: true } } },
+            plugins: { legend: { display: true } },
+            scales: {
+              y:  { beginAtZero: true, position: 'left' },
+              y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } },
+            } },
         });
 
         chartRevenueType = destroyChart(chartRevenueType);
