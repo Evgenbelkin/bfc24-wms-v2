@@ -100,7 +100,8 @@ router.patch('/:id/delivery-info', requireRole('tenant_admin','supervisor','rece
 });
 
 /** GET /inbound/:id/label — печатный штрихкод заявки (для водителя без своей
- *  распечатки), QR кодирует order.barcode, подпись — order_number. */
+ *  распечатки), QR кодирует order.barcode, подпись — order_number.
+ *  Акт приёмки товара по заявке — см. отдельный модуль /acts. */
 router.get('/:id/label', async (req,res,next) => {
   try {
     const order = await svc.getInboundOrderById({ tenantId: req.user.tenantId, orderId: validatePositiveInt(req.params.id,'id') });

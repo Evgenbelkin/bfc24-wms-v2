@@ -127,36 +127,38 @@ router.post('/import-items', requireRole('tenant_admin','supervisor'), async (re
 
           // Синхронизируем в masterdata.items
           const item = await client.query(
-            `SELECT id, volume_liters FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+            `SELECT id, volume_liters, size FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
             [req.user.tenantId, acc.client_id, b.barcode]
           );
           if (item.rowCount === 0 && card.title) {
             await client.query(
               `INSERT INTO wms.items(tenant_id,client_id,barcode,item_name,vendor_code,brand,unit,source,wb_nm_id,preview_url,
-                                      length_cm,width_cm,height_cm,volume_liters,weight_grams)
-               VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
+                                      length_cm,width_cm,height_cm,volume_liters,weight_grams,size)
+               VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
               [req.user.tenantId, acc.client_id, b.barcode,
                card.title, card.vendorCode||null, card.brand||null, card.nmID, previewUrl,
-               lengthCm, widthCm, heightCm, volumeLiters, weightGrams]
+               lengthCm, widthCm, heightCm, volumeLiters, weightGrams, b.tech_size||null]
             );
             if (volumeLiters) filledVolume++;
-          } else if (item.rowCount > 0 && item.rows[0].volume_liters == null && volumeLiters) {
-            // Товар уже был в справочнике, но объём никто не заполнил (ни вручную,
-            // ни при более раннем импорте) — подтягиваем из ВБ. Если объём УЖЕ
-            // стоит (в т.ч. вписанный вручную клиентом/складом) — не трогаем его,
-            // чтобы не затереть уточнённое значение данными из карточки ВБ.
+          } else if (item.rowCount > 0 && ((item.rows[0].volume_liters == null && volumeLiters) || (item.rows[0].size == null && b.tech_size))) {
+            // Товар уже был в справочнике, но объём/размер никто не заполнил (ни
+            // вручную, ни при более раннем импорте) — подтягиваем из ВБ. Если
+            // поле УЖЕ стоит (в т.ч. вписанное вручную клиентом/складом) — не
+            // трогаем его, чтобы не затереть уточнённое значение данными из
+            // карточки ВБ (COALESCE в обе стороны).
             await client.query(
               `UPDATE wms.items SET
                  length_cm = COALESCE(length_cm, $1),
                  width_cm  = COALESCE(width_cm, $2),
                  height_cm = COALESCE(height_cm, $3),
-                 volume_liters = $4,
+                 volume_liters = COALESCE(volume_liters, $4),
                  weight_grams = COALESCE(weight_grams, $5),
+                 size = COALESCE(size, $6),
                  updated_at = NOW()
-               WHERE id=$6`,
-              [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, item.rows[0].id]
+               WHERE id=$7`,
+              [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, b.tech_size||null, item.rows[0].id]
             );
-            filledVolume++;
+            if (volumeLiters) filledVolume++;
           }
         }
       }

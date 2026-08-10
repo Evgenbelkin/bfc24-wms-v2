@@ -151,11 +151,15 @@ function extractCardBarcodes(card) {
   const sizes = card.sizes || card.addin?.find?.(a => a.type === 'Размер')?.params || [];
   for (const size of sizes) {
     const chrtID = size.chrtID || size.id;
+    // techSize - "внутренний" размер карточки (то, что реально печатают на
+    // этикетке, "128", "146", "42" и т.п.), wbSize - альтернативное поле в
+    // некоторых ответах Content API. Берём первое, что есть.
+    const techSize = size.techSize || size.wbSize || null;
     const skus = Array.isArray(size.skus) && size.skus.length
       ? size.skus
       : (size.barcode ? [size.barcode] : []);
     for (const sku of skus) {
-      if (sku) barcodes.push({ nm_id: nmID, chrt_id: chrtID, barcode: String(sku) });
+      if (sku) barcodes.push({ nm_id: nmID, chrt_id: chrtID, barcode: String(sku), tech_size: techSize });
     }
   }
   return barcodes;

@@ -230,6 +230,23 @@
     label:      (id) => get(`/inbound/${id}/label`),
   };
 
+  // ─────────────── Tenant (реквизиты своей компании) ───────────────
+
+  const tenant = {
+    profile:       ()   => get('/tenant/profile'),
+    updateProfile: (d)  => patch('/tenant/profile', d),
+  };
+
+  // ─────────────── Acceptance Acts (Акт приёмки товара) ───────────────
+
+  const acts = {
+    list:      (p)      => get('/acts', p),
+    get:       (id)      => get(`/acts/${id}`),
+    create:    (d)       => post('/acts', d),
+    update:    (id, d)   => patch(`/acts/${id}`, d),
+    freeLines: (p)        => get('/acts/free-lines', p),
+  };
+
   // ─────────────── Receiving ───────────────
 
   const receiving = {
@@ -527,7 +544,7 @@
     workstations,
     checkin,
     billing, consumables, payroll, marking, returns,
-    seller, platform,
+    seller, platform, tenant, acts,
   };
 
 })(window);

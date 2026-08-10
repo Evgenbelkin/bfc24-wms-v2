@@ -238,6 +238,9 @@ async function updateDeliveryInfo({ tenantId, orderId, driverName, vehicleMake }
   return r.rows[0];
 }
 
+// Акт приёмки товара по заявке (и без неё) теперь отдельный модуль —
+// см. server/src/modules/acts/acts.service.js (wms.acceptance_acts).
+
 module.exports = {
   listInboundOrders, getInboundOrderById, getInboundOrderByBarcode,
   getInboundOrderLines, createInboundOrder, confirmInboundOrder, cancelInboundOrder,

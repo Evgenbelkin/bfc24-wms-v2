@@ -29,7 +29,7 @@ router.get('/short',  requireRole('tenant_admin','supervisor','receiver','picker
   } catch(e){ next(e); }
 });
 
-router.get('/:id',    requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+router.get('/:id',    requireRole('tenant_admin','supervisor','receiver'), async (req,res,next)=>{
   try {
     const client = await svc.getClientById({ tenantId: req.user.tenantId, clientId: validatePositiveInt(req.params.id,'id') });
     res.json({ ok: true, client });

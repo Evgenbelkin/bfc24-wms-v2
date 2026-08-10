@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Реквизиты компании — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/></svg> Реквизиты компании</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Реквизиты «Исполнителя»</div>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">
+      Эти данные подставляются в Акт приёмки товара как реквизиты вашей компании (Исполнитель).
+      Название компании в системе задаётся платформой отдельно и здесь не редактируется.
+    </div>
+    <div class="field"><label>Юр. наименование</label><input id="p-legal-name" placeholder="ИП Иванов Иван Иванович"/></div>
+    <div class="field"><label>ИНН</label><input id="p-inn"/></div>
+    <div class="field"><label>ОГРНИП</label><input id="p-ogrnip"/></div>
+    <div class="field"><label>Юр. адрес</label><input id="p-legal-address"/></div>
+    <button class="btn-big btn-green btn-full" id="save-btn" onclick="saveProfile()">
+      <svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить
+    </button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    async function loadProfile() {
+      try {
+        const res = await window.API.tenant.profile();
+        const p = res.profile || {};
+        UI.setVal('#p-legal-name', p.legal_name || '');
+        UI.setVal('#p-inn', p.inn || '');
+        UI.setVal('#p-ogrnip', p.ogrnip || '');
+        UI.setVal('#p-legal-address', p.legal_address || '');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function saveProfile() {
+      const data = {
+        legal_name: UI.val('#p-legal-name'),
+        inn: UI.val('#p-inn'),
+        ogrnip: UI.val('#p-ogrnip'),
+        legal_address: UI.val('#p-legal-address'),
+      };
+      try {
+        await window.API.tenant.updateProfile(data);
+        UI.notify.ok('Реквизиты сохранены');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    loadProfile();
+  </script>
+</body>
+</html>

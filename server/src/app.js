@@ -42,6 +42,8 @@ const billingRouter = require('./modules/billing/billing.router');
 const auditRouter = require('./modules/audit/audit.router');
 const platformRouter = require('./modules/platform/platform.router');
 const overviewRouter = require('./modules/overview/overview.router');
+const tenantRouter = require('./modules/tenant/tenant.router');
+const actsRouter = require('./modules/acts/acts.router');
 
 // =============================================================================
 // Express App
@@ -213,6 +215,8 @@ app.use(`${api}/analytics`,  analyticsRouter);
 app.use(`${api}/billing`,    billingRouter);
 app.use(`${api}/audit`,      auditRouter);
 app.use(`${api}/overview`,   overviewRouter);
+app.use(`${api}/tenant`,     tenantRouter);
+app.use(`${api}/acts`,       actsRouter);
 
 // ---------------------------------------------------------------------------
 // 404 + Error handler (должны быть ПОСЛЕДНИМИ)

@@ -96,7 +96,7 @@
       <div class="card-title">Состав</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Стикер</th><th>Действие</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Артикул продавца</th><th>Артикул ВБ</th><th>Размер</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Стикер</th><th>Действие</th></tr></thead>
           <tbody id="lines-body"></tbody>
         </table>
       </div>
@@ -217,6 +217,9 @@
         UI.renderTable('#lines-body', currentLines, (l, idx) => `
           <tr>
             <td>${UI.escHtml(l.item_name || l.barcode)}</td>
+            <td>${UI.escHtml(l.vendor_code || '—')}</td>
+            <td>${l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—'}</td>
+            <td>${UI.escHtml(l.size || '—')}</td>
             <td>${UI.fmtQty(l.qty)}</td>
             <td>${UI.fmtQty(l.qty_picked)}</td>
             <td>${UI.fmtQty(l.qty_packed)}</td>
