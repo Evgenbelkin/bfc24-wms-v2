@@ -339,6 +339,10 @@
       create: (d)     => post('/wb/accounts', d),
       update: (id, d) => patch(`/wb/accounts/${id}`, d),
     },
+    warehouses: {
+      list:   (accountId)          => get(`/wb/accounts/${accountId}/warehouses`),
+      update: (accountId, whId, d) => patch(`/wb/accounts/${accountId}/warehouses/${whId}`, d),
+    },
     syncOrders:  (d) => post('/wb/sync-orders', d),
     syncOrdersAll: () => post('/wb/sync-orders-all', {}),
     importItems: (d) => post('/wb/import-items', d),
