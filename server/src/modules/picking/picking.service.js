@@ -182,7 +182,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
   // выше — идём по одному стеллажу от начала до конца, не возвращаясь.
   return transaction(async (client) => {
     const candidates = await client.query(
-      `SELECT t.id, t.item_id, t.client_id, t.warehouse_id, t.location_code, t.priority
+      `SELECT t.id, t.item_id, t.client_id, t.warehouse_id, t.location_code, t.priority, t.wave_id
        FROM wms.picking_tasks t
        WHERE t.tenant_id=$1 AND t.status='new'
          AND ($2::int IS NULL OR t.picker_id=$2)
@@ -193,15 +193,41 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     );
     if (candidates.rowCount === 0) return null;
 
-    // Для задач без заранее известной ячейки подбираем лучшую (read-only,
-    // без резерва — резервируем только ту задачу, которую реально выберем
-    // ниже) — чтобы можно было сравнить их всех по физическому расположению.
-    // Идут по отдельным (не транзакционным) коннектам из пула — параллельно,
-    // чтобы не держать блокировку кандидатов дольше необходимого.
+    // Внутри одной волны один и тот же товар часто нужен НЕСКОЛЬКИМ заказам
+    // сразу. Если для этого товара в ЭТОЙ ЖЕ волне где-то уже зафиксирована
+    // ячейка (у другой задачи — взятой, выполненной или ещё ожидающей) —
+    // переиспользуем её, а не пересчитываем "лучшую по остаткам" заново.
+    // Без этого ячейка для второго/третьего заказа на тот же товар могла
+    // резолвиться иначе (остаток на ней тает после каждой брони), и
+    // сборщика уводило в сторону, а потом возвращало обратно за тем же
+    // товаром для другого заказа — "хождение туда-обратно" внутри волны.
+    const pinnedMap = new Map(); // `${wave_id}:${item_id}` -> location_code
+    const waveIds = [...new Set(candidates.rows.filter(c => !c.location_code && c.item_id && c.wave_id).map(c => c.wave_id))];
+    const itemIds = [...new Set(candidates.rows.filter(c => !c.location_code && c.item_id && c.wave_id).map(c => c.item_id))];
+    if (waveIds.length && itemIds.length) {
+      const pinnedRes = await client.query(
+        `SELECT DISTINCT ON (wave_id, item_id) wave_id, item_id, location_code
+         FROM wms.picking_tasks
+         WHERE tenant_id=$1 AND wave_id = ANY($2::bigint[]) AND item_id = ANY($3::int[])
+           AND location_code IS NOT NULL
+         ORDER BY wave_id, item_id, id ASC`,
+        [tenantId, waveIds, itemIds]
+      );
+      for (const r of pinnedRes.rows) pinnedMap.set(`${r.wave_id}:${r.item_id}`, r.location_code);
+    }
+
+    // Для задач без заранее известной ячейки (и без "закреплённой" за товаром
+    // в этой волне) подбираем лучшую (read-only, без резерва — резервируем
+    // только ту задачу, которую реально выберем ниже) — чтобы можно было
+    // сравнить их всех по физическому расположению. Идут по отдельным (не
+    // транзакционным) коннектам из пула — параллельно, чтобы не держать
+    // блокировку кандидатов дольше необходимого.
     const resolvedById = new Map();
     await Promise.all(candidates.rows.map(async (c) => {
       if (c.location_code) { resolvedById.set(c.id, { code: c.location_code, id: null }); return; }
       if (!c.item_id) { resolvedById.set(c.id, { code: null, id: null }); return; }
+      const pinned = c.wave_id ? pinnedMap.get(`${c.wave_id}:${c.item_id}`) : null;
+      if (pinned) { resolvedById.set(c.id, { code: pinned, id: null }); return; }
       const best = await findBestPickLocation({
         tenantId, warehouseId: c.warehouse_id, itemId: c.item_id, clientId: c.client_id,
       });
