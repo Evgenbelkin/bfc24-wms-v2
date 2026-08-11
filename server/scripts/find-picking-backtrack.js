@@ -35,7 +35,7 @@ async function main() {
 
     const res = await client.query(
       `SELECT pt.id, pt.wave_id, pt.shipment_code, pt.wb_order_id, pt.item_id,
-              pt.barcode, pt.location_code, pt.started_at, pt.completed_at,
+              pt.barcode, pt.location_code, pt.started_at, pt.finished_at,
               i.item_name
        FROM wms.picking_tasks pt
        LEFT JOIN wms.items i ON i.id = pt.item_id
