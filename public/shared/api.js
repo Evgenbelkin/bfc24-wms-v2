@@ -484,6 +484,7 @@
       update:      (id, data)  => patch(`/seller/wb-warehouses/${id}`, data),
       setReserve:  (reservePct)=> patch('/seller/wb-warehouses/settings/reserve', { reserve_pct: reservePct }),
     },
+    stockByWarehouse: () => get('/seller/stock-by-warehouse'),
   };
 
   // ─────────────── Platform (Owner-admin) ───────────────

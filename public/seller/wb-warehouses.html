@@ -14,6 +14,8 @@
     .wh-pct{width:56px;text-align:right;font-size:13px;color:var(--muted);}
     .reserve-row{display:flex;align-items:center;gap:10px;}
     .reserve-row input{width:80px;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:right;}
+    .wh-thresholds{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:6px;font-size:12px;color:var(--muted);}
+    .wh-thresholds input{width:64px;padding:6px 8px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;text-align:right;}
   </style>
 </head>
 <body>
@@ -60,6 +62,18 @@
         Если у склада доля 0 или он выключен — товар на него не отправляется вообще.
       </p>
     </div>
+
+    <div class="card">
+      <div class="card-title">Пороги подсорта</div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 6px;">
+        Необязательно. Если задать порог по складу, в отчёте «Остатки по складам»
+        такие позиции подсветятся как требующие подсорта — по количеству, по дням запаса
+        (при текущей скорости продаж) или по обоим сразу.
+      </p>
+      <div id="wh-thresholds-list"></div>
+    </div>
+
+    <a href="/seller/stock-by-warehouse.html" class="btn-big btn-blue btn-full" style="text-decoration:none;text-align:center;display:block;margin-top:4px;">Смотреть остатки по складам →</a>
   </div>
 
   <script src="/shared/api.js"></script>
@@ -100,6 +114,22 @@
       }).join('');
     }
 
+    function renderThresholds() {
+      const list = document.getElementById('wh-thresholds-list');
+      if (!warehouses.length) { list.innerHTML = ''; return; }
+      list.innerHTML = warehouses.map(w => `
+        <div class="wh-row">
+          <div class="wh-name">${UI.escHtml(w.warehouse_name || w.warehouse_code)}</div>
+          <div class="wh-thresholds">
+            <label>мин. остаток <input type="number" min="0" step="1" value="${w.reorder_min_qty != null ? w.reorder_min_qty : ''}"
+              placeholder="—" onchange="updateWarehouse(${w.id}, {reorder_min_qty: this.value === '' ? null : this.value})"/> шт</label>
+            <label>мин. запас <input type="number" min="0" step="0.5" value="${w.reorder_min_days != null ? w.reorder_min_days : ''}"
+              placeholder="—" onchange="updateWarehouse(${w.id}, {reorder_min_days: this.value === '' ? null : this.value})"/> дн.</label>
+          </div>
+        </div>
+      `).join('');
+    }
+
     async function loadWarehouses() {
       try {
         const res = await window.API.seller.wbWarehouses.list();
@@ -113,6 +143,7 @@
         document.getElementById('reserve-input').value = res.account.reserve_pct;
         warehouses = res.warehouses || [];
         renderWarehouses();
+        renderThresholds();
       } catch (e) { UI.notify.err(e.message); }
     }
 
@@ -131,6 +162,7 @@
         if (w) Object.assign(w, data);
         UI.notify.ok('Сохранено');
         renderWarehouses();
+        renderThresholds();
       } catch (e) { UI.notify.err(e.message); }
     }
 

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Остатки по складам — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .cell-qty{font-weight:700;}
+    .cell-days{font-size:11px;color:var(--muted);margin-top:2px;}
+    .cell-days.low{color:var(--red);font-weight:700;}
+    .low-row td:first-child{box-shadow:inset 3px 0 0 var(--red);}
+    .legend{font-size:12px;color:var(--muted);margin:0 0 4px;}
+    .legend .dot{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--red);margin-right:5px;vertical-align:-1px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/wb-warehouses.html" class="btn-sm btn-back">← Склады WB</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Остатки по складам</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card" id="no-account-card" style="display:none;">
+    <div class="empty-state">Аккаунт WB ещё не подключён — обратитесь к складу.</div>
+  </div>
+
+  <div class="card" id="no-warehouses-card" style="display:none;">
+    <div class="empty-state">Склады не настроены — зайдите в «Склады WB» и обновите список.</div>
+  </div>
+
+  <div id="main-content" style="display:none;">
+    <div class="card">
+      <input id="f-search" placeholder="Поиск по названию или артикулу..." style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" oninput="renderTable()"/>
+    </div>
+
+    <div class="card">
+      <p class="legend"><span class="dot"></span>красным — остаток или запас ниже заданного порога подсорта (настраивается в «Склады WB»)</p>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+        Показано то, что WMS рассчитала и отправила по складам (не «живой» остаток из ЛК WB).
+        Обновляется автоматически после приёмки, инвентаризации и смены настроек.
+        Рядом с количеством — оценка запаса в днях по средней скорости продаж за последние 30 дней.
+      </p>
+      <p id="calc-at" style="font-size:12px;color:var(--muted);margin:0 0 10px;"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr id="thead-row"><th>Товар</th><th>Артикул</th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <button class="btn-sm btn-back" onclick="loadReport()">↻ Обновить</button>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let warehouses = [];
+    let items = [];
+
+    async function loadReport() {
+      try {
+        const res = await window.API.seller.stockByWarehouse();
+        if (!res.has_account) {
+          document.getElementById('no-account-card').style.display = 'block';
+          document.getElementById('no-warehouses-card').style.display = 'none';
+          document.getElementById('main-content').style.display = 'none';
+          return;
+        }
+        warehouses = res.warehouses || [];
+        items = res.items || [];
+        if (!warehouses.length) {
+          document.getElementById('no-account-card').style.display = 'none';
+          document.getElementById('no-warehouses-card').style.display = 'block';
+          document.getElementById('main-content').style.display = 'none';
+          return;
+        }
+        document.getElementById('no-account-card').style.display = 'none';
+        document.getElementById('no-warehouses-card').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
+
+        const thead = document.getElementById('thead-row');
+        thead.innerHTML = '<th>Товар</th><th>Артикул</th>' +
+          warehouses.map(w => `<th>${UI.escHtml(w.warehouse_name || w.warehouse_code)}</th>`).join('');
+
+        document.getElementById('calc-at').textContent = res.calculated_at
+          ? 'Рассчитано: ' + new Date(res.calculated_at).toLocaleString('ru-RU')
+          : '';
+
+        renderTable();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function renderTable() {
+      const term = UI.val('#f-search').toLowerCase();
+      const filtered = term
+        ? items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.vendor_code||'').toLowerCase().includes(term) || (it.barcode||'').includes(term))
+        : items;
+
+      const body = document.getElementById('stock-body');
+      if (!filtered.length) {
+        body.innerHTML = `<tr><td colspan="${2+warehouses.length}" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
+        return;
+      }
+      body.innerHTML = filtered.map(it => {
+        const cells = warehouses.map(w => {
+          const c = it.by_warehouse[w.warehouse_code];
+          if (!c) return `<td><span class="cell-qty">0</span></td>`;
+          const daysText = c.days_of_stock != null ? `хватит на ${c.days_of_stock} дн.` : (c.avg_daily_qty > 0 ? '' : 'нет продаж 30дн');
+          return `<td>
+            <div class="cell-qty">${UI.fmtQty(c.qty)}</div>
+            ${daysText ? `<div class="cell-days ${c.low_stock ? 'low' : ''}">${daysText}</div>` : (c.low_stock ? `<div class="cell-days low">ниже порога</div>` : '')}
+          </td>`;
+        }).join('');
+        const rowLow = Object.values(it.by_warehouse).some(c => c.low_stock);
+        return `<tr class="${rowLow ? 'low-row' : ''}">
+          <td>${UI.escHtml(it.item_name || '—')}</td>
+          <td>${UI.escHtml(it.vendor_code || '—')}</td>
+          ${cells}
+        </tr>`;
+      }).join('');
+    }
+
+    loadReport();
+  </script>
+</body>
+</html>

@@ -336,6 +336,98 @@ function triggerRedistributionForClient({ tenantId, clientId }) {
   });
 }
 
+// =============================================================================
+// Остатки по складам FBS + оборачиваемость (кабинет клиента, одно окно)
+//
+// Показываем НЕ реальный остаток на складе WB (WB его нам не отдаёт по
+// складам напрямую), а то, что сама WMS рассчитала и отправила в рамках
+// автораспределения выше (wms.wb_stock_distribution) - клиент явно выбрал
+// этот вариант. Рядом с количеством - оценка "хватит на N дней" по средней
+// скорости продаж этого товара на этом складе за последние 30 дней
+// (analytics.wb_sales_raw, сопоставление по warehouse_name - WB не даёт
+// стабильного числового id склада в отчёте продаж, только человекочитаемое
+// имя, поэтому сопоставляем по имени в рамках одного mp_account).
+// =============================================================================
+
+const TURNOVER_WINDOW_DAYS = 30;
+
+async function getStockDistributionReport({ tenantId, clientId }) {
+  const accRes = await query(
+    `SELECT id FROM wms.mp_accounts WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE ORDER BY id LIMIT 1`,
+    [tenantId, clientId]
+  );
+  if (accRes.rowCount === 0) return { has_account: false, warehouses: [], items: [], calculated_at: null };
+  const mpAccountId = accRes.rows[0].id;
+
+  const whRes = await query(
+    `SELECT id, warehouse_code, warehouse_name, reorder_min_qty, reorder_min_days
+     FROM wms.wb_seller_warehouses
+     WHERE mp_account_id=$1 AND is_active=TRUE AND is_enabled_for_dist=TRUE
+     ORDER BY warehouse_name`,
+    [mpAccountId]
+  );
+  const warehouses = whRes.rows;
+  if (!warehouses.length) return { has_account: true, warehouses: [], items: [], calculated_at: null };
+
+  const distRes = await query(
+    `SELECT d.barcode, d.warehouse_code, d.qty, d.calculated_at,
+            i.item_name, i.vendor_code
+     FROM wms.wb_stock_distribution d
+     LEFT JOIN wms.items i ON i.tenant_id=$2 AND i.client_id=$3 AND i.barcode=d.barcode
+     WHERE d.mp_account_id=$1`,
+    [mpAccountId, tenantId, clientId]
+  );
+
+  const salesRes = await query(
+    `SELECT barcode, warehouse_name, COUNT(*)::numeric / $2 AS avg_daily_qty
+     FROM analytics.wb_sales_raw
+     WHERE mp_account_id=$1 AND barcode IS NOT NULL
+       AND sale_datetime >= NOW() - ($2::text || ' days')::interval
+     GROUP BY barcode, warehouse_name`,
+    [mpAccountId, TURNOVER_WINDOW_DAYS]
+  );
+  const salesMap = new Map();
+  for (const r of salesRes.rows) salesMap.set(`${r.barcode}|${r.warehouse_name}`, Number(r.avg_daily_qty));
+
+  const whByCode = new Map(warehouses.map(w => [w.warehouse_code, w]));
+  const itemsMap = new Map();
+  let calculatedAt = null;
+
+  for (const row of distRes.rows) {
+    if (!itemsMap.has(row.barcode)) {
+      itemsMap.set(row.barcode, {
+        barcode: row.barcode,
+        item_name: row.item_name || null,
+        vendor_code: row.vendor_code || null,
+        by_warehouse: {},
+      });
+    }
+    const item = itemsMap.get(row.barcode);
+    const wh = whByCode.get(row.warehouse_code);
+    const qty = Number(row.qty);
+    const avgDaily = wh ? (salesMap.get(`${row.barcode}|${wh.warehouse_name}`) || 0) : 0;
+    const daysOfStock = avgDaily > 0 ? qty / avgDaily : null;
+    let lowStock = false;
+    if (wh) {
+      if (wh.reorder_min_qty != null && qty < Number(wh.reorder_min_qty)) lowStock = true;
+      if (wh.reorder_min_days != null && daysOfStock != null && daysOfStock < Number(wh.reorder_min_days)) lowStock = true;
+    }
+    item.by_warehouse[row.warehouse_code] = {
+      qty,
+      avg_daily_qty: Math.round(avgDaily * 100) / 100,
+      days_of_stock: daysOfStock != null ? Math.round(daysOfStock * 10) / 10 : null,
+      low_stock: lowStock,
+    };
+    if (!calculatedAt || row.calculated_at > calculatedAt) calculatedAt = row.calculated_at;
+  }
+
+  const items = [...itemsMap.values()].sort((a, b) =>
+    (a.item_name || a.barcode).localeCompare(b.item_name || b.barcode, 'ru')
+  );
+
+  return { has_account: true, warehouses, items, calculated_at: calculatedAt };
+}
+
 // Числовой код status_ex нигде официально не задокументирован, а прямое
 // сопоставление "код N = такой-то текст" на практике оказалось ОШИБОЧНЫМ:
 // две заявки с status_ex=0 у одного клиента были фактически "ожидают решения
@@ -421,4 +513,5 @@ module.exports = {
   distributeStockForAccount,
   triggerRedistributionForClient,
   listReturnClaimsForClient,
+  getStockDistributionReport,
 };

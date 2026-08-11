@@ -475,7 +475,7 @@ router.post('/wb-warehouses/sync', requireModule('wb_integration'), async (req,r
 router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
-    const { weight, is_enabled_for_dist } = req.body;
+    const { weight, is_enabled_for_dist, reorder_min_qty, reorder_min_days } = req.body;
     const fields = []; const params = []; let idx = 1;
     if (weight !== undefined) {
       const w = Number(weight);
@@ -483,6 +483,22 @@ router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,r
       fields.push(`weight=$${idx++}`); params.push(w);
     }
     if (is_enabled_for_dist !== undefined) { fields.push(`is_enabled_for_dist=$${idx++}`); params.push(!!is_enabled_for_dist); }
+    if (reorder_min_qty !== undefined) {
+      if (reorder_min_qty === null || reorder_min_qty === '') { fields.push(`reorder_min_qty=$${idx++}`); params.push(null); }
+      else {
+        const q = Number(reorder_min_qty);
+        if (!Number.isFinite(q) || q < 0) throw new ValidationError('reorder_min_qty must be a non-negative number');
+        fields.push(`reorder_min_qty=$${idx++}`); params.push(Math.round(q));
+      }
+    }
+    if (reorder_min_days !== undefined) {
+      if (reorder_min_days === null || reorder_min_days === '') { fields.push(`reorder_min_days=$${idx++}`); params.push(null); }
+      else {
+        const d = Number(reorder_min_days);
+        if (!Number.isFinite(d) || d < 0) throw new ValidationError('reorder_min_days must be a non-negative number');
+        fields.push(`reorder_min_days=$${idx++}`); params.push(d);
+      }
+    }
     if (!fields.length) throw new ValidationError('Nothing to update');
     fields.push(`updated_at=NOW()`);
     params.push(Number(req.params.id), req.user.tenantId, clientId);
@@ -490,7 +506,7 @@ router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,r
       `UPDATE wms.wb_seller_warehouses w SET ${fields.join(', ')}
        FROM wms.mp_accounts ma
        WHERE w.mp_account_id = ma.id AND w.id=$${idx++} AND w.tenant_id=$${idx++} AND ma.client_id=$${idx++}
-       RETURNING w.id, w.weight, w.is_enabled_for_dist`,
+       RETURNING w.id, w.weight, w.is_enabled_for_dist, w.reorder_min_qty, w.reorder_min_days`,
       params
     );
     if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Warehouse not found'} });
@@ -514,6 +530,17 @@ router.patch('/wb-warehouses/settings/reserve', requireModule('wb_integration'),
     if (r.rowCount === 0) throw new ValidationError('Нет подключённого аккаунта WB');
     wbSvc.triggerRedistributionForClient({ tenantId: req.user.tenantId, clientId });
     res.json({ ok:true, reserve_pct: pct });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/stock-by-warehouse — остатки по всем складам FBS в одном окне
+ *  (наш расчёт распределения, wms.wb_stock_distribution) + оценка "хватит на
+ *  N дней" по скорости продаж и подсветка порога подсорта. */
+router.get('/stock-by-warehouse', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const result = await wbSvc.getStockDistributionReport({ tenantId: req.user.tenantId, clientId });
+    res.json({ ok:true, ...result });
   } catch(e){ next(e); }
 });
 
