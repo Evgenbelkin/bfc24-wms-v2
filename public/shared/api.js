@@ -339,6 +339,10 @@
       create: (d)     => post('/wb/accounts', d),
       update: (id, d) => patch(`/wb/accounts/${id}`, d),
     },
+    warehouses: {
+      list:   (accountId)          => get(`/wb/accounts/${accountId}/warehouses`),
+      update: (accountId, whId, d) => patch(`/wb/accounts/${accountId}/warehouses/${whId}`, d),
+    },
     syncOrders:  (d) => post('/wb/sync-orders', d),
     syncOrdersAll: () => post('/wb/sync-orders-all', {}),
     importItems: (d) => post('/wb/import-items', d),
@@ -460,6 +464,7 @@
     shipments:(p)     => get('/seller/shipments', p),
     items:    (p)     => get('/seller/items', p),
     setItemCostPrice: (itemId, costPrice) => patch(`/seller/items/${itemId}/cost-price`, { cost_price: costPrice }),
+    setItemReorderThreshold: (itemId, data) => patch(`/seller/items/${itemId}/reorder-threshold`, data),
     markingSummary:      (itemId)           => get(`/seller/items/${itemId}/marking/summary`),
     markingCodes:        (itemId, p)        => get(`/seller/items/${itemId}/marking/codes`, p),
     importMarkingCodes:  (itemId, codesText)=> post(`/seller/items/${itemId}/marking/codes/import`, { codes_text: codesText }),
@@ -480,6 +485,7 @@
       update:      (id, data)  => patch(`/seller/wb-warehouses/${id}`, data),
       setReserve:  (reservePct)=> patch('/seller/wb-warehouses/settings/reserve', { reserve_pct: reservePct }),
     },
+    stockByWarehouse: () => get('/seller/stock-by-warehouse'),
   };
 
   // ─────────────── Platform (Owner-admin) ───────────────

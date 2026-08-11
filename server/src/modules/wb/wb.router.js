@@ -78,6 +78,49 @@ router.patch('/accounts/:id', requireRole('tenant_admin'), async (req,res,next)=
   } catch(e){ next(e); }
 });
 
+// ─────────────── Склады WB аккаунта (какие обрабатывать в волнах сборки) ───────────────
+//
+// Отдельно от wms.wb_seller_warehouses.is_enabled_for_dist (клиентский флаг
+// для автораспределения остатков) — is_enabled_for_picking решает админ этого
+// тенанта: если у клиента несколько складов WB в разных городах, каждый
+// обслуживается своим фулфилментом, и /generate-wave не должен захватывать
+// чужие заказы. См. миграцию 035.
+
+router.get('/accounts/:id/warehouses', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const accountId = Number(req.params.id);
+    const accCheck = await query(`SELECT id FROM wms.mp_accounts WHERE id=$1 AND tenant_id=$2`, [accountId, req.user.tenantId]);
+    if (accCheck.rowCount === 0) throw new NotFoundError('MP Account', accountId);
+    const r = await query(
+      `SELECT id, wb_warehouse_id, warehouse_code, warehouse_name, is_active,
+              is_enabled_for_picking, is_enabled_for_dist, weight
+       FROM wms.wb_seller_warehouses
+       WHERE mp_account_id=$1
+       ORDER BY is_active DESC, warehouse_name`,
+      [accountId]
+    );
+    res.json({ ok: true, warehouses: r.rows });
+  } catch(e){ next(e); }
+});
+
+router.patch('/accounts/:id/warehouses/:whId', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const accountId = Number(req.params.id);
+    const whId = Number(req.params.whId);
+    const { is_enabled_for_picking } = req.body;
+    if (is_enabled_for_picking === undefined) throw new ValidationError('is_enabled_for_picking is required');
+    const r = await query(
+      `UPDATE wms.wb_seller_warehouses w SET is_enabled_for_picking=$1, updated_at=NOW()
+       FROM wms.mp_accounts ma
+       WHERE w.mp_account_id = ma.id AND w.id=$2 AND w.mp_account_id=$3 AND ma.tenant_id=$4
+       RETURNING w.id, w.is_enabled_for_picking`,
+      [!!is_enabled_for_picking, whId, accountId, req.user.tenantId]
+    );
+    if (r.rowCount === 0) throw new NotFoundError('Warehouse', whId);
+    res.json({ ok: true, warehouse: r.rows[0] });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Импорт карточек WB ───────────────
 
 router.post('/import-items', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
@@ -223,13 +266,30 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     // новым, будет помечен status='external' и не попадёт в выборку ниже.
     await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token });
 
-    // Заказы без поставки
+    // Список складов WB тоже подтягиваем по свежему — чтобы флаг
+    // is_enabled_for_picking ниже применялся к актуальному набору складов
+    // (некритично: если WB недоступен, используем то, что уже засинкано).
+    try {
+      await wbService.syncSellerWarehouses({ tenantId: req.user.tenantId, mpAccountId: accountId });
+    } catch (e) {
+      logger.warn({ err: e, accountId }, 'syncSellerWarehouses failed before generate-wave, using cached list');
+    }
+
+    // Заказы без поставки. Склады WB, явно выключенные админом этого тенанта
+    // (is_enabled_for_picking=FALSE — «этот склад обслуживает другой ФФ»),
+    // из выборки исключаем. Склад без настройки (ещё не засинкан/неизвестен)
+    // остаётся включённым — обратная совместимость с прежним поведением.
     const ordersRes = await query(
-      `SELECT wb_order_id, barcode, warehouse_id, warehouse_name
-       FROM wms.wb_orders
-       WHERE tenant_id=$1 AND mp_account_id=$2 AND wb_supply_id IS NULL
-         AND COALESCE(status,'') NOT IN ('confirm','complete','cancel','external')
-       ORDER BY created_at ASC LIMIT $3`,
+      `SELECT o.wb_order_id, o.barcode, o.warehouse_id, o.warehouse_name
+       FROM wms.wb_orders o
+       WHERE o.tenant_id=$1 AND o.mp_account_id=$2 AND o.wb_supply_id IS NULL
+         AND COALESCE(o.status,'') NOT IN ('confirm','complete','cancel','external')
+         AND NOT EXISTS (
+           SELECT 1 FROM wms.wb_seller_warehouses w
+           WHERE w.mp_account_id=o.mp_account_id AND w.wb_warehouse_id=o.warehouse_id
+             AND w.is_enabled_for_picking=FALSE
+         )
+       ORDER BY o.created_at ASC LIMIT $3`,
       [req.user.tenantId, accountId, limitOrders]
     );
     if (ordersRes.rowCount === 0) return res.json({ ok:true, message:'No orders without supply', supplies:[] });
