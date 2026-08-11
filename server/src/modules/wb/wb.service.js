@@ -347,6 +347,11 @@ function triggerRedistributionForClient({ tenantId, clientId }) {
 // (analytics.wb_sales_raw, сопоставление по warehouse_name - WB не даёт
 // стабильного числового id склада в отчёте продаж, только человекочитаемое
 // имя, поэтому сопоставляем по имени в рамках одного mp_account).
+//
+// Порог подсорта (reorder_min_qty/reorder_min_days) задаётся НА ТОВАР
+// (wms.items), не на склад - у разных товаров разная оборачиваемость, а один
+// и тот же порог должен действовать одинаково на каждом складе этого товара
+// (см. миграцию 037 - изначально клали порог на склад, оказалось неверно).
 // =============================================================================
 
 const TURNOVER_WINDOW_DAYS = 30;
@@ -360,7 +365,7 @@ async function getStockDistributionReport({ tenantId, clientId }) {
   const mpAccountId = accRes.rows[0].id;
 
   const whRes = await query(
-    `SELECT id, warehouse_code, warehouse_name, reorder_min_qty, reorder_min_days
+    `SELECT id, warehouse_code, warehouse_name
      FROM wms.wb_seller_warehouses
      WHERE mp_account_id=$1 AND is_active=TRUE AND is_enabled_for_dist=TRUE
      ORDER BY warehouse_name`,
@@ -371,7 +376,7 @@ async function getStockDistributionReport({ tenantId, clientId }) {
 
   const distRes = await query(
     `SELECT d.barcode, d.warehouse_code, d.qty, d.calculated_at,
-            i.item_name, i.vendor_code
+            i.id AS item_id, i.item_name, i.vendor_code, i.reorder_min_qty, i.reorder_min_days
      FROM wms.wb_stock_distribution d
      LEFT JOIN wms.items i ON i.tenant_id=$2 AND i.client_id=$3 AND i.barcode=d.barcode
      WHERE d.mp_account_id=$1`,
@@ -397,8 +402,11 @@ async function getStockDistributionReport({ tenantId, clientId }) {
     if (!itemsMap.has(row.barcode)) {
       itemsMap.set(row.barcode, {
         barcode: row.barcode,
+        item_id: row.item_id || null,
         item_name: row.item_name || null,
         vendor_code: row.vendor_code || null,
+        reorder_min_qty: row.reorder_min_qty != null ? Number(row.reorder_min_qty) : null,
+        reorder_min_days: row.reorder_min_days != null ? Number(row.reorder_min_days) : null,
         by_warehouse: {},
       });
     }
@@ -408,10 +416,8 @@ async function getStockDistributionReport({ tenantId, clientId }) {
     const avgDaily = wh ? (salesMap.get(`${row.barcode}|${wh.warehouse_name}`) || 0) : 0;
     const daysOfStock = avgDaily > 0 ? qty / avgDaily : null;
     let lowStock = false;
-    if (wh) {
-      if (wh.reorder_min_qty != null && qty < Number(wh.reorder_min_qty)) lowStock = true;
-      if (wh.reorder_min_days != null && daysOfStock != null && daysOfStock < Number(wh.reorder_min_days)) lowStock = true;
-    }
+    if (item.reorder_min_qty != null && qty < item.reorder_min_qty) lowStock = true;
+    if (item.reorder_min_days != null && daysOfStock != null && daysOfStock < item.reorder_min_days) lowStock = true;
     item.by_warehouse[row.warehouse_code] = {
       qty,
       avg_daily_qty: Math.round(avgDaily * 100) / 100,

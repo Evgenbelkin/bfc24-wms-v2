@@ -12,6 +12,12 @@
     .low-row td:first-child{box-shadow:inset 3px 0 0 var(--red);}
     .legend{font-size:12px;color:var(--muted);margin:0 0 4px;}
     .legend .dot{display:inline-block;width:9px;height:9px;border-radius:3px;background:var(--red);margin-right:5px;vertical-align:-1px;}
+    .wh-chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+    .wh-chip{display:flex;align-items:center;gap:5px;padding:6px 10px;background:var(--card2);border:1px solid var(--border);border-radius:20px;font-size:12px;cursor:pointer;user-select:none;}
+    .wh-chip input{width:14px;height:14px;}
+    .low-toggle{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;}
+    .threshold-row{display:flex;gap:6px;align-items:center;margin-top:4px;font-size:11px;color:var(--muted);}
+    .threshold-row input{width:52px;padding:4px 6px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;text-align:right;}
   </style>
 </head>
 <body>
@@ -32,19 +38,24 @@
   <div id="main-content" style="display:none;">
     <div class="card">
       <input id="f-search" placeholder="Поиск по названию или артикулу..." style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" oninput="renderTable()"/>
+      <label class="low-toggle">
+        <input type="checkbox" id="f-low-only" onchange="renderTable()"/> Только «нужен подсорт»
+      </label>
+      <div id="wh-chips" class="wh-chip-row"></div>
     </div>
 
     <div class="card">
-      <p class="legend"><span class="dot"></span>красным — остаток или запас ниже заданного порога подсорта (настраивается в «Склады WB»)</p>
+      <p class="legend"><span class="dot"></span>красным — остаток или запас ниже порога подсорта для этого товара</p>
       <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
         Показано то, что WMS рассчитала и отправила по складам (не «живой» остаток из ЛК WB).
         Обновляется автоматически после приёмки, инвентаризации и смены настроек.
         Рядом с количеством — оценка запаса в днях по средней скорости продаж за последние 30 дней.
+        Порог подсорта задаётся под названием товара — одинаковый на всех его складах.
       </p>
       <p id="calc-at" style="font-size:12px;color:var(--muted);margin:0 0 10px;"></p>
       <div class="table-wrap">
         <table>
-          <thead><tr id="thead-row"><th>Товар</th><th>Артикул</th></tr></thead>
+          <thead><tr id="thead-row"><th>Товар</th></tr></thead>
           <tbody id="stock-body"></tbody>
         </table>
       </div>
@@ -64,6 +75,11 @@
 
     let warehouses = [];
     let items = [];
+    let hiddenWarehouseCodes = new Set();
+
+    function visibleWarehouses() {
+      return warehouses.filter(w => !hiddenWarehouseCodes.has(w.warehouse_code));
+    }
 
     async function loadReport() {
       try {
@@ -86,31 +102,55 @@
         document.getElementById('no-warehouses-card').style.display = 'none';
         document.getElementById('main-content').style.display = 'block';
 
-        const thead = document.getElementById('thead-row');
-        thead.innerHTML = '<th>Товар</th><th>Артикул</th>' +
-          warehouses.map(w => `<th>${UI.escHtml(w.warehouse_name || w.warehouse_code)}</th>`).join('');
+        document.getElementById('wh-chips').innerHTML = warehouses.map(w => `
+          <label class="wh-chip">
+            <input type="checkbox" ${hiddenWarehouseCodes.has(w.warehouse_code) ? '' : 'checked'}
+              onchange="toggleWarehouseVisible('${w.warehouse_code}', this.checked)"/>
+            ${UI.escHtml(w.warehouse_name || w.warehouse_code)}
+          </label>
+        `).join('');
 
         document.getElementById('calc-at').textContent = res.calculated_at
           ? 'Рассчитано: ' + new Date(res.calculated_at).toLocaleString('ru-RU')
           : '';
 
+        renderThead();
         renderTable();
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    function toggleWarehouseVisible(code, checked) {
+      if (checked) hiddenWarehouseCodes.delete(code); else hiddenWarehouseCodes.add(code);
+      renderThead();
+      renderTable();
+    }
+
+    function renderThead() {
+      const thead = document.getElementById('thead-row');
+      thead.innerHTML = '<th>Товар</th>' +
+        visibleWarehouses().map(w => `<th>${UI.escHtml(w.warehouse_name || w.warehouse_code)}</th>`).join('');
+    }
+
+    function itemIsLow(it) {
+      return Object.values(it.by_warehouse).some(c => c.low_stock);
+    }
+
     function renderTable() {
       const term = UI.val('#f-search').toLowerCase();
-      const filtered = term
+      const lowOnly = document.getElementById('f-low-only').checked;
+      let filtered = term
         ? items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.vendor_code||'').toLowerCase().includes(term) || (it.barcode||'').includes(term))
         : items;
+      if (lowOnly) filtered = filtered.filter(itemIsLow);
 
+      const whs = visibleWarehouses();
       const body = document.getElementById('stock-body');
       if (!filtered.length) {
-        body.innerHTML = `<tr><td colspan="${2+warehouses.length}" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
+        body.innerHTML = `<tr><td colspan="${1+whs.length}" style="text-align:center;color:var(--muted);padding:24px;">Ничего не найдено</td></tr>`;
         return;
       }
       body.innerHTML = filtered.map(it => {
-        const cells = warehouses.map(w => {
+        const cells = whs.map(w => {
           const c = it.by_warehouse[w.warehouse_code];
           if (!c) return `<td><span class="cell-qty">0</span></td>`;
           const daysText = c.days_of_stock != null ? `хватит на ${c.days_of_stock} дн.` : (c.avg_daily_qty > 0 ? '' : 'нет продаж 30дн');
@@ -119,13 +159,33 @@
             ${daysText ? `<div class="cell-days ${c.low_stock ? 'low' : ''}">${daysText}</div>` : (c.low_stock ? `<div class="cell-days low">ниже порога</div>` : '')}
           </td>`;
         }).join('');
-        const rowLow = Object.values(it.by_warehouse).some(c => c.low_stock);
+        const rowLow = itemIsLow(it);
+        const thresholdCell = it.item_id
+          ? `<div class="threshold-row">
+               <span>${UI.escHtml(it.vendor_code || '')}</span>
+             </div>
+             <div class="threshold-row">
+               мин.<input type="number" min="0" step="1" value="${it.reorder_min_qty != null ? it.reorder_min_qty : ''}"
+                 placeholder="—" onchange="saveThreshold(${it.item_id}, {reorder_min_qty: this.value === '' ? null : this.value})"/>шт
+               <input type="number" min="0" step="0.5" value="${it.reorder_min_days != null ? it.reorder_min_days : ''}"
+                 placeholder="—" onchange="saveThreshold(${it.item_id}, {reorder_min_days: this.value === '' ? null : this.value})"/>дн
+             </div>`
+          : `<div class="threshold-row">${UI.escHtml(it.vendor_code || '')}</div>`;
         return `<tr class="${rowLow ? 'low-row' : ''}">
-          <td>${UI.escHtml(it.item_name || '—')}</td>
-          <td>${UI.escHtml(it.vendor_code || '—')}</td>
+          <td>${UI.escHtml(it.item_name || '—')}${thresholdCell}</td>
           ${cells}
         </tr>`;
       }).join('');
+    }
+
+    async function saveThreshold(itemId, data) {
+      try {
+        const res = await window.API.seller.setItemReorderThreshold(itemId, data);
+        const it = items.find(x => x.item_id === itemId);
+        if (it) Object.assign(it, res.item);
+        UI.notify.ok('Порог сохранён');
+        renderTable();
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     loadReport();

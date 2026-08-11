@@ -14,6 +14,10 @@
     .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
     @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
     .catalog-thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--card2);}
+    .wh-pick-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+    .wh-pick-row:last-child{border-bottom:none;}
+    .wh-pick-row .wh-pick-name{font-size:14px;font-weight:400;color:var(--text);text-transform:none;letter-spacing:normal;margin:0;}
+    .wh-pick-row input[type="checkbox"]{width:18px;height:18px;flex-shrink:0;}
     .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
     .result-box strong{color:var(--text);}
     .locations-box{background:var(--card2);border-radius:10px;padding:8px 14px;}
@@ -246,11 +250,11 @@
           return;
         }
         box.innerHTML = whs.map(w => `
-          <label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
-            <input type="checkbox" ${w.is_enabled_for_picking ? 'checked' : ''}
+          <div class="wh-pick-row">
+            <input type="checkbox" id="wh-pick-${w.id}" ${w.is_enabled_for_picking ? 'checked' : ''}
                    onchange="toggleWarehousePicking(${accountId}, ${w.id}, this.checked)"/>
-            <span>${UI.escHtml(w.warehouse_name || w.warehouse_code)}</span>
-          </label>
+            <label for="wh-pick-${w.id}" class="wh-pick-name">${UI.escHtml(w.warehouse_name || w.warehouse_code)}</label>
+          </div>
         `).join('');
       } catch (e) {
         box.innerHTML = `<div style="font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;

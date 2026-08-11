@@ -192,6 +192,47 @@ router.patch('/items/:id/cost-price', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** PATCH /seller/items/:id/reorder-threshold — порог подсорта для товара:
+ *  мин. остаток (шт) и/или мин. запас (дней при текущей скорости продаж).
+ *  Единый порог на товар — применяется одинаково на каждом его складе FBS
+ *  (см. GET /seller/stock-by-warehouse). Оба поля опциональны, null снимает
+ *  порог. */
+router.patch('/items/:id/reorder-threshold', requireModule('wb_integration'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const itemId = Number(req.params.id);
+    const { reorder_min_qty, reorder_min_days } = req.body;
+    const fields = []; const params = []; let idx = 1;
+    if (reorder_min_qty !== undefined) {
+      if (reorder_min_qty === null || reorder_min_qty === '') { fields.push(`reorder_min_qty=$${idx++}`); params.push(null); }
+      else {
+        const q = Number(reorder_min_qty);
+        if (!Number.isFinite(q) || q < 0) throw new ValidationError('reorder_min_qty must be a non-negative number');
+        fields.push(`reorder_min_qty=$${idx++}`); params.push(Math.round(q));
+      }
+    }
+    if (reorder_min_days !== undefined) {
+      if (reorder_min_days === null || reorder_min_days === '') { fields.push(`reorder_min_days=$${idx++}`); params.push(null); }
+      else {
+        const d = Number(reorder_min_days);
+        if (!Number.isFinite(d) || d < 0) throw new ValidationError('reorder_min_days must be a non-negative number');
+        fields.push(`reorder_min_days=$${idx++}`); params.push(d);
+      }
+    }
+    if (!fields.length) throw new ValidationError('Nothing to update');
+    fields.push(`updated_at=NOW()`);
+    params.push(itemId, req.user.tenantId, clientId);
+    const r = await query(
+      `UPDATE wms.items SET ${fields.join(', ')}
+       WHERE id=$${idx++} AND tenant_id=$${idx++} AND client_id=$${idx++}
+       RETURNING id, reorder_min_qty, reorder_min_days`,
+      params
+    );
+    if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Item not found'} });
+    res.json({ ok:true, item:r.rows[0] });
+  } catch(e){ next(e); }
+});
+
 /** Проверить, что item принадлежит текущему клиенту — общий guard для двух
  *  эндпоинтов ниже, чтобы клиент не мог загрузить/посмотреть коды чужого товара. */
 async function assertOwnItem({ tenantId, clientId, itemId }) {
@@ -475,7 +516,7 @@ router.post('/wb-warehouses/sync', requireModule('wb_integration'), async (req,r
 router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
-    const { weight, is_enabled_for_dist, reorder_min_qty, reorder_min_days } = req.body;
+    const { weight, is_enabled_for_dist } = req.body;
     const fields = []; const params = []; let idx = 1;
     if (weight !== undefined) {
       const w = Number(weight);
@@ -483,22 +524,6 @@ router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,r
       fields.push(`weight=$${idx++}`); params.push(w);
     }
     if (is_enabled_for_dist !== undefined) { fields.push(`is_enabled_for_dist=$${idx++}`); params.push(!!is_enabled_for_dist); }
-    if (reorder_min_qty !== undefined) {
-      if (reorder_min_qty === null || reorder_min_qty === '') { fields.push(`reorder_min_qty=$${idx++}`); params.push(null); }
-      else {
-        const q = Number(reorder_min_qty);
-        if (!Number.isFinite(q) || q < 0) throw new ValidationError('reorder_min_qty must be a non-negative number');
-        fields.push(`reorder_min_qty=$${idx++}`); params.push(Math.round(q));
-      }
-    }
-    if (reorder_min_days !== undefined) {
-      if (reorder_min_days === null || reorder_min_days === '') { fields.push(`reorder_min_days=$${idx++}`); params.push(null); }
-      else {
-        const d = Number(reorder_min_days);
-        if (!Number.isFinite(d) || d < 0) throw new ValidationError('reorder_min_days must be a non-negative number');
-        fields.push(`reorder_min_days=$${idx++}`); params.push(d);
-      }
-    }
     if (!fields.length) throw new ValidationError('Nothing to update');
     fields.push(`updated_at=NOW()`);
     params.push(Number(req.params.id), req.user.tenantId, clientId);
@@ -506,7 +531,7 @@ router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,r
       `UPDATE wms.wb_seller_warehouses w SET ${fields.join(', ')}
        FROM wms.mp_accounts ma
        WHERE w.mp_account_id = ma.id AND w.id=$${idx++} AND w.tenant_id=$${idx++} AND ma.client_id=$${idx++}
-       RETURNING w.id, w.weight, w.is_enabled_for_dist, w.reorder_min_qty, w.reorder_min_days`,
+       RETURNING w.id, w.weight, w.is_enabled_for_dist`,
       params
     );
     if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Warehouse not found'} });
