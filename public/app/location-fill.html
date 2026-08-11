@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Заполняемость ячеек — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select{flex:1;min-width:140px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:10px;}
+    .legend .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+    .fill-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;}
+    .fill-cell{border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;color:#fff;min-height:64px;display:flex;flex-direction:column;justify-content:center;}
+    .fill-cell .code{font-size:12px;font-weight:700;word-break:break-all;}
+    .fill-cell .pct{font-size:15px;font-weight:800;margin-top:2px;}
+    .fill-cell .lit{font-size:10px;opacity:.9;margin-top:1px;}
+    .fill-empty{background:var(--card2)!important;color:var(--muted)!important;}
+    .fill-green{background:var(--green);}
+    .fill-blue{background:var(--blue);}
+    .fill-red{background:var(--red);}
+    .fill-nodata{background:var(--card2);color:var(--muted);}
+    .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;}
+    .summary-cell{background:var(--card2);border-radius:10px;padding:12px;text-align:center;}
+    .summary-cell .num{font-size:18px;font-weight:700;}
+    .summary-cell .lbl{font-size:11px;color:var(--muted);margin-top:2px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/locations.html" class="btn-sm btn-back">← Места хранения</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Заполняемость</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Фильтры</div>
+    <div class="filters-row">
+      <select id="f-warehouse" onchange="loadFillReport()"><option value="">Все склады</option></select>
+      <select id="f-zone" onchange="renderGrid()"><option value="">Все зоны</option></select>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--green)"></span>занято &lt; 20% — много места</span>
+      <span><span class="dot" style="background:var(--blue)"></span>20–90% — нормально</span>
+      <span><span class="dot" style="background:var(--red)"></span>&gt; 90% — почти забита</span>
+      <span><span class="dot" style="background:var(--card2);border:1px solid var(--border)"></span>нет данных об объёме ячейки</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Сводка</div>
+    <div class="summary-grid">
+      <div class="summary-cell"><div class="num" id="s-total">—</div><div class="lbl">Ячеек</div></div>
+      <div class="summary-cell"><div class="num" id="s-green">—</div><div class="lbl">Зелёных</div></div>
+      <div class="summary-cell"><div class="num" id="s-blue">—</div><div class="lbl">Синих</div></div>
+      <div class="summary-cell"><div class="num" id="s-red">—</div><div class="lbl">Красных</div></div>
+      <div class="summary-cell"><div class="num" id="s-nodata">—</div><div class="lbl">Без объёма</div></div>
+      <div class="summary-cell"><div class="num" id="s-occupied">—</div><div class="lbl">Занято, л</div></div>
+      <div class="summary-cell"><div class="num" id="s-capacity">—</div><div class="lbl">Вместимость, л</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Ячейки (<span id="grid-count">0</span>)</div>
+    <div id="fill-grid" class="fill-grid"></div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor','tenant_admin','inventory_manager'])) {
+      window.location.href = '/app/menu.html';
+    }
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let warehouses = [];
+    let fillCache = [];
+
+    function colorClass(loc) {
+      if (loc.capacity_liters == null || loc.capacity_liters <= 0) return 'fill-nodata';
+      if (loc.fill_pct < 20) return 'fill-green';
+      if (loc.fill_pct <= 90) return 'fill-blue';
+      return 'fill-red';
+    }
+
+    async function loadWarehouses() {
+      try {
+        const res = await window.API.warehouses.list();
+        warehouses = res.warehouses || [];
+        const sel = document.getElementById('f-warehouse');
+        sel.innerHTML = '<option value="">Все склады</option>' +
+          warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadFillReport() {
+      try {
+        const warehouseId = UI.val('#f-warehouse');
+        const params = {};
+        if (warehouseId) params.warehouse_id = warehouseId;
+        const res = await window.API.locations.fillReport(params);
+        fillCache = res.locations || [];
+
+        const zones = [...new Set(fillCache.map(l => l.zone_code).filter(Boolean))].sort();
+        const zoneSel = document.getElementById('f-zone');
+        const prevZone = zoneSel.value;
+        zoneSel.innerHTML = '<option value="">Все зоны</option>' +
+          zones.map(z => `<option value="${UI.escHtml(z)}">${UI.escHtml(z)}</option>`).join('');
+        if (zones.includes(prevZone)) zoneSel.value = prevZone;
+
+        renderGrid();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function renderGrid() {
+      const zone = UI.val('#f-zone');
+      const rows = zone ? fillCache.filter(l => l.zone_code === zone) : fillCache;
+
+      document.getElementById('grid-count').textContent = rows.length;
+
+      let green=0, blue=0, red=0, nodata=0, occupied=0, capacity=0;
+      for (const l of rows) {
+        const cls = colorClass(l);
+        if (cls === 'fill-green') green++;
+        else if (cls === 'fill-blue') blue++;
+        else if (cls === 'fill-red') red++;
+        else nodata++;
+        occupied += Number(l.occupied_liters) || 0;
+        if (l.capacity_liters != null) capacity += Number(l.capacity_liters);
+      }
+      document.getElementById('s-total').textContent = rows.length;
+      document.getElementById('s-green').textContent = green;
+      document.getElementById('s-blue').textContent = blue;
+      document.getElementById('s-red').textContent = red;
+      document.getElementById('s-nodata').textContent = nodata;
+      document.getElementById('s-occupied').textContent = occupied.toFixed(0);
+      document.getElementById('s-capacity').textContent = capacity.toFixed(0);
+
+      const grid = document.getElementById('fill-grid');
+      if (!rows.length) {
+        grid.innerHTML = `<div class="empty-state">Ячеек не найдено — проверьте фильтр или задайте размеры на странице «Места хранения»</div>`;
+        return;
+      }
+      grid.innerHTML = rows.map((l, idx) => {
+        const cls = colorClass(l);
+        const pctText = l.fill_pct != null ? `${l.fill_pct}%` : '—';
+        const litText = l.capacity_liters != null
+          ? `${l.occupied_liters} / ${l.capacity_liters} л`
+          : (l.occupied_liters > 0 ? `${l.occupied_liters} л занято` : 'нет размеров');
+        return `
+          <div class="fill-cell ${cls}" onclick="openCellDetails(${idx}, '${zone ? UI.escHtml(zone) : ''}')">
+            <div class="code">${UI.escHtml(l.location_code)}</div>
+            <div class="pct">${pctText}</div>
+            <div class="lit">${litText}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openCellDetails(idx) {
+      const zone = UI.val('#f-zone');
+      const rows = zone ? fillCache.filter(l => l.zone_code === zone) : fillCache;
+      const l = rows[idx];
+      if (!l) return;
+      const dims = (l.length_cm && l.width_cm && l.height_cm)
+        ? `${l.length_cm}×${l.width_cm}×${l.height_cm} см`
+        : 'не заданы';
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;">
+          <div class="modal-card" style="background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:420px;">
+            <div class="card-title">Ячейка ${UI.escHtml(l.location_code)}</div>
+            <p>Зона: ${UI.escHtml(l.zone_code || '—')}</p>
+            <p>Размеры: ${dims}</p>
+            <p>Вместимость: ${l.capacity_liters != null ? l.capacity_liters + ' л' : 'не задана'}</p>
+            <p>Занято: ${l.occupied_liters} л ${l.fill_pct != null ? `(${l.fill_pct}%)` : ''}</p>
+            <p>Товарных позиций (SKU): ${l.sku_count}, штук на руках: ${l.qty_on_hand}</p>
+            <div class="btn-row" style="margin-top:14px;">
+              <a class="btn-big btn-blue" href="/app/locations.html?search=${encodeURIComponent(l.location_code)}" style="text-decoration:none;text-align:center;">Открыть в «Местах хранения»</a>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    (async () => { await loadWarehouses(); await loadFillReport(); })();
+  </script>
+</body>
+</html>

@@ -44,7 +44,8 @@
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"/> Выбрать все на странице</label>
       <span style="font-size:13px;color:var(--muted);">Выбрано: <b id="selected-count">0</b></span>
-      <button class="btn-sm btn-blue" style="margin-left:auto;" onclick="printSelectedLabels()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Печать выбранных</button>
+      <button class="btn-sm btn-back" style="margin-left:auto;" onclick="openBulkDimensionsModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg> Задать размеры</button>
+      <button class="btn-sm btn-blue" onclick="printSelectedLabels()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Печать выбранных</button>
     </div>
   </div>
 
@@ -58,6 +59,7 @@
     <button class="btn-big btn-green" style="flex:1;" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новая ячейка</button>
     <button class="btn-big btn-blue" style="flex:1;" onclick="openBulkModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Создать пачкой</button>
   </div>
+  <a href="/app/location-fill.html" class="btn-sm btn-back btn-full" style="display:block;text-align:center;margin-top:10px;"><svg class="i" viewBox="0 0 24 24" style="vertical-align:-3px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Заполняемость ячеек</a>
 
   <div id="modal-root"></div>
 
@@ -141,6 +143,52 @@
       }
     }
 
+    function openBulkDimensionsModal() {
+      if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы одну ячейку'); return; }
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Задать размеры (${selectedIds.size} ячеек)</div>
+            <div class="field-row3" style="display:flex;gap:8px;">
+              <div class="field" style="flex:1;"><label>Длина, см</label><input id="bd-length" type="number" min="0" step="0.1" oninput="updateBulkDimensionsPreview()"/></div>
+              <div class="field" style="flex:1;"><label>Ширина, см</label><input id="bd-width" type="number" min="0" step="0.1" oninput="updateBulkDimensionsPreview()"/></div>
+              <div class="field" style="flex:1;"><label>Высота, см</label><input id="bd-height" type="number" min="0" step="0.1" oninput="updateBulkDimensionsPreview()"/></div>
+            </div>
+            <p id="bd-preview" style="font-size:13px;color:var(--muted);margin:6px 0 0;"></p>
+            <p style="font-size:12px;color:var(--muted);">Применится ко всем выбранным ячейкам одинаково.</p>
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn-big btn-green" onclick="submitBulkDimensions()">Применить</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function updateBulkDimensionsPreview() {
+      const el = document.getElementById('bd-preview');
+      if (!el) return;
+      const l = Number(UI.val('#bd-length')) || 0;
+      const w = Number(UI.val('#bd-width')) || 0;
+      const h = Number(UI.val('#bd-height')) || 0;
+      el.textContent = (l > 0 && w > 0 && h > 0) ? `Вместимость: ≈ ${(l*w*h/1000).toFixed(1)} л на ячейку` : '';
+    }
+
+    async function submitBulkDimensions() {
+      const data = {
+        ids: Array.from(selectedIds),
+        length_cm: UI.val('#bd-length') || null,
+        width_cm: UI.val('#bd-width') || null,
+        height_cm: UI.val('#bd-height') || null,
+      };
+      try {
+        const res = await window.API.locations.bulkDimensions(data);
+        UI.notify.ok(`Обновлено ячеек: ${res.updated}`);
+        closeModal();
+        await loadLocations();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
     function openBulkModal() {
       const whOptions = warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
       document.getElementById('modal-root').innerHTML = `
@@ -158,6 +206,12 @@
               <div class="field"><label>Позиция до</label><input id="b-pos-to" type="number" min="1" value="20" oninput="updateBulkPreview()"/></div>
             </div>
             <div class="field"><label>Тип ячейки</label><select id="b-type">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${k==='rack'?'selected':''}>${v}</option>`).join('')}</select></div>
+            <div class="field-row3" style="display:flex;gap:8px;">
+              <div class="field" style="flex:1;"><label>Длина, см</label><input id="b-length" type="number" min="0" step="0.1" oninput="updateBulkPreview()"/></div>
+              <div class="field" style="flex:1;"><label>Ширина, см</label><input id="b-width" type="number" min="0" step="0.1" oninput="updateBulkPreview()"/></div>
+              <div class="field" style="flex:1;"><label>Высота, см</label><input id="b-height" type="number" min="0" step="0.1" oninput="updateBulkPreview()"/></div>
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin:0;">Размеры необязательны, но нужны для экрана «Заполняемость ячеек» — применятся ко всем ячейкам этой партии</p>
             <p id="b-preview" style="font-size:13px;color:var(--muted);margin:6px 0 0;"></p>
             <div class="btn-row" style="margin-top:14px;">
               <button class="btn-big btn-green" onclick="submitBulkCreate()">Создать</button>
@@ -183,8 +237,12 @@
       }
       const total = (rTo - rFrom + 1) * (pTo - pFrom + 1);
       const pad = (n) => String(n).padStart(2, '0');
+      const l = Number(UI.val('#b-length')) || 0;
+      const w = Number(UI.val('#b-width')) || 0;
+      const h = Number(UI.val('#b-height')) || 0;
+      const volumeHint = (l > 0 && w > 0 && h > 0) ? `<br>Вместимость каждой ячейки: ≈ ${(l*w*h/1000).toFixed(1)} л` : '';
       el.innerHTML = `Будет создано (или пропущено, если уже есть): <b>${total}</b> ячеек. ` +
-        `Пример: <code>${zone}-${pad(rFrom)}-${pad(pFrom)}</code> … <code>${zone}-${pad(rTo)}-${pad(pTo)}</code>` +
+        `Пример: <code>${zone}-${pad(rFrom)}-${pad(pFrom)}</code> … <code>${zone}-${pad(rTo)}-${pad(pTo)}</code>` + volumeHint +
         (total > 2000 ? `<br><span style="color:var(--red)">Слишком много за раз (максимум 2000) — уменьшите диапазон.</span>` : '');
     }
 
@@ -197,6 +255,9 @@
         position_from: UI.val('#b-pos-from'),
         position_to: UI.val('#b-pos-to'),
         location_type: UI.val('#b-type'),
+        length_cm: UI.val('#b-length') || null,
+        width_cm: UI.val('#b-width') || null,
+        height_cm: UI.val('#b-height') || null,
       };
       try {
         const res = await window.API.locations.bulkCreate(data);
@@ -261,6 +322,12 @@
             <div class="field"><label>Тип</label><select id="m-type">${typeOptions}</select></div>
             <div class="field"><label>Описание</label><input id="m-desc" value="${loc && loc.description ? UI.escHtml(loc.description) : ''}"/></div>
             <div class="field"><label>Зона</label><input id="m-zone" value="${loc && loc.zone_code ? UI.escHtml(loc.zone_code) : ''}"/></div>
+            <div class="field-row3" style="display:flex;gap:8px;">
+              <div class="field" style="flex:1;"><label>Длина, см</label><input id="m-length" type="number" min="0" step="0.1" value="${loc && loc.length_cm!=null ? loc.length_cm : ''}" oninput="updateModalVolumePreview()"/></div>
+              <div class="field" style="flex:1;"><label>Ширина, см</label><input id="m-width" type="number" min="0" step="0.1" value="${loc && loc.width_cm!=null ? loc.width_cm : ''}" oninput="updateModalVolumePreview()"/></div>
+              <div class="field" style="flex:1;"><label>Высота, см</label><input id="m-height" type="number" min="0" step="0.1" value="${loc && loc.height_cm!=null ? loc.height_cm : ''}" oninput="updateModalVolumePreview()"/></div>
+            </div>
+            <p id="m-volume-preview" style="font-size:13px;color:var(--muted);margin:2px 0 0;"></p>
             <div class="field"><label style="display:inline;">Активна</label> <input type="checkbox" id="m-active" ${!loc || loc.is_active ? 'checked':''}/></div>
             <div class="field"><label style="display:inline;">Ячейка сборки (pick location)</label> <input type="checkbox" id="m-pick" ${!loc || loc.is_pick_location ? 'checked':''}/></div>
             <div class="btn-row">
@@ -270,6 +337,18 @@
           </div>
         </div>
       `;
+      updateModalVolumePreview();
+    }
+
+    function updateModalVolumePreview() {
+      const el = document.getElementById('m-volume-preview');
+      if (!el) return;
+      const l = Number(UI.val('#m-length')) || 0;
+      const w = Number(UI.val('#m-width')) || 0;
+      const h = Number(UI.val('#m-height')) || 0;
+      el.textContent = (l > 0 && w > 0 && h > 0)
+        ? `Вместимость: ≈ ${(l * w * h / 1000).toFixed(1)} л`
+        : '';
     }
 
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
@@ -280,6 +359,9 @@
         location_type: UI.val('#m-type'),
         description: UI.val('#m-desc'),
         zone_code: UI.val('#m-zone'),
+        length_cm: UI.val('#m-length') || null,
+        width_cm: UI.val('#m-width') || null,
+        height_cm: UI.val('#m-height') || null,
         is_active: document.getElementById('m-active').checked,
         is_pick_location: document.getElementById('m-pick').checked,
       };
@@ -299,7 +381,14 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    (async () => { await loadWarehouses(); await loadLocations(); })();
+    (async () => {
+      // Переход с экрана "Заполняемость ячеек" по конкретной ячейке — сразу
+      // подставляем код в поиск, а не заставляем вводить его заново вручную.
+      const params = new URLSearchParams(window.location.search);
+      const searchParam = params.get('search');
+      if (searchParam) UI.setVal('#f-search', searchParam);
+      await loadWarehouses(); await loadLocations();
+    })();
   </script>
 </body>
 </html>
