@@ -38,6 +38,19 @@ router.get('/by-code', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** GET /locations/fill-report — заполняемость ячеек по объёму, для сетки на
+ *  экране (см. locations.service.js:getLocationFillReport). */
+router.get('/fill-report', async (req,res,next)=>{
+  try {
+    const rows = await svc.getLocationFillReport({
+      tenantId:    req.user.tenantId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      pickOnly:    req.query.pick_only !== 'false',
+    });
+    res.json({ ok: true, locations: rows });
+  } catch(e){ next(e); }
+});
+
 router.get('/:id', async (req,res,next)=>{
   try {
     const loc = await svc.getLocationById({ tenantId: req.user.tenantId, locationId: validatePositiveInt(req.params.id,'id') });
@@ -67,8 +80,28 @@ router.post('/bulk', requireRole('tenant_admin','supervisor'), async (req,res,ne
       positionTo: req.body.position_to,
       locationType: req.body.location_type || 'rack',
       padWidth: req.body.pad_width,
+      lengthCm: req.body.length_cm,
+      widthCm: req.body.width_cm,
+      heightCm: req.body.height_cm,
+      maxVolumeL: req.body.max_volume_l,
     });
     res.status(201).json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /locations/bulk-dimensions { ids, length_cm, width_cm, height_cm, max_volume_l }
+ *  — задать размеры/вместимость сразу нескольким выбранным ячейкам. */
+router.patch('/bulk-dimensions', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkUpdateDimensions({
+      tenantId: req.user.tenantId,
+      ids: req.body.ids,
+      lengthCm: req.body.length_cm,
+      widthCm: req.body.width_cm,
+      heightCm: req.body.height_cm,
+      maxVolumeL: req.body.max_volume_l,
+    });
+    res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
 

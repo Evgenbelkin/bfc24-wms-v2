@@ -203,6 +203,8 @@
     update:  (id,d)=>patch(`/locations/${id}`, d),
     bulkCreate: (d) => post('/locations/bulk', d),
     printLabels: (locationIds) => post('/locations/labels', { location_ids: locationIds }),
+    bulkDimensions: (d) => patch('/locations/bulk-dimensions', d),
+    fillReport: (p) => get('/locations/fill-report', p),
   };
 
   // ─────────────── Stock ───────────────

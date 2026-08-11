@@ -10,6 +10,14 @@ const { validateNonEmptyString, parseBool, validatePositiveInt } = require('../.
 
 const VALID_TYPES = ['rack','floor','buffer','receiving','shipping','quarantine','virtual'];
 
+/** Объём в литрах из размеров ячейки в см (1000 см³ = 1 л), или null если размеры не заданы. */
+function volumeFromDims(lengthCm, widthCm, heightCm) {
+  if (lengthCm == null || widthCm == null || heightCm == null) return null;
+  const l = Number(lengthCm), w = Number(widthCm), h = Number(heightCm);
+  if (!(l > 0) || !(w > 0) || !(h > 0)) return null;
+  return Math.round((l * w * h / 1000) * 100) / 100;
+}
+
 async function listLocations({ tenantId, warehouseId = null, zoneCode = null, locationType = null, isActive = null, search = null, limit = 200, offset = 0 }) {
   const params = [tenantId];
   const conds = ['l.tenant_id = $1'];
@@ -34,6 +42,7 @@ async function listLocations({ tenantId, warehouseId = null, zoneCode = null, lo
        l.location_type, l.zone_code, l.aisle, l.rack, l.shelf, l.position,
        l.is_active, l.is_pick_location,
        l.max_weight_kg, l.max_volume_l,
+       l.length_cm, l.width_cm, l.height_cm,
        w.warehouse_name,
        COALESCE(SUM(sb.qty_on_hand), 0)::int AS qty_on_hand
      FROM wms.locations l
@@ -94,12 +103,24 @@ async function createLocation({ tenantId, warehouseId, createdById, data }) {
   );
   if (exists.rowCount > 0) throw new ConflictError(`Location '${code}' already exists in this warehouse`);
 
+  // Вместимость в литрах: если заданы все три размера — считаем сами
+  // (L*W*H/1000), явно переданный max_volume_l имеет приоритет (на случай
+  // нестандартной формы ячейки, где произведение размеров не отражает
+  // реальную полезную ёмкость).
+  const lengthCm = data.length_cm != null ? Number(data.length_cm) : null;
+  const widthCm  = data.width_cm  != null ? Number(data.width_cm)  : null;
+  const heightCm = data.height_cm != null ? Number(data.height_cm) : null;
+  const maxVolumeL = data.max_volume_l != null
+    ? Number(data.max_volume_l)
+    : volumeFromDims(lengthCm, widthCm, heightCm);
+
   const res = await query(
     `INSERT INTO wms.locations
        (tenant_id, warehouse_id, location_code, description, location_type,
         zone_code, aisle, rack, shelf, position,
-        max_weight_kg, max_volume_l, is_active, is_pick_location, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        max_weight_kg, max_volume_l, length_cm, width_cm, height_cm,
+        is_active, is_pick_location, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING *`,
     [
       tenantId, wid, code,
@@ -107,7 +128,7 @@ async function createLocation({ tenantId, warehouseId, createdById, data }) {
       data.zone_code || null, data.aisle || null, data.rack || null,
       data.shelf || null, data.position || null,
       data.max_weight_kg != null ? Number(data.max_weight_kg) : null,
-      data.max_volume_l  != null ? Number(data.max_volume_l)  : null,
+      maxVolumeL, lengthCm, widthCm, heightCm,
       parseBool(data.is_active, true),
       parseBool(data.is_pick_location, true),
       createdById,
@@ -117,7 +138,7 @@ async function createLocation({ tenantId, warehouseId, createdById, data }) {
 }
 
 async function updateLocation({ tenantId, locationId, data }) {
-  await getLocationById({ tenantId, locationId });
+  const current = await getLocationById({ tenantId, locationId });
 
   const fields = [];
   const params = [];
@@ -134,9 +155,24 @@ async function updateLocation({ tenantId, locationId, data }) {
   str('shelf', 'shelf', 20);
   str('position', 'position', 20);
   num('max_weight_kg', 'max_weight_kg');
-  num('max_volume_l', 'max_volume_l');
+  num('length_cm', 'length_cm');
+  num('width_cm', 'width_cm');
+  num('height_cm', 'height_cm');
   bool('is_active', 'is_active', true);
   bool('is_pick_location', 'is_pick_location', true);
+
+  // Вместимость: явно переданный max_volume_l побеждает; иначе, если в этом
+  // вызове меняется хотя бы один из размеров — пересчитываем из полного
+  // набора размеров (новые значения + то, что уже было сохранено раньше).
+  if (data.max_volume_l !== undefined) {
+    num('max_volume_l', 'max_volume_l');
+  } else if (data.length_cm !== undefined || data.width_cm !== undefined || data.height_cm !== undefined) {
+    const l = data.length_cm !== undefined ? data.length_cm : current.length_cm;
+    const w = data.width_cm  !== undefined ? data.width_cm  : current.width_cm;
+    const h = data.height_cm !== undefined ? data.height_cm : current.height_cm;
+    fields.push(`max_volume_l = $${idx++}`);
+    params.push(volumeFromDims(l, w, h));
+  }
 
   if (data.location_type !== undefined) {
     if (!VALID_TYPES.includes(data.location_type)) throw new ValidationError('Invalid location_type');
@@ -166,6 +202,7 @@ async function bulkCreateLocations({
   tenantId, warehouseId, createdById, zone,
   rowFrom, rowTo, positionFrom, positionTo,
   locationType = 'rack', padWidth = 2,
+  lengthCm = null, widthCm = null, heightCm = null, maxVolumeL = null,
 }) {
   const z = validateNonEmptyString(zone, 'zone', 10).trim().toUpperCase();
   const wid = validatePositiveInt(warehouseId, 'warehouse_id');
@@ -190,20 +227,62 @@ async function bulkCreateLocations({
     }
   }
 
+  // Размеры (если заданы) применяются одинаково ко всем ячейкам партии — для
+  // типового стеллажа с одинаковыми по объёму ячейками этого достаточно;
+  // для нестандартных ячеек размеры потом можно поправить массовым или
+  // одиночным редактированием.
+  const lCm = lengthCm != null ? Number(lengthCm) : null;
+  const wCm = widthCm  != null ? Number(widthCm)  : null;
+  const hCm = heightCm != null ? Number(heightCm) : null;
+  const volumeL = maxVolumeL != null ? Number(maxVolumeL) : volumeFromDims(lCm, wCm, hCm);
+
   let created = 0;
   const createdCodes = [];
   for (const code of codes) {
     const r = await query(
-      `INSERT INTO wms.locations (tenant_id, warehouse_id, location_code, location_type, zone_code, is_active, is_pick_location, created_by)
-       VALUES ($1,$2,$3,$4,$5,TRUE,TRUE,$6)
+      `INSERT INTO wms.locations
+         (tenant_id, warehouse_id, location_code, location_type, zone_code,
+          length_cm, width_cm, height_cm, max_volume_l,
+          is_active, is_pick_location, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,TRUE,$10)
        ON CONFLICT (tenant_id, warehouse_id, location_code) DO NOTHING
        RETURNING id, location_code`,
-      [tenantId, wid, code, locationType, z, createdById]
+      [tenantId, wid, code, locationType, z, lCm, wCm, hCm, volumeL, createdById]
     );
     if (r.rowCount > 0) { created++; createdCodes.push(r.rows[0].location_code); }
   }
 
   return { total: codes.length, created, skipped: codes.length - created, codes: createdCodes };
+}
+
+/**
+ * Массово задать размеры/вместимость уже существующим ячейкам (по списку id)
+ * — например выбрали чекбоксами 30 ячеек одного стеллажа и одним запросом
+ * проставили всем 60×40×40. max_volume_l, если передан явно, побеждает
+ * расчёт из размеров (см. volumeFromDims) — тот же приоритет, что и в
+ * createLocation/updateLocation.
+ */
+async function bulkUpdateDimensions({ tenantId, ids, lengthCm = null, widthCm = null, heightCm = null, maxVolumeL = null }) {
+  const list = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!list.length) throw new ValidationError('ids must be a non-empty array');
+
+  const lCm = lengthCm != null ? Number(lengthCm) : null;
+  const wCm = widthCm  != null ? Number(widthCm)  : null;
+  const hCm = heightCm != null ? Number(heightCm) : null;
+  const volumeL = maxVolumeL != null ? Number(maxVolumeL) : volumeFromDims(lCm, wCm, hCm);
+
+  if (lCm == null && wCm == null && hCm == null && volumeL == null) {
+    throw new ValidationError('Нужно указать хотя бы размеры или объём');
+  }
+
+  const r = await query(
+    `UPDATE wms.locations
+     SET length_cm=$1, width_cm=$2, height_cm=$3, max_volume_l=$4, updated_at=NOW()
+     WHERE tenant_id=$5 AND id = ANY($6::int[])
+     RETURNING id, location_code`,
+    [lCm, wCm, hCm, volumeL, tenantId, list]
+  );
+  return { updated: r.rowCount, locations: r.rows };
 }
 
 /** Ячейки по списку id (для массовой печати наклеек) — строго в рамках тенанта. */
@@ -215,6 +294,60 @@ async function getLocationsByIds({ tenantId, ids }) {
     [tenantId, list]
   );
   return r.rows;
+}
+
+/**
+ * Заполняемость ячеек по объёму — для экрана-сетки склада. Занятый объём
+ * считается тем же способом, что и тарификация хранения по литражу
+ * (billing.service.js:chargeStorageForClientToday, storage_mode='volume'):
+ * SUM(qty_on_hand × item.volume_liters) по ячейке; если у товара объём не
+ * указан — считаем как 1 литр за штуку (тот же fallback, чтобы не терять
+ * ячейку из отчёта только из-за незаполненной карточки товара).
+ * pickOnly=true (по умолчанию) — только стеллажные/pick-ячейки, где реально
+ * лежит товар для сборки; буферные/приёмка/отгрузка/карантин/виртуальные
+ * для планирования вместимости не так важны и обычно не имеют заданного
+ * объёма вовсе.
+ */
+async function getLocationFillReport({ tenantId, warehouseId = null, pickOnly = true }) {
+  const params = [tenantId];
+  const conds = ['l.tenant_id = $1', 'l.is_active = TRUE'];
+  let idx = 2;
+  if (warehouseId) { conds.push(`l.warehouse_id = $${idx++}`); params.push(warehouseId); }
+  if (pickOnly) conds.push(`l.is_pick_location = TRUE AND l.location_type = 'rack'`);
+
+  const res = await query(
+    `SELECT
+       l.id, l.location_code, l.zone_code, l.warehouse_id,
+       l.length_cm, l.width_cm, l.height_cm, l.max_volume_l,
+       COALESCE(occ.occupied_liters, 0)::numeric AS occupied_liters,
+       COALESCE(occ.sku_count, 0)::int AS sku_count,
+       COALESCE(occ.qty_on_hand, 0)::int AS qty_on_hand
+     FROM wms.locations l
+     LEFT JOIN LATERAL (
+       SELECT
+         SUM(sb.qty_on_hand * COALESCE(i.volume_liters, 1))::numeric AS occupied_liters,
+         COUNT(DISTINCT sb.item_id)::int AS sku_count,
+         SUM(sb.qty_on_hand)::int AS qty_on_hand
+       FROM wms.stock_balances sb
+       JOIN wms.items i ON i.id = sb.item_id
+       WHERE sb.location_id = l.id AND sb.qty_on_hand > 0
+     ) occ ON TRUE
+     WHERE ${conds.join(' AND ')}
+     ORDER BY l.location_code`,
+    params
+  );
+
+  return res.rows.map(r => {
+    const capacity = r.max_volume_l != null ? Number(r.max_volume_l) : null;
+    const occupied = Number(r.occupied_liters);
+    const fillPct = capacity && capacity > 0 ? Math.round((occupied / capacity) * 1000) / 10 : null;
+    return {
+      id: r.id, location_code: r.location_code, zone_code: r.zone_code, warehouse_id: r.warehouse_id,
+      length_cm: r.length_cm, width_cm: r.width_cm, height_cm: r.height_cm,
+      capacity_liters: capacity, occupied_liters: Math.round(occupied * 100) / 100,
+      fill_pct: fillPct, sku_count: r.sku_count, qty_on_hand: r.qty_on_hand,
+    };
+  });
 }
 
 /** Найти лучшую ячейку для SKU (с максимальным остатком) */
@@ -242,4 +375,5 @@ module.exports = {
   listLocations, getLocationById, getLocationByCode,
   createLocation, updateLocation, findBestPickLocation,
   bulkCreateLocations, getLocationsByIds,
+  bulkUpdateDimensions, getLocationFillReport,
 };
