@@ -20,6 +20,25 @@ const { NotFoundError, ValidationError } = require('../../utils/errors');
 
 const RATEABLE_MOVEMENT_TYPES = ['receiving', 'placement', 'picking', 'packing', 'shipping'];
 
+// Тип операции -> "родная" роль для ставки. Нужно, потому что у сотрудника
+// есть ОДНА основная роль (wms.users.role) и произвольный набор ДОПОЛНИТЕЛЬНЫХ
+// ролей (extra_roles - доступ к другим модулям, см. users.service.js), а
+// ставка в billing.employee_rates всегда привязана к роли-владельцу операции
+// (Сборщик получает ставку за Сборку и т.п.). Раньше ставка роли искалась по
+// ОСНОВНОЙ роли сотрудника ($role:$movementType) - у сотрудника с основной
+// ролью "Приёмщик", который в доп.ролях также Сборщик, любая его сборка
+// оплачивалась по несуществующей паре "Приёмщик:Сборка" (0 ₽), хотя ставка
+// "Сборщик:Сборка" была настроена. Теперь ставка ищется по роли, которой
+// принадлежит САМА ОПЕРАЦИЯ, а не по бейджу сотрудника - тогда неважно,
+// основная это роль или дополнительная, платится всегда правильно.
+const ROLE_FOR_MOVEMENT_TYPE = {
+  receiving: 'receiver',
+  placement: 'receiver',
+  picking:   'picker',
+  packing:   'packer',
+  shipping:  'shipper',
+};
+
 function unitsExprFor(movementType) {
   if (['receiving', 'placement', 'packing'].includes(movementType)) {
     return `SUM(GREATEST(m.qty,0))`;
@@ -125,7 +144,7 @@ async function getPayrollReport({ tenantId, dateFrom, dateTo, clientId = null })
     if (units === 0) continue;
 
     const rate = empRate.get(`${row.user_id}:${row.movement_type}`)
-             ?? roleRate.get(`${row.role}:${row.movement_type}`)
+             ?? roleRate.get(`${ROLE_FOR_MOVEMENT_TYPE[row.movement_type]}:${row.movement_type}`)
              ?? 0;
     const amount = units * rate;
 
@@ -210,7 +229,7 @@ async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = '
     if (units === 0) continue;
 
     const rate = empRate.get(`${row.user_id}:${row.movement_type}`)
-             ?? roleRate.get(`${role}:${row.movement_type}`)
+             ?? roleRate.get(`${ROLE_FOR_MOVEMENT_TYPE[row.movement_type]}:${row.movement_type}`)
              ?? 0;
     const amount = units * rate;
     if (amount === 0) continue;
