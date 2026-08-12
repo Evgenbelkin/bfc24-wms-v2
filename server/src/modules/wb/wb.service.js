@@ -247,13 +247,19 @@ async function distributeStockForAccount({ tenantId, mpAccountId }) {
   // Только штрихкоды, реально зарегистрированные у WB под этим аккаунтом -
   // иначе рискуем пушить в WB товары, которых там вообще нет в карточках
   // (например клиент хранит у нас что-то не для WB).
+  // ВАЖНО: раньше здесь был HAVING SUM(...) > 0 — товары, у которых остаток
+  // дошёл ровно до нуля, выпадали из пересчёта НАВСЕГДА (barcode просто не
+  // попадал в цикл ниже), и в WB никогда не уходила команда "поставь 0".
+  // Последнее переданное ненулевое количество так и висело на стороне WB
+  // сколько угодно долго, WB продолжал его продавать поверх реального нуля -
+  // конкретный кейс, который это вскрыл: 2006784216833 (11-12.08.2026).
+  // Теперь обнулившиеся товары остаются в выборке и явно уходят в WB как 0.
   const stockRes = await query(
     `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty
      FROM wms.stock_balances sb
      WHERE sb.tenant_id=$1 AND sb.client_id=$2
        AND EXISTS (SELECT 1 FROM wms.wb_item_barcodes wib WHERE wib.mp_account_id=$3 AND wib.barcode=sb.barcode)
-     GROUP BY sb.barcode
-     HAVING SUM(sb.qty_available) > 0`,
+     GROUP BY sb.barcode`,
     [tenantId, account.client_id, mpAccountId]
   );
 
@@ -285,7 +291,11 @@ async function distributeStockForAccount({ tenantId, mpAccountId }) {
     for (let i = 0; i < warehouses.length; i++) {
       const w = warehouses[i];
       const qty = base[i];
-      if (qty > 0) distByWarehouse[w.warehouse_code].push({ sku: barcode, amount: qty });
+      // Раньше пушили в WB только qty>0 - при обнулившемся товаре это значило
+      // "молчим", и WB так и не узнавал, что стало 0 (см. комментарий у
+      // stockRes выше). Теперь шлём amount:0 явно - WB должен принимать 0 как
+      // валидное значение "нет в наличии".
+      distByWarehouse[w.warehouse_code].push({ sku: barcode, amount: qty });
       await query(
         `INSERT INTO wms.wb_stock_distribution(tenant_id, mp_account_id, barcode, warehouse_code, qty, calculated_at)
          VALUES($1,$2,$3,$4,$5,NOW())
