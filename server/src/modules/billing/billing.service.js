@@ -589,17 +589,24 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
   );
 
   // Отгружено, шт — по периодам, для графика "Динамика выручки" (вторая линия,
-  // чтобы видеть не только деньги, но и физический объём отгрузок). Берём
-  // именно service_type='shipping' — это факт того, что реально уехало со
-  // склада, самая понятная и однозначная метрика "сколько товаров обработано"
-  // (в отличие от суммы по всем операциям, где одна и та же единица товара
-  // считалась бы несколько раз — на приёмке, сборке, упаковке и отгрузке).
+  // чтобы видеть не только деньги, но и физический объём отгрузок).
+  //
+  // ВАЖНО: источник — wms.shipments (физический факт отгрузки), а НЕ
+  // billing.service_charges. Раньше брали service_type='shipping' из
+  // начислений, но это завязывало физическую метрику на настройки прайса:
+  // как только клиенту убирают старый прайс на "отгрузку" (переходя на схему
+  // "Обработка"), chargeForOperation молча перестаёт создавать начисление
+  // (см. её же "нет прайса — не начисляем"), и график вместе с ним обнулялся,
+  // хотя товар продолжал физически уезжать. wms.shipments.total_shipped_qty/
+  // shipped_at проставляются в confirmShipment независимо от того, настроен
+  // ли биллинг вообще.
+  const shipClientCond = clientId ? ` AND s.client_id=$4` : '';
   const shippedQtyRes = await query(
-    `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
-            SUM(sc.quantity)::numeric AS qty
-     FROM billing.service_charges sc
-     WHERE sc.tenant_id=$1 AND sc.service_type='shipping'
-       AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+    `SELECT date_trunc($${baseParams.length + 1}, s.shipped_at)::date AS period,
+            SUM(s.total_shipped_qty)::numeric AS qty
+     FROM wms.shipments s
+     WHERE s.tenant_id=$1 AND s.shipped_at IS NOT NULL
+       AND s.shipped_at::date>=$2::date AND s.shipped_at::date<=$3::date${shipClientCond}
      GROUP BY period
      ORDER BY period`,
     [...baseParams, granularity]
