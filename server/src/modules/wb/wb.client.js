@@ -271,11 +271,17 @@ async function fetchOrderStatuses(token, orderIds) {
   return Array.isArray(data?.orders) ? data.orders : [];
 }
 
-/** Получить остатки FBS по складу */
-async function fetchFbsStocks(token, warehouseId) {
+/** Получить остатки FBS по складу - в отличие от updateFbsStocks (PUT), этот
+ *  метод у WB требует явный список skus в теле запроса (до 1000 за раз), без
+ *  него WB не знает, какие товары показывать - раньше здесь тело не
+ *  отправлялось вообще, метод фактически был нерабочим (нигде не вызывался,
+ *  ошибку никто не заметил). Чанкинг по 1000 - на вызывающей стороне. */
+async function fetchFbsStocks(token, warehouseId, skus) {
+  if (!Array.isArray(skus) || skus.length === 0) return [];
   const data = await wbRequest({
     token,
     path: `/api/v3/stocks/${encodeURIComponent(warehouseId)}`,
+    data: { skus },
   });
   return Array.isArray(data?.stocks) ? data.stocks : [];
 }
