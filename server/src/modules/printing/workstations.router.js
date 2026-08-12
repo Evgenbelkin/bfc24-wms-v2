@@ -20,11 +20,12 @@ router.get('/', requireRole('tenant_admin','supervisor'), async (req,res,next)=>
   try {
     const r = await query(
       `SELECT ws.id, ws.tenant_id, ws.warehouse_id, ws.station_code, ws.station_name, ws.zone_type,
-              ws.default_printer_id, ws.is_active, ws.notes, ws.created_at, ws.updated_at,
-              w.warehouse_name, p.printer_name, p.printer_code
+              ws.default_printer_id, ws.marking_printer_id, ws.is_active, ws.notes, ws.created_at, ws.updated_at,
+              w.warehouse_name, p.printer_name, p.printer_code, mp.printer_name AS marking_printer_name, mp.printer_code AS marking_printer_code
        FROM wms.workstations ws
        LEFT JOIN wms.warehouses w ON w.id=ws.warehouse_id
        LEFT JOIN wms.printers p ON p.id=ws.default_printer_id
+       LEFT JOIN wms.printers mp ON mp.id=ws.marking_printer_id
        WHERE ws.tenant_id=$1 ORDER BY w.warehouse_name, ws.zone_type, ws.station_name`,
       [req.user.tenantId]
     );
@@ -34,7 +35,7 @@ router.get('/', requireRole('tenant_admin','supervisor'), async (req,res,next)=>
 
 router.post('/', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
-    const { station_name, zone_type='packing', warehouse_id, default_printer_id, notes } = req.body;
+    const { station_name, zone_type='packing', warehouse_id, default_printer_id, marking_printer_id, notes } = req.body;
     if (!station_name) throw new ValidationError('station_name is required');
 
     // Как и с printer_code — код рабочего места подбирается сам из названия,
@@ -49,9 +50,9 @@ router.post('/', requireRole('tenant_admin','supervisor'), async (req,res,next)=
     }
 
     const r = await query(
-      `INSERT INTO wms.workstations(tenant_id,warehouse_id,station_code,station_name,zone_type,default_printer_id,is_active,notes)
-       VALUES($1,$2,$3,$4,$5,$6,TRUE,$7) RETURNING *`,
-      [req.user.tenantId, warehouse_id||null, stationCode, station_name, zone_type, default_printer_id||null, notes||null]
+      `INSERT INTO wms.workstations(tenant_id,warehouse_id,station_code,station_name,zone_type,default_printer_id,marking_printer_id,is_active,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,TRUE,$8) RETURNING *`,
+      [req.user.tenantId, warehouse_id||null, stationCode, station_name, zone_type, default_printer_id||null, marking_printer_id||null, notes||null]
     );
     res.status(201).json({ ok:true, workstation:r.rows[0] });
   } catch(e){ next(e); }
@@ -60,11 +61,12 @@ router.post('/', requireRole('tenant_admin','supervisor'), async (req,res,next)=
 router.patch('/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const id = validatePositiveInt(req.params.id,'id');
-    const { station_name, zone_type, default_printer_id, is_active, notes } = req.body;
+    const { station_name, zone_type, default_printer_id, marking_printer_id, is_active, notes } = req.body;
     const fields=[]; const params=[]; let idx=1;
     if (station_name       !== undefined) { fields.push(`station_name=$${idx++}`);       params.push(station_name); }
     if (zone_type          !== undefined) { fields.push(`zone_type=$${idx++}`);          params.push(zone_type); }
     if (default_printer_id !== undefined) { fields.push(`default_printer_id=$${idx++}`); params.push(default_printer_id||null); }
+    if (marking_printer_id !== undefined) { fields.push(`marking_printer_id=$${idx++}`); params.push(marking_printer_id||null); }
     if (is_active          !== undefined) { fields.push(`is_active=$${idx++}`);          params.push(!!is_active); }
     if (notes              !== undefined) { fields.push(`notes=$${idx++}`);              params.push(notes||null); }
     if (!fields.length) throw new ValidationError('No fields');
@@ -105,10 +107,12 @@ router.get('/my', async (req,res,next)=>{
   try {
     const r = await query(
       `SELECT eas.station_id, eas.set_at, ws.station_code, ws.station_name, ws.zone_type,
-              ws.default_printer_id, ws.is_active AS station_is_active, p.printer_name
+              ws.default_printer_id, ws.marking_printer_id, ws.is_active AS station_is_active,
+              p.printer_name, mp.printer_name AS marking_printer_name
        FROM wms.employee_active_station eas
        JOIN wms.workstations ws ON ws.id=eas.station_id
        LEFT JOIN wms.printers p ON p.id=ws.default_printer_id
+       LEFT JOIN wms.printers mp ON mp.id=ws.marking_printer_id
        WHERE eas.employee_id=$1 AND eas.tenant_id=$2`,
       [req.user.id, req.user.tenantId]
     );

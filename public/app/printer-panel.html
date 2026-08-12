@@ -406,7 +406,7 @@
           <div class="list-row row-item" onclick="openWorkstationModal(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml(w.station_name)}</div>
-              <div class="sub">${UI.escHtml((ZONE_TYPES.find(z=>z.value===w.zone_type)||{}).label || w.zone_type)} · ${UI.escHtml(w.warehouse_name||'без склада')} · ${w.printer_name ? 'печать: '+UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>'} ${w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>'}</div>
+              <div class="sub">${UI.escHtml((ZONE_TYPES.find(z=>z.value===w.zone_type)||{}).label || w.zone_type)} · ${UI.escHtml(w.warehouse_name||'без склада')} · ${w.printer_name ? 'печать: '+UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>'}${w.marking_printer_name ? ' · ЧЗ: '+UI.escHtml(w.marking_printer_name) : ''} ${w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>'}</div>
             </div>
           </div>
         `).join('');
@@ -418,6 +418,7 @@
       const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}" ${w && w.warehouse_id===wh.id ? 'selected':''}>${UI.escHtml(wh.warehouse_name)}</option>`).join('');
       const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}" ${w && w.zone_type===z.value ? 'selected':''}>${z.label}</option>`).join('');
       const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.default_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
+      const markingPrinterOptions = `<option value="">— туда же, что и основная печать —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.marking_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
 
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
@@ -427,7 +428,8 @@
             <div class="field"><label>Тип места</label><select id="wsm-zone">${zoneOptions}</select></div>
             <div class="field"><label>Склад (опционально)</label><select id="wsm-warehouse" ${w?'disabled':''}>${whOptions}</select></div>
             <div class="field"><label>Принтер этого места</label><select id="wsm-printer">${printerOptions}</select></div>
-            <div class="hint-box" style="margin-top:0;">Сотрудник сканирует код этого рабочего места на телефоне один раз (в начале смены/при смене места) — дальше вся печать со сканирования штрихкода на этом месте идёт на выбранный здесь принтер.</div>
+            <div class="field"><label>Принтер для кодов "Честный знак" (опционально)</label><select id="wsm-marking-printer">${markingPrinterOptions}</select></div>
+            <div class="hint-box" style="margin-top:0;">Сотрудник сканирует код этого рабочего места на телефоне один раз (в начале смены/при смене места) — дальше вся печать со сканирования штрихкода на этом месте идёт на выбранный здесь принтер. Если на столе два принтера (стикер ВБ и отдельно коды ЧЗ) — укажите второй принтер отдельным полем выше, иначе оставьте "туда же".</div>
             ${w ? `<div class="field"><label style="display:inline;">Активно</label> <input type="checkbox" id="wsm-active" ${w.is_active ? 'checked':''}/></div>` : ''}
             ${w ? `
               <div class="field">
@@ -455,6 +457,7 @@
             station_name: name,
             zone_type: UI.val('#wsm-zone'),
             default_printer_id: UI.val('#wsm-printer') || null,
+            marking_printer_id: UI.val('#wsm-marking-printer') || null,
             is_active: document.getElementById('wsm-active').checked,
           };
           await window.API.workstations.update(w.id, data);
@@ -465,6 +468,7 @@
             zone_type: UI.val('#wsm-zone'),
             warehouse_id: UI.val('#wsm-warehouse') || null,
             default_printer_id: UI.val('#wsm-printer') || null,
+            marking_printer_id: UI.val('#wsm-marking-printer') || null,
           };
           await window.API.workstations.create(data);
           UI.notify.ok('Рабочее место создано');
