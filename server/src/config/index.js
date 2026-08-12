@@ -98,6 +98,11 @@ const config = {
   wb: {
     // Автосинхронизация заказов WB в фоне (0 = выключено)
     autoSyncIntervalMinutes: intEnv('WB_AUTO_SYNC_INTERVAL_MINUTES', 15),
+    // Периодический пересчёт и отправка остатков FBS в WB (0 = выключено).
+    // См. server/src/jobs/wbStockSync.js - раньше пересчёт запускался только
+    // по приёмке/инвентаризации, на реальных объёмах этого оказалось мало
+    // (инцидент 12.08.2026, см. комментарий в wb.service.js).
+    stockSyncIntervalMinutes: intEnv('WB_STOCK_SYNC_INTERVAL_MINUTES', 15),
   },
 
   urls: {
