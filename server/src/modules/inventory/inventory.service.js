@@ -377,9 +377,11 @@ async function submitCount({ tenantId, taskId, qtyActual, userId, comment }) {
   });
 
   // Пересчитать распределение по складам WB, только если реально что-то
-  // изменилось (delta=0 - подтвердили то, что и так было, пересчитывать нечего)
-  if (taskResult.delta !== 0) {
-    triggerRedistributionForClient({ tenantId, clientId: taskResult.clientId });
+  // изменилось (delta=0 - подтвердили то, что и так было, пересчитывать нечего).
+  // Только по штрихкоду ЭТОЙ задачи (см. комментарий в wb.service.js) - не
+  // пересчитываем заодно весь ассортимент клиента.
+  if (taskResult.delta !== 0 && taskResult.row.barcode) {
+    triggerRedistributionForClient({ tenantId, clientId: taskResult.clientId, barcodes: [taskResult.row.barcode] });
   }
 
   return taskResult.row;
@@ -550,7 +552,8 @@ async function assembleKit({ tenantId, warehouseId, clientId, kitItemId, qty, lo
 
   // Состав остатков изменился так, как WB сам узнать не мог (комплект
   // прибыл, базовый товар убыл) - пересчитываем распределение по складам WB.
-  triggerRedistributionForClient({ tenantId, clientId });
+  // Только по этим двум штрихкодам (см. комментарий в wb.service.js).
+  triggerRedistributionForClient({ tenantId, clientId, barcodes: [result.kitBarcode, result.baseBarcode] });
 
   return result;
 }
