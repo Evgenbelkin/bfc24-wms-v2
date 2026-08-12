@@ -57,6 +57,9 @@
       <div class="card">
         <div class="card-title">Период</div>
         <div class="filters-row">
+          <select id="rep-client"><option value="">Все клиенты</option></select>
+        </div>
+        <div class="filters-row">
           <input id="rep-from" type="date"/>
           <input id="rep-to" type="date"/>
         </div>
@@ -94,6 +97,7 @@
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
       if (name==='rates') loadRates();
+      if (name==='report' && document.getElementById('rep-client').options.length <= 1) loadClientsForReport();
     }
 
     const ROLES = [
@@ -212,11 +216,21 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    async function loadClientsForReport() {
+      try {
+        const res = await window.API.clients.short();
+        const sel = document.getElementById('rep-client');
+        sel.innerHTML = '<option value="">Все клиенты</option>' +
+          (res.clients || []).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+      } catch (e) { /* фильтр необязателен, не критично */ }
+    }
+
     async function loadReport() {
       const from = UI.val('#rep-from'), to = UI.val('#rep-to');
+      const clientId = UI.val('#rep-client') || null;
       if (!from || !to) { UI.notify.err('Укажите период'); return; }
       try {
-        const res = await window.API.payroll.report(from, to);
+        const res = await window.API.payroll.report(from, to, clientId);
         const list = document.getElementById('report-list');
         if (!res.employees.length) { list.innerHTML = `<div class="empty-state">Нет данных за период</div>`; document.getElementById('report-total').textContent=''; return; }
         list.innerHTML = res.employees.map((e, idx) => `
