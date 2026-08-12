@@ -219,8 +219,21 @@ async function syncSellerWarehouses({ tenantId, mpAccountId }) {
  *  аккаунта. Возвращает сводку (для лога/ручного вызова из панели), сам по
  *  себе не бросает наружу ошибки похода в WB API по отдельным складам -
  *  каждый склад пушится независимо, один упавший не должен блокировать
- *  остальные. */
-async function distributeStockForAccount({ tenantId, mpAccountId }) {
+ *  остальные.
+ *
+ *  barcodes (опционально) - пересчитать и отправить ТОЛЬКО эти штрихкоды,
+ *  а не весь ассортимент аккаунта. Важно для приёмки/инвентаризации ОДНОГО
+ *  товара: раньше событие по одному товару запускало полный пересчёт ВСЕХ
+ *  штрихкодов клиента, а это пересчитывает qty_available и по другим товарам,
+ *  у которых в этот момент могут быть уже принятые WB заказы, ещё не
+ *  собранные в волну (резерв в WMS проставляется только при генерации волны
+ *  сборки, а не при синке заказа) - остаток по НИМ в WMS ещё "полный", и
+ *  полный пересчёт заново отправляет в WB завышенное число, фактически
+ *  возвращая то, что WB уже продал. Точечный пересчёт по одному
+ *  затронутому штрихкоду эту дыру не открывает. Полный пересчёт по всему
+ *  аккаунту остаётся - но только по расписанию (wbStockSync, редко) и при
+ *  смене клиентом весов/резерва (там по-другому никак, меняется всё сразу). */
+async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = null }) {
   const accRes = await query(
     `SELECT id, client_id, api_token, settings FROM wms.mp_accounts
      WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE AND marketplace='wb'`,
@@ -254,13 +267,17 @@ async function distributeStockForAccount({ tenantId, mpAccountId }) {
   // сколько угодно долго, WB продолжал его продавать поверх реального нуля -
   // конкретный кейс, который это вскрыл: 2006784216833 (11-12.08.2026).
   // Теперь обнулившиеся товары остаются в выборке и явно уходят в WB как 0.
+  const barcodesFilter = Array.isArray(barcodes) && barcodes.length > 0
+    ? ` AND sb.barcode = ANY($4::text[])` : '';
+  const stockParams = barcodesFilter ? [tenantId, account.client_id, mpAccountId, barcodes]
+                                      : [tenantId, account.client_id, mpAccountId];
   const stockRes = await query(
     `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty
      FROM wms.stock_balances sb
      WHERE sb.tenant_id=$1 AND sb.client_id=$2
-       AND EXISTS (SELECT 1 FROM wms.wb_item_barcodes wib WHERE wib.mp_account_id=$3 AND wib.barcode=sb.barcode)
+       AND EXISTS (SELECT 1 FROM wms.wb_item_barcodes wib WHERE wib.mp_account_id=$3 AND wib.barcode=sb.barcode)${barcodesFilter}
      GROUP BY sb.barcode`,
-    [tenantId, account.client_id, mpAccountId]
+    stockParams
   );
 
   const distByWarehouse = {};
@@ -330,14 +347,22 @@ async function distributeStockForAccount({ tenantId, mpAccountId }) {
 /** Найти активные WB-аккаунты клиента и пересчитать/отправить распределение
  *  для каждого. Fire-and-forget с точки зрения вызывающего кода (приёмка/
  *  инвентаризация не должны ждать похода в WB API и тем более падать, если
- *  он недоступен) - сам логирует все ошибки внутри. */
-function triggerRedistributionForClient({ tenantId, clientId }) {
+ *  он недоступен) - сам логирует все ошибки внутри.
+ *
+ *  barcodes (опционально) - см. комментарий у distributeStockForAccount:
+ *  событие по конкретному товару (приёмка/инвентаризация/сборка комплекта)
+ *  должно пересчитывать только ЕГО, а не весь ассортимент клиента - иначе
+ *  заодно пересчитываются и другие товары, у которых остаток в WMS ещё не
+ *  учитывает уже принятые, но не собранные WB-заказы, и в WB улетает
+ *  завышенное число. Без barcodes (для смены весов складов клиентом) -
+ *  пересчёт всего ассортимента, там по-другому нельзя. */
+function triggerRedistributionForClient({ tenantId, clientId, barcodes = null }) {
   query(
     `SELECT id FROM wms.mp_accounts WHERE tenant_id=$1 AND client_id=$2 AND marketplace='wb' AND is_active=TRUE`,
     [tenantId, clientId]
   ).then(accRes => {
     for (const row of accRes.rows) {
-      distributeStockForAccount({ tenantId, mpAccountId: row.id }).catch(e => {
+      distributeStockForAccount({ tenantId, mpAccountId: row.id, barcodes }).catch(e => {
         logger.warn({ err: e.message, mpAccountId: row.id, clientId }, 'Stock redistribution failed (soft-fail)');
       });
     }

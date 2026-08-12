@@ -132,8 +132,9 @@ async function acceptFree({ tenantId, warehouseId, clientId, barcode, locationCo
   // Пересчитать и отправить в WB распределение остатков по складам клиента -
   // после приёмки итоговое количество на складе изменилось так, как WB сам
   // узнать не мог. Fire-and-forget (см. wb.service.js) - приёмщик не должен
-  // ждать похода в WB API.
-  triggerRedistributionForClient({ tenantId, clientId });
+  // ждать похода в WB API. Только по ЭТОМУ штрихкоду (см. комментарий в
+  // wb.service.js) - не пересчитываем весь ассортимент клиента заодно.
+  triggerRedistributionForClient({ tenantId, clientId, barcodes: [b] });
 
   // Начисление клиенту за приёмку (silent no-op, если для клиента не настроен
   // прайс на 'receiving' — см. billing.service.js:chargeForOperation).
@@ -264,7 +265,7 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
     };
   });
 
-  triggerRedistributionForClient({ tenantId, clientId });
+  triggerRedistributionForClient({ tenantId, clientId, barcodes: [itemB] });
 
   chargeForOperation({ tenantId, clientId, serviceType: 'receiving', quantity: q, refType: 'inbound', refId: receiveResult.orderId });
 
