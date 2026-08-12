@@ -19,7 +19,11 @@ const { print }  = require('pdf-to-printer');
 
 const API_BASE    = process.env.API_BASE_URL || 'http://localhost:3001/api/v2';
 const AGENT_KEY    = process.env.AGENT_KEY   || '';
-const POLL_MS     = Number(process.env.POLL_INTERVAL_MS || 1500);
+// Было 1500 — на упаковке это ощущалось как заметное ожидание стикера после
+// скана. Опрос (/printer-agent/jobs) очень дешёвый на сервере (один индексный
+// запрос по printer_id+status), поэтому дефолт снижен до 500 — при желании
+// станция всё ещё может переопределить через POLL_INTERVAL_MS в своём .env.
+const POLL_MS     = Number(process.env.POLL_INTERVAL_MS || 500);
 const TMP_DIR     = path.join(__dirname, 'tmp');
 // Отладочная копия последних напечатанных документов (сырой SVG от сервера +
 // готовый PDF) — не чистится автоматически как tmp/, держим последние

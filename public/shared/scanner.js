@@ -16,7 +16,9 @@
 (function (window) {
   'use strict';
 
-  const DEFAULT_FORMATS = ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code', 'code_39'];
+  // data_matrix добавлен отдельно — это формат кодов "Честный знак" (КИЗ),
+  // без него камера телефона их физически не распознаёт, даже наведясь точно.
+  const DEFAULT_FORMATS = ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code', 'code_39', 'data_matrix'];
 
   let currentStream = null;
 
