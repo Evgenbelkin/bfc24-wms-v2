@@ -271,15 +271,19 @@ async function fetchOrderStatuses(token, orderIds) {
   return Array.isArray(data?.orders) ? data.orders : [];
 }
 
-/** Получить остатки FBS по складу - в отличие от updateFbsStocks (PUT), этот
- *  метод у WB требует явный список skus в теле запроса (до 1000 за раз), без
- *  него WB не знает, какие товары показывать - раньше здесь тело не
- *  отправлялось вообще, метод фактически был нерабочим (нигде не вызывался,
- *  ошибку никто не заметил). Чанкинг по 1000 - на вызывающей стороне. */
+/** Получить остатки FBS по складу - в отличие от updateFbsStocks (PUT-запрос
+ *  "установить"), этот метод у WB тоже вызывается через POST (несмотря на
+ *  название "Get stocks" в документации - проверено на реальном аккаунте:
+ *  без method:'POST' WB отвечает 405, Allow-заголовок явно перечисляет
+ *  PUT/DELETE/POST, GET не поддерживается). Плюс требует явный список skus в
+ *  теле запроса (до 1000 за раз) - без него WB не знает, какие товары
+ *  показывать. Раньше здесь не было ни метода, ни тела - метод был полностью
+ *  нерабочим (нигде не вызывался, ошибку никто не замечал). Чанкинг по 1000 -
+ *  на вызывающей стороне. */
 async function fetchFbsStocks(token, warehouseId, skus) {
   if (!Array.isArray(skus) || skus.length === 0) return [];
   const data = await wbRequest({
-    token,
+    token, method: 'POST',
     path: `/api/v3/stocks/${encodeURIComponent(warehouseId)}`,
     data: { skus },
   });
