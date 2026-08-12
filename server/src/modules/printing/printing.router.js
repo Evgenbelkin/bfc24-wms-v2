@@ -48,42 +48,91 @@ router.post('/printers/:id/agent-key', requireRole('tenant_admin','supervisor'),
     const check = await query(`SELECT id FROM wms.printers WHERE id=$1 AND tenant_id=$2`, [id, req.user.tenantId]);
     if (check.rowCount===0) throw new NotFoundError('Printer', id);
 
-    const secret = crypto.randomBytes(24).toString('hex');
-    const rawKey = `pk_${id}_${secret}`;
-    const hashHex = hashAgentKey(rawKey);
-    await query(
-      `UPDATE wms.printers SET agent_key_sha256=$1, agent_key_hash=NULL, agent_last_seen_at=NULL, updated_at=NOW() WHERE id=$2`,
-      [hashHex, id]
-    );
+    const rawKey = await issueAgentKeyRow(id);
     // rawKey отдаём один-единственный раз — второй раз получить его будет неоткуда
     res.json({ ok:true, agent_key: rawKey });
   } catch(e){ next(e); }
 });
 
+// "Код принтера" раньше вводился человеком вручную — техническое поле, в
+// котором путались ("какой код куда писать"). Теперь подбирается сам из
+// названия, с ретраем при коллизии (UNIQUE(tenant_id,printer_code)) —
+// пользователь этого не видит и не заполняет. Вынесено в функцию, чтобы
+// одинаково работать и для одиночного POST /printers, и для массового
+// импорта списком (bulk-import) — при 70-100 принтерах создавать их по
+// одному через форму нереально.
+async function createPrinterRow(tenantId, data) {
+  const { printer_name, printer_type='label', connection_type='agent', agent_code, device_name, ip_address, port, zone_code, warehouse_id, is_default=false, paper_size_name } = data;
+  if (!printer_name) throw new ValidationError('printer_name is required');
+
+  const base = slugify(printer_name, 40);
+  let printerCode = base;
+  for (let attempt = 0; ; attempt++) {
+    const exists = await query(`SELECT id FROM wms.printers WHERE tenant_id=$1 AND printer_code=$2`, [tenantId, printerCode]);
+    if (exists.rowCount === 0) break;
+    if (attempt >= 10) throw new ValidationError('Could not generate a unique printer code, try a different name');
+    printerCode = `${base}-${crypto.randomBytes(2).toString('hex')}`;
+  }
+
+  const r = await query(
+    `INSERT INTO wms.printers(tenant_id,warehouse_id,printer_code,printer_name,printer_type,connection_type,agent_code,device_name,ip_address,port,zone_code,is_default,is_active,paper_size_name)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13) RETURNING *`,
+    [tenantId, warehouse_id||null, printerCode, printer_name, printer_type, connection_type, agent_code||null, device_name||null, ip_address||null, port||null, zone_code||null, !!is_default, paper_size_name||null]
+  );
+  return r.rows[0];
+}
+
+// Выпуск agent_key, вынесенный в функцию — используется и одиночным
+// перевыпуском (POST /printers/:id/agent-key выше), и массовым импортом
+// (сразу выпустить ключ каждому новому принтеру).
+async function issueAgentKeyRow(printerId) {
+  const secret = crypto.randomBytes(24).toString('hex');
+  const rawKey = `pk_${printerId}_${secret}`;
+  const hashHex = hashAgentKey(rawKey);
+  await query(
+    `UPDATE wms.printers SET agent_key_sha256=$1, agent_key_hash=NULL, agent_last_seen_at=NULL, updated_at=NOW() WHERE id=$2`,
+    [hashHex, printerId]
+  );
+  return rawKey;
+}
+
 router.post('/printers', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
-    const { printer_name, printer_type='label', connection_type='agent', agent_code, device_name, ip_address, port, zone_code, warehouse_id, is_default=false, paper_size_name } = req.body;
-    if (!printer_name) throw new ValidationError('printer_name is required');
+    const printer = await createPrinterRow(req.user.tenantId, req.body);
+    res.status(201).json({ ok:true, printer });
+  } catch(e){ next(e); }
+});
 
-    // "Код принтера" раньше вводился человеком вручную — техническое поле, в
-    // котором путались ("какой код куда писать"). Теперь подбирается сам из
-    // названия, с ретраем при коллизии (UNIQUE(tenant_id,printer_code)) —
-    // пользователь этого не видит и не заполняет.
-    const base = slugify(printer_name, 40);
-    let printerCode = base;
-    for (let attempt = 0; ; attempt++) {
-      const exists = await query(`SELECT id FROM wms.printers WHERE tenant_id=$1 AND printer_code=$2`, [req.user.tenantId, printerCode]);
-      if (exists.rowCount === 0) break;
-      if (attempt >= 10) throw new ValidationError('Could not generate a unique printer code, try a different name');
-      printerCode = `${base}-${crypto.randomBytes(2).toString('hex')}`;
+// Массовое создание принтеров списком — для клиентов масштаба "70-100
+// принтеров на склад", которым создавать их по одному через форму
+// нереально. Каждая строка обрабатывается независимо (одна ошибка не рвёт
+// весь импорт — тот же принцип, что и в wbStockSync: копим ошибки по
+// строкам и не останавливаемся). Для connection_type='agent' (по умолчанию)
+// сразу выпускается agent_key — чтобы результат этого запроса можно было
+// напрямую сохранить как printers.csv для hub-install.ps1 (printer-agent),
+// не заходя в панель принтеров по одному за ключом для каждого принтера.
+router.post('/printers/bulk-import', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { printers, issue_agent_keys=true } = req.body;
+    if (!Array.isArray(printers) || printers.length===0) throw new ValidationError('printers must be a non-empty array');
+    if (printers.length > 500) throw new ValidationError('Too many rows in one import (max 500) — split into batches');
+
+    const created = [];
+    const errors = [];
+    for (let i=0; i<printers.length; i++) {
+      const row = printers[i];
+      try {
+        const printer = await createPrinterRow(req.user.tenantId, row);
+        let agent_key = null;
+        if (issue_agent_keys && (row.connection_type||'agent')==='agent') {
+          agent_key = await issueAgentKeyRow(printer.id);
+        }
+        created.push({ id: printer.id, printer_name: printer.printer_name, printer_code: printer.printer_code, agent_key });
+      } catch (rowErr) {
+        errors.push({ row: i+1, printer_name: row && row.printer_name, error: rowErr.message });
+      }
     }
-
-    const r = await query(
-      `INSERT INTO wms.printers(tenant_id,warehouse_id,printer_code,printer_name,printer_type,connection_type,agent_code,device_name,ip_address,port,zone_code,is_default,is_active,paper_size_name)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13) RETURNING *`,
-      [req.user.tenantId, warehouse_id||null, printerCode, printer_name, printer_type, connection_type, agent_code||null, device_name||null, ip_address||null, port||null, zone_code||null, !!is_default, paper_size_name||null]
-    );
-    res.status(201).json({ ok:true, printer:r.rows[0] });
+    res.status(201).json({ ok:true, created, errors, created_count: created.length, error_count: errors.length });
   } catch(e){ next(e); }
 });
 
