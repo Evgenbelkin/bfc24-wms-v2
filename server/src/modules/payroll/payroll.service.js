@@ -75,7 +75,7 @@ async function deleteRate({ tenantId, id }) {
  * Отчёт по ЗП за период: по каждому активному складскому сотруднику —
  * выработка по типам операций × ставка (own override, иначе ставка роли).
  */
-async function getPayrollReport({ tenantId, dateFrom, dateTo }) {
+async function getPayrollReport({ tenantId, dateFrom, dateTo, clientId = null }) {
   if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
 
   // 1) Ставки — маленькая таблица, забираем всю и матчим в JS
@@ -90,12 +90,15 @@ async function getPayrollReport({ tenantId, dateFrom, dateTo }) {
     else roleRate.set(`${r.role}:${r.movement_type}`, Number(r.rate));
   }
 
-  // 2) Выработка по сотрудникам × типам операций за период
+  // 2) Выработка по сотрудникам × типам операций за период. clientId
+  // опционален - $4::int IS NULL значит "все клиенты" (wms.stock_movements
+  // хранит client_id на каждой операции, так что фильтр точный, не оценка).
   const unionParts = RATEABLE_MOVEMENT_TYPES.map(mt =>
     `SELECT m.user_id, '${mt}'::text AS movement_type, ${unitsExprFor(mt)} AS units
      FROM wms.stock_movements m
      WHERE m.tenant_id=$1 AND m.movement_type='${mt}'
        AND m.created_at>=$2::date AND m.created_at<($3::date+interval '1 day')
+       AND ($4::int IS NULL OR m.client_id=$4)
      GROUP BY m.user_id`
   ).join('\nUNION ALL\n');
 
@@ -106,7 +109,7 @@ async function getPayrollReport({ tenantId, dateFrom, dateTo }) {
      WHERE u.tenant_id=$1 AND u.is_active=TRUE
        AND u.role IN ('receiver','picker','packer','shipper','inventory_manager')
      ORDER BY u.full_name`,
-    [tenantId, dateFrom, dateTo]
+    [tenantId, dateFrom, dateTo, clientId]
   );
 
   const byEmployee = new Map();
@@ -145,7 +148,7 @@ const PAYROLL_GRANULARITIES = ['day', 'week', 'month'];
  * wms.stock_movements), но с группировкой ещё и по периоду (день/неделя/
  * месяц), чтобы видеть тренд, а не только итог за весь диапазон.
  */
-async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = 'day' }) {
+async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = 'day', clientId = null }) {
   if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
   if (!PAYROLL_GRANULARITIES.includes(granularity)) {
     throw new ValidationError(`granularity must be one of: ${PAYROLL_GRANULARITIES.join(', ')}`);
@@ -172,16 +175,18 @@ async function getPayrollAnalytics({ tenantId, dateFrom, dateTo, granularity = '
   );
   const userRole = new Map(usersRes.rows.map(u => [u.id, u.role]));
 
-  // 3) Выработка по периоду × сотруднику × типу операции
+  // 3) Выработка по периоду × сотруднику × типу операции. clientId опционален
+  // (см. комментарий в getPayrollReport выше).
   const unionParts = RATEABLE_MOVEMENT_TYPES.map(mt =>
     `SELECT date_trunc($4, m.created_at)::date AS period, m.user_id, '${mt}'::text AS movement_type, ${unitsExprFor(mt)} AS units
      FROM wms.stock_movements m
      WHERE m.tenant_id=$1 AND m.movement_type='${mt}'
        AND m.created_at>=$2::date AND m.created_at<($3::date+interval '1 day')
+       AND ($5::int IS NULL OR m.client_id=$5)
      GROUP BY period, m.user_id`
   ).join('\nUNION ALL\n');
 
-  const workRes = await query(unionParts, [tenantId, dateFrom, dateTo, granularity]);
+  const workRes = await query(unionParts, [tenantId, dateFrom, dateTo, granularity, clientId]);
 
   // Полная сетка периодов - см. подробный комментарий у аналогичного места в
   // billing.service.js:getRevenueAnalytics. Без неё дни без начислений ЗП

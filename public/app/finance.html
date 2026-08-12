@@ -325,9 +325,11 @@
       // как невалидный client_id вместо "все клиенты".
       const revenueParams = { date_from: dateFrom, date_to: dateTo, granularity };
       if (clientId) revenueParams.client_id = clientId;
+      const payrollParams = { date_from: dateFrom, date_to: dateTo, granularity };
+      if (clientId) payrollParams.client_id = clientId;
       await Promise.all([
         loadRevenue(revenueParams),
-        loadPayroll({ date_from: dateFrom, date_to: dateTo, granularity }),
+        loadPayroll(payrollParams),
       ]);
       updateDiffKpi();
     }

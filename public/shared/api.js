@@ -435,7 +435,7 @@
       upsert: (d)      => post('/payroll/rates', d),
       delete: (id)     => del(`/payroll/rates/${id}`),
     },
-    report: (dateFrom, dateTo) => get('/payroll/report', { date_from: dateFrom, date_to: dateTo }),
+    report: (dateFrom, dateTo, clientId) => get('/payroll/report', clientId ? { date_from: dateFrom, date_to: dateTo, client_id: clientId } : { date_from: dateFrom, date_to: dateTo }),
     analytics: (p) => get('/payroll/analytics', p),
   };
 

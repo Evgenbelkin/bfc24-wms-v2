@@ -57,6 +57,7 @@ router.get('/report', requireRole('tenant_admin', 'supervisor'), async (req, res
       tenantId: req.user.tenantId,
       dateFrom: req.query.date_from,
       dateTo: req.query.date_to,
+      clientId: req.query.client_id ? Number(req.query.client_id) : null,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
@@ -69,6 +70,7 @@ router.get('/analytics', requireRole('tenant_admin', 'supervisor'), async (req, 
       dateFrom:    req.query.date_from,
       dateTo:      req.query.date_to,
       granularity: req.query.granularity || 'day',
+      clientId:    req.query.client_id ? Number(req.query.client_id) : null,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
