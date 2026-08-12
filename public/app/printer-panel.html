@@ -37,6 +37,7 @@
       <div id="pr-list"></div>
     </div>
     <button class="btn-big btn-green btn-full" onclick="openPrinterModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый принтер</button>
+    <button class="btn-big btn-blue btn-full" style="margin-top:8px;" onclick="openPrinterBulkModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Импорт списком</button>
   </div>
 
   <!-- ============ Маршруты ============ -->
@@ -56,6 +57,7 @@
       <div id="ws-list"></div>
     </div>
     <button class="btn-big btn-green btn-full" onclick="openWorkstationModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новое рабочее место</button>
+    <button class="btn-big btn-blue btn-full" style="margin-top:8px;" onclick="openWorkstationBulkModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Импорт списком</button>
   </div>
 
   <!-- ============ Очередь ============ -->
@@ -303,6 +305,56 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    // ---------- Массовый импорт принтеров ----------
+    function openPrinterBulkModal() {
+      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Импорт принтеров списком</div>
+            <div class="hint-box" style="margin-top:0;">По одному названию принтера на строку. Склад и способ подключения — общие для всех строк этого импорта; при необходимости отдельный принтер потом можно донастроить через карточку как обычно.</div>
+            <div class="field"><label>Названия принтеров (по одному на строку)</label>
+              <textarea id="pbi-names" rows="8" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:monospace;" placeholder="Стол упаковки 1&#10;Стол упаковки 2&#10;Стол упаковки 3"></textarea>
+            </div>
+            <div class="field"><label>Склад (опционально, для всех)</label><select id="pbi-warehouse">${whOptions}</select></div>
+            <div class="field"><label style="display:inline;">Сразу выпустить ключи агента</label> <input type="checkbox" id="pbi-issue-keys" checked/></div>
+            <div class="hint-box" style="margin-top:0;">Если способ подключения этих принтеров — «через агент» (обычный случай), сразу выпустятся ключи для каждого, и результат импорта можно будет скачать как <code>printers.csv</code> — готовый файл для массовой установки агентов на компьютере-хабе (см. HUB-ИНСТРУКЦИЯ.txt внутри архива агента).</div>
+            <div id="pbi-result"></div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="submitPrinterBulk()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Импортировать</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function submitPrinterBulk() {
+      const names = UI.val('#pbi-names').split('\n').map(s => s.trim()).filter(Boolean);
+      if (!names.length) { UI.notify.err('Впишите хотя бы одно название'); return; }
+      const warehouse_id = UI.val('#pbi-warehouse') || null;
+      const issueKeys = document.getElementById('pbi-issue-keys').checked;
+      const printers = names.map(printer_name => ({ printer_name, warehouse_id, connection_type: 'agent' }));
+      try {
+        const res = await window.API.printing.printers.bulkImport(printers, issueKeys);
+        UI.notify.ok(`Создано принтеров: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}`);
+        const withKeys = res.created.filter(c => c.agent_key);
+        let html = `<div class="hint-box" style="margin-top:8px;">Создано: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}</div>`;
+        if (res.errors.length) {
+          html += `<div class="hint-box" style="border-left-color:var(--red);margin-top:8px;">${res.errors.map(e => `Строка ${e.row} (${UI.escHtml(e.printer_name||'')}): ${UI.escHtml(e.error)}`).join('<br/>')}</div>`;
+        }
+        if (withKeys.length) {
+          const csv = 'name,agent_key\n' + withKeys.map(c => `${c.printer_name},${c.agent_key}`).join('\n');
+          const blob = new Blob([csv], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          html += `<div class="field"><a class="btn-sm btn-blue" href="${url}" download="printers.csv">Скачать printers.csv (${withKeys.length} ключей)</a></div>`;
+          html += `<div class="hint-box" style="margin-top:0;">Положите этот файл в папку printer-agent на компьютере-хабе рядом с hub-install.ps1 и запустите его — ключи вставлять вручную не нужно.</div>`;
+        }
+        document.getElementById('pbi-result').innerHTML = html;
+        await loadPrinters();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
     // ---------- Маршруты ----------
     let routesList = [];
 
@@ -406,7 +458,7 @@
           <div class="list-row row-item" onclick="openWorkstationModal(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml(w.station_name)}</div>
-              <div class="sub">${UI.escHtml((ZONE_TYPES.find(z=>z.value===w.zone_type)||{}).label || w.zone_type)} · ${UI.escHtml(w.warehouse_name||'без склада')} · ${w.printer_name ? 'печать: '+UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>'} ${w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>'}</div>
+              <div class="sub">${UI.escHtml((ZONE_TYPES.find(z=>z.value===w.zone_type)||{}).label || w.zone_type)} · ${UI.escHtml(w.warehouse_name||'без склада')} · ${w.printer_name ? 'печать: '+UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>'}${w.marking_printer_name ? ' · ЧЗ: '+UI.escHtml(w.marking_printer_name) : ''} ${w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>'}</div>
             </div>
           </div>
         `).join('');
@@ -418,6 +470,7 @@
       const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}" ${w && w.warehouse_id===wh.id ? 'selected':''}>${UI.escHtml(wh.warehouse_name)}</option>`).join('');
       const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}" ${w && w.zone_type===z.value ? 'selected':''}>${z.label}</option>`).join('');
       const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.default_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
+      const markingPrinterOptions = `<option value="">— туда же, что и основная печать —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.marking_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
 
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
@@ -427,7 +480,8 @@
             <div class="field"><label>Тип места</label><select id="wsm-zone">${zoneOptions}</select></div>
             <div class="field"><label>Склад (опционально)</label><select id="wsm-warehouse" ${w?'disabled':''}>${whOptions}</select></div>
             <div class="field"><label>Принтер этого места</label><select id="wsm-printer">${printerOptions}</select></div>
-            <div class="hint-box" style="margin-top:0;">Сотрудник сканирует код этого рабочего места на телефоне один раз (в начале смены/при смене места) — дальше вся печать со сканирования штрихкода на этом месте идёт на выбранный здесь принтер.</div>
+            <div class="field"><label>Принтер для кодов "Честный знак" (опционально)</label><select id="wsm-marking-printer">${markingPrinterOptions}</select></div>
+            <div class="hint-box" style="margin-top:0;">Сотрудник сканирует код этого рабочего места на телефоне один раз (в начале смены/при смене места) — дальше вся печать со сканирования штрихкода на этом месте идёт на выбранный здесь принтер. Если на столе два принтера (стикер ВБ и отдельно коды ЧЗ) — укажите второй принтер отдельным полем выше, иначе оставьте "туда же".</div>
             ${w ? `<div class="field"><label style="display:inline;">Активно</label> <input type="checkbox" id="wsm-active" ${w.is_active ? 'checked':''}/></div>` : ''}
             ${w ? `
               <div class="field">
@@ -455,6 +509,7 @@
             station_name: name,
             zone_type: UI.val('#wsm-zone'),
             default_printer_id: UI.val('#wsm-printer') || null,
+            marking_printer_id: UI.val('#wsm-marking-printer') || null,
             is_active: document.getElementById('wsm-active').checked,
           };
           await window.API.workstations.update(w.id, data);
@@ -465,6 +520,7 @@
             zone_type: UI.val('#wsm-zone'),
             warehouse_id: UI.val('#wsm-warehouse') || null,
             default_printer_id: UI.val('#wsm-printer') || null,
+            marking_printer_id: UI.val('#wsm-marking-printer') || null,
           };
           await window.API.workstations.create(data);
           UI.notify.ok('Рабочее место создано');
@@ -480,6 +536,51 @@
         await window.API.workstations.delete(id);
         UI.notify.ok('Рабочее место удалено');
         closeModal();
+        await loadWorkstations();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // ---------- Массовый импорт рабочих мест ----------
+    function openWorkstationBulkModal() {
+      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}">${UI.escHtml(wh.warehouse_name)}</option>`).join('');
+      const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}">${z.label}</option>`).join('');
+      const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+          <div class="modal-card">
+            <div class="card-title">Импорт рабочих мест списком</div>
+            <div class="hint-box" style="margin-top:0;">По одному названию места на строку (например, "Стол упаковки 1", "Стол упаковки 2" и т.д.). Тип места, склад и принтер по умолчанию — общие для всех строк этого импорта; при необходимости конкретное место потом можно донастроить через карточку как обычно. Сначала импортируйте принтеры (вкладка «Принтеры»), потом рабочие места — так можно сразу привязать принтер к месту.</div>
+            <div class="field"><label>Названия рабочих мест (по одному на строку)</label>
+              <textarea id="wbi-names" rows="8" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:monospace;" placeholder="Стол упаковки 1&#10;Стол упаковки 2&#10;Стол упаковки 3"></textarea>
+            </div>
+            <div class="field"><label>Тип места</label><select id="wbi-zone">${zoneOptions}</select></div>
+            <div class="field"><label>Склад (опционально, для всех)</label><select id="wbi-warehouse">${whOptions}</select></div>
+            <div class="field"><label>Принтер по умолчанию (опционально, для всех)</label><select id="wbi-printer">${printerOptions}</select></div>
+            <div id="wbi-result"></div>
+            <div class="btn-row">
+              <button class="btn-big btn-green" onclick="submitWorkstationBulk()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Импортировать</button>
+              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function submitWorkstationBulk() {
+      const names = UI.val('#wbi-names').split('\n').map(s => s.trim()).filter(Boolean);
+      if (!names.length) { UI.notify.err('Впишите хотя бы одно название'); return; }
+      const zone_type = UI.val('#wbi-zone');
+      const warehouse_id = UI.val('#wbi-warehouse') || null;
+      const default_printer_id = UI.val('#wbi-printer') || null;
+      const workstationsRows = names.map(station_name => ({ station_name, zone_type, warehouse_id, default_printer_id }));
+      try {
+        const res = await window.API.workstations.bulkImport(workstationsRows);
+        UI.notify.ok(`Создано мест: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}`);
+        let html = `<div class="hint-box" style="margin-top:8px;">Создано: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}</div>`;
+        if (res.errors.length) {
+          html += `<div class="hint-box" style="border-left-color:var(--red);margin-top:8px;">${res.errors.map(e => `Строка ${e.row} (${UI.escHtml(e.station_name||'')}): ${UI.escHtml(e.error)}`).join('<br/>')}</div>`;
+        }
+        document.getElementById('wbi-result').innerHTML = html;
         await loadWorkstations();
       } catch (e) { UI.notify.err(e.message); }
     }

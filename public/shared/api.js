@@ -359,6 +359,7 @@
       create:    (d)  => post('/printing/printers', d),
       update:    (id, d) => patch(`/printing/printers/${id}`, d),
       issueAgentKey: (id) => post(`/printing/printers/${id}/agent-key`, {}),
+      bulkImport: (printers, issueAgentKeys=true) => post('/printing/printers/bulk-import', { printers, issue_agent_keys: issueAgentKeys }),
     },
     routes: {
       list:   ()      => get('/printing/routes'),
@@ -381,6 +382,7 @@
     my:     ()      => get('/workstations/my'),
     select: (station_code) => post('/workstations/select', { station_code }),
     sticker: (id)   => get(`/workstations/${id}/sticker`),
+    bulkImport: (workstations) => post('/workstations/bulk-import', { workstations }),
   };
 
   // ─────────────── Checkin (отметка на складе по QR) ───────────────

@@ -19,6 +19,12 @@ temp/
 .DS_Store
 Thumbs.db
 
+# printer-agent hub install (генерируется на компьютере клиента, не в git)
+printer-agent/instances/
+printer-agent/nssm.exe
+printer-agent/printers.csv
+printer-agent/bin/
+
 # editor
 .vscode/
 .idea/
