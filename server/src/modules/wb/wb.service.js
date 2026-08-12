@@ -280,12 +280,41 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
     stockParams
   );
 
+  // "Новые" заказы WB (status='new') по этим же штрихкодам - WB уже списал их
+  // у себя из показанного остатка (резервирует в момент создания заказа, ещё
+  // до того как мы вообще его увидим), а в WMS они никак не отражены: волна
+  // сборки ещё не сформирована, резерва (qty_reserved) нет, товар в
+  // stock_balances выглядит полностью свободным. Если это не учесть, пересчёт
+  // отправит в WB "полный" остаток и фактически вернёт то, что WB уже продал
+  // (см. инцидент 2006784216833 - механизм подсказал сам пользователь).
+  //
+  // Статус 'confirm' и дальше для этой цели НЕ годится - выставляется один
+  // раз при добавлении в поставку и потом никогда не обновляется до
+  // 'complete', даже после реальной отгрузки (deliverSupply это не делает) -
+  // то есть 'confirm' почти всегда висит и на давно отгруженных заказах.
+  // 'new' же надёжен: перезаписывается на каждой синхронизации напрямую из
+  // живого ответа WB (/api/v3/orders/new), и заказ, ушедший в поставку,
+  // сразу помечается 'confirm' (см. wb.router.js) - то есть 'new' у нас
+  // всегда актуален и означает "WB точно ещё удерживает эту единицу, мы её
+  // точно ещё не трогали".
+  const newOrdersRes = await query(
+    `SELECT barcode, COUNT(*)::int AS n
+     FROM wms.wb_orders
+     WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND barcode IS NOT NULL${barcodesFilter ? ' AND barcode = ANY($3::text[])' : ''}
+     GROUP BY barcode`,
+    barcodesFilter ? [tenantId, mpAccountId, barcodes] : [tenantId, mpAccountId]
+  );
+  const newOrdersByBarcode = new Map(newOrdersRes.rows.map(r => [r.barcode, r.n]));
+
   const distByWarehouse = {};
   warehouses.forEach(w => { distByWarehouse[w.warehouse_code] = []; });
 
   for (const row of stockRes.rows) {
     const barcode = row.barcode;
-    const totalQty = Number(row.qty);
+    // Вычитаем "новые" WB-заказы по этому штрихкоду - см. комментарий выше
+    // про newOrdersByBarcode. Не может уйти в минус - GREATEST(0, ...).
+    const openNewOrders = newOrdersByBarcode.get(barcode) || 0;
+    const totalQty = Math.max(0, Number(row.qty) - openNewOrders);
     // Резерв - часть остатка, которую сознательно НЕ раздаём по складам WB
     // (буфер на случай ошибок/повреждений, чтобы не продать то, чего
     // физически может не оказаться).
