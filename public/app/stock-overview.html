@@ -65,7 +65,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Объём</th><th>Стоимость</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Артикул</th><th>Размер</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Объём</th><th>Стоимость</th></tr></thead>
           <tbody id="stock-body"></tbody>
         </table>
       </div>
@@ -102,7 +102,7 @@
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Когда</th><th>Тип</th><th>Товар</th><th>Кол-во</th><th>Откуда</th><th>Куда</th><th>Кто</th></tr></thead>
+          <thead><tr><th>Когда</th><th>Тип</th><th>Товар</th><th>Артикул</th><th>Размер</th><th>Кол-во</th><th>Откуда</th><th>Куда</th><th>Кто</th></tr></thead>
           <tbody id="movements-body"></tbody>
         </table>
       </div>
@@ -180,7 +180,9 @@
 
         UI.renderTable('#stock-body', stockRowsCache, (r) => `
           <tr>
-            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${[r.vendor_code, r.size ? 'разм. '+r.size : null, r.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${UI.escHtml(r.barcode)}</div></td>
+            <td>${UI.escHtml(r.vendor_code || '—')}</td>
+            <td>${UI.escHtml(r.size || '—')}</td>
             <td>${UI.escHtml(r.location_code)}</td>
             <td>${UI.escHtml(r.client_name||'—')}</td>
             <td>${UI.fmtQty(r.qty_on_hand)}</td>
@@ -212,7 +214,9 @@
           <tr>
             <td>${UI.fmtDateTime(r.created_at)}</td>
             <td><span class="pill pill-blue">${MOVEMENT_TYPE_LABELS[r.movement_type] || UI.escHtml(r.movement_type)}</span></td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${[r.vendor_code, r.size ? 'разм. '+r.size : null, r.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${UI.escHtml(r.barcode)}</div></td>
+            <td>${UI.escHtml(r.vendor_code || '—')}</td>
+            <td>${UI.escHtml(r.size || '—')}</td>
             <td>${UI.fmtQty(r.qty)}</td>
             <td>${UI.escHtml(r.from_location_code||'—')}</td>
             <td>${UI.escHtml(r.to_location_code||'—')}</td>
