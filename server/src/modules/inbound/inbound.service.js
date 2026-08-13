@@ -57,7 +57,7 @@ async function getInboundOrderByBarcode({ tenantId, barcode }) {
 
 async function getInboundOrderLines({ orderId }) {
   const r = await query(
-    `SELECT l.*, i.item_name AS item_name_master, i.preview_url
+    `SELECT l.*, i.item_name AS item_name_master, i.size, i.preview_url
      FROM wms.inbound_order_lines l
      LEFT JOIN wms.items i ON i.id=l.item_id
      WHERE l.inbound_order_id=$1 ORDER BY l.id`,

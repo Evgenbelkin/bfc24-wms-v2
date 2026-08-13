@@ -91,6 +91,7 @@
                    onerror="this.style.display='none'; document.getElementById('big-photo-placeholder').style.display='block';"/>
             </div>
             <div class="big-photo-name" id="big-photo-name"></div>
+            <div id="big-photo-vendor" style="font-size:13px;color:var(--muted);margin-top:2px;"></div>
             <div class="big-photo-barcode" id="big-photo-barcode"></div>
           </div>
 
@@ -298,11 +299,13 @@
         placeholder.style.display = 'block';
         hint.textContent = 'Все строки упакованы';
         document.getElementById('big-photo-name').textContent = '';
+        document.getElementById('big-photo-vendor').textContent = '';
         document.getElementById('big-photo-barcode').textContent = '';
         return;
       }
 
       document.getElementById('big-photo-name').textContent = line.item_name || line.barcode;
+      document.getElementById('big-photo-vendor').textContent = [line.vendor_code, line.size ? 'разм. '+line.size : null].filter(Boolean).join(' · ');
       document.getElementById('big-photo-barcode').innerHTML = isExpected
         ? `<div class="big-photo-expect-tag">Ожидается по заданию</div>${UI.escHtml(line.barcode)}`
         : UI.escHtml(line.barcode);
@@ -349,7 +352,7 @@
             ${photo}
             <div class="main" style="flex:1;min-width:0;">
               <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}${isNext ? '<span class="line-next-tag">Далее</span>' : ''}</div>
-              <div class="line-barcode">${UI.escHtml(l.barcode)}</div>
+              <div class="line-barcode">${[l.vendor_code, l.size ? 'р.'+l.size : null, l.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div>
               ${stickersHtml}
             </div>
             <div class="line-progress" style="color:${done ? 'var(--green2)' : 'var(--amber)'}">

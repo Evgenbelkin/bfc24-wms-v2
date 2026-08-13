@@ -107,7 +107,8 @@
       <div style="overflow:hidden">
         <img id="task-preview" class="task-preview" src="" onerror="this.style.display='none'"/>
         <div class="task-barcode" id="task-barcode">—</div>
-        <div class="task-name" id="task-name">—</div>
+        <div class="task-name" id="task-name" style="margin-bottom:2px;">—</div>
+        <div id="task-vendor" style="font-size:13px;color:#64748b;margin-bottom:16px;"></div>
       </div>
 
       <div class="task-location">
@@ -188,6 +189,7 @@
       currentTask = task;
       document.getElementById('task-barcode').textContent = task.barcode || '—';
       document.getElementById('task-name').textContent    = task.item_name || task.barcode || '—';
+      document.getElementById('task-vendor').textContent  = [task.vendor_code, task.size ? 'разм. '+task.size : null].filter(Boolean).join(' · ');
       document.getElementById('task-location').textContent= task.location_code || '—';
       document.getElementById('task-qty').textContent     = task.qty || 0;
       document.getElementById('shipment-code').textContent= task.shipment_code || '—';

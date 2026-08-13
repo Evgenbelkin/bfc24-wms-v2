@@ -56,6 +56,7 @@
       <div style="overflow:hidden;margin-bottom:12px;">
         <img id="sel-preview" style="width:64px;height:64px;object-fit:cover;border-radius:8px;float:right;margin-left:10px;" onerror="this.style.display='none'"/>
         <div style="font-size:16px;font-weight:700;" id="sel-name">—</div>
+        <div style="color:var(--muted);font-size:13px;" id="sel-vendor"></div>
         <div style="color:var(--muted);font-size:13px;" id="sel-barcode">—</div>
       </div>
 
@@ -157,7 +158,7 @@
           <div class="list-row pending-row" onclick="selectPending(${idx})">
             <div class="main">
               <div class="title">${UI.escHtml(it.item_name || it.barcode)}</div>
-              <div class="sub">${UI.escHtml(it.barcode)} · из ${UI.escHtml(it.location_code)} · ${UI.escHtml(it.client_name||'')}</div>
+              <div class="sub">${[it.vendor_code, it.size ? 'разм. '+it.size : null, it.barcode].filter(Boolean).map(UI.escHtml).join(' · ')} · из ${UI.escHtml(it.location_code)} · ${UI.escHtml(it.client_name||'')}</div>
             </div>
             <div class="badge"><span>Кол-во</span><div>${UI.fmtQty(it.qty_available)}</div></div>
           </div>
@@ -171,6 +172,7 @@
         barcode: it.barcode, item_name: it.item_name, preview_url: it.preview_url,
         from_location_code: it.location_code, qty_available: it.qty_available,
         item_id: it.item_id, client_id: it.client_id,
+        vendor_code: it.vendor_code, size: it.size,
       });
     }
 
@@ -184,6 +186,7 @@
           barcode: it.barcode, item_name: it.item_name, preview_url: null,
           from_location_code: it.location_code, qty_available: it.qty_available,
           item_id: null, client_id: it.client_id,
+          vendor_code: it.vendor_code, size: it.size,
         });
       } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
     }
@@ -194,6 +197,7 @@
       qty = Math.max(1, Number(sel.qty_available) || 1);
       document.getElementById('selected-card').style.display = 'block';
       document.getElementById('sel-name').textContent = sel.item_name || sel.barcode;
+      document.getElementById('sel-vendor').textContent = [sel.vendor_code, sel.size ? 'разм. '+sel.size : null].filter(Boolean).join(' · ');
       document.getElementById('sel-barcode').textContent = sel.barcode;
       document.getElementById('sel-from').textContent = sel.from_location_code;
       document.getElementById('sel-available').textContent = sel.qty_available;
@@ -260,7 +264,7 @@
         UI.renderTable('#history-body', res.rows, (r) => `
           <tr>
             <td>${UI.fmtDateTime(r.created_at)}</td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${[r.vendor_code, r.size ? 'разм. '+r.size : null, r.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
             <td>${UI.fmtQty(r.qty)}</td>
             <td>${UI.escHtml(r.from_location_code||'—')}</td>
             <td>${UI.escHtml(r.to_location_code||'—')}</td>

@@ -130,7 +130,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     `SELECT t.id, t.barcode, t.qty, t.qty_picked, t.scan_step,
        t.location_code, t.shipment_code, t.wave_id, t.wb_order_id,
        t.warehouse_id, t.client_id, t.item_id,
-       i.item_name, i.preview_url
+       i.item_name, i.vendor_code, i.size, i.preview_url
      FROM wms.picking_tasks t
      LEFT JOIN wms.items i ON i.id=t.item_id
      WHERE t.tenant_id=$1 AND t.picker_id=$2 AND t.status='in_progress'
@@ -244,7 +244,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     const taskId = best.id;
 
     const taskRes = await client.query(
-      `SELECT t.*, i.item_name, i.preview_url FROM wms.picking_tasks t
+      `SELECT t.*, i.item_name, i.vendor_code, i.size, i.preview_url FROM wms.picking_tasks t
        LEFT JOIN wms.items i ON i.id=t.item_id
        WHERE t.id=$1`, [taskId]
     );

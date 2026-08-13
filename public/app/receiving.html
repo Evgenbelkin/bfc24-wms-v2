@@ -628,7 +628,7 @@
         document.getElementById('inb-close-short-btn').style.display =
           INB_TERMINAL_STATUSES.includes(currentOrder.status) ? 'none' : 'inline-block';
         UI.renderTable('#inb-lines-body', res.lines, (l) => `
-          <tr><td>${UI.escHtml(l.item_name_master || l.item_name || '—')}</td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_expected)}</td><td>${UI.fmtQty(l.qty_received||0)}</td></tr>
+          <tr><td>${UI.escHtml(l.item_name_master || l.item_name || '—')}<div style="color:var(--muted);font-size:11px;">${[l.vendor_code, l.size ? 'разм. '+l.size : null].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_expected)}</td><td>${UI.fmtQty(l.qty_received||0)}</td></tr>
         `);
       } catch (e) {
         UI.notify.err(e.message);
