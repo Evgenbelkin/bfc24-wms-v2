@@ -91,6 +91,17 @@
       <button type="button" class="btn-big btn-red btn-full" onclick="cancelShipment()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Отменить отгрузку</button>
     </div>
 
+    <!-- Появляется только у отменённой отгрузки, если часть товара уже была
+         собрана (снята с полки) до отмены — система не знает, где эти единицы
+         физически лежат сейчас (обычно на столе упаковки), и не может сама
+         вернуть их на баланс. Кладовщик находит товар руками, указывает
+         ячейку — вот тогда остаток восстанавливается. -->
+    <div class="card" id="return-picked-card" style="display:none">
+      <div class="card-title">Нужно разложить по ячейкам</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Эти позиции уже были собраны до отмены — физически они сейчас не на своей полке (скорее всего на столе упаковки). Найдите товар, укажите ячейку и подтвердите — остаток восстановится.</div>
+      <div id="return-picked-list"></div>
+    </div>
+
     <!-- Постоянный блок QR поставки WB — виден в любой момент, если QR уже получен
          (не только сразу после подтверждения отгрузки), чтобы можно было открыть/
          перепечатать позже, например если стикер зажевало принтером. -->
@@ -277,6 +288,40 @@
         // done/cancelled (там уже либо реально доставлено, либо уже отменена).
         const cancelCard = document.getElementById('cancel-card');
         cancelCard.style.display = (canRequeue && !['done','cancelled'].includes(currentShipment.status)) ? 'block' : 'none';
+
+        renderReturnPickedCard(canRequeue ? (res.already_picked || []) : []);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function renderReturnPickedCard(items) {
+      const card = document.getElementById('return-picked-card');
+      if (!items.length) { card.style.display = 'none'; return; }
+      card.style.display = 'block';
+      document.getElementById('return-picked-list').innerHTML = items.map((it, idx) => `
+        <div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;">
+          <div style="font-weight:700;margin-bottom:2px;">${UI.escHtml(it.item_name || it.barcode)}</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${[it.barcode, it.size ? 'разм. '+it.size : null].filter(Boolean).map(UI.escHtml).join(' · ')} · нужно вернуть: ${UI.fmtQty(it.qty)}</div>
+          <div style="display:flex;gap:8px;">
+            <input id="rp-loc-${idx}" placeholder="Ячейка (например A1-01)" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"/>
+            <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#rp-loc-${idx}','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          </div>
+          <button type="button" class="btn-sm btn-back" style="margin-top:8px;width:100%;" onclick="confirmReturnPicked(${idx})">Вернуть на склад</button>
+        </div>
+      `).join('');
+      window._returnPickedItems = items;
+    }
+
+    async function confirmReturnPicked(idx) {
+      const items = window._returnPickedItems || [];
+      const it = items[idx];
+      if (!it || !currentShipment) return;
+      const locInput = document.getElementById(`rp-loc-${idx}`);
+      const locationCode = (locInput?.value || '').trim();
+      if (!locationCode) { UI.notify.err('Укажите ячейку, куда кладёте товар'); return; }
+      try {
+        await window.API.shipping.returnPicked(currentShipment.external_id, it.barcode, it.qty, locationCode);
+        UI.notify.ok(`Возвращено на склад: ${it.item_name || it.barcode} → ${locationCode}`);
+        await openShipmentByCode(currentShipment.external_id);
       } catch (e) { UI.notify.err(e.message); }
     }
 

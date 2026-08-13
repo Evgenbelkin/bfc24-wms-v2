@@ -77,4 +77,22 @@ router.post('/cancel', requireRole('tenant_admin','supervisor'), async (req,res,
   } catch(e){ next(e); }
 });
 
+// Вернуть на склад единицы, уже собранные (сняты с полки) под отменённую
+// отгрузку — кладовщик физически нашёл товар и указывает актуальную ячейку.
+// См. cancelShipment.already_picked — список именно того, что нужно провести
+// через этот эндпоинт по одной строке (barcode) за раз.
+router.post('/return-picked', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { shipment_code, barcode, qty, location_code } = req.body;
+    const result = await svc.returnPickedStock({
+      tenantId:     req.user.tenantId,
+      shipmentCode: shipment_code,
+      barcode, qty,
+      locationCode: location_code,
+      userId:       req.user.id,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;

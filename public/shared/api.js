@@ -325,6 +325,7 @@
     confirm: (d) => post('/shipping/confirm', d),
     markDelivered: (code) => post('/shipping/mark-delivered', { shipment_code: code }),
     cancel: (code, reason) => post('/shipping/cancel', { shipment_code: code, reason }),
+    returnPicked: (code, barcode, qty, locationCode) => post('/shipping/return-picked', { shipment_code: code, barcode, qty, location_code: locationCode }),
   };
 
   // ─────────────── Overview ("Табло") ───────────────
