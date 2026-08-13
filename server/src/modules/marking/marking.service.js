@@ -58,6 +58,24 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
   return { imported, duplicates: codes.length - imported, skipped_invalid: skippedInvalid, total_in_batch: allCodes.length };
 }
 
+/** Удалить код из пула (только пока он 'available' — использованный код это уже
+ *  исторический факт, в т.ч. возможно уже отправленный в WB, удалять нельзя,
+ *  чтобы не потерять аудит). Для случаев, когда в пул случайно занесли
+ *  "левый" код (опечатка при ручном вводе, не настоящий скан DataMatrix) —
+ *  раньше почистить пул было нечем, код так и висел там навсегда. */
+async function deleteCode({ tenantId, itemId, codeId }) {
+  const r = await query(
+    `DELETE FROM wms.marking_codes WHERE id=$1 AND tenant_id=$2 AND item_id=$3 AND status='available' RETURNING id, code`,
+    [codeId, tenantId, itemId]
+  );
+  if (r.rowCount === 0) {
+    const exists = await query(`SELECT status FROM wms.marking_codes WHERE id=$1 AND tenant_id=$2 AND item_id=$3`, [codeId, tenantId, itemId]);
+    if (exists.rowCount === 0) throw new ValidationError('Код не найден в пуле этого товара');
+    throw new ValidationError(`Код уже использован (статус '${exists.rows[0].status}') — удалить нельзя, только свободные коды`);
+  }
+  return r.rows[0];
+}
+
 /** Сводка по товару: сколько кодов свободно / использовано */
 async function getCodesSummary({ tenantId, itemId }) {
   const r = await query(
@@ -429,7 +447,7 @@ async function allocateAndPrint({
 }
 
 module.exports = {
-  parseCodesText, importCodes, getCodesSummary, listCodes,
+  parseCodesText, importCodes, getCodesSummary, listCodes, deleteCode,
   shouldMarkAt, allocateAndPrint,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
   listPendingManualOverrides,

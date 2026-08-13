@@ -6,6 +6,7 @@ const logger = require('../../utils/logger');
 const wbClient = require('../wb/wb.client');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
+const ledger = require('../stock/stock.ledger');
 
 // =============================================================================
 // Shipping Service
@@ -404,4 +405,65 @@ async function markDelivered({ tenantId, shipmentCode, userId }) {
   return r.rows[0];
 }
 
-module.exports = { listShipments, getShipmentDetails, confirmShipment, markDelivered };
+/**
+ * Отменить/снять с учёта зависшую отгрузку — для случая, когда упаковка
+ * заблокировалась (например, код "Честный знак" не нашёлся в пуле) и
+ * продавец в итоге отгрузил заказ прямо в кабинете WB в обход ВМС. Такая
+ * отгрузка в wms.shipments навсегда остаётся в незавершённом статусе —
+ * реконсиляция wb_orders её не видит (см. комментарий в wb.service.js:
+ * она сверяет только заказы БЕЗ wb_supply_id, а у отгрузки он уже есть).
+ * Снимает резервы по ещё активным задачам сборки, отменяет сами задачи
+ * сборки/упаковки, переводит отгрузку в status='cancelled' (это значение
+ * есть в enum с самого начала, но раньше его никто не проставлял).
+ *
+ * Разрешено из ЛЮБОГО статуса, кроме 'done' (уже реально доставлено —
+ * отменять нечего) и 'cancelled' (уже отменена).
+ */
+async function cancelShipment({ tenantId, shipmentCode, userId, reason }) {
+  return transaction(async (client) => {
+    const shipRes = await client.query(
+      `SELECT * FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 FOR UPDATE`,
+      [tenantId, shipmentCode]
+    );
+    if (shipRes.rowCount === 0) throw new NotFoundError('Shipment', shipmentCode);
+    const shipment = shipRes.rows[0];
+    if (shipment.status === 'done') {
+      throw new ValidationError('Отгрузка уже отмечена как доставленная — отменять нечего.');
+    }
+    if (shipment.status === 'cancelled') {
+      throw new ValidationError('Отгрузка уже отменена.');
+    }
+
+    // Снимаем резервы и отменяем ещё активные задачи сборки этой отгрузки —
+    // иначе ячейки/остаток так и останутся зарезервированы под задачу,
+    // которую больше никто никогда не выполнит.
+    const activeTasks = await client.query(
+      `SELECT id FROM wms.picking_tasks WHERE tenant_id=$1 AND shipment_code=$2 AND status IN ('new','in_progress')`,
+      [tenantId, shipmentCode]
+    );
+    for (const t of activeTasks.rows) {
+      await ledger.releaseReservationByRef({ refType: 'picking_task', refId: t.id, status: 'cancelled', dbClient: client });
+    }
+    await client.query(
+      `UPDATE wms.picking_tasks SET status='cancelled', finished_at=NOW(), updated_at=NOW()
+       WHERE tenant_id=$1 AND shipment_code=$2 AND status IN ('new','in_progress')`,
+      [tenantId, shipmentCode]
+    );
+    await client.query(
+      `UPDATE wms.packing_tasks SET status='cancelled', updated_at=NOW()
+       WHERE tenant_id=$1 AND shipment_code=$2 AND status IN ('new','in_progress')`,
+      [tenantId, shipmentCode]
+    );
+
+    const r = await client.query(
+      `UPDATE wms.shipments
+       SET status='cancelled', cancelled_at=NOW(), cancelled_by=$1, cancel_reason=$2, updated_at=NOW()
+       WHERE id=$3
+       RETURNING id, external_id, status, cancelled_at`,
+      [userId, reason || null, shipment.id]
+    );
+    return { ...r.rows[0], picking_tasks_cancelled: activeTasks.rowCount };
+  });
+}
+
+module.exports = { listShipments, getShipmentDetails, confirmShipment, markDelivered, cancelShipment };

@@ -395,15 +395,34 @@
         }
         box.innerHTML = rows.map(c => {
           const p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
+          // Удалить можно только "левый" код, который ещё никуда не ушёл
+          // (available) — и только tenant_admin/supervisor, действие
+          // необратимо (используемые/отправленные в WB коды удалить нельзя,
+          // это уже исторический факт).
+          const delBtn = (canEdit && c.status === 'available')
+            ? `<button title="Удалить код из пула" onclick="deleteMarkingCode(${itemId},${c.id})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px;flex:0 0 auto;">✕</button>`
+            : '';
           return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;">
             <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex:0 0 auto;"></span>
             <span style="font-family:monospace;flex:1;word-break:break-all;">${UI.escHtml(c.code)}</span>
             <span style="color:${p.color};white-space:nowrap;">${p.label}</span>
+            ${delBtn}
           </div>`;
         }).join('');
       } catch (e) {
         box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
       }
+    }
+
+    async function deleteMarkingCode(itemId, codeId) {
+      if (!UI.confirm('Удалить этот код из пула? Действие необратимо — если код на самом деле настоящий, его придётся сканировать/вставлять заново.')) return;
+      try {
+        await window.API.marking.deleteCode(itemId, codeId);
+        UI.notify.ok('Код удалён из пула');
+        await toggleMarkingCodesList(itemId); // закрыть
+        await toggleMarkingCodesList(itemId); // и сразу переоткрыть с обновлённым списком
+        await loadMarkingSummary(itemId);
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     async function importMarkingCodes(idx) {
