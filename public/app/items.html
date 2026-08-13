@@ -191,7 +191,7 @@
             ${canEdit ? `<input type="checkbox" class="item-cb" data-id="${it.id}" onclick="event.stopPropagation(); onItemCheck(${it.id}, this.checked);" ${selectedItemIds.has(it.id) ? 'checked' : ''}/>` : ''}
             <div class="main" style="flex:1;">
               <div class="title">${UI.escHtml(it.item_name)}</div>
-              <div class="sub">${UI.escHtml(it.barcode)} · ${UI.escHtml(it.client_name||'')} ${it.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
+              <div class="sub">${[it.vendor_code, it.size ? 'разм. '+it.size : null, it.barcode].filter(Boolean).map(UI.escHtml).join(' · ')} · ${UI.escHtml(it.client_name||'')} ${it.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
             </div>
             <div class="badge"><span>Ед.</span><div>${UI.escHtml(it.unit)}</div></div>
           </div>

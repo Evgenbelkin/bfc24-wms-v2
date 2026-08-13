@@ -180,7 +180,7 @@
 
         UI.renderTable('#stock-body', stockRowsCache, (r) => `
           <tr>
-            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${UI.escHtml(r.barcode)}</div></td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${[r.vendor_code, r.size ? 'разм. '+r.size : null, r.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
             <td>${UI.escHtml(r.location_code)}</td>
             <td>${UI.escHtml(r.client_name||'—')}</td>
             <td>${UI.fmtQty(r.qty_on_hand)}</td>
@@ -212,7 +212,7 @@
           <tr>
             <td>${UI.fmtDateTime(r.created_at)}</td>
             <td><span class="pill pill-blue">${MOVEMENT_TYPE_LABELS[r.movement_type] || UI.escHtml(r.movement_type)}</span></td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.escHtml(r.item_name || r.barcode)}<div style="color:var(--muted);font-size:11px;">${[r.vendor_code, r.size ? 'разм. '+r.size : null, r.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
             <td>${UI.fmtQty(r.qty)}</td>
             <td>${UI.escHtml(r.from_location_code||'—')}</td>
             <td>${UI.escHtml(r.to_location_code||'—')}</td>
