@@ -149,12 +149,12 @@ async function getClientStockSummary({ tenantId, clientId }) {
        SUM(sb.qty_on_hand)::int    AS total_on_hand,
        SUM(sb.qty_reserved)::int   AS total_reserved,
        SUM(sb.qty_available)::int  AS total_available,
-       i.id AS item_id, i.item_name, i.vendor_code, i.unit, i.cost_price,
+       i.id AS item_id, i.item_name, i.vendor_code, i.unit, i.cost_price, i.size,
        (SUM(sb.qty_on_hand) * COALESCE(i.cost_price,0))::numeric AS total_cost_value
      FROM wms.stock_balances sb
      LEFT JOIN wms.items i ON i.id = sb.item_id
      WHERE sb.tenant_id = $1 AND sb.client_id = $2 AND sb.qty_on_hand > 0
-     GROUP BY sb.barcode, i.id, i.item_name, i.vendor_code, i.unit, i.cost_price
+     GROUP BY sb.barcode, i.id, i.item_name, i.vendor_code, i.unit, i.cost_price, i.size
      ORDER BY i.item_name, sb.barcode`,
     [tenantId, clientId]
   );
