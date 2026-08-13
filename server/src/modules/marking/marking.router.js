@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const svc = require('./marking.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, requireModule } = require('../../middleware/tenant');
@@ -45,6 +46,31 @@ router.post('/items/:itemId/codes/import', requireRole('tenant_admin', 'supervis
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
+});
+
+/** POST /marking/items/:itemId/codes/import-file { file } — импорт кодов из
+ *  .xlsx, альтернатива вставке текстом/сканированию для клиентов, у которых
+ *  уже есть выгрузка кодов файлом. Файл целиком читается в память (лимит
+ *  5 МБ — список кодов даже на тысячи строк весит существенно меньше). */
+const uploadCodesFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }).single('file');
+
+router.post('/items/:itemId/codes/import-file', requireRole('tenant_admin', 'supervisor'), (req, res, next) => {
+  uploadCodesFile(req, res, async (uploadErr) => {
+    try {
+      if (uploadErr) {
+        if (uploadErr.code === 'LIMIT_FILE_SIZE') throw new ValidationError('Файл слишком большой (максимум 5 МБ)');
+        throw new ValidationError(`Не удалось загрузить файл: ${uploadErr.message}`);
+      }
+      const itemId = validatePositiveInt(req.params.itemId, 'itemId');
+      if (!req.file) throw new ValidationError('Файл не передан');
+      if (!/\.xlsx$/i.test(req.file.originalname || '')) throw new ValidationError('Поддерживаются только файлы .xlsx');
+      const result = await svc.importCodesFromExcel({
+        tenantId: req.user.tenantId, itemId, createdBy: req.user.id,
+        fileBuffer: req.file.buffer,
+      });
+      res.json({ ok: true, ...result });
+    } catch (e) { next(e); }
+  });
 });
 
 /** PATCH /marking/items/:itemId/settings { requires_marking, marking_trigger, marking_mode } */

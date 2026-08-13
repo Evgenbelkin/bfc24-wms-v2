@@ -66,12 +66,16 @@
   }
 
   async function request(method, path, data = null, opts = {}) {
+    // FormData (загрузка файла) — НЕ JSON.stringify и НЕ выставляем свой
+    // Content-Type: браузер сам проставит multipart/form-data с правильным
+    // boundary, если мы его не трогаем.
+    const isFormData = (typeof FormData !== 'undefined') && data instanceof FormData;
     const doFetch = () => {
       const token = getToken();
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const config = { method, headers, ...opts };
-      if (data !== null && method !== 'GET') config.body = JSON.stringify(data);
+      if (data !== null && method !== 'GET') config.body = isFormData ? data : JSON.stringify(data);
       const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
       return fetch(url, config);
     };
@@ -123,6 +127,7 @@
   const patch  = (path, data)   => request('PATCH',  path, data);
   const put    = (path, data)   => request('PUT',    path, data);
   const del    = (path)         => request('DELETE', path);
+  const postFile = (path, formData) => request('POST', path, formData);
 
   // ─────────────── Auth ───────────────
 
@@ -188,6 +193,7 @@
     summary:    (itemId)          => get(`/marking/items/${itemId}/codes/summary`),
     listCodes:  (itemId, p)       => get(`/marking/items/${itemId}/codes`, p),
     importCodes:(itemId, codesText) => post(`/marking/items/${itemId}/codes/import`, { codes_text: codesText }),
+    importCodesFile: (itemId, file) => { const fd = new FormData(); fd.append('file', file); return postFile(`/marking/items/${itemId}/codes/import-file`, fd); },
     deleteCode: (itemId, codeId)   => del(`/marking/items/${itemId}/codes/${codeId}`),
     updateSettings:(itemId, d)    => patch(`/marking/items/${itemId}/settings`, d),
     bulkUpdateSettings: (itemIds, d) => patch('/marking/items/bulk-settings', { item_ids: itemIds, ...d }),
