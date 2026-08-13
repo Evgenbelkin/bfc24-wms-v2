@@ -282,6 +282,14 @@
                 </div>
                 <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="marking-scan-count"></div>
                 <button class="btn-big btn-blue btn-full" style="margin-top:6px;" onclick="importMarkingCodes(${idx})">Загрузить коды в пул</button>
+                <div style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;">
+                  <div style="flex:1;height:1px;background:var(--border);"></div>
+                  <span style="font-size:11px;color:var(--muted);">или</span>
+                  <div style="flex:1;height:1px;background:var(--border);"></div>
+                </div>
+                <input type="file" id="m-marking-file" accept=".xlsx" style="display:none;" onchange="importMarkingCodesFile(${idx})"/>
+                <button type="button" class="btn-big btn-back btn-full" onclick="document.getElementById('m-marking-file').click()"><svg class="i" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg> Загрузить файлом Excel (.xlsx)</button>
+                <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="marking-file-status"></div>
               </div>
               ` : ''}
             </div>
@@ -439,6 +447,29 @@
         updateMarkingScanCount();
         await loadMarkingSummary(it.id);
       } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function importMarkingCodesFile(idx) {
+      const it = itemCache[idx];
+      const input = document.getElementById('m-marking-file');
+      const file = input?.files?.[0];
+      const status = document.getElementById('marking-file-status');
+      if (!file) return;
+      if (status) status.textContent = `Загружаем ${file.name}…`;
+      try {
+        const res = await window.API.marking.importCodesFile(it.id, file);
+        const notes = [];
+        if (res.duplicates) notes.push(`дублей пропущено: ${res.duplicates}`);
+        if (res.skipped_invalid) notes.push(`не похоже на КИЗ, пропущено: ${res.skipped_invalid}`);
+        UI.notify.ok(`Загружено из файла: ${res.imported} шт.${notes.length ? ` (${notes.join(', ')})` : ''}`);
+        if (status) status.textContent = '';
+        await loadMarkingSummary(it.id);
+      } catch (e) {
+        UI.notify.err(e.message);
+        if (status) status.textContent = '';
+      } finally {
+        input.value = '';
+      }
     }
 
     async function printItemLabel(idx) {

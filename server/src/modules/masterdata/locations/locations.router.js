@@ -125,4 +125,15 @@ router.patch('/:id', requireRole('tenant_admin','supervisor'), async (req,res,ne
   } catch(e){ next(e); }
 });
 
+/** DELETE /locations/:id — удалить ячейку, только если в ней сейчас нет
+ *  товара. Если по ячейке уже есть история движений — удалить нельзя (упрётся
+ *  в внешний ключ), вместо этого её деактивируют (is_active=false), см.
+ *  locations.service.js:deleteLocation. */
+router.delete('/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.deleteLocation({ tenantId: req.user.tenantId, locationId: validatePositiveInt(req.params.id,'id') });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;

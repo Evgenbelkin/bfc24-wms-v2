@@ -190,6 +190,48 @@ async function updateLocation({ tenantId, locationId, data }) {
   return res.rows[0];
 }
 
+/**
+ * Удалить ячейку — только если в ней сейчас нет товара (qty_on_hand=0 по
+ * всем строкам stock_balances для этой ячейки). Если ячейку когда-либо
+ * использовали (есть строки в истории — stock_movements, picking_tasks,
+ * receiving_tasks, returns и т.п. ссылаются на неё по FK без каскада),
+ * настоящий DELETE упадёт нарушением внешнего ключа — в этом случае вместо
+ * ошибки просто деактивируем ячейку (is_active=false, тот же эффект "ушла
+ * из списка активных"), не теряя историю движений по ней. Возвращаем режим
+ * ('hard' | 'soft'), чтобы фронт мог показать разное сообщение.
+ */
+async function deleteLocation({ tenantId, locationId }) {
+  const current = await getLocationById({ tenantId, locationId });
+
+  const stockRes = await query(
+    `SELECT COALESCE(SUM(qty_on_hand), 0)::int AS qty FROM wms.stock_balances WHERE location_id = $1`,
+    [locationId]
+  );
+  const qty = stockRes.rows[0].qty;
+  if (qty > 0) {
+    throw new ValidationError(`В ячейке '${current.location_code}' ещё есть товар (${qty} шт.) — сначала переместите или спишите его.`);
+  }
+
+  try {
+    const res = await query(
+      `DELETE FROM wms.locations WHERE id = $1 AND tenant_id = $2 RETURNING id, location_code`,
+      [locationId, tenantId]
+    );
+    return { ...res.rows[0], mode: 'hard' };
+  } catch (e) {
+    // 23503 = foreign_key_violation — по ячейке уже есть история (движения,
+    // задачи сборки/приёмки и т.п.), удалить нельзя, не потеряв эту историю.
+    if (e.code === '23503') {
+      const res = await query(
+        `UPDATE wms.locations SET is_active = false, updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING id, location_code`,
+        [locationId, tenantId]
+      );
+      return { ...res.rows[0], mode: 'soft' };
+    }
+    throw e;
+  }
+}
+
 const MAX_BULK_CELLS = 2000;
 
 /**
@@ -373,7 +415,7 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId })
 
 module.exports = {
   listLocations, getLocationById, getLocationByCode,
-  createLocation, updateLocation, findBestPickLocation,
+  createLocation, updateLocation, deleteLocation, findBestPickLocation,
   bulkCreateLocations, getLocationsByIds,
   bulkUpdateDimensions, getLocationFillReport,
 };

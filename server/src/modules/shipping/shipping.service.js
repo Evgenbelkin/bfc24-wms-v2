@@ -95,7 +95,38 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
     [tenantId, shipmentCode, shipment.id]
   );
 
-  return { shipment, lines: linesRes.rows };
+  // Для отменённых отгрузок отдельно считаем "висящий" остаток: что было
+  // реально собрано (picking_tasks.status='done'), за вычетом того, что уже
+  // вернули на склад через "Вернуть на склад" (см. returnPickedStock —
+  // движения с movement_type='return', ref_type='shipment_cancel', привязка
+  // по этой же отгрузке). Пересчитываем каждый раз, а не сохраняем один раз
+  // при отмене — иначе список потеряется при повторном открытии страницы
+  // и не уменьшится по мере частичного возврата.
+  let alreadyPicked = [];
+  if (shipment.status === 'cancelled') {
+    const r = await query(
+      `SELECT picked.barcode, picked.item_name, picked.size, (picked.qty - COALESCE(returned.qty, 0))::int AS qty
+       FROM (
+         SELECT pt.barcode, i.item_name, i.size, SUM(pt.qty)::int AS qty
+         FROM wms.picking_tasks pt
+         LEFT JOIN wms.items i ON i.id = pt.item_id
+         WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.status='done'
+         GROUP BY pt.barcode, i.item_name, i.size
+       ) picked
+       LEFT JOIN (
+         SELECT barcode, SUM(qty)::int AS qty
+         FROM wms.stock_movements
+         WHERE tenant_id=$1 AND ref_type='shipment_cancel' AND ref_id=$3 AND movement_type='return'
+         GROUP BY barcode
+       ) returned ON returned.barcode = picked.barcode
+       WHERE (picked.qty - COALESCE(returned.qty, 0)) > 0
+       ORDER BY picked.item_name`,
+      [tenantId, shipmentCode, shipment.id]
+    );
+    alreadyPicked = r.rows;
+  }
+
+  return { shipment, lines: linesRes.rows, already_picked: alreadyPicked };
 }
 
 /** Подтверждение отгрузки (скан QR поставки) */
@@ -455,6 +486,25 @@ async function cancelShipment({ tenantId, shipmentCode, userId, reason }) {
       [tenantId, shipmentCode]
     );
 
+    // ВАЖНО: задачи сборки со status='done' здесь НЕ трогаем — по ним товар
+    // уже физически снят с полки (consumeStock сработал ещё в момент сборки,
+    // см. picking.service.js:387) и стоит сейчас где-то у упаковщика/на столе
+    // упаковки, а не в исходной ячейке. Система не знает, где эти единицы
+    // физически лежат ПРЯМО СЕЙЧАС — молча "вернуть" их куда-то было бы
+    // враньём в остатках. Вместо этого просто честно перечисляем их вызывающей
+    // стороне (по товару и количеству), чтобы кладовщик нашёл эти единицы
+    // руками и провёл через "Вернуть на склад" ниже — там ОН укажет
+    // актуальную ячейку, а не система угадает.
+    const alreadyPickedRes = await client.query(
+      `SELECT pt.barcode, i.item_name, i.size, SUM(pt.qty)::int AS qty
+       FROM wms.picking_tasks pt
+       LEFT JOIN wms.items i ON i.id = pt.item_id
+       WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.status='done'
+       GROUP BY pt.barcode, i.item_name, i.size
+       ORDER BY i.item_name`,
+      [tenantId, shipmentCode]
+    );
+
     const r = await client.query(
       `UPDATE wms.shipments
        SET status='cancelled', cancelled_at=NOW(), cancelled_by=$1, cancel_reason=$2, updated_at=NOW()
@@ -462,8 +512,41 @@ async function cancelShipment({ tenantId, shipmentCode, userId, reason }) {
        RETURNING id, external_id, status, cancelled_at`,
       [userId, reason || null, shipment.id]
     );
-    return { ...r.rows[0], picking_tasks_cancelled: activeTasks.rowCount };
+    return {
+      ...r.rows[0],
+      picking_tasks_cancelled: activeTasks.rowCount,
+      already_picked: alreadyPickedRes.rows,
+    };
   });
 }
 
-module.exports = { listShipments, getShipmentDetails, confirmShipment, markDelivered, cancelShipment };
+/**
+ * Вернуть в остатки единицы, которые уже были собраны (сняты с полки) для
+ * отменённой отгрузки, но так и не уехали — кладовщик физически нашёл их
+ * (обычно на столе упаковки/в таре сборщика) и указывает, в какую ячейку
+ * кладёт их СЕЙЧАС. См. cancelShipment.already_picked — ровно тот список,
+ * который нужно провести через этот метод по одной строке за раз.
+ * Тот же принцип, что и в returns.service.js (оператор с товаром в руках
+ * сам называет ячейку — система не угадывает физическое место).
+ */
+async function returnPickedStock({ tenantId, shipmentCode, barcode, qty, locationCode, userId }) {
+  const shipRes = await query(
+    `SELECT id, warehouse_id, client_id, status FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2`,
+    [tenantId, shipmentCode]
+  );
+  if (shipRes.rowCount === 0) throw new NotFoundError('Shipment', shipmentCode);
+  const shipment = shipRes.rows[0];
+  if (shipment.status !== 'cancelled') {
+    throw new ValidationError('Возврат на склад доступен только для отменённой отгрузки.');
+  }
+
+  const result = await ledger.receiveStock({
+    tenantId, warehouseId: shipment.warehouse_id, clientId: shipment.client_id,
+    barcode, locationCode, qty,
+    refType: 'shipment_cancel', refId: shipment.id, movementType: 'return',
+    userId, comment: `Возврат на склад после отмены отгрузки ${shipmentCode} (собрано, но не упаковано/не отгружено)`,
+  });
+  return result;
+}
+
+module.exports = { listShipments, getShipmentDetails, confirmShipment, markDelivered, cancelShipment, returnPickedStock };

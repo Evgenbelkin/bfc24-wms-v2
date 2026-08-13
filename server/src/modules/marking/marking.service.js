@@ -58,6 +58,47 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
   return { imported, duplicates: codes.length - imported, skipped_invalid: skippedInvalid, total_in_batch: allCodes.length };
 }
 
+/**
+ * Импортировать коды из загруженного Excel-файла (.xlsx) — альтернатива ручной
+ * вставке текстом/сканированию, когда у клиента уже есть выгрузка кодов из
+ * "Честного знака" файлом. Берём первый лист, читаем ВСЕ непустые ячейки (не
+ * только первую колонку) — не важно, в каком столбце/с какой шапкой клиент
+ * выгрузил список, лишний текст (заголовки и т.п.) всё равно отсеется той же
+ * проверкой длины, что и при обычном текстовом импорте (см. importCodes).
+ */
+async function importCodesFromExcel({ tenantId, itemId, createdBy, fileBuffer }) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  try {
+    await wb.xlsx.load(fileBuffer);
+  } catch (e) {
+    throw new ValidationError('Не удалось прочитать файл — убедитесь, что это корректный .xlsx');
+  }
+  const sheet = wb.worksheets[0];
+  if (!sheet) throw new ValidationError('В файле нет ни одного листа');
+
+  const values = [];
+  sheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      const v = cell.value;
+      if (v == null) return;
+      let text;
+      if (typeof v === 'object') {
+        if (Array.isArray(v.richText)) text = v.richText.map((r) => r.text).join('');
+        else text = v.text != null ? String(v.text) : (v.result != null ? String(v.result) : '');
+      } else {
+        text = String(v);
+      }
+      text = text.trim();
+      if (text) values.push(text);
+    });
+  });
+
+  if (!values.length) throw new ValidationError('В файле не нашлось ни одного заполненного значения');
+
+  return importCodes({ tenantId, itemId, createdBy, codesText: values.join('\n') });
+}
+
 /** Удалить код из пула (только пока он 'available' — использованный код это уже
  *  исторический факт, в т.ч. возможно уже отправленный в WB, удалять нельзя,
  *  чтобы не потерять аудит). Для случаев, когда в пул случайно занесли
@@ -447,7 +488,7 @@ async function allocateAndPrint({
 }
 
 module.exports = {
-  parseCodesText, importCodes, getCodesSummary, listCodes, deleteCode,
+  parseCodesText, importCodes, importCodesFromExcel, getCodesSummary, listCodes, deleteCode,
   shouldMarkAt, allocateAndPrint,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
   listPendingManualOverrides,
