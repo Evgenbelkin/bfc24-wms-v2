@@ -127,87 +127,13 @@ router.post('/import-items', requireRole('tenant_admin','supervisor'), async (re
   try {
     const accountId = Number(req.body.account_id);
     const acc = await getMpAccount(req.user.tenantId, accountId);
-    const cards = await wbClient.fetchItems(acc.api_token, { limit: 100, maxPages: 50 });
-
-    let savedItems = 0; let savedBarcodes = 0; let filledVolume = 0;
-    await transaction(async (client) => {
-      for (const card of cards) {
-        const previewUrl = card.mediaFiles?.[0] || card.photos?.[0]?.big || null;
-
-        // Габариты и объём приходят из карточки WB (это те же данные, по которым
-        // сам ВБ считает платное хранение) — берём length/width/height (см) и
-        // weightBrutto (кг), считаем литраж как Д×Ш×В/1000. Заполняются одним
-        // блоком на всю карточку (у ВБ это габариты упаковки товара, они общие
-        // для всех размеров карточки), поэтому распространяются на каждый barcode
-        // этой карточки ниже.
-        const dim = card.dimensions || {};
-        const lengthCm = Number(dim.length) || null;
-        const widthCm  = Number(dim.width)  || null;
-        const heightCm = Number(dim.height) || null;
-        const volumeLiters = (lengthCm && widthCm && heightCm)
-          ? Number(((lengthCm * widthCm * heightCm) / 1000).toFixed(4))
-          : null;
-        const weightGrams = dim.weightBrutto ? Math.round(Number(dim.weightBrutto) * 1000) : null;
-
-        await client.query(
-          `INSERT INTO wms.wb_items(tenant_id,mp_account_id,nm_id,imt_id,vendor_code,brand,title,preview_url)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-           ON CONFLICT(mp_account_id,nm_id) DO UPDATE SET vendor_code=EXCLUDED.vendor_code,
-             brand=EXCLUDED.brand,title=EXCLUDED.title,preview_url=EXCLUDED.preview_url,updated_at=NOW()`,
-          [req.user.tenantId, accountId, card.nmID, card.imtID||null,
-           card.vendorCode||null, card.brand||null, card.title||null, previewUrl]
-        );
-        savedItems++;
-
-        const barcodes = wbClient.extractCardBarcodes(card);
-        for (const b of barcodes) {
-          await client.query(
-            `INSERT INTO wms.wb_item_barcodes(tenant_id,mp_account_id,nm_id,chrt_id,barcode)
-             VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-            [req.user.tenantId, accountId, b.nm_id, b.chrt_id, b.barcode]
-          );
-          savedBarcodes++;
-
-          // Синхронизируем в masterdata.items
-          const item = await client.query(
-            `SELECT id, volume_liters, size FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-            [req.user.tenantId, acc.client_id, b.barcode]
-          );
-          if (item.rowCount === 0 && card.title) {
-            await client.query(
-              `INSERT INTO wms.items(tenant_id,client_id,barcode,item_name,vendor_code,brand,unit,source,wb_nm_id,preview_url,
-                                      length_cm,width_cm,height_cm,volume_liters,weight_grams,size)
-               VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
-              [req.user.tenantId, acc.client_id, b.barcode,
-               card.title, card.vendorCode||null, card.brand||null, card.nmID, previewUrl,
-               lengthCm, widthCm, heightCm, volumeLiters, weightGrams, b.tech_size||null]
-            );
-            if (volumeLiters) filledVolume++;
-          } else if (item.rowCount > 0 && ((item.rows[0].volume_liters == null && volumeLiters) || (item.rows[0].size == null && b.tech_size))) {
-            // Товар уже был в справочнике, но объём/размер никто не заполнил (ни
-            // вручную, ни при более раннем импорте) — подтягиваем из ВБ. Если
-            // поле УЖЕ стоит (в т.ч. вписанное вручную клиентом/складом) — не
-            // трогаем его, чтобы не затереть уточнённое значение данными из
-            // карточки ВБ (COALESCE в обе стороны).
-            await client.query(
-              `UPDATE wms.items SET
-                 length_cm = COALESCE(length_cm, $1),
-                 width_cm  = COALESCE(width_cm, $2),
-                 height_cm = COALESCE(height_cm, $3),
-                 volume_liters = COALESCE(volume_liters, $4),
-                 weight_grams = COALESCE(weight_grams, $5),
-                 size = COALESCE(size, $6),
-                 updated_at = NOW()
-               WHERE id=$7`,
-              [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, b.tech_size||null, item.rows[0].id]
-            );
-            if (volumeLiters) filledVolume++;
-          }
-        }
-      }
+    // Логика в wbService.importItemsForAccount — переиспользуется и фоновым
+    // джобом (wbItemsSync.js), чтобы размер/габариты подтягивались сами по
+    // расписанию, а не только по клику на эту кнопку.
+    const result = await wbService.importItemsForAccount({
+      tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id,
     });
-
-    res.json({ ok: true, fetched_cards: cards.length, saved_items: savedItems, saved_barcodes: savedBarcodes, filled_volume: filledVolume });
+    res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
 
