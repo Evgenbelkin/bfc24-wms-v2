@@ -542,24 +542,47 @@
 
     // ---------- Массовый импорт рабочих мест ----------
     // У КАЖДОГО стола обычно СВОЯ пара принтеров (стикер ВБ + отдельно ЧЗ) —
-    // общий на весь импорт принтер тут бесполезен. Поэтому формат — по
-    // строке на место, поля через запятую: название[, принтер[, принтер ЧЗ]].
-    // Названия принтеров ищутся по точному совпадению среди уже созданных
-    // принтеров (сначала импортируйте принтеры, потом рабочие места) —
-    // это позволяет вставить сразу готовую таблицу, скопированную из Excel.
+    // общий на весь импорт принтер тут бесполезен. Раньше принтер для строки
+    // вводился текстом (через запятую) и искался по точному названию — на
+    // практике это оказалось неочевидно и приводило к опечаткам ("принтер не
+    // назначен" без понятной причины). Теперь на каждую строку — обычные
+    // выпадающие списки принтеров, как в карточке одного места, ошибиться
+    // мимо существующего принтера уже нельзя.
+    let wbiRowSeq = 0;
+
+    function workstationBulkRowHtml(rowId) {
+      const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
+      const markingOptions = `<option value="">— туда же, что и основная печать —</option>` + printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
+      return `
+        <div class="wbi-row" data-row-id="${rowId}" style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;">
+          <div class="field" style="margin-bottom:6px;"><label>Название</label><input class="wbi-row-name" placeholder="Стол упаковки 1"/></div>
+          <div class="field-row2">
+            <div class="field"><label>Принтер этого места</label><select class="wbi-row-printer">${printerOptions}</select></div>
+            <div class="field"><label>Принтер для ЧЗ</label><select class="wbi-row-marking">${markingOptions}</select></div>
+          </div>
+          <button class="btn-sm btn-red" style="margin-top:6px;" onclick="this.closest('.wbi-row').remove()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Убрать строку</button>
+        </div>
+      `;
+    }
+
+    function addWorkstationBulkRow() {
+      wbiRowSeq++;
+      document.getElementById('wbi-rows').insertAdjacentHTML('beforeend', workstationBulkRowHtml(wbiRowSeq));
+    }
+
     function openWorkstationBulkModal() {
       const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}">${UI.escHtml(wh.warehouse_name)}</option>`).join('');
       const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}">${z.label}</option>`).join('');
+      wbiRowSeq = 0;
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
           <div class="modal-card">
             <div class="card-title">Импорт рабочих мест списком</div>
-            <div class="hint-box" style="margin-top:0;">По строке на место, через запятую: <b>название</b>, затем необязательно <b>принтер этого места</b> и <b>принтер для кодов ЧЗ</b> — по точному названию принтера (регистр не важен). Если у стола только один принтер — оставьте второе поле пустым. Тип места и склад — общие для всех строк. Сначала импортируйте принтеры (вкладка «Принтеры»), потом рабочие места — так можно сразу привязать оба принтера к каждому столу.</div>
-            <div class="field"><label>Рабочие места (по строке, через запятую)</label>
-              <textarea id="wbi-names" rows="8" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:monospace;" placeholder="Стол упаковки 1, Принтер ВБ 1, Принтер ЧЗ 1&#10;Стол упаковки 2, Принтер ВБ 2, Принтер ЧЗ 2&#10;Стол упаковки 3, Принтер ВБ 3"></textarea>
-            </div>
-            <div class="field"><label>Тип места</label><select id="wbi-zone">${zoneOptions}</select></div>
+            <div class="hint-box" style="margin-top:0;">Добавьте по строке на каждое рабочее место — название и, если у стола два принтера, выбор обоих сразу из уже созданных принтеров. Тип места и склад общие для всего импорта. Сначала создайте принтеры (вкладка «Принтеры»), потом рабочие места.</div>
+            <div class="field"><label>Тип места (для всех)</label><select id="wbi-zone">${zoneOptions}</select></div>
             <div class="field"><label>Склад (опционально, для всех)</label><select id="wbi-warehouse">${whOptions}</select></div>
+            <div id="wbi-rows"></div>
+            <button class="btn-sm btn-blue" style="margin-top:8px;" onclick="addWorkstationBulkRow()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Добавить строку</button>
             <div id="wbi-result"></div>
             <div class="btn-row">
               <button class="btn-big btn-green" onclick="submitWorkstationBulk()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Импортировать</button>
@@ -568,38 +591,27 @@
           </div>
         </div>
       `;
-    }
-
-    function findPrinterIdByName(name) {
-      if (!name) return { id: null, warning: null };
-      const trimmed = name.trim();
-      if (!trimmed) return { id: null, warning: null };
-      const found = printersList.find(p => p.printer_name.trim().toLowerCase() === trimmed.toLowerCase());
-      return found ? { id: found.id, warning: null } : { id: null, warning: `принтер "${trimmed}" не найден — оставлено пустым, донастройте вручную` };
+      // Начинаем сразу с 3 пустых строк, чтобы не приходилось нажимать
+      // "Добавить" перед первым же вводом.
+      addWorkstationBulkRow(); addWorkstationBulkRow(); addWorkstationBulkRow();
     }
 
     async function submitWorkstationBulk() {
-      const lines = UI.val('#wbi-names').split('\n').map(s => s.trim()).filter(Boolean);
-      if (!lines.length) { UI.notify.err('Впишите хотя бы одну строку'); return; }
+      const rowEls = Array.from(document.querySelectorAll('#wbi-rows .wbi-row'));
       const zone_type = UI.val('#wbi-zone');
       const warehouse_id = UI.val('#wbi-warehouse') || null;
-      const rowWarnings = [];
-      const workstationsRows = lines.map((line, i) => {
-        const parts = line.split(',').map(s => s.trim());
-        const station_name = parts[0];
-        const dp = findPrinterIdByName(parts[1]);
-        const mp = findPrinterIdByName(parts[2]);
-        if (dp.warning) rowWarnings.push(`Строка ${i+1} (${station_name}): ${dp.warning}`);
-        if (mp.warning) rowWarnings.push(`Строка ${i+1} (${station_name}): ${mp.warning}`);
-        return { station_name, zone_type, warehouse_id, default_printer_id: dp.id, marking_printer_id: mp.id };
-      });
+      const workstationsRows = rowEls.map(el => ({
+        station_name: el.querySelector('.wbi-row-name').value.trim(),
+        zone_type,
+        warehouse_id,
+        default_printer_id: el.querySelector('.wbi-row-printer').value || null,
+        marking_printer_id: el.querySelector('.wbi-row-marking').value || null,
+      })).filter(r => r.station_name);
+      if (!workstationsRows.length) { UI.notify.err('Заполните название хотя бы у одной строки'); return; }
       try {
         const res = await window.API.workstations.bulkImport(workstationsRows);
         UI.notify.ok(`Создано мест: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}`);
         let html = `<div class="hint-box" style="margin-top:8px;">Создано: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}</div>`;
-        if (rowWarnings.length) {
-          html += `<div class="hint-box" style="border-left-color:var(--amber);margin-top:8px;">${rowWarnings.map(w => UI.escHtml(w)).join('<br/>')}</div>`;
-        }
         if (res.errors.length) {
           html += `<div class="hint-box" style="border-left-color:var(--red);margin-top:8px;">${res.errors.map(e => `Строка ${e.row} (${UI.escHtml(e.station_name||'')}): ${UI.escHtml(e.error)}`).join('<br/>')}</div>`;
         }
