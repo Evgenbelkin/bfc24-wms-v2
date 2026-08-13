@@ -202,6 +202,7 @@
     get:     (id)=> get(`/locations/${id}`),
     create:  (d) => post('/locations', d),
     update:  (id,d)=>patch(`/locations/${id}`, d),
+    delete:  (id) => del(`/locations/${id}`),
     bulkCreate: (d) => post('/locations/bulk', d),
     printLabels: (locationIds) => post('/locations/labels', { location_ids: locationIds }),
     bulkDimensions: (d) => patch('/locations/bulk-dimensions', d),
