@@ -273,7 +273,10 @@
               </div>
               <div id="marking-codes-list" style="display:none;margin-top:6px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
               <div id="marking-print-wrap" style="display:${!it.marking_mode || it.marking_mode==='print' ? 'block':'none'};">
-                <input id="m-marking-scan-input" placeholder="Сканируйте коды сюда подряд — каждый добавится строкой ниже" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;margin-top:6px;"/>
+                <div style="display:flex;gap:8px;align-items:stretch;margin-top:6px;">
+                  <input id="m-marking-scan-input" placeholder="Сканируйте коды сюда подряд — каждый добавится строкой ниже" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"/>
+                  <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#m-marking-scan-input','Скан кода маркировки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+                </div>
                 <div class="field-row2" style="margin-top:6px;">
                   <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку (сюда же можно вставить список из файла)" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;" oninput="updateMarkingScanCount()"></textarea>
                 </div>
