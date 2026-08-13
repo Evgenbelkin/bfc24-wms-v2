@@ -8,6 +8,7 @@ const { testConnection, pool } = require('./src/config/database');
 const logger = require('./src/utils/logger');
 const wbAutoSync = require('./src/jobs/wbAutoSync');
 const wbStockSync = require('./src/jobs/wbStockSync');
+const wbItemsSync = require('./src/jobs/wbItemsSync');
 const storageBilling = require('./src/jobs/storageBilling');
 
 // =============================================================================
@@ -48,6 +49,7 @@ async function start() {
 
   wbAutoSync.start();
   wbStockSync.start();
+  wbItemsSync.start();
   storageBilling.start();
 }
 
@@ -58,6 +60,7 @@ async function shutdown(signal) {
   logger.info(`Received ${signal}, starting graceful shutdown...`);
   wbAutoSync.stop();
   wbStockSync.stop();
+  wbItemsSync.stop();
   storageBilling.stop();
 
   if (server) {

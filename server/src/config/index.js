@@ -110,6 +110,9 @@ const config = {
     // собранный WB-заказ (резерв проставляется только при генерации волны
     // сборки). Частый полный пересчёт держал бы этот риск открытым постоянно.
     stockSyncIntervalMinutes: intEnv('WB_STOCK_SYNC_INTERVAL_MINUTES', 480),
+    // Фоновая синхронизация карточек товаров WB (размер/габариты в wms.items).
+    // Карточки меняются редко - по умолчанию раз в сутки (0 = выключено).
+    itemsSyncIntervalMinutes: intEnv('WB_ITEMS_SYNC_INTERVAL_MINUTES', 1440),
   },
 
   urls: {
