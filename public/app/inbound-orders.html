@@ -205,7 +205,7 @@
         document.getElementById('detail-lines-body').innerHTML = lines.length
           ? lines.map(l => `
               <tr>
-                <td>${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}</td>
+                <td>${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}<div style="color:var(--muted);font-size:11px;">${[l.vendor_code, l.size ? 'разм. '+l.size : null].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
                 <td>${UI.escHtml(l.barcode)}</td>
                 <td>${UI.fmtQty(l.qty_expected)}</td>
                 <td>${UI.fmtQty(l.qty_received||0)}</td>

@@ -80,12 +80,12 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
        pt.barcode,
        MAX(pt.location_code) AS location_code,
        SUM(pt.qty)::int AS qty_plan,
-       i.item_name, i.vendor_code, i.unit, i.preview_url,
+       i.item_name, i.vendor_code, i.size, i.unit, i.preview_url,
        i.requires_marking, i.marking_trigger, i.marking_mode
      FROM wms.picking_tasks pt
      LEFT JOIN wms.items i ON i.id=pt.item_id
      WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.status IN ('new','in_progress','done')
-     GROUP BY pt.barcode, i.item_name, i.vendor_code, i.unit, i.preview_url,
+     GROUP BY pt.barcode, i.item_name, i.vendor_code, i.size, i.unit, i.preview_url,
        i.requires_marking, i.marking_trigger, i.marking_mode
      ORDER BY i.item_name, pt.barcode`,
     [tenantId, shipment.external_id]

@@ -47,7 +47,7 @@ async function listPendingPlacement({ tenantId, warehouseId = null, clientId = n
        sb.barcode, sb.qty_on_hand, sb.qty_available, sb.last_movement_at,
        l.id AS location_id, l.location_code, l.location_type, l.zone_code,
        w.id AS warehouse_id, w.warehouse_name,
-       i.id AS item_id, i.item_name, i.vendor_code, i.unit, i.needs_packaging, i.preview_url,
+       i.id AS item_id, i.item_name, i.vendor_code, i.size, i.unit, i.needs_packaging, i.preview_url,
        c.id AS client_id, c.client_name
      FROM wms.stock_balances sb
      JOIN wms.locations l ON l.id = sb.location_id
@@ -69,7 +69,7 @@ async function getPendingByBarcode({ tenantId, barcode, warehouseId = null }) {
     SELECT sb.barcode, sb.qty_on_hand, sb.qty_available,
            l.id AS location_id, l.location_code, l.location_type,
            w.id AS warehouse_id, w.warehouse_name,
-           i.item_name, i.vendor_code,
+           i.item_name, i.vendor_code, i.size,
            c.id AS client_id, c.client_name
     FROM wms.stock_balances sb
     JOIN wms.locations l ON l.id = sb.location_id
@@ -273,7 +273,7 @@ async function listPlacementHistory({ tenantId, clientId = null, warehouseId = n
   const r = await query(
     `SELECT m.id, m.barcode, m.qty, m.from_location_code, m.to_location_code,
             m.comment, m.created_at,
-            i.item_name, i.vendor_code,
+            i.item_name, i.vendor_code, i.size,
             c.client_name, u.username AS operator_name, w.warehouse_name
      FROM wms.stock_movements m
      LEFT JOIN wms.items i ON i.id=m.item_id
