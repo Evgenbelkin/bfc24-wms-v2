@@ -69,7 +69,7 @@ async function listStockBalances({
        (sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS cost_value,
        l.id AS location_id, l.location_code, l.zone_code, l.location_type,
        w.id AS warehouse_id, w.warehouse_name,
-       i.item_name, i.vendor_code, i.unit, i.volume_liters, i.needs_packaging,
+       i.item_name, i.vendor_code, i.size, i.unit, i.volume_liters, i.needs_packaging,
        c.client_name
      FROM wms.stock_balances sb
      JOIN wms.locations l ON l.id = sb.location_id
@@ -101,7 +101,7 @@ async function getStockByBarcode({ tenantId, clientId, barcode, warehouseId = nu
        sb.barcode, sb.qty_on_hand, sb.qty_reserved, sb.qty_available,
        l.id AS location_id, l.location_code, l.zone_code,
        w.warehouse_name,
-       i.item_name, i.vendor_code, i.unit
+       i.item_name, i.vendor_code, i.size, i.unit
      FROM wms.stock_balances sb
      JOIN wms.locations l ON l.id = sb.location_id
      JOIN wms.warehouses w ON w.id = sb.warehouse_id
@@ -126,7 +126,7 @@ async function getStockByLocation({ tenantId, locationCode, warehouseId = null }
     `SELECT
        sb.barcode, sb.client_id, sb.qty_on_hand, sb.qty_reserved, sb.qty_available,
        l.location_code, l.zone_code,
-       i.item_name, i.vendor_code, i.unit,
+       i.item_name, i.vendor_code, i.size, i.unit,
        c.client_name
      FROM wms.stock_balances sb
      JOIN wms.locations l ON l.id = sb.location_id
@@ -195,7 +195,7 @@ async function listMovements({
        m.barcode, m.from_location_code, m.to_location_code,
        m.ref_type, m.ref_id, m.comment, m.created_at,
        m.user_id, u.username,
-       i.item_name, c.client_name
+       i.item_name, i.vendor_code, i.size, c.client_name
      FROM wms.stock_movements m
      LEFT JOIN wms.users u ON u.id = m.user_id
      LEFT JOIN wms.items i ON i.id = m.item_id
