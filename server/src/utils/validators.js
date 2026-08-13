@@ -73,6 +73,40 @@ function validateBarcode(value, fieldName = 'barcode') {
 }
 
 /**
+ * Похоже ли значение на реальный код маркировки "Честный знак" (КИЗ), а не
+ * на обычный товарный штрихкод, случайно отсканированный в то же поле.
+ *
+ * КИЗ — это GS1 DataMatrix: минимум AI(01)+GTIN(14 цифр)+AI(21)+серийный
+ * номер (обычно ещё символов 13-20), а в норме ещё AI(91) и AI(92) с
+ * криптохвостом — итоговая длина у реального кода почти всегда 40+, часто
+ * 80-100+ символов. Обычный штрихкод товара (EAN-13/EAN-8/внутренний код
+ * ВБ) — почти всегда чисто цифровой и не длиннее 14 символов. Порог в 25
+ * символов взят с большим запасом ниже любого реального КИЗ и выше любого
+ * обычного штрихкода — так что отличить их можно без разбора точного
+ * GS1-формата (сканеры по-разному передают разделители групп \x1D, само
+ * поле "91/92" иногда обрезано настройками сканера).
+ */
+function isValidKizCode(value) {
+  const s = String(value || '').trim();
+  if (s.length < 25) return false;
+  return true;
+}
+
+/**
+ * То же самое, но бросает ValidationError вместо true/false — для мест,
+ * где код обязан быть валидным КИЗ (иначе запрос вообще не должен пройти).
+ */
+function validateKizCode(value, fieldName = 'code') {
+  const s = String(value || '').trim();
+  if (!isValidKizCode(s)) {
+    throw new ValidationError(
+      `Field '${fieldName}' does not look like a valid "Честный знак" marking code (too short — looks like a product barcode was scanned instead)`
+    );
+  }
+  return s;
+}
+
+/**
  * Проверить email
  */
 function validateEmail(value, fieldName = 'email') {
@@ -146,6 +180,8 @@ module.exports = {
   validateDateOnly,
   validateDateRange,
   validateBarcode,
+  isValidKizCode,
+  validateKizCode,
   validateEmail,
   validatePassword,
   parseBool,

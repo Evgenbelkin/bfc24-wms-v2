@@ -5,6 +5,7 @@ const { query, transaction } = require('../../config/database');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { generateMarkingLabelSvg } = require('../../utils/qrcode');
 const { ValidationError, ForbiddenError } = require('../../utils/errors');
+const { isValidKizCode } = require('../../utils/validators');
 const wbClient = require('../wb/wb.client');
 const logger = require('../../utils/logger');
 
@@ -26,8 +27,19 @@ function parseCodesText(raw) {
 
 /** Импортировать коды в пул на товар */
 async function importCodes({ tenantId, itemId, createdBy, codesText }) {
-  const codes = parseCodesText(codesText);
-  if (codes.length === 0) throw new ValidationError('Нет ни одного кода для импорта');
+  const allCodes = parseCodesText(codesText);
+  if (allCodes.length === 0) throw new ValidationError('Нет ни одного кода для импорта');
+
+  // Отсекаем то, что явно не похоже на КИЗ (например, в это же поле вставили
+  // список обычных штрихкодов товара по ошибке) — не роняем весь импорт
+  // целиком, а просто пропускаем такие строки и честно говорим сколько.
+  const codes = allCodes.filter(isValidKizCode);
+  const skippedInvalid = allCodes.length - codes.length;
+  if (codes.length === 0) {
+    throw new ValidationError(
+      `Ни одна из ${allCodes.length} строк не похожа на код "Честный знак" (слишком короткие — похоже на обычные штрихкоды товара)`
+    );
+  }
 
   const itemRes = await query(`SELECT id FROM wms.items WHERE id=$1 AND tenant_id=$2`, [itemId, tenantId]);
   if (itemRes.rowCount === 0) throw new ValidationError('Item not found');
@@ -43,7 +55,7 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
     );
     if (r.rowCount > 0) imported++;
   }
-  return { imported, duplicates: codes.length - imported, total_in_batch: codes.length };
+  return { imported, duplicates: codes.length - imported, skipped_invalid: skippedInvalid, total_in_batch: allCodes.length };
 }
 
 /** Сводка по товару: сколько кодов свободно / использовано */
@@ -121,6 +133,21 @@ async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient 
     throw new ValidationError(
       `Товар промаркирован клиентом (Честный знак) — отсканируйте код DataMatrix ` +
       `с каждой принимаемой единицы, прежде чем продолжить приёмку.`
+    );
+  }
+
+  // Проверка ДО начала транзакции — если в поле для КИЗ прилетел обычный
+  // товарный штрихкод (частый случай: сканер/фокус промахнулись мимо поля,
+  // или оператор по привычке отсканировал этикетку товара вместо кода
+  // маркировки), явно и понятно объясняем что не так, вместо невнятной
+  // ошибки от INSERT или (хуже) тихой регистрации штрихкода как "кода
+  // маркировки". См. isValidKizCode в utils/validators.js — реальный КИЗ
+  // всегда заметно длиннее любого товарного штрихкода.
+  const badCode = list.find(c => !isValidKizCode(c));
+  if (badCode) {
+    throw new ValidationError(
+      `"${badCode}" не похож на код "Честный знак" (слишком короткий — похоже, отсканирован обычный штрихкод товара). ` +
+      `Отсканируйте код DataMatrix с этикетки маркировки, а не штрихкод товара.`
     );
   }
 

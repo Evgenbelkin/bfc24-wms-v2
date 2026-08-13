@@ -51,6 +51,15 @@
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // Похоже ли значение на код "Честный знак" (КИЗ), а не на обычный
+  // товарный штрихкод - зеркалит isValidKizCode из server/src/utils/
+  // validators.js (см. там подробный комментарий про длину GS1 DataMatrix).
+  // Используется в полях сканирования КИЗ, чтобы отсекать промах мимо поля
+  // ДО похода на сервер - сразу гудок ошибки и понятное сообщение.
+  function isValidKizCode(str) {
+    return String(str || '').trim().length >= 25;
+  }
+
   // ─────────────── Loading state ───────────────
 
   function setLoading(selector, isLoading, originalText) {
@@ -421,7 +430,7 @@
   window.UI = {
     toast, notify,
     el, els, show, hide, setText, setHTML, val, setVal, disable, enable,
-    escHtml, setLoading,
+    escHtml, isValidKizCode, setLoading,
     renderTable,
     requireAuth, requireRole,
     fmtDate, fmtDateTime, fmtMoney, fmtQty,

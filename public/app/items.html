@@ -273,9 +273,11 @@
               </div>
               <div id="marking-codes-list" style="display:none;margin-top:6px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
               <div id="marking-print-wrap" style="display:${!it.marking_mode || it.marking_mode==='print' ? 'block':'none'};">
+                <input id="m-marking-scan-input" placeholder="Сканируйте коды сюда подряд — каждый добавится строкой ниже" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;margin-top:6px;"/>
                 <div class="field-row2" style="margin-top:6px;">
-                  <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"></textarea>
+                  <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку (сюда же можно вставить список из файла)" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;" oninput="updateMarkingScanCount()"></textarea>
                 </div>
+                <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="marking-scan-count"></div>
                 <button class="btn-big btn-blue btn-full" style="margin-top:6px;" onclick="importMarkingCodes(${idx})">Загрузить коды в пул</button>
               </div>
               ` : ''}
@@ -313,6 +315,38 @@
       `;
       markingCodesListOpen = false;
       if (it) loadMarkingSummary(it.id);
+      if (it) wireMarkingScanInput();
+    }
+
+    // Раньше коды в пул можно было только вставить текстом (Ctrl+V списка) —
+    // при пачке КИЗ, которые физически под рукой (например, приёмка ещё не
+    // подключена к "scan"-режиму, а коды на товарах уже есть), приходилось
+    // сначала куда-то их всё сканировать, потом копировать сюда. Теперь
+    // можно сканировать прямо в это поле одно за другим — каждый скан
+    // добавляет строку в textarea ниже (её при этом можно и вручную
+    // редактировать/вставлять список как раньше — ничего не отняли).
+    function updateMarkingScanCount() {
+      const counter = document.getElementById('marking-scan-count');
+      if (!counter) return;
+      const n = (UI.val('#m-marking-codes-text') || '').split(/\r?\n/).map(s=>s.trim()).filter(Boolean).length;
+      counter.textContent = n > 0 ? `В очереди на загрузку: ${n}` : '';
+    }
+
+    function wireMarkingScanInput() {
+      updateMarkingScanCount();
+      UI.onScan('#m-marking-scan-input', (v) => {
+        const code = String(v || '').trim();
+        if (!code) return;
+        if (!UI.isValidKizCode(code)) {
+          throw new Error('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix');
+        }
+        const textarea = document.getElementById('m-marking-codes-text');
+        const existing = textarea.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        if (existing.includes(code)) { UI.notify.warn('Этот код уже в очереди'); return; }
+        existing.push(code);
+        textarea.value = existing.join('\n');
+        updateMarkingScanCount();
+      });
     }
 
     async function loadMarkingSummary(itemId) {
@@ -375,8 +409,12 @@
       if (!text || !text.trim()) { UI.notify.err('Вставьте хотя бы один код'); return; }
       try {
         const res = await window.API.marking.importCodes(it.id, text);
-        UI.notify.ok(`Загружено: ${res.imported} шт.${res.duplicates ? ` (дублей пропущено: ${res.duplicates})` : ''}`);
+        const notes = [];
+        if (res.duplicates) notes.push(`дублей пропущено: ${res.duplicates}`);
+        if (res.skipped_invalid) notes.push(`не похоже на КИЗ, пропущено: ${res.skipped_invalid}`);
+        UI.notify.ok(`Загружено: ${res.imported} шт.${notes.length ? ` (${notes.join(', ')})` : ''}`);
         UI.setVal('#m-marking-codes-text', '');
+        updateMarkingScanCount();
         await loadMarkingSummary(it.id);
       } catch (e) { UI.notify.err(e.message); }
     }
