@@ -58,6 +58,29 @@ router.patch('/:id', requireRole('tenant_admin','supervisor'), async (req,res,ne
   } catch(e){ next(e); }
 });
 
+/** DELETE /items/:id — удалить товар, только если по нему сейчас нет
+ *  остатка. Если по товару уже есть история (почти всегда так) — удалить
+ *  нельзя (упрётся в внешний ключ), вместо этого его деактивируют
+ *  (is_active=false), см. items.service.js:deleteItem. */
+router.delete('/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.deleteItem({ tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id') });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** POST /items/bulk-delete { item_ids } — то же самое пачкой (для чистки
+ *  "левых" товаров, например после кривой настройки приёмки, когда она
+ *  заводила товар на любой отсканированный штрихкод без разбора). Не падает
+ *  на первом же товаре с остатком — просто считает его пропущенным и идёт
+ *  дальше. */
+router.post('/bulk-delete', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkDeleteItems({ tenantId: req.user.tenantId, itemIds: req.body.item_ids });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /items/:id/print-label { copies } — напечатать этикетку товара
  *  (штрихкод + название) через принтер текущего сотрудника (рабочее место,
  *  если оно выбрано, иначе общий маршрут doc_type='item_barcode'). Нужно для

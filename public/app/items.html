@@ -59,6 +59,7 @@
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"/> Выбрать все на странице</label>
       <span style="font-size:13px;color:var(--muted);">Выбрано: <b id="selected-count">0</b></span>
       <button class="btn-sm btn-blue" style="margin-left:auto;" onclick="openBulkMarkingModal()"><svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Маркировка для выбранных</button>
+      <button class="btn-sm btn-red" onclick="deleteSelectedItems()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить выбранные</button>
     </div>
   </div>
 
@@ -155,6 +156,17 @@
         const res = await window.API.marking.bulkUpdateSettings(Array.from(selectedItemIds), data);
         UI.notify.ok(`Обновлено товаров: ${res.updated}`);
         closeModal();
+        selectedItemIds.clear();
+        await loadItems();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deleteSelectedItems() {
+      if (!selectedItemIds.size) { UI.notify.err('Отметьте хотя бы один товар'); return; }
+      if (!UI.confirm(`Удалить выбранные товары (${selectedItemIds.size} шт.)? Товары с остатком пропустятся.`)) return;
+      try {
+        const res = await window.API.items.bulkDelete(Array.from(selectedItemIds));
+        UI.notify.ok(`Удалено: ${res.deleted}${res.deactivated ? `, деактивировано: ${res.deactivated}` : ''}${res.skipped ? `, пропущено (есть остаток): ${res.skipped}` : ''}`);
         selectedItemIds.clear();
         await loadItems();
       } catch (e) { UI.notify.err(e.message); }
@@ -321,6 +333,7 @@
               ${canEdit ? `<button class="btn-big btn-green" onclick="saveItem(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
             </div>
+            ${canEdit && it ? `<button class="btn-big btn-red btn-full" style="margin-top:8px;" onclick="deleteItemFromModal(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить товар</button>` : ''}
           </div>
         </div>
       `;
@@ -535,6 +548,20 @@
           await window.API.items.create(data);
           UI.notify.ok('Товар создан');
         }
+        closeModal();
+        await loadItems();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function deleteItemFromModal(idx) {
+      const it = itemCache[idx];
+      if (!it) return;
+      if (!UI.confirm(`Удалить товар ${it.item_name || it.barcode}?`)) return;
+      try {
+        const res = await window.API.items.delete(it.id);
+        UI.notify.ok(res.mode === 'soft'
+          ? `Товар «${res.item_name || res.barcode}» деактивирован (есть история — полностью удалить нельзя)`
+          : `Товар «${res.item_name || res.barcode}» удалён`);
         closeModal();
         await loadItems();
       } catch (e) { UI.notify.err(e.message); }
