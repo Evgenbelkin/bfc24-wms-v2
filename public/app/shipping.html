@@ -80,6 +80,17 @@
       <button type="button" class="btn-big btn-green btn-full" onclick="markDelivered()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Отметить доставленной</button>
     </div>
 
+    <!-- Снять зависшую отгрузку с учёта — для случая, когда сборка/упаковка
+         заблокировалась (например, код "Честный знак" не найден в пуле) и
+         продавец в итоге отгрузил заказ прямо в кабинете WB в обход ВМС.
+         Такая отгрузка иначе остаётся в незавершённом статусе навсегда —
+         только supervisor/tenant_admin, только пока не done/cancelled. -->
+    <div class="card" id="cancel-card" style="display:none">
+      <div class="card-title">Отгрузка зависла?</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Если заказ уже физически уехал (например, продавец отгрузил его прямо в кабинете WB в обход ВМС из-за сбоя сборки/упаковки) — отмените отгрузку здесь, чтобы она не висела незавершённой. Резервы снимутся, задачи сборки/упаковки отменятся.</div>
+      <button type="button" class="btn-big btn-red btn-full" onclick="cancelShipment()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Отменить отгрузку</button>
+    </div>
+
     <!-- Постоянный блок QR поставки WB — виден в любой момент, если QR уже получен
          (не только сразу после подтверждения отгрузки), чтобы можно было открыть/
          перепечатать позже, например если стикер зажевало принтером. -->
@@ -261,6 +272,11 @@
         } else {
           deliveredCard.style.display = 'none';
         }
+
+        // "Отменить отгрузку" — доступно из любого статуса, кроме финальных
+        // done/cancelled (там уже либо реально доставлено, либо уже отменена).
+        const cancelCard = document.getElementById('cancel-card');
+        cancelCard.style.display = (canRequeue && !['done','cancelled'].includes(currentShipment.status)) ? 'block' : 'none';
       } catch (e) { UI.notify.err(e.message); }
     }
 
@@ -286,6 +302,18 @@
       try {
         await window.API.shipping.markDelivered(currentShipment.external_id);
         UI.notify.ok('Отгрузка отмечена доставленной');
+        await openShipmentByCode(currentShipment.external_id);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function cancelShipment() {
+      if (!currentShipment) return;
+      const reason = prompt(`Отменить отгрузку ${currentShipment.external_id}? Укажите причину (например: "отгружено напрямую через кабинет WB, упаковка была заблокирована"):`);
+      if (reason === null) return; // нажали "Отмена" в самом prompt
+      if (!UI.confirm(`Точно отменить отгрузку ${currentShipment.external_id}? Резервы снимутся, задачи сборки/упаковки отменятся. Действие необратимо.`)) return;
+      try {
+        await window.API.shipping.cancel(currentShipment.external_id, reason);
+        UI.notify.ok('Отгрузка отменена');
         await openShipmentByCode(currentShipment.external_id);
       } catch (e) { UI.notify.err(e.message); }
     }

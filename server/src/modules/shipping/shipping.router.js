@@ -62,4 +62,19 @@ router.post('/mark-delivered', requireRole('tenant_admin','supervisor'), async (
   } catch(e){ next(e); }
 });
 
+// Отменить/снять с учёта зависшую отгрузку — только супервайзер/админ
+// (необратимое действие: снимает резервы, отменяет задачи сборки/упаковки).
+router.post('/cancel', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { shipment_code, reason } = req.body;
+    const result = await svc.cancelShipment({
+      tenantId:     req.user.tenantId,
+      shipmentCode: shipment_code,
+      userId:       req.user.id,
+      reason,
+    });
+    res.json({ ok: true, shipment: result });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;

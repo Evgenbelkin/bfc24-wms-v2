@@ -124,6 +124,18 @@ router.patch('/items/bulk-settings', requireRole('tenant_admin', 'supervisor'), 
   } catch (e) { next(e); }
 });
 
+/** DELETE /marking/items/:itemId/codes/:codeId — убрать "левый" код из пула
+ *  (только свободный/не использованный код, только tenant_admin/supervisor —
+ *  необратимо, коды нельзя восстановить, только заново отсканировать/вставить). */
+router.delete('/items/:itemId/codes/:codeId', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const itemId = validatePositiveInt(req.params.itemId, 'itemId');
+    const codeId = validatePositiveInt(req.params.codeId, 'codeId');
+    const deleted = await svc.deleteCode({ tenantId: req.user.tenantId, itemId, codeId });
+    res.json({ ok: true, deleted });
+  } catch (e) { next(e); }
+});
+
 /** GET /marking/pending-manual-overrides — коды, проведённые без отправки в WB (требуют ручной привязки) */
 router.get('/pending-manual-overrides', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {

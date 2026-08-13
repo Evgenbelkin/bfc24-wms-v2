@@ -188,6 +188,7 @@
     summary:    (itemId)          => get(`/marking/items/${itemId}/codes/summary`),
     listCodes:  (itemId, p)       => get(`/marking/items/${itemId}/codes`, p),
     importCodes:(itemId, codesText) => post(`/marking/items/${itemId}/codes/import`, { codes_text: codesText }),
+    deleteCode: (itemId, codeId)   => del(`/marking/items/${itemId}/codes/${codeId}`),
     updateSettings:(itemId, d)    => patch(`/marking/items/${itemId}/settings`, d),
     bulkUpdateSettings: (itemIds, d) => patch('/marking/items/bulk-settings', { item_ids: itemIds, ...d }),
     pendingOverrides: (p)          => get('/marking/pending-manual-overrides', p),
@@ -323,6 +324,7 @@
     details: (code) => get('/shipping/details', { shipment_code: code }),
     confirm: (d) => post('/shipping/confirm', d),
     markDelivered: (code) => post('/shipping/mark-delivered', { shipment_code: code }),
+    cancel: (code, reason) => post('/shipping/cancel', { shipment_code: code, reason }),
   };
 
   // ─────────────── Overview ("Табло") ───────────────
