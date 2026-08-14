@@ -181,6 +181,7 @@
   const items = {
     list:      (p) => get('/items', p),
     byBarcode: (b, clientId) => get('/items/by-barcode', { barcode: b, client_id: clientId }),
+    byKiz:     (code, clientId) => get('/items/by-kiz', { code, client_id: clientId }),
     get:       (id)=> get(`/items/${id}`),
     create:    (d) => post('/items', d),
     update:    (id,d)=>patch(`/items/${id}`, d),

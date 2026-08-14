@@ -121,9 +121,10 @@
           <div class="card" id="scan-item-card">
             <div class="card-title">Скан товара</div>
             <div class="scan-row">
-              <input id="scan-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
+              <input id="scan-barcode" class="scan-input" placeholder="Штрихкод товара или киз" inputmode="none" autocomplete="off"/>
               <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#scan-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
             </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;">Для промаркированных товаров можно сразу сканировать киз — товар определится сам.</div>
             <div id="scan-status" class="refresh-note"></div>
           </div>
 
@@ -421,9 +422,41 @@
 
     async function handleScan(barcode) {
       if (!currentTask || !pickupConfirmed) return;
-      const line = findLineByBarcode(barcode);
+      const scanned = String(barcode || '').trim();
+
+      // Промаркированные товары: можно сразу сканировать киз в это же поле,
+      // без отдельного скана обычного штрихкода — система сама достаёт GTIN
+      // из кода и по нему находит товар (см. items.service.js:findItemByKizCode).
+      // Если код не распознался или товар с таким GTIN не нашёлся у этого
+      // клиента — просто просим отсканировать обычный штрихкод, как раньше.
+      if (UI.isValidKizCode(scanned)) {
+        const statusEl = document.getElementById('scan-status');
+        try {
+          const res = await window.API.items.byKiz(scanned, currentShipment?.client_id);
+          if (res.item && res.item.barcode) {
+            // Подстраховка на случай ошибки именно на шаге кода маркировки —
+            // чтобы кнопка "обойти супервайзером" (см. submitMarkingOverride)
+            // сработала так же, как в обычном двухшаговом сценарии.
+            pendingDmBarcode = res.item.barcode;
+            const ok = await submitScan(res.item.barcode, scanned, null);
+            if (!ok) {
+              document.getElementById('pack-dm-card').style.display = 'block';
+              UI.setVal('#pack-dm-input', scanned);
+            }
+            return;
+          }
+        } catch (e) {
+          // не нашли товар по этому кизу — падаем на подсказку ниже
+        }
+        UI.beep('err');
+        UI.notify.err('Не смогли определить товар по этому коду — отсканируйте обычный штрихкод товара');
+        if (statusEl) statusEl.textContent = '';
+        return;
+      }
+
+      const line = findLineByBarcode(scanned);
       if (lineNeedsDataMatrixScan(line)) {
-        pendingDmBarcode = barcode;
+        pendingDmBarcode = scanned;
         document.getElementById('pack-dm-card').style.display = 'block';
         document.getElementById('pack-dm-error').style.display = 'none';
         document.getElementById('pack-dm-override-btn').style.display = 'none';
@@ -431,7 +464,7 @@
         setTimeout(() => document.getElementById('pack-dm-input').focus(), 100);
         return;
       }
-      await submitScan(barcode, null, null);
+      await submitScan(scanned, null, null);
     }
 
     async function submitScan(barcode, dataMatrixCode, markingOverride) {
@@ -452,7 +485,8 @@
         renderLines();
         renderBigPhoto();
         renderStickerCard();
-        statusEl.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> ${UI.escHtml(res.barcode)}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '');
+        const viaBadge = dataMatrixCode ? ' · <span style="color:var(--green);font-weight:700;">✓ КИЗ</span>' : '';
+        statusEl.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> ${UI.escHtml(res.barcode)}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '') + viaBadge;
         renderMarkingCounter(res);
         UI.notify.ok(res.marking && res.marking.manual_override
           ? `Упаковано БЕЗ отправки КИЗ в WB (обход супервайзера): ${res.qty_packed}/${res.qty_plan}`
@@ -467,6 +501,10 @@
         if (dataMatrixCode) {
           // Ошибка именно на шаге DataMatrix (нет в пуле / WB API отклонил и т.п.) —
           // не прячем карточку, даём возможность повторить скан или вызвать супервайзера.
+          // Карточку показываем явно (а не полагаемся, что она уже видна) — при
+          // прямом скане киза (без отдельного скана штрихкода) она могла ни разу
+          // не открыться до этой ошибки.
+          document.getElementById('pack-dm-card').style.display = 'block';
           errEl.textContent = e.message;
           errEl.style.display = 'block';
           overrideBtn.style.display = 'block';

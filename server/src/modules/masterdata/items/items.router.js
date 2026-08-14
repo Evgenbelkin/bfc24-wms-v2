@@ -9,7 +9,7 @@ const { validatePositiveInt } = require('../../../utils/validators');
 const { generateItemLabelSvg } = require('../../../utils/qrcode');
 const { resolvePrinter } = require('../../printing/printerResolver');
 const { query } = require('../../../config/database');
-const { ValidationError } = require('../../../utils/errors');
+const { ValidationError, NotFoundError } = require('../../../utils/errors');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -32,6 +32,19 @@ router.get('/by-barcode', async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.query.client_id);
     const item = await svc.getItemByBarcode({ tenantId: req.user.tenantId, clientId, barcode: req.query.barcode });
+    res.json({ ok: true, item });
+  } catch(e){ next(e); }
+});
+
+/** GET /items/by-kiz?code=...&client_id=... — определить товар по коду
+ *  "Честный знак" (достаём GTIN из начала кода, ищем товар с таким штрихкодом
+ *  у этого клиента). Используется на сборке/упаковке/приёмке, чтобы можно
+ *  было сканировать сразу киз без отдельного скана обычного штрихкода. */
+router.get('/by-kiz', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const item = await svc.findItemByKizCode({ tenantId: req.user.tenantId, clientId, code: req.query.code });
+    if (!item) throw new NotFoundError('Item by kiz code');
     res.json({ ok: true, item });
   } catch(e){ next(e); }
 });
