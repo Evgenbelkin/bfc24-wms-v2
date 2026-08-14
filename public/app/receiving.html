@@ -174,7 +174,7 @@
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Ячейка</th></tr></thead>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Ячейка</th><th>Кто принял</th></tr></thead>
           <tbody id="history-body"></tbody>
         </table>
       </div>
@@ -811,6 +811,7 @@
             <td>${UI.escHtml(r.item_name || r.barcode)}</td>
             <td>${UI.fmtQty(r.qty_received)}</td>
             <td>${UI.escHtml(r.location_code || '—')}</td>
+            <td>${UI.escHtml(r.receiver_name || '—')}</td>
           </tr>
         `);
       } catch (e) { UI.notify.err(e.message); }
