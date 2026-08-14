@@ -120,19 +120,24 @@
         const res = await window.API.locations.printLabels(Array.from(selectedIds));
         const labels = res.labels || [];
         w.document.open();
+        // Каждая наклейка — отдельная страница размером под термоэтикетку
+        // (58×40мм), а не сетка на A4: раньше это уходило на обычный принтер
+        // листом A4 с несколькими ячейками в ряд, вместо одной наклейки на
+        // ленте термопринтера. В диалоге печати браузера нужно выбрать
+        // термопринтер и масштаб "Реальный размер" (не "Подгонать по странице").
         w.document.write(`
           <html><head><title>Наклейки ячеек (${labels.length})</title>
           <style>
-            @page { margin: 8mm; }
+            @page { size: 58mm 40mm; margin: 0; }
             html,body{margin:0;padding:0;}
             body{font-family:sans-serif;}
-            .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm;padding:6mm;}
-            .cell{border:1px dashed #ccc;padding:4mm;text-align:center;page-break-inside:avoid;}
-            .cell svg{width:100%;height:auto;display:block;}
+            .cell{width:58mm;height:40mm;box-sizing:border-box;padding:2mm;
+                  display:flex;align-items:center;justify-content:center;
+                  page-break-after:always;break-after:page;}
+            .cell:last-child{page-break-after:auto;break-after:auto;}
+            .cell svg{width:100%;height:100%;display:block;}
           </style></head><body>
-          <div class="grid">
-            ${labels.map(l => `<div class="cell">${l.svg}</div>`).join('')}
-          </div>
+          ${labels.map(l => `<div class="cell">${l.svg}</div>`).join('')}
           <script>window.onload = () => window.print();<\/script>
           </body></html>
         `);
