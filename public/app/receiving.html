@@ -298,7 +298,11 @@
       const code = String(v || '').trim();
       if (!code) return;
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
-      if (!UI.hasValidKizStructure(code)) { UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона'); return; }
+      // ВРЕМЕННО (диагностика) отключена клиентская проверка структуры — пропускаем
+      // код на сервер, чтобы он попал в лог (см. marking.service.js registerScannedCodes)
+      // и можно было разобрать реальные байты без доступа к консоли ТСД. Сервер всё
+      // равно не даст такому коду сохраниться. Вернуть проверку после диагностики:
+      // if (!UI.hasValidKizStructure(code)) { UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона'); return; }
       if (freeDmCodes.length >= freeQty) { UI.notify.err(`Уже отсканировано ${freeQty} код(ов) — этого достаточно`); return; }
       if (freeDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       freeDmCodes.push(code);

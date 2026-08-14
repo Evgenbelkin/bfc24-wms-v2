@@ -231,6 +231,13 @@ async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient 
   // не сразу, а через дни, когда код уже "использован". Ловим здесь.
   const brokenCode = list.find(c => !hasValidKizStructure(c));
   if (brokenCode) {
+    // Временная диагностика: логируем байты отклонённого кода в hex, чтобы
+    // можно было разобрать структуру по логам pm2, не трогая проверку и не
+    // давая битому коду попасть в БД. Смотри также предыдущий инцидент с GS1.
+    logger.warn(
+      { tenantId, itemId, len: brokenCode.length, hex: Buffer.from(brokenCode, 'binary').toString('hex') },
+      'registerScannedCodes: код отклонён проверкой структуры (hasValidKizStructure)'
+    );
     throw new ValidationError(
       `Код похож на "Честный знак" по длине, но структура повреждена (потерян или задвоен служебный разделитель) — обычно так бывает при скане камерой телефона. ` +
       `Пересканируйте физическим сканером в режиме GS1 DataMatrix.`
