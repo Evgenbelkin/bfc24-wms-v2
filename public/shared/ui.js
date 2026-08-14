@@ -60,6 +60,21 @@
     return String(str || '').trim().length >= 25;
   }
 
+  // Проверка структуры (не только длины) — зеркалит hasValidKizStructure из
+  // server/src/utils/validators.js. Между серийным номером и следующим блоком
+  // должен быть ровно один служебный байт-разделитель GS1 (0x1D) - реальный
+  // инцидент показал, что скан камерой телефона может выдать код правильной
+  // длины, но с потерянным/задвоенным разделителем, который потом отклонит
+  // WB. Даёт мгновенную обратную связь прямо в браузере, не дожидаясь сервера.
+  function hasValidKizStructure(str) {
+    let s = String(str || '').trim();
+    if (/^\]d2/i.test(s)) s = s.slice(3);
+    if (s.charCodeAt(0) === 0x1d) s = s.slice(1);
+    if (!/^01\d{14}21/.test(s)) return false;
+    const gsCount = (s.match(/\x1d/g) || []).length;
+    return gsCount === 1;
+  }
+
   // ─────────────── Loading state ───────────────
 
   function setLoading(selector, isLoading, originalText) {
@@ -430,7 +445,7 @@
   window.UI = {
     toast, notify,
     el, els, show, hide, setText, setHTML, val, setVal, disable, enable,
-    escHtml, isValidKizCode, setLoading,
+    escHtml, isValidKizCode, hasValidKizStructure, setLoading,
     renderTable,
     requireAuth, requireRole,
     fmtDate, fmtDateTime, fmtMoney, fmtQty,

@@ -80,9 +80,9 @@
     <div class="card" id="free-dm-card" style="display:none;">
       <div class="card-title">Код "Честный знак" (DataMatrix)</div>
       <div class="mode-note">Товар промаркирован клиентом — отсканируйте код с каждой единицы (нужно: <span id="free-dm-need">1</span>, отсканировано: <span id="free-dm-count">0</span>).</div>
+      <div class="mode-note" style="color:var(--red);">Только физическим сканером (режим GS1 DataMatrix) — камера телефона ненадёжно передаёт служебные символы кода и такие коды потом отклонит Wildberries.</div>
       <div class="scan-row">
         <input id="free-dm-input" class="scan-input" placeholder="Код DataMatrix" inputmode="none" autocomplete="off"/>
-        <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-dm-input','Скан DataMatrix')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
       <ul id="free-dm-list" style="margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--muted2);"></ul>
     </div>
@@ -147,9 +147,9 @@
       <div class="card" id="inb-dm-card" style="display:none;">
         <div class="card-title">Код "Честный знак" (DataMatrix)</div>
         <div class="mode-note">Товар промаркирован клиентом — отсканируйте код с каждой единицы (нужно: <span id="inb-dm-need">1</span>, отсканировано: <span id="inb-dm-count">0</span>).</div>
+        <div class="mode-note" style="color:var(--red);">Только физическим сканером (режим GS1 DataMatrix) — камера телефона ненадёжно передаёт служебные символы кода и такие коды потом отклонит Wildberries.</div>
         <div class="scan-row">
           <input id="inb-dm-input" class="scan-input" placeholder="Код DataMatrix" inputmode="none" autocomplete="off"/>
-          <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-dm-input','Скан DataMatrix')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
         </div>
         <ul id="inb-dm-list" style="margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--muted2);"></ul>
       </div>
@@ -298,6 +298,7 @@
       const code = String(v || '').trim();
       if (!code) return;
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
+      if (!UI.hasValidKizStructure(code)) { UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона'); return; }
       if (freeDmCodes.length >= freeQty) { UI.notify.err(`Уже отсканировано ${freeQty} код(ов) — этого достаточно`); return; }
       if (freeDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       freeDmCodes.push(code);
@@ -731,6 +732,7 @@
       const code = String(v || '').trim();
       if (!code) return;
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
+      if (!UI.hasValidKizStructure(code)) { UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона'); return; }
       if (inbDmCodes.length >= inbQty) { UI.notify.err(`Уже отсканировано ${inbQty} код(ов) — этого достаточно`); return; }
       if (inbDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       inbDmCodes.push(code);

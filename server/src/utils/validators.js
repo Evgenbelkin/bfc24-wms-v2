@@ -107,6 +107,29 @@ function validateKizCode(value, fieldName = 'code') {
 }
 
 /**
+ * Проверить СТРУКТУРУ кода "Честный знак" — в отличие от isValidKizCode
+ * (которая только смотрит на длину и намеренно не лезет в детали GS1-формата)
+ * это уже настоящая проверка на конкретную, реально встретившуюся поломку:
+ * между серийным номером (AI 21) и следующим блоком (AI 91) обязан быть ровно
+ * один служебный байт-разделитель GS (0x1D, невидимый). Ловим это на разборе
+ * реального инцидента (WB отклонил коды с "неверная структура маркировки") —
+ * выяснилось, что сканирование камерой телефона (BarcodeDetector в браузере)
+ * ненадёжно передаёт этот байт: то теряет совсем, то дублирует не там, где
+ * нужно. Обычный физический 2D-сканер в правильном режиме передаёт его
+ * стабильно. Функция не пытается разобрать GS1 полностью (это делает WB на
+ * своей стороне) — только ловит именно эту конкретную, уже подтверждённую
+ * поломку, чтобы не дать битому коду дойти до пула/упаковки/отправки в WB.
+ */
+function hasValidKizStructure(value) {
+  let s = String(value || '').trim();
+  if (/^\]d2/i.test(s)) s = s.slice(3);
+  if (s.charCodeAt(0) === 0x1d) s = s.slice(1); // ведущий FNC1/GS символики — норма, срезаем
+  if (!/^01\d{14}21/.test(s)) return false;
+  const gsCount = (s.match(/\x1d/g) || []).length;
+  return gsCount === 1;
+}
+
+/**
  * Достать GTIN (14 цифр) из начала кода "Честный знак".
  *
  * GS1 DataMatrix всегда начинается с идентификатора применения (01) —
@@ -125,6 +148,7 @@ function extractGtinFromKizCode(value) {
   let s = String(value || '').trim();
   // Технический префикс символики (не данные, чисто метаинформация сканера)
   if (/^\]d2/i.test(s)) s = s.slice(3);
+  if (s.charCodeAt(0) === 0x1d) s = s.slice(1); // ведущий FNC1/GS символики — норма, срезаем
   if (!s.startsWith('01')) return null;
   const gtin = s.slice(2, 16);
   if (gtin.length !== 14 || !/^\d{14}$/.test(gtin)) return null;
@@ -221,6 +245,7 @@ module.exports = {
   validateBarcode,
   isValidKizCode,
   validateKizCode,
+  hasValidKizStructure,
   extractGtinFromKizCode,
   gtinToBarcodeCandidates,
   validateEmail,
