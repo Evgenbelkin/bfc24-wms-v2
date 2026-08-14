@@ -5,7 +5,7 @@ const { query, transaction } = require('../../config/database');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { generateMarkingLabelSvg } = require('../../utils/qrcode');
 const { ValidationError, ForbiddenError } = require('../../utils/errors');
-const { isValidKizCode } = require('../../utils/validators');
+const { isValidKizCode, hasValidKizStructure } = require('../../utils/validators');
 const wbClient = require('../wb/wb.client');
 const logger = require('../../utils/logger');
 
@@ -33,9 +33,22 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
   // Отсекаем то, что явно не похоже на КИЗ (например, в это же поле вставили
   // список обычных штрихкодов товара по ошибке) — не роняем весь импорт
   // целиком, а просто пропускаем такие строки и честно говорим сколько.
-  const codes = allCodes.filter(isValidKizCode);
-  const skippedInvalid = allCodes.length - codes.length;
+  const longEnough = allCodes.filter(isValidKizCode);
+  const skippedInvalid = allCodes.length - longEnough.length;
+
+  // Отдельно отсекаем структурно повреждённые коды (похожи по длине на КИЗ,
+  // но разделитель GS1 потерян или задвоен — реальный инцидент показал, что
+  // это типично для скана камерой телефона, см. hasValidKizStructure). Такие
+  // коды технически "похожи" на КИЗ, но неизбежно провалятся при отправке в
+  // WB — лучше поймать это здесь, чем через несколько дней в кабинете WB.
+  const codes = longEnough.filter(hasValidKizStructure);
+  const skippedBroken = longEnough.length - codes.length;
   if (codes.length === 0) {
+    if (skippedBroken > 0) {
+      throw new ValidationError(
+        `${skippedBroken} код(ов) похожи на "Честный знак" по длине, но структура повреждена (потерян или задвоен служебный разделитель) — обычно так бывает при скане камерой телефона. Пересканируйте физическим сканером в режиме GS1 DataMatrix.`
+      );
+    }
     throw new ValidationError(
       `Ни одна из ${allCodes.length} строк не похожа на код "Честный знак" (слишком короткие — похоже на обычные штрихкоды товара)`
     );
@@ -55,7 +68,7 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
     );
     if (r.rowCount > 0) imported++;
   }
-  return { imported, duplicates: codes.length - imported, skipped_invalid: skippedInvalid, total_in_batch: allCodes.length };
+  return { imported, duplicates: codes.length - imported, skipped_invalid: skippedInvalid, skipped_broken_structure: skippedBroken, total_in_batch: allCodes.length };
 }
 
 /**
@@ -207,6 +220,20 @@ async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient 
     throw new ValidationError(
       `"${badCode}" не похож на код "Честный знак" (слишком короткий — похоже, отсканирован обычный штрихкод товара). ` +
       `Отсканируйте код DataMatrix с этикетки маркировки, а не штрихкод товара.`
+    );
+  }
+
+  // Отдельная проверка структуры (не только длины) — см. hasValidKizStructure.
+  // Реальный инцидент показал: скан камерой телефона может выдать код нужной
+  // длины, но с потерянным/задвоенным служебным разделителем — такой код
+  // технически пройдёт как "похож на КИЗ", но неизбежно провалится при
+  // отправке в WB ("неверная структура маркировки"), причём узнаём мы об этом
+  // не сразу, а через дни, когда код уже "использован". Ловим здесь.
+  const brokenCode = list.find(c => !hasValidKizStructure(c));
+  if (brokenCode) {
+    throw new ValidationError(
+      `Код похож на "Честный знак" по длине, но структура повреждена (потерян или задвоен служебный разделитель) — обычно так бывает при скане камерой телефона. ` +
+      `Пересканируйте физическим сканером в режиме GS1 DataMatrix.`
     );
   }
 

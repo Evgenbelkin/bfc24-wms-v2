@@ -174,8 +174,15 @@
         locStep.className  = 'step done';
         itemStep.className = 'step active';
         scanInput.className = 'scan-input awaiting-item';
-        scanLabel.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
-        scanInput.placeholder = 'Скан товара...';
+        // Для промаркированных товаров (Честный знак, режим "клиент маркирует")
+        // можно вместо обычного штрихкода отсканировать сам киз конкретной
+        // единицы — система сама определит по нему товар. Подсказываем это
+        // явно, чтобы сборщик не гадал, что именно сканировать.
+        const marked = currentTask && currentTask.requires_marking && currentTask.marking_mode === 'scan';
+        scanLabel.innerHTML = marked
+          ? '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР или КИЗ'
+          : '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
+        scanInput.placeholder = marked ? 'Скан штрихкода или киза...' : 'Скан товара...';
       }
     }
 
@@ -276,12 +283,18 @@
             scanned_barcode: scanned,
           });
           if (res.result === 'ok') {
+            // Явно показываем, чем именно засчитали единицу — штрихкодом или
+            // кизом — чтобы сборщик видел, что система распознала скан
+            // правильно, а не просто молча приняла.
+            const viaBadge = res.matched_via === 'kiz'
+              ? '<span style="color:var(--green);font-weight:700;">✓ КИЗ</span>'
+              : '<span style="color:var(--blue);font-weight:700;">✓ Штрихкод</span>';
             if (res.done) {
               UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})`);
               await loadWaveStatus();
               await loadNextTask();
             } else {
-              statusEl.textContent = `Собрано: ${res.qty_picked}/${res.qty_total}`;
+              statusEl.innerHTML = `${viaBadge} · Собрано: ${res.qty_picked}/${res.qty_total}`;
             }
           } else {
             UI.beep('err');

@@ -2,7 +2,7 @@
 
 const { query, transaction } = require('../../../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../../../utils/errors');
-const { validateNonEmptyString, validateBarcode, parseBool } = require('../../../utils/validators');
+const { validateNonEmptyString, validateBarcode, parseBool, extractGtinFromKizCode, gtinToBarcodeCandidates } = require('../../../utils/validators');
 
 // =============================================================================
 // Items Service
@@ -74,6 +74,32 @@ async function getItemByBarcode({ tenantId, clientId, barcode }) {
   const res = await query(sql, params);
   if (res.rowCount === 0) throw new NotFoundError(`Item with barcode '${b}'`);
   return res.rows[0];
+}
+
+/**
+ * Определить товар по коду "Честный знак" — достаём GTIN из начала кода
+ * и ищем товар с таким штрихкодом у ЭТОГО клиента (не по всей базе — barcode
+ * уникален только в рамках клиента, у разных клиентов теоретически могут
+ * встретиться одинаковые "самодельные" штрихкоды). Используется на сборке/
+ * упаковке/приёмке, чтобы понять, к какому товару относится отсканированный
+ * киз, без отдельного скана обычного штрихкода.
+ *
+ * Возвращает null (не бросает ошибку), если код не распознался как КИЗ или
+ * товар с таким GTIN не нашёлся у клиента — вызывающий код должен в этом
+ * случае откатиться на обычный ручной ввод/скан штрихкода.
+ */
+async function findItemByKizCode({ tenantId, clientId, code }) {
+  const gtin = extractGtinFromKizCode(code);
+  if (!gtin) return null;
+
+  const candidates = gtinToBarcodeCandidates(gtin);
+  const res = await query(
+    `SELECT i.*, c.client_name FROM wms.items i LEFT JOIN wms.clients c ON c.id = i.client_id
+     WHERE i.tenant_id = $1 AND i.client_id = $2 AND i.barcode = ANY($3::text[])
+     LIMIT 1`,
+    [tenantId, clientId, candidates]
+  );
+  return res.rowCount > 0 ? res.rows[0] : null;
 }
 
 async function createItem({ tenantId, clientId, createdById, data }) {
@@ -239,6 +265,70 @@ async function updateItem({ tenantId, itemId, data }) {
   return res.rows[0];
 }
 
+/**
+ * Удалить товар — только если по нему сейчас нет остатка (qty_on_hand=0 по
+ * всем ячейкам/складам). Если товар когда-либо использовался (почти всегда
+ * так — даже у авто-созданных "левых" товаров от кривой приёмки уже есть
+ * строка в wms.sku_registry, см. resolveOrCreateItem ниже, плюс возможны
+ * строки в stock_movements/picking_tasks/marking_codes и т.п.), настоящий
+ * DELETE упадёт нарушением внешнего ключа — тогда вместо ошибки просто
+ * деактивируем товар (is_active=false), не теряя историю. Тот же принцип,
+ * что и у deleteLocation в locations.service.js.
+ */
+async function deleteItem({ tenantId, itemId }) {
+  const current = await getItemById({ tenantId, itemId });
+
+  const stockRes = await query(
+    `SELECT COALESCE(SUM(qty_on_hand), 0)::int AS qty FROM wms.stock_balances WHERE item_id = $1`,
+    [itemId]
+  );
+  const qty = stockRes.rows[0].qty;
+  if (qty > 0) {
+    throw new ValidationError(`У товара '${current.item_name || current.barcode}' есть остаток (${qty} шт.) — сначала спишите или переместите его.`);
+  }
+
+  try {
+    const res = await query(
+      `DELETE FROM wms.items WHERE id = $1 AND tenant_id = $2 RETURNING id, item_name, barcode`,
+      [itemId, tenantId]
+    );
+    return { ...res.rows[0], mode: 'hard' };
+  } catch (e) {
+    if (e.code === '23503') {
+      const res = await query(
+        `UPDATE wms.items SET is_active = false, updated_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING id, item_name, barcode`,
+        [itemId, tenantId]
+      );
+      return { ...res.rows[0], mode: 'soft' };
+    }
+    throw e;
+  }
+}
+
+/**
+ * Пачка удаления — та же логика построчно, не роняет всё на первой ошибке
+ * (например на товаре с остатком), а просто считает его пропущенным и идёт
+ * дальше, чтобы одним запросом почистить сразу много "левых" товаров.
+ */
+async function bulkDeleteItems({ tenantId, itemIds }) {
+  const ids = Array.isArray(itemIds) ? itemIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+  if (!ids.length) throw new ValidationError('item_ids is required');
+  if (ids.length > 1000) throw new ValidationError('Слишком много товаров за один раз (максимум 1000)');
+
+  let deleted = 0, deactivated = 0, skipped = 0;
+  const skippedItems = [];
+  for (const id of ids) {
+    try {
+      const r = await deleteItem({ tenantId, itemId: id });
+      if (r.mode === 'soft') deactivated++; else deleted++;
+    } catch (e) {
+      skipped++;
+      skippedItems.push({ item_id: id, reason: e.message });
+    }
+  }
+  return { deleted, deactivated, skipped, skipped_items: skippedItems };
+}
+
 /** Гарантировать наличие item + SKU registry */
 async function resolveOrCreateItem({ tenantId, clientId, barcode, dbClient = null }) {
   const db = dbClient || { query: (sql, params) => query(sql, params) };
@@ -309,6 +399,7 @@ async function resolveExistingItem({ tenantId, clientId, barcode, dbClient = nul
 }
 
 module.exports = {
-  listItems, getItemById, getItemByBarcode,
-  createItem, updateItem, resolveOrCreateItem, resolveExistingItem,
+  listItems, getItemById, getItemByBarcode, findItemByKizCode,
+  createItem, updateItem, deleteItem, bulkDeleteItems,
+  resolveOrCreateItem, resolveExistingItem,
 };

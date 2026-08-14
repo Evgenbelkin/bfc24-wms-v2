@@ -9,7 +9,7 @@ const { validatePositiveInt } = require('../../../utils/validators');
 const { generateItemLabelSvg } = require('../../../utils/qrcode');
 const { resolvePrinter } = require('../../printing/printerResolver');
 const { query } = require('../../../config/database');
-const { ValidationError } = require('../../../utils/errors');
+const { ValidationError, NotFoundError } = require('../../../utils/errors');
 
 router.use(authRequired, tenantMiddleware);
 
@@ -36,6 +36,19 @@ router.get('/by-barcode', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** GET /items/by-kiz?code=...&client_id=... — определить товар по коду
+ *  "Честный знак" (достаём GTIN из начала кода, ищем товар с таким штрихкодом
+ *  у этого клиента). Используется на сборке/упаковке/приёмке, чтобы можно
+ *  было сканировать сразу киз без отдельного скана обычного штрихкода. */
+router.get('/by-kiz', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const item = await svc.findItemByKizCode({ tenantId: req.user.tenantId, clientId, code: req.query.code });
+    if (!item) throw new NotFoundError('Item by kiz code');
+    res.json({ ok: true, item });
+  } catch(e){ next(e); }
+});
+
 router.get('/:id', async (req,res,next)=>{
   try {
     const item = await svc.getItemById({ tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id') });
@@ -55,6 +68,29 @@ router.patch('/:id', requireRole('tenant_admin','supervisor'), async (req,res,ne
   try {
     const item = await svc.updateItem({ tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id'), data: req.body });
     res.json({ ok: true, item });
+  } catch(e){ next(e); }
+});
+
+/** DELETE /items/:id — удалить товар, только если по нему сейчас нет
+ *  остатка. Если по товару уже есть история (почти всегда так) — удалить
+ *  нельзя (упрётся в внешний ключ), вместо этого его деактивируют
+ *  (is_active=false), см. items.service.js:deleteItem. */
+router.delete('/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.deleteItem({ tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id') });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** POST /items/bulk-delete { item_ids } — то же самое пачкой (для чистки
+ *  "левых" товаров, например после кривой настройки приёмки, когда она
+ *  заводила товар на любой отсканированный штрихкод без разбора). Не падает
+ *  на первом же товаре с остатком — просто считает его пропущенным и идёт
+ *  дальше. */
+router.post('/bulk-delete', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkDeleteItems({ tenantId: req.user.tenantId, itemIds: req.body.item_ids });
+    res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
 
