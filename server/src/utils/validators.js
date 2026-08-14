@@ -107,6 +107,45 @@ function validateKizCode(value, fieldName = 'code') {
 }
 
 /**
+ * Достать GTIN (14 цифр) из начала кода "Честный знак".
+ *
+ * GS1 DataMatrix всегда начинается с идентификатора применения (01) —
+ * "дальше идёт GTIN", сразу за которым 14 цифр самого GTIN. Дальше в коде
+ * идут другие поля (серийный номер, крипто-хвост) — их не трогаем, они нам
+ * не нужны. Некоторые сканеры в режиме "идентификатор символики" добавляют
+ * технический префикс перед данными (например "]d2") — на всякий случай
+ * срезаем его, если есть.
+ *
+ * Возвращает null, если код не начинается с ожидаемой структуры (значит
+ * это не настоящий/распознаваемый КИЗ, или сканер передал что-то нестандартное)
+ * — вызывающий код должен в этом случае откатываться на ручной ввод штрихкода,
+ * а не падать с ошибкой.
+ */
+function extractGtinFromKizCode(value) {
+  let s = String(value || '').trim();
+  // Технический префикс символики (не данные, чисто метаинформация сканера)
+  if (/^\]d2/i.test(s)) s = s.slice(3);
+  if (!s.startsWith('01')) return null;
+  const gtin = s.slice(2, 16);
+  if (gtin.length !== 14 || !/^\d{14}$/.test(gtin)) return null;
+  return gtin;
+}
+
+/**
+ * GTIN-14 → кандидаты обычного штрихкода товара для поиска в справочнике.
+ * GTIN — это, как правило, EAN-13 с одним нулём спереди (упаковка/размер
+ * товара). Возвращаем и сам GTIN как есть (на случай, если в справочнике
+ * барcode уже хранится в 14-значном виде), и вариант с обрезанным ведущим
+ * нулём (обычный EAN-13) — пробуем оба, штрихкоды в базе не гарантированно
+ * чистый EAN (ручной ввод, Ozon и т.п.), так что берём оба разумных варианта.
+ */
+function gtinToBarcodeCandidates(gtin) {
+  const candidates = [gtin];
+  if (gtin.startsWith('0')) candidates.push(gtin.slice(1));
+  return candidates;
+}
+
+/**
  * Проверить email
  */
 function validateEmail(value, fieldName = 'email') {
@@ -182,6 +221,8 @@ module.exports = {
   validateBarcode,
   isValidKizCode,
   validateKizCode,
+  extractGtinFromKizCode,
+  gtinToBarcodeCandidates,
   validateEmail,
   validatePassword,
   parseBool,

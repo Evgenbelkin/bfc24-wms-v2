@@ -2,7 +2,7 @@
 
 const { query, transaction } = require('../../../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../../../utils/errors');
-const { validateNonEmptyString, validateBarcode, parseBool } = require('../../../utils/validators');
+const { validateNonEmptyString, validateBarcode, parseBool, extractGtinFromKizCode, gtinToBarcodeCandidates } = require('../../../utils/validators');
 
 // =============================================================================
 // Items Service
@@ -74,6 +74,32 @@ async function getItemByBarcode({ tenantId, clientId, barcode }) {
   const res = await query(sql, params);
   if (res.rowCount === 0) throw new NotFoundError(`Item with barcode '${b}'`);
   return res.rows[0];
+}
+
+/**
+ * Определить товар по коду "Честный знак" — достаём GTIN из начала кода
+ * и ищем товар с таким штрихкодом у ЭТОГО клиента (не по всей базе — barcode
+ * уникален только в рамках клиента, у разных клиентов теоретически могут
+ * встретиться одинаковые "самодельные" штрихкоды). Используется на сборке/
+ * упаковке/приёмке, чтобы понять, к какому товару относится отсканированный
+ * киз, без отдельного скана обычного штрихкода.
+ *
+ * Возвращает null (не бросает ошибку), если код не распознался как КИЗ или
+ * товар с таким GTIN не нашёлся у клиента — вызывающий код должен в этом
+ * случае откатиться на обычный ручной ввод/скан штрихкода.
+ */
+async function findItemByKizCode({ tenantId, clientId, code }) {
+  const gtin = extractGtinFromKizCode(code);
+  if (!gtin) return null;
+
+  const candidates = gtinToBarcodeCandidates(gtin);
+  const res = await query(
+    `SELECT i.*, c.client_name FROM wms.items i LEFT JOIN wms.clients c ON c.id = i.client_id
+     WHERE i.tenant_id = $1 AND i.client_id = $2 AND i.barcode = ANY($3::text[])
+     LIMIT 1`,
+    [tenantId, clientId, candidates]
+  );
+  return res.rowCount > 0 ? res.rows[0] : null;
 }
 
 async function createItem({ tenantId, clientId, createdById, data }) {
@@ -373,7 +399,7 @@ async function resolveExistingItem({ tenantId, clientId, barcode, dbClient = nul
 }
 
 module.exports = {
-  listItems, getItemById, getItemByBarcode,
+  listItems, getItemById, getItemByBarcode, findItemByKizCode,
   createItem, updateItem, deleteItem, bulkDeleteItems,
   resolveOrCreateItem, resolveExistingItem,
 };

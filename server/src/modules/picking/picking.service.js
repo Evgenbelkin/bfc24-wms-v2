@@ -5,7 +5,7 @@ const ledger = require('../stock/stock.ledger');
 const { resolveOrCreateItem } = require('../masterdata/items/items.service');
 const { findBestPickLocation, getLocationByCode } = require('../masterdata/locations/locations.service');
 const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
-const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
+const { validateBarcode, validateQty, validatePositiveInt, isValidKizCode } = require('../../utils/validators');
 const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
@@ -130,7 +130,8 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     `SELECT t.id, t.barcode, t.qty, t.qty_picked, t.scan_step,
        t.location_code, t.shipment_code, t.wave_id, t.wb_order_id,
        t.warehouse_id, t.client_id, t.item_id,
-       i.item_name, i.vendor_code, i.size, i.preview_url
+       i.item_name, i.vendor_code, i.size, i.preview_url,
+       i.requires_marking, i.marking_mode
      FROM wms.picking_tasks t
      LEFT JOIN wms.items i ON i.id=t.item_id
      WHERE t.tenant_id=$1 AND t.picker_id=$2 AND t.status='in_progress'
@@ -244,7 +245,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
     const taskId = best.id;
 
     const taskRes = await client.query(
-      `SELECT t.*, i.item_name, i.vendor_code, i.size, i.preview_url FROM wms.picking_tasks t
+      `SELECT t.*, i.item_name, i.vendor_code, i.size, i.preview_url, i.requires_marking, i.marking_mode FROM wms.picking_tasks t
        LEFT JOIN wms.items i ON i.id=t.item_id
        WHERE t.id=$1`, [taskId]
     );
@@ -343,7 +344,26 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     const expected = String(task.barcode || '').trim();
     const scanned  = String(scannedBarcode || '').trim();
 
-    if (scanned !== expected) {
+    let matched = scanned === expected;
+    let matchedVia = 'barcode';
+
+    // Промаркированные товары (Честный знак): вместо обычного штрихкода можно
+    // отсканировать сам киз конкретной единицы — если он числится в пуле
+    // именно этого товара и ещё доступен (не использован раньше), засчитываем
+    // забор одной единицы точно так же, как обычный скан штрихкода. Код при
+    // этом НЕ помечается использованным — статус меняется только на упаковке
+    // (см. consumeScannedCodeAtPacking), здесь только проверка принадлежности
+    // к пулу. Для товаров без маркировки пул пуст — эта ветка просто не
+    // сработает, обычное поведение не меняется.
+    if (!matched && task.item_id && isValidKizCode(scanned)) {
+      const kizRes = await client.query(
+        `SELECT id FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND code=$3 AND status='available' LIMIT 1`,
+        [tenantId, task.item_id, scanned]
+      );
+      if (kizRes.rowCount > 0) { matched = true; matchedVia = 'kiz'; }
+    }
+
+    if (!matched) {
       await client.query(
         `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message) VALUES($1,$2,'item',$3,$4,'mismatch','Wrong barcode')`,
         [taskId, pickerId, expected, scanned]
@@ -365,7 +385,7 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
         `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result) VALUES($1,$2,'item',$3,$4,'ok')`,
         [taskId, pickerId, expected, scanned]
       );
-      return { ok: true, result: 'ok', done: false, qty_picked: pickedQty, qty_total: qtyToPick, next_step: 'await_item' };
+      return { ok: true, result: 'ok', done: false, qty_picked: pickedQty, qty_total: qtyToPick, next_step: 'await_item', matched_via: matchedVia };
     }
 
     // Все отсканированы — списываем со склада
@@ -426,7 +446,7 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
       }
     }
 
-    return { ok: true, result: 'ok', done: true, qty_picked: qtyToPick, qty_total: qtyToPick };
+    return { ok: true, result: 'ok', done: true, qty_picked: qtyToPick, qty_total: qtyToPick, matched_via: matchedVia };
   });
 
   if (chargeClientId) {
