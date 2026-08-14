@@ -221,6 +221,17 @@
             ${a ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${a.is_active ? 'checked':''}/></div>` : ''}
             ${a ? `
             <div class="field">
+              <label style="display:inline;">Отправлять остатки в WB</label>
+              <input type="checkbox" id="m-stock-sync" ${a.stock_sync_disabled ? '' : 'checked'}/>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+                Если выключить — WMS перестанет автоматически раскидывать остатки по складам WB для
+                этого аккаунта (ни по расписанию, ни при приёмке/инвентаризации). Удобно на время тестов,
+                когда клиент сам управляет остатками в кабинете WB.
+              </div>
+            </div>
+            ` : ''}
+            ${a ? `
+            <div class="field">
               <label>Склады WB — какие обрабатывать в волнах сборки</label>
               <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">
                 Если у клиента несколько складов WB в разных городах (каждый — свой фулфилмент),
@@ -278,6 +289,7 @@
       try {
         if (a) {
           data.is_active = document.getElementById('m-active').checked;
+          data.stock_sync_disabled = !document.getElementById('m-stock-sync').checked;
           await window.API.wb.accounts.update(a.id, data);
           UI.notify.ok('Аккаунт обновлён');
         } else {

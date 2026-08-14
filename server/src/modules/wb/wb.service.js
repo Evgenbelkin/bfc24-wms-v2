@@ -243,6 +243,17 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   const account = accRes.rows[0];
   if (!account.api_token) return { skipped: true, reason: 'no_api_token' };
 
+  // Рубильник "не отправлять остатки в WB для этого аккаунта" — нужен,
+  // например, когда клиент тестирует систему и не хочет, чтобы WMS автоматом
+  // раскидывала остатки по складам WB, пока он сам обнулил их в кабинете.
+  // Один этот guard перекрывает и плановый пересчёт (wbStockSync, по
+  // расписанию), и событийный (triggerRedistributionForClient при приёмке/
+  // инвентаризации) — оба идут через эту же функцию, отдельно гасить нигде
+  // больше не нужно.
+  if (account.settings && account.settings.stock_sync_disabled) {
+    return { skipped: true, reason: 'stock_sync_disabled_by_admin' };
+  }
+
   const whRes = await query(
     `SELECT wb_warehouse_id, warehouse_code, weight FROM wms.wb_seller_warehouses
      WHERE mp_account_id=$1 AND is_active=TRUE AND is_enabled_for_dist=TRUE AND weight > 0`,

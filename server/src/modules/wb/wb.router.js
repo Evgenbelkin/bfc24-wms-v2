@@ -30,6 +30,7 @@ router.get('/accounts', requireRole('tenant_admin','supervisor'), async (req,res
     const r = await query(
       `SELECT ma.id, ma.client_id, ma.marketplace, ma.account_code, ma.account_name,
          ma.supplier_id, ma.is_active,
+         COALESCE((ma.settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled,
          (ma.api_token IS NOT NULL AND length(trim(ma.api_token))>0) AS has_token,
          c.client_name
        FROM wms.mp_accounts ma JOIN wms.clients c ON c.id=ma.client_id
@@ -56,7 +57,7 @@ router.post('/accounts', requireRole('tenant_admin'), async (req,res,next)=>{
 router.patch('/accounts/:id', requireRole('tenant_admin'), async (req,res,next)=>{
   try {
     const id = Number(req.params.id);
-    const { account_name, account_code, supplier_id, api_token, is_active } = req.body;
+    const { account_name, account_code, supplier_id, api_token, is_active, stock_sync_disabled } = req.body;
     const fields=[]; const params=[]; let idx=1;
     if (account_name !== undefined) { fields.push(`account_name=$${idx++}`); params.push(account_name); }
     if (account_code !== undefined) { fields.push(`account_code=$${idx++}`); params.push(account_code||null); }
@@ -66,11 +67,19 @@ router.patch('/accounts/:id', requireRole('tenant_admin'), async (req,res,next)=
       params.push(api_token||''); idx++;
     }
     if (is_active !== undefined) { fields.push(`is_active=$${idx++}`); params.push(!!is_active); }
+    // Рубильник отправки остатков в WB — хранится внутри settings JSONB
+    // (миграция не нужна, там уже живёт stock_reserve_pct, см. distributeStockForAccount).
+    if (stock_sync_disabled !== undefined) {
+      fields.push(`settings=COALESCE(settings,'{}'::jsonb) || jsonb_build_object('stock_sync_disabled',$${idx++}::boolean)`);
+      params.push(!!stock_sync_disabled);
+    }
     if (!fields.length) return res.status(400).json({ ok:false, error:{code:'VALIDATION_ERROR',message:'No fields'} });
     fields.push(`updated_at=NOW()`); params.push(id, req.user.tenantId);
     const r = await query(
       `UPDATE wms.mp_accounts SET ${fields.join(',')} WHERE id=$${idx++} AND tenant_id=$${idx}
-       RETURNING id,account_name,is_active,(api_token IS NOT NULL) AS has_token`,
+       RETURNING id,account_name,is_active,
+         COALESCE((settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled,
+         (api_token IS NOT NULL) AS has_token`,
       params
     );
     if (r.rowCount===0) throw new NotFoundError('MP Account', id);
