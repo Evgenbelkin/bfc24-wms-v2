@@ -11,43 +11,6 @@ function generateQrSvg(text, { width = 240, margin = 1 } = {}) {
   return QRCode.toString(String(text), { type: 'svg', margin, width });
 }
 
-/**
- * Токен отметки на складе как Code128 (обычный линейный штрихкод) вместо
- * QR — для экрана "QR для отметки на входе". Причина: часть складов
- * работает с дешёвыми лазерными 1D-сканерами (только линейные штрихкоды,
- * физически не могут разобрать QR/DataMatrix — не хватает 2D-имиджера), а
- * не только ТСД/камерой. Токен из checkinToken.js (timestamp + hex-подпись,
- * ~46 символов) отлично ложится в Code128 — та же логика, что и у обычных
- * штрихкодов товаров/ячеек, которые эти сканеры прекрасно читают.
- */
-function generateCheckinBarcodeSvg(text, { width = 480, height = 140 } = {}) {
-  const barcodeSvg = bwipjs.toSVG({
-    bcid: 'code128',
-    text: String(text),
-    scale: 2,
-    height: 22,
-    includetext: false,
-  });
-  const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(barcodeSvg);
-  const bw = vbMatch ? Number(vbMatch[1]) : 300;
-  const bh = vbMatch ? Number(vbMatch[2]) : 100;
-
-  const marginX = 20;
-  const barcodeW = width - marginX * 2;
-  const scale = Math.min(barcodeW / bw, height / bh);
-  const barcodeH = bh * scale;
-  const barcodeX = (width - bw * scale) / 2;
-  const barcodeY = (height - barcodeH) / 2;
-
-  const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(barcodeSvg);
-  const barcodeInner = innerMatch ? innerMatch[1] : barcodeSvg;
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
-    `<rect x="0" y="0" width="${width}" height="${height}" fill="#fff"/>` +
-    `<g transform="translate(${barcodeX}, ${barcodeY}) scale(${scale})">${barcodeInner}</g>` +
-    `</svg>`;
-}
-
 function escapeXml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -247,4 +210,4 @@ function generateLocationLabelSvg(locationCode, { width = 300, height = 150, bar
     `</svg>`;
 }
 
-module.exports = { generateQrSvg, generateCheckinBarcodeSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg, generateLocationLabelSvg, generateInboundOrderLabelSvg };
+module.exports = { generateQrSvg, generateShipmentLabelSvg, generateItemLabelSvg, generateMarkingLabelSvg, generateLocationLabelSvg, generateInboundOrderLabelSvg };

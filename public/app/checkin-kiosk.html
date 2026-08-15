@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
-  <title>Код для отметки на складе — BFC24 WMS v2</title>
+  <title>QR для отметки на складе — BFC24 WMS v2</title>
   <link rel="stylesheet" href="/shared/theme.css"/>
   <style>
-    .kiosk-wrap{max-width:640px;margin:40px auto;text-align:center;}
+    .kiosk-wrap{max-width:480px;margin:40px auto;text-align:center;}
     .kiosk-qr{background:#fff;border-radius:20px;padding:24px;display:inline-block;box-shadow:0 10px 30px rgba(0,0,0,0.25);}
-    .kiosk-qr svg{width:min(85vw,560px);height:auto;display:block;}
+    .kiosk-qr svg{width:min(70vw,340px);height:min(70vw,340px);display:block;}
     .kiosk-title{font-size:22px;font-weight:800;margin:24px 0 6px;}
     .kiosk-sub{color:var(--muted);font-size:14px;margin-bottom:20px;}
     .kiosk-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden;max-width:260px;margin:0 auto;}
@@ -19,15 +19,15 @@
 <body>
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
-    <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg> Код для отметки на складе</h1>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg> QR для отметки на складе</h1>
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
   <div class="kiosk-wrap">
     <div class="kiosk-title">Отсканируйте, чтобы начать смену</div>
-    <div class="kiosk-sub">Отсканируйте этот штрихкод сканером/ТСД, либо камерой телефона в приложении BFC24 (раздел «Отметка на складе»)</div>
+    <div class="kiosk-sub">Каждый сотрудник сканирует этот код своим телефоном в приложении BFC24 (раздел «Отметка на складе»)</div>
     <div class="kiosk-qr" id="qr-box">
-      <div style="width:480px;height:140px;display:flex;align-items:center;justify-content:center;color:#999;">Загрузка...</div>
+      <div style="width:280px;height:280px;display:flex;align-items:center;justify-content:center;color:#999;">Загрузка...</div>
     </div>
     <div class="kiosk-bar" style="margin-top:20px;"><div class="kiosk-bar-fill" id="bar-fill"></div></div>
     <div class="kiosk-note">Код меняется каждые 90 секунд — так и должно быть, ничего не сломалось</div>
@@ -63,7 +63,7 @@
         document.getElementById('qr-box').innerHTML = res.qr_svg;
         startBar();
       } catch (e) {
-        document.getElementById('qr-box').innerHTML = `<div style="width:480px;padding:20px;color:var(--red);font-size:13px;">Не удалось получить код: ${UI.escHtml(e.message)}</div>`;
+        document.getElementById('qr-box').innerHTML = `<div style="width:280px;padding:20px;color:var(--red);font-size:13px;">Не удалось получить код: ${UI.escHtml(e.message)}</div>`;
       }
     }
 

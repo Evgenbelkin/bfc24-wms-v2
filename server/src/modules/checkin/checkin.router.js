@@ -7,7 +7,7 @@ const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
 const { ValidationError } = require('../../utils/errors');
-const { generateCheckinBarcodeSvg } = require('../../utils/qrcode');
+const { generateQrSvg } = require('../../utils/qrcode');
 const { signCheckinToken, verifyCheckinToken, CHECKIN_TOKEN_TTL_MS } = require('../../utils/checkinToken');
 const { CHECKIN_VALID_HOURS } = require('../../middleware/requireCheckedIn');
 
@@ -27,11 +27,7 @@ router.use(authRequired, tenantMiddleware);
 router.get('/token', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {
     const token = signCheckinToken();
-    // Раньше был QR — часть складов работает с 1D-лазерными сканерами
-    // (только линейные штрихкоды, не читают QR/DataMatrix), поэтому код
-    // отметки теперь Code128 - его читает любой сканер: и 1D, и 2D/ТСД, и
-    // камера. См. generateCheckinBarcodeSvg в utils/qrcode.js.
-    const qrSvg = generateCheckinBarcodeSvg(token, { width: 480, height: 140 });
+    const qrSvg = await generateQrSvg(token, { width: 280 });
     res.json({
       ok: true,
       token,
