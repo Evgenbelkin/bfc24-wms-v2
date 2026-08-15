@@ -30,12 +30,11 @@
 
   <div class="card" id="scan-card" style="display:none;">
     <div class="card-title">Скан QR с экрана на входе</div>
-    <p class="mode-note">Попросите старшего смены показать код на его экране («QR для отметки») и наведите камеру.</p>
-    <input id="checkin-input" class="scan-input" style="opacity:0;position:absolute;pointer-events:none;" inputmode="none" autocomplete="off"/>
-    <button type="button" class="scan-big-btn" onclick="UI.scanInto('#checkin-input','Скан QR склада')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-      Сканировать код
-    </button>
+    <p class="mode-note">Попросите старшего смены показать код на его экране («QR для отметки»). Если у вас ТСД или обычный сканер — сканируйте прямо в поле ниже. Если сканера нет — наведите камеру телефона кнопкой.</p>
+    <div class="scan-row">
+      <input id="checkin-input" class="scan-input" placeholder="Сканируйте сюда сканером/ТСД" inputmode="none" autocomplete="off"/>
+      <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#checkin-input','Скан QR склада')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+    </div>
   </div>
 
   <script src="/shared/api.js"></script>
