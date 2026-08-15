@@ -29,11 +29,11 @@
   </div>
 
   <div class="card" id="scan-card" style="display:none;">
-    <div class="card-title">Скан QR с экрана на входе</div>
-    <p class="mode-note">Попросите старшего смены показать код на его экране («QR для отметки»). Если у вас ТСД или обычный сканер — сканируйте прямо в поле ниже. Если сканера нет — наведите камеру телефона кнопкой.</p>
+    <div class="card-title">Скан кода с экрана на входе</div>
+    <p class="mode-note">Попросите старшего смены показать код на его экране («Код для отметки»). Если у вас ТСД или обычный сканер — сканируйте прямо в поле ниже. Если сканера нет — наведите камеру телефона кнопкой.</p>
     <div class="scan-row">
       <input id="checkin-input" class="scan-input" placeholder="Сканируйте сюда сканером/ТСД" inputmode="none" autocomplete="off"/>
-      <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#checkin-input','Скан QR склада')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+      <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#checkin-input','Скан кода склада')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
     </div>
   </div>
 
@@ -61,7 +61,7 @@
       document.getElementById('status-card').innerHTML = `
         <div class="status-icon status-bad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg></div>
         <div class="status-title status-bad">Вы ещё не отмечены</div>
-        <div class="status-sub">Отсканируйте QR-код на экране у входа, чтобы получить доступ к сборке/упаковке/приёмке</div>
+        <div class="status-sub">Отсканируйте код на экране у входа, чтобы получить доступ к сборке/упаковке/приёмке</div>
       `;
       document.getElementById('scan-card').style.display = 'block';
       // UI.onScan() пытается сфокусировать поле через 100мс после загрузки
