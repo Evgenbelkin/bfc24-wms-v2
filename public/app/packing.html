@@ -405,17 +405,38 @@
       }).join('') || `<div class="empty-state">Нет строк</div>`;
     }
 
-    function openStickerChip(lineIdx, stickerIdx) {
+    // Картинка стикера НЕ приходит вместе со списком строк (см. комментарий
+    // в packing.service.js:getPackingTaskDetails — на большой волне это
+    // раздувало ответ до мегабайт и тормозило открытие задачи). Подгружаем
+    // конкретную картинку по клику и кэшируем в s.image, чтобы повторный
+    // клик по тому же чипу не дёргал сервер заново.
+    async function openStickerChip(lineIdx, stickerIdx) {
       const l = currentLines[lineIdx];
       const s = l?.stickers?.[stickerIdx];
-      if (!s?.image) { UI.notify.warn('Для этого стикера нет изображения'); return; }
+      if (!s?.order_id) { UI.notify.warn('Для этого стикера нет изображения'); return; }
+      // Открываем окно СРАЗУ, синхронно по клику - иначе мобильный/desktop
+      // браузер может заблокировать всплывающее окно, открытое после await.
       const w = window.open('', '_blank');
-      w.document.write(`<title>Стикер ${UI.escHtml(s.code||'')}</title>
-        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
-          <img src="data:image/svg+xml;base64,${s.image}" style="max-width:90vw;max-height:80vh;"/>
-          ${s.code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(s.code)}</div>` : ''}
-        </body>`);
-      w.document.close();
+      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно'); return; }
+      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Загрузка стикера…</p>');
+      try {
+        if (!s.image) {
+          const res = await window.API.packing.stickerImage(s.order_id);
+          s.image = res.image;
+          if (!s.code && res.code) s.code = res.code;
+        }
+        w.document.open();
+        w.document.write(`<title>Стикер ${UI.escHtml(s.code||'')}</title>
+          <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
+            <img src="data:image/svg+xml;base64,${s.image}" style="max-width:90vw;max-height:80vh;"/>
+            ${s.code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(s.code)}</div>` : ''}
+          </body>`);
+        w.document.close();
+      } catch (e) {
+        w.document.open();
+        w.document.write(`<p style="font-family:sans-serif;color:red;padding:40px;">${UI.escHtml(e.message)}</p>`);
+        w.document.close();
+      }
     }
 
     async function loadTaskDetails(res) {

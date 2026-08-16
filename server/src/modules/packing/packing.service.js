@@ -109,8 +109,15 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
   // в том же порядке (ORDER BY id), в котором scanItem их потом раздаёт по
   // OFFSET — так позиция в списке 1:1 соответствует тому, какой скан по счёту
   // какой стикер печатает.
+  //
+  // ВАЖНО: wo.wb_sticker (base64 SVG, десятки КБ на заказ) сюда НЕ тянем —
+  // на большой волне (30-40 позиций, часто ещё больше физических единиц)
+  // это раздувало ответ до мегабайтов и заметно тормозило открытие задачи
+  // упаковщиком. Картинку конкретного стикера подгружаем по клику отдельным
+  // запросом (см. GET /packing/sticker-image/:wbOrderId и openStickerChip
+  // на фронте) — тот же приём, что уже применяли для списка заказов ВБ.
   const stickersRes = await query(
-    `SELECT wo.barcode, wo.wb_sticker, wo.wb_sticker_code
+    `SELECT wo.id, wo.barcode, wo.wb_sticker_code
      FROM wms.wb_orders wo
      WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND wo.wb_sticker_code IS NOT NULL
      ORDER BY wo.barcode, wo.id`,
@@ -118,7 +125,7 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
   );
   const stickersByBarcode = {};
   for (const r of stickersRes.rows) {
-    (stickersByBarcode[r.barcode] ||= []).push({ code: r.wb_sticker_code, image: r.wb_sticker });
+    (stickersByBarcode[r.barcode] ||= []).push({ code: r.wb_sticker_code, order_id: r.id });
   }
 
   const lines = planRes.rows.map(row => {
@@ -126,8 +133,7 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
     return {
       ...row,
       qty_packed: packedMap[row.barcode] || 0,
-      stickers,                                   // [{code, image}, ...] — по одному на каждую единицу товара
-      wb_sticker:      stickers[0]?.image || null, // для обратной совместимости
+      stickers,                                   // [{code, order_id}, ...] — по одному на каждую единицу товара, картинка подгружается по клику
       wb_sticker_code: stickers[0]?.code  || null,
     };
   });
@@ -364,6 +370,17 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
   });
 }
 
+/** Картинка конкретного стикера ВБ по клику на чип в списке строк упаковки —
+ *  отдельным запросом, не в общем ответе (см. комментарий в getPackingTaskDetails). */
+async function getStickerImage({ tenantId, wbOrderId }) {
+  const r = await query(
+    `SELECT wb_sticker, wb_sticker_code FROM wms.wb_orders WHERE id=$1 AND tenant_id=$2`,
+    [wbOrderId, tenantId]
+  );
+  if (r.rowCount === 0 || !r.rows[0].wb_sticker) throw new NotFoundError('Sticker', wbOrderId);
+  return { image: r.rows[0].wb_sticker, code: r.rows[0].wb_sticker_code };
+}
+
 /** Подтвердить упаковку (завершить задачу) */
 async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, locationCode, comment }) {
   let chargeClientId = null, chargeQty = 0;
@@ -480,4 +497,4 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
   return result;
 }
 
-module.exports = { getOrTakePackingTask, getPackingTaskDetails, scanItem, confirmPacking };
+module.exports = { getOrTakePackingTask, getPackingTaskDetails, scanItem, confirmPacking, getStickerImage };
