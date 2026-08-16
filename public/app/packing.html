@@ -46,7 +46,10 @@
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
     <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Упаковка</h1>
-    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-sm btn-back" id="voice-toggle-btn" onclick="onToggleVoice()" title="Голосовое сопровождение"></button>
+      <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    </div>
   </div>
 
   <div class="card empty-state" id="no-task-card">
@@ -181,6 +184,15 @@
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
 
+    // ---------- Голосовое сопровождение ----------
+    function renderVoiceBtn() {
+      const btn = document.getElementById('voice-toggle-btn');
+      const on = UI.voiceEnabled();
+      btn.textContent = on ? '🔊 Голос' : '🔇 Голос';
+    }
+    function onToggleVoice() { UI.toggleVoice(); renderVoiceBtn(); }
+    renderVoiceBtn();
+
     let currentTask = null;
     let currentShipment = null;
     let currentLines = [];
@@ -264,12 +276,14 @@
       const shipmentCode = currentShipment?.external_id || currentTask?.shipment_code || '';
       if (String(scanned).trim().toUpperCase() !== String(shipmentCode).trim().toUpperCase()) {
         UI.beep('err');
+        UI.speak('Ошибка. Не тот короб');
         UI.notify.err('Это не тот короб — код на наклейке не совпадает с текущим заданием');
         UI.setVal('#pickup-scan', '');
         return;
       }
       pickupConfirmed = true;
       UI.notify.ok('Короб подтверждён, можно упаковывать');
+      UI.speak('Сканируйте товар');
       renderPickupGate();
     }
     UI.onScan('#pickup-scan', confirmPickup);
@@ -449,6 +463,7 @@
           // не нашли товар по этому кизу — падаем на подсказку ниже
         }
         UI.beep('err');
+        UI.speak('Код не найден');
         UI.notify.err('Не смогли определить товар по этому коду — отсканируйте обычный штрихкод товара');
         if (statusEl) statusEl.textContent = '';
         return;
@@ -491,6 +506,16 @@
         UI.notify.ok(res.marking && res.marking.manual_override
           ? `Упаковано БЕЗ отправки КИЗ в WB (обход супервайзера): ${res.qty_packed}/${res.qty_plan}`
           : `Упаковано: ${res.qty_packed}/${res.qty_plan}`);
+        // Голосом: если этим сканом закрыли последнюю строку - явно говорим
+        // отнести в зону отгрузки (это следующий физический шаг), иначе
+        // просто короткое подтверждение скана.
+        const totalPlanNow   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
+        const totalPackedNow = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
+        if (totalPlanNow > 0 && totalPackedNow >= totalPlanNow) {
+          UI.speak('Всё упаковано. Разместите короб в зону отгрузки');
+        } else {
+          UI.speak('Принято');
+        }
         // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
         pendingDmBarcode = null;
         document.getElementById('pack-dm-card').style.display = 'none';
@@ -498,6 +523,7 @@
         return true;
       } catch (e) {
         UI.beep('err');
+        UI.speak('Ошибка');
         if (dataMatrixCode) {
           // Ошибка именно на шаге DataMatrix (нет в пуле / WB API отклонил и т.п.) —
           // не прячем карточку, даём возможность повторить скан или вызвать супервайзера.

@@ -200,6 +200,42 @@
     } catch (_) { /* звук не критичен для работы - тихо игнорируем (например, если Web Audio недоступен) */ }
   }
 
+  // ─────────────── Голосовое сопровождение (Web Speech API) ───────────────
+  // Проговаривает короткие фразы ("Принято", "Ошибка", "Отсканируйте товар")
+  // синтезом речи браузера — не нужен сервер/интернет-API, работает в Chrome
+  // из коробки. Включено по умолчанию, но это личная настройка КОНКРЕТНОГО
+  // рабочего места/устройства (не сотрудника и не тенанта) — на одном столе
+  // упаковки голос может мешать, на другом наоборот нужен - поэтому храним
+  // переключатель в localStorage этого браузера, а не в БД.
+  const VOICE_STORAGE_KEY = 'wms_voice_enabled';
+  function voiceEnabled() {
+    const v = localStorage.getItem(VOICE_STORAGE_KEY);
+    return v === null ? true : v === '1';
+  }
+  function setVoiceEnabled(on) {
+    localStorage.setItem(VOICE_STORAGE_KEY, on ? '1' : '0');
+  }
+  function toggleVoice() {
+    const next = !voiceEnabled();
+    setVoiceEnabled(next);
+    if (next) speak('Голос включён');
+    return next;
+  }
+  function speak(text) {
+    try {
+      if (!voiceEnabled()) return;
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+      // Обрываем предыдущую фразу, если она ещё договаривается - иначе при
+      // частых сканах фразы копятся в очереди и голос начинает отставать от
+      // реальных действий на экране.
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text || ''));
+      u.lang = 'ru-RU';
+      u.rate = 1.05;
+      window.speechSynthesis.speak(u);
+    } catch (_) { /* синтез речи не критичен - тихо игнорируем */ }
+  }
+
   // ─────────────── Scanner input helper ───────────────
   // TSD-friendly: Enter-triggered scan
 
@@ -461,6 +497,7 @@
     onScan, scanInto, populateSelect, confirm,
     openChangePasswordModal,
     beep,
+    speak, voiceEnabled, setVoiceEnabled, toggleVoice,
   };
 
 })(window);
