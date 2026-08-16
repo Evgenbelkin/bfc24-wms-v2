@@ -221,6 +221,31 @@
     if (next) speak('Голос включён');
     return next;
   }
+
+  // Браузер обычно даёт на выбор НЕСКОЛЬКО голосов для русского - локальный
+  // системный (SAPI на Windows и т.п., звучит грубо/невнятно - похоже на это
+  // и жаловались: "короб" слышится как "краб") и "облачный" (в Chrome обычно
+  // содержит "Google" в названии - звучит заметно чище и понятнее). Явно
+  // выбираем такой, если он есть, вместо того чтобы полагаться на выбор
+  // браузера по умолчанию (Chrome по умолчанию нередко берёт как раз
+  // локальный). Список голосов иногда грузится асинхронно (пустой при первом
+  // обращении) - подписываемся на voiceschanged и кэшируем результат.
+  let _cachedVoices = null;
+  function pickRuVoice() {
+    if (!window.speechSynthesis) return null;
+    const voices = _cachedVoices || window.speechSynthesis.getVoices();
+    if (!voices || !voices.length) return null;
+    _cachedVoices = voices;
+    const ru = voices.filter(v => /^ru/i.test(v.lang));
+    if (!ru.length) return null;
+    return ru.find(v => /google/i.test(v.name))
+        || ru.find(v => /online|natural|neural/i.test(v.name))
+        || ru[0];
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => { _cachedVoices = window.speechSynthesis.getVoices(); };
+  }
+
   function speak(text) {
     try {
       if (!voiceEnabled()) return;
@@ -231,7 +256,13 @@
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(String(text || ''));
       u.lang = 'ru-RU';
-      u.rate = 1.05;
+      // Чуть медленнее обычного (1.0) - на скорости 1.05+ голоса низкого
+      // качества "смазывают" окончания слов, из-за чего "короб" превращается
+      // в невнятное "краб".
+      u.rate = 0.92;
+      u.pitch = 1;
+      const voice = pickRuVoice();
+      if (voice) u.voice = voice;
       window.speechSynthesis.speak(u);
     } catch (_) { /* синтез речи не критичен - тихо игнорируем */ }
   }
