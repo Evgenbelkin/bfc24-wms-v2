@@ -14,8 +14,9 @@
     .line-barcode{font-size:15px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-weight:700;letter-spacing:.3px;}
     .line-next-tag{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;margin-left:8px;white-space:nowrap;}
     .line-stickers{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
-    .sticker-chip{font-family:'SF Mono',Consolas,monospace;font-weight:800;font-size:13px;padding:2px 9px;border-radius:6px;background:#fef3c7;color:#b45309;white-space:nowrap;cursor:pointer;}
+    .sticker-chip{font-family:'SF Mono',Consolas,monospace;font-weight:800;font-size:13px;padding:2px 9px 2px 2px;border-radius:6px;background:#fef3c7;color:#b45309;white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
     .sticker-chip.done{background:#dcfce7;color:#15803d;}
+    .sticker-thumb{width:22px;height:22px;border-radius:4px;background:#fff;object-fit:contain;flex-shrink:0;}
     .line-progress{font-size:15px;font-weight:800;white-space:nowrap;}
     .qty-row{display:flex;align-items:center;gap:10px;}
     .qty-btn{width:52px;height:52px;border-radius:12px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:22px;font-weight:700;cursor:pointer;}
@@ -386,7 +387,10 @@
           ? `<div class="line-stickers">${l.stickers.map((s, si) => `
               <span class="sticker-chip ${si < Number(l.qty_packed||0) ? 'done' : ''}"
                     onclick="openStickerChip(${li},${si});event.stopPropagation();"
-                    title="${si < Number(l.qty_packed||0) ? 'Уже напечатан' : 'Ожидает печати'}">${UI.escHtml(s.code)}</span>
+                    title="${si < Number(l.qty_packed||0) ? 'Уже напечатан' : 'Ожидает печати'}">
+                <img class="sticker-thumb" id="sticker-thumb-${li}-${si}" src="${s.image ? 'data:image/svg+xml;base64,'+s.image : ''}" style="${s.image ? '' : 'visibility:hidden;'}"/>
+                ${UI.escHtml(s.code)}
+              </span>
             `).join('')}</div>`
           : '';
         return `
@@ -403,19 +407,71 @@
           </div>
         `;
       }).join('') || `<div class="empty-state">Нет строк</div>`;
+      preloadLineStickers();
     }
 
-    function openStickerChip(lineIdx, stickerIdx) {
+    // Картинки стикеров не приходят вместе со списком строк (см. комментарий
+    // в packing.service.js:getPackingTaskDetails — на большой волне 30-40
+    // позиций это раздувало ОДИН ответ до мегабайт и тормозило открытие
+    // задачи целиком). Вместо этого сразу после отрисовки списка догружаем
+    // картинки каждого стикера ОТДЕЛЬНЫМИ параллельными запросами в фоне —
+    // список текста виден сразу, картинки проявляются по мере загрузки, без
+    // клика. Уже загруженные (s.image) и уже идущие запросы не дублируем.
+    let _stickerPreloadInFlight = new Set();
+    function preloadLineStickers() {
+      currentLines.forEach((l, li) => {
+        (l.stickers || []).forEach((s, si) => {
+          if (!s.order_id || s.image) return;
+          const key = `${li}-${si}`;
+          if (_stickerPreloadInFlight.has(key)) return;
+          _stickerPreloadInFlight.add(key);
+          window.API.packing.stickerImage(s.order_id)
+            .then(res => {
+              s.image = res.image;
+              const img = document.getElementById(`sticker-thumb-${li}-${si}`);
+              if (img) {
+                img.src = 'data:image/svg+xml;base64,' + res.image;
+                img.style.visibility = 'visible';
+              }
+            })
+            .catch(() => { /* стикер без картинки — чип с кодом всё равно виден, не критично */ })
+            .finally(() => { _stickerPreloadInFlight.delete(key); });
+        });
+      });
+    }
+
+    // Картинка стикера НЕ приходит вместе со списком строк (см. комментарий
+    // в packing.service.js:getPackingTaskDetails — на большой волне это
+    // раздувало ответ до мегабайт и тормозило открытие задачи). Подгружаем
+    // конкретную картинку по клику и кэшируем в s.image, чтобы повторный
+    // клик по тому же чипу не дёргал сервер заново.
+    async function openStickerChip(lineIdx, stickerIdx) {
       const l = currentLines[lineIdx];
       const s = l?.stickers?.[stickerIdx];
-      if (!s?.image) { UI.notify.warn('Для этого стикера нет изображения'); return; }
+      if (!s?.order_id) { UI.notify.warn('Для этого стикера нет изображения'); return; }
+      // Открываем окно СРАЗУ, синхронно по клику - иначе мобильный/desktop
+      // браузер может заблокировать всплывающее окно, открытое после await.
       const w = window.open('', '_blank');
-      w.document.write(`<title>Стикер ${UI.escHtml(s.code||'')}</title>
-        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
-          <img src="data:image/svg+xml;base64,${s.image}" style="max-width:90vw;max-height:80vh;"/>
-          ${s.code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(s.code)}</div>` : ''}
-        </body>`);
-      w.document.close();
+      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно'); return; }
+      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Загрузка стикера…</p>');
+      try {
+        if (!s.image) {
+          const res = await window.API.packing.stickerImage(s.order_id);
+          s.image = res.image;
+          if (!s.code && res.code) s.code = res.code;
+        }
+        w.document.open();
+        w.document.write(`<title>Стикер ${UI.escHtml(s.code||'')}</title>
+          <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
+            <img src="data:image/svg+xml;base64,${s.image}" style="max-width:90vw;max-height:80vh;"/>
+            ${s.code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(s.code)}</div>` : ''}
+          </body>`);
+        w.document.close();
+      } catch (e) {
+        w.document.open();
+        w.document.write(`<p style="font-family:sans-serif;color:red;padding:40px;">${UI.escHtml(e.message)}</p>`);
+        w.document.close();
+      }
     }
 
     async function loadTaskDetails(res) {

@@ -62,6 +62,17 @@ router.post('/scan-item', requireRole('tenant_admin','supervisor','packer'), asy
   } catch(e){ next(e); }
 });
 
+/** GET /packing/sticker-image/:wbOrderId — картинка одного стикера ВБ по
+ *  клику на чип (см. комментарий в packing.service.js:getPackingTaskDetails
+ *  про то, почему это не отдаётся сразу в общем списке строк). */
+router.get('/sticker-image/:wbOrderId', requireRole('tenant_admin','supervisor','packer'), async (req,res,next)=>{
+  try {
+    const wbOrderId = validatePositiveInt(req.params.wbOrderId, 'wbOrderId');
+    const result = await svc.getStickerImage({ tenantId: req.user.tenantId, wbOrderId });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /packing/confirm */
 router.post('/confirm', requireRole('tenant_admin','supervisor','packer'), async (req,res,next)=>{
   try {

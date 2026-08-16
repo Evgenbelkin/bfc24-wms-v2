@@ -325,6 +325,7 @@
     current: ()  => get('/packing/current'),
     scanItem:(d) => post('/packing/scan-item', d),
     confirm: (d) => post('/packing/confirm', d),
+    stickerImage: (wbOrderId) => get(`/packing/sticker-image/${wbOrderId}`),
   };
 
   // ─────────────── Shipping ───────────────
