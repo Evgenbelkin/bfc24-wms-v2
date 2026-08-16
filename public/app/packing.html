@@ -336,6 +336,18 @@
       }
     }
 
+    // Заменяет сломанную <img> (preview_url не грузится) на плейсхолдер-иконку.
+    // Раньше это делалось инлайновым onerror с вложенными двойными кавычками
+    // прямо внутри HTML-атрибута onerror="..." — браузер обрывал атрибут на
+    // первой же внутренней кавычке, и "хвост" строки (включая обрывок вида
+    // )))"/>) прорывался на страницу как обычный текст рядом с товаром.
+    function linePhotoError(imgEl) {
+      const div = document.createElement('div');
+      div.className = 'line-photo-placeholder';
+      div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>';
+      imgEl.replaceWith(div);
+    }
+
     function renderLines() {
       const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
       const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
@@ -349,7 +361,7 @@
         const justScanned = l.barcode === lastScannedBarcode;
         const isNext = !justScanned && nextExpected && l === nextExpected;
         const photo = l.preview_url
-          ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'line-photo-placeholder',textContent:'<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>'}))"/>`
+          ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="linePhotoError(this)"/>`
           : `<div class="line-photo-placeholder"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></div>`;
         // Стикеры ВБ этого товара — по одному на каждую физическую единицу.
         // Видно ДО скана (что должно напечататься), а после каждого скана
