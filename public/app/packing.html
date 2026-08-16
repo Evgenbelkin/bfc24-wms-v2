@@ -46,7 +46,10 @@
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
     <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Упаковка</h1>
-    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-sm btn-back" id="voice-toggle-btn" onclick="onToggleVoice()" title="Голосовое сопровождение"></button>
+      <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    </div>
   </div>
 
   <div class="card empty-state" id="no-task-card">
@@ -181,6 +184,15 @@
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
 
+    // ---------- Голосовое сопровождение ----------
+    function renderVoiceBtn() {
+      const btn = document.getElementById('voice-toggle-btn');
+      const on = UI.voiceEnabled();
+      btn.textContent = on ? '🔊 Голос' : '🔇 Голос';
+    }
+    function onToggleVoice() { UI.toggleVoice(); renderVoiceBtn(); }
+    renderVoiceBtn();
+
     let currentTask = null;
     let currentShipment = null;
     let currentLines = [];
@@ -264,12 +276,14 @@
       const shipmentCode = currentShipment?.external_id || currentTask?.shipment_code || '';
       if (String(scanned).trim().toUpperCase() !== String(shipmentCode).trim().toUpperCase()) {
         UI.beep('err');
+        UI.speak('Ошибка. Не тот короб');
         UI.notify.err('Это не тот короб — код на наклейке не совпадает с текущим заданием');
         UI.setVal('#pickup-scan', '');
         return;
       }
       pickupConfirmed = true;
       UI.notify.ok('Короб подтверждён, можно упаковывать');
+      speakNextItemPrompt();
       renderPickupGate();
     }
     UI.onScan('#pickup-scan', confirmPickup);
@@ -282,6 +296,21 @@
     // в списке состава.
     function getNextExpectedLine() {
       return currentLines.find(l => Number(l.qty_packed||0) < Number(l.qty_plan||0)) || null;
+    }
+
+    // Голосом сразу подсказываем, что сканировать дальше. Если следующий
+    // ожидаемый товар промаркирован (marking_mode='scan') — сразу говорим
+    // "Отсканируйте киз", а не ждём, пока упаковщик сначала отсканирует
+    // обычный штрихкод и ТОЛЬКО ПОТОМ увидит запрос на киз - унифицированное
+    // поле #scan-barcode и так принимает киз напрямую (см. handleScan), так
+    // что штрихкод можно вообще не сканировать.
+    function speakNextItemPrompt() {
+      const next = getNextExpectedLine();
+      if (next && lineNeedsDataMatrixScan(next)) {
+        UI.speak('Отсканируйте киз');
+      } else {
+        UI.speak('Сканируйте товар');
+      }
     }
 
     function renderBigPhoto() {
@@ -322,6 +351,18 @@
       }
     }
 
+    // Заменяет сломанную <img> (preview_url не грузится) на плейсхолдер-иконку.
+    // Раньше это делалось инлайновым onerror с вложенными двойными кавычками
+    // прямо внутри HTML-атрибута onerror="..." — браузер обрывал атрибут на
+    // первой же внутренней кавычке, и "хвост" строки (включая обрывок вида
+    // )))"/>) прорывался на страницу как обычный текст рядом с товаром.
+    function linePhotoError(imgEl) {
+      const div = document.createElement('div');
+      div.className = 'line-photo-placeholder';
+      div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>';
+      imgEl.replaceWith(div);
+    }
+
     function renderLines() {
       const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
       const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
@@ -335,7 +376,7 @@
         const justScanned = l.barcode === lastScannedBarcode;
         const isNext = !justScanned && nextExpected && l === nextExpected;
         const photo = l.preview_url
-          ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'line-photo-placeholder',textContent:'<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>'}))"/>`
+          ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="linePhotoError(this)"/>`
           : `<div class="line-photo-placeholder"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></div>`;
         // Стикеры ВБ этого товара — по одному на каждую физическую единицу.
         // Видно ДО скана (что должно напечататься), а после каждого скана
@@ -449,6 +490,7 @@
           // не нашли товар по этому кизу — падаем на подсказку ниже
         }
         UI.beep('err');
+        UI.speak('Код не найден');
         UI.notify.err('Не смогли определить товар по этому коду — отсканируйте обычный штрихкод товара');
         if (statusEl) statusEl.textContent = '';
         return;
@@ -461,6 +503,7 @@
         document.getElementById('pack-dm-error').style.display = 'none';
         document.getElementById('pack-dm-override-btn').style.display = 'none';
         UI.setVal('#pack-dm-input', '');
+        UI.speak('Отсканируйте киз');
         setTimeout(() => document.getElementById('pack-dm-input').focus(), 100);
         return;
       }
@@ -491,6 +534,19 @@
         UI.notify.ok(res.marking && res.marking.manual_override
           ? `Упаковано БЕЗ отправки КИЗ в WB (обход супервайзера): ${res.qty_packed}/${res.qty_plan}`
           : `Упаковано: ${res.qty_packed}/${res.qty_plan}`);
+        // Голосом: если этим сканом закрыли последнюю строку - явно говорим
+        // отнести в зону отгрузки (это следующий физический шаг), иначе
+        // просто короткое подтверждение скана.
+        const totalPlanNow   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
+        const totalPackedNow = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
+        if (totalPlanNow > 0 && totalPackedNow >= totalPlanNow) {
+          UI.speak('Всё упаковано. Разместите короб в зону отгрузки');
+        } else {
+          // Подсказываем сразу, что сканировать дальше - если следующий
+          // товар промаркирован, сразу "Отсканируйте киз" вместо нейтрального
+          // "Принято", чтобы не сканировали штрихкод впустую перед кизом.
+          speakNextItemPrompt();
+        }
         // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
         pendingDmBarcode = null;
         document.getElementById('pack-dm-card').style.display = 'none';
@@ -498,6 +554,7 @@
         return true;
       } catch (e) {
         UI.beep('err');
+        UI.speak('Ошибка');
         if (dataMatrixCode) {
           // Ошибка именно на шаге DataMatrix (нет в пуле / WB API отклонил и т.п.) —
           // не прячем карточку, даём возможность повторить скан или вызвать супервайзера.

@@ -200,6 +200,73 @@
     } catch (_) { /* звук не критичен для работы - тихо игнорируем (например, если Web Audio недоступен) */ }
   }
 
+  // ─────────────── Голосовое сопровождение (Web Speech API) ───────────────
+  // Проговаривает короткие фразы ("Принято", "Ошибка", "Отсканируйте товар")
+  // синтезом речи браузера — не нужен сервер/интернет-API, работает в Chrome
+  // из коробки. Включено по умолчанию, но это личная настройка КОНКРЕТНОГО
+  // рабочего места/устройства (не сотрудника и не тенанта) — на одном столе
+  // упаковки голос может мешать, на другом наоборот нужен - поэтому храним
+  // переключатель в localStorage этого браузера, а не в БД.
+  const VOICE_STORAGE_KEY = 'wms_voice_enabled';
+  function voiceEnabled() {
+    const v = localStorage.getItem(VOICE_STORAGE_KEY);
+    return v === null ? true : v === '1';
+  }
+  function setVoiceEnabled(on) {
+    localStorage.setItem(VOICE_STORAGE_KEY, on ? '1' : '0');
+  }
+  function toggleVoice() {
+    const next = !voiceEnabled();
+    setVoiceEnabled(next);
+    if (next) speak('Голос включён');
+    return next;
+  }
+
+  // Браузер обычно даёт на выбор НЕСКОЛЬКО голосов для русского - локальный
+  // системный (SAPI на Windows и т.п., звучит грубо/невнятно - похоже на это
+  // и жаловались: "короб" слышится как "краб") и "облачный" (в Chrome обычно
+  // содержит "Google" в названии - звучит заметно чище и понятнее). Явно
+  // выбираем такой, если он есть, вместо того чтобы полагаться на выбор
+  // браузера по умолчанию (Chrome по умолчанию нередко берёт как раз
+  // локальный). Список голосов иногда грузится асинхронно (пустой при первом
+  // обращении) - подписываемся на voiceschanged и кэшируем результат.
+  let _cachedVoices = null;
+  function pickRuVoice() {
+    if (!window.speechSynthesis) return null;
+    const voices = _cachedVoices || window.speechSynthesis.getVoices();
+    if (!voices || !voices.length) return null;
+    _cachedVoices = voices;
+    const ru = voices.filter(v => /^ru/i.test(v.lang));
+    if (!ru.length) return null;
+    return ru.find(v => /google/i.test(v.name))
+        || ru.find(v => /online|natural|neural/i.test(v.name))
+        || ru[0];
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => { _cachedVoices = window.speechSynthesis.getVoices(); };
+  }
+
+  function speak(text) {
+    try {
+      if (!voiceEnabled()) return;
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+      // Обрываем предыдущую фразу, если она ещё договаривается - иначе при
+      // частых сканах фразы копятся в очереди и голос начинает отставать от
+      // реальных действий на экране.
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text || ''));
+      u.lang = 'ru-RU';
+      // Чуть медленнее обычного (1.0) - на скорости 1.05+ голоса низкого
+      // качества "смазывают" окончания слов, из-за чего "короб" превращается
+      // в невнятное "краб".
+      u.rate = 0.92;
+      u.pitch = 1;
+      const voice = pickRuVoice();
+      if (voice) u.voice = voice;
+      window.speechSynthesis.speak(u);
+    } catch (_) { /* синтез речи не критичен - тихо игнорируем */ }
+  }
+
   // ─────────────── Scanner input helper ───────────────
   // TSD-friendly: Enter-triggered scan
 
@@ -461,6 +528,7 @@
     onScan, scanInto, populateSelect, confirm,
     openChangePasswordModal,
     beep,
+    speak, voiceEnabled, setVoiceEnabled, toggleVoice,
   };
 
 })(window);
