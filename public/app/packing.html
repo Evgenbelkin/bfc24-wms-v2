@@ -283,7 +283,7 @@
       }
       pickupConfirmed = true;
       UI.notify.ok('Короб подтверждён, можно упаковывать');
-      UI.speak('Сканируйте товар');
+      speakNextItemPrompt();
       renderPickupGate();
     }
     UI.onScan('#pickup-scan', confirmPickup);
@@ -296,6 +296,21 @@
     // в списке состава.
     function getNextExpectedLine() {
       return currentLines.find(l => Number(l.qty_packed||0) < Number(l.qty_plan||0)) || null;
+    }
+
+    // Голосом сразу подсказываем, что сканировать дальше. Если следующий
+    // ожидаемый товар промаркирован (marking_mode='scan') — сразу говорим
+    // "Отсканируйте киз", а не ждём, пока упаковщик сначала отсканирует
+    // обычный штрихкод и ТОЛЬКО ПОТОМ увидит запрос на киз - унифицированное
+    // поле #scan-barcode и так принимает киз напрямую (см. handleScan), так
+    // что штрихкод можно вообще не сканировать.
+    function speakNextItemPrompt() {
+      const next = getNextExpectedLine();
+      if (next && lineNeedsDataMatrixScan(next)) {
+        UI.speak('Отсканируйте киз');
+      } else {
+        UI.speak('Сканируйте товар');
+      }
     }
 
     function renderBigPhoto() {
@@ -527,7 +542,10 @@
         if (totalPlanNow > 0 && totalPackedNow >= totalPlanNow) {
           UI.speak('Всё упаковано. Разместите короб в зону отгрузки');
         } else {
-          UI.speak('Принято');
+          // Подсказываем сразу, что сканировать дальше - если следующий
+          // товар промаркирован, сразу "Отсканируйте киз" вместо нейтрального
+          // "Принято", чтобы не сканировали штрихкод впустую перед кизом.
+          speakNextItemPrompt();
         }
         // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
         pendingDmBarcode = null;
