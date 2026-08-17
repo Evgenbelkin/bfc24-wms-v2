@@ -48,16 +48,18 @@ async function listActiveAccounts(tenantId) {
  *  15 минут) мы сверяем, какие из наших "new"-заказов пропали из свежего ответа WB,
  *  и помечаем их status='external' — это выводит их из очереди на волну и делает
  *  видимыми в фильтре как "Занято в кабинете WB", вместо того чтобы бесконечно висеть. */
-async function syncOrdersForAccount({ tenantId, accountId, apiToken }) {
+async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = null }) {
   const orders = await wbClient.fetchNewOrders(apiToken);
 
   let saved = 0;
   const freshIds = [];
+  const touchedBarcodes = new Set();
   for (const o of orders) {
     const wbOrderId = o.id || o.odid || o.orderId;
     if (!wbOrderId) continue;
     freshIds.push(Number(wbOrderId));
     const barcode = Array.isArray(o.skus) ? o.skus[0] : (o.barcode || null);
+    if (barcode) touchedBarcodes.add(barcode);
     await query(
       `INSERT INTO wms.wb_orders
          (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
@@ -88,6 +90,23 @@ async function syncOrdersForAccount({ tenantId, accountId, apiToken }) {
     [tenantId, accountId, freshIds]
   );
 
+  // Пересчёт и отправка остатка в WB СРАЗУ по товарам, затронутым этой
+  // синхронизацией (точечно, только по их баркодам - см. комментарий у
+  // triggerRedistributionForClient про то, почему не по всему ассортименту).
+  // Без этого шага остаток по товару обновлялся в WB только по приёмке/
+  // инвентаризации/сборке комплекта или раз в 8 часов по крону (wbStockSync) -
+  // а между появлением новых заказов WB (синк каждые 15 минут) и таким
+  // пересчётом могло пройти много времени, и WB продолжал продавать по
+  // старому, уже не актуальному числу поверх только что пришедших заказов.
+  // Именно это и стало причиной инцидента с overselling по 2006784214907
+  // (17.08.2026) - заказы копились в wb_orders, а пересчёт остатка не
+  // триггерился синком заказов вообще. Fire-and-forget, как и остальные
+  // вызовы triggerRedistributionForClient - синк заказов не должен ждать
+  // похода в WB API за остатками.
+  if (clientId && touchedBarcodes.size > 0) {
+    triggerRedistributionForClient({ tenantId, clientId, barcodes: Array.from(touchedBarcodes) });
+  }
+
   return { fetched: orders.length, saved, marked_external: reconciled.rowCount };
 }
 
@@ -97,7 +116,7 @@ async function syncAllAccountsForTenant(tenantId) {
   const results = [];
   for (const acc of accounts) {
     try {
-      const r = await syncOrdersForAccount({ tenantId, accountId: acc.id, apiToken: acc.api_token });
+      const r = await syncOrdersForAccount({ tenantId, accountId: acc.id, apiToken: acc.api_token, clientId: acc.client_id });
       results.push({ account_id: acc.id, account_name: acc.account_name, ok: true, ...r });
     } catch (e) {
       logger.error({ err: e, tenantId, accountId: acc.id }, 'WB sync-all: account sync failed');
