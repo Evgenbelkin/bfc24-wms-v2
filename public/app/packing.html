@@ -595,7 +595,8 @@
         // просто короткое подтверждение скана.
         const totalPlanNow   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
         const totalPackedNow = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
-        if (totalPlanNow > 0 && totalPackedNow >= totalPlanNow) {
+        const allPackedNow = totalPlanNow > 0 && totalPackedNow >= totalPlanNow;
+        if (allPackedNow) {
           UI.speak('Всё упаковано. Разместите короб в зону отгрузки');
         } else {
           // Подсказываем сразу, что сканировать дальше - если следующий
@@ -606,7 +607,11 @@
         // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
         pendingDmBarcode = null;
         document.getElementById('pack-dm-card').style.display = 'none';
-        document.getElementById('scan-barcode').focus();
+        // Если этим сканом закрыли последнюю строку - сканировать в поле
+        // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
+        // отгрузки (туда сканируют физически следующим шагом), а не оставаться
+        // в уже неактуальном поле товара.
+        document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode').focus();
         return true;
       } catch (e) {
         UI.beep('err');
