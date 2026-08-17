@@ -48,16 +48,18 @@ async function listActiveAccounts(tenantId) {
  *  15 минут) мы сверяем, какие из наших "new"-заказов пропали из свежего ответа WB,
  *  и помечаем их status='external' — это выводит их из очереди на волну и делает
  *  видимыми в фильтре как "Занято в кабинете WB", вместо того чтобы бесконечно висеть. */
-async function syncOrdersForAccount({ tenantId, accountId, apiToken }) {
+async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = null }) {
   const orders = await wbClient.fetchNewOrders(apiToken);
 
   let saved = 0;
   const freshIds = [];
+  const touchedBarcodes = new Set();
   for (const o of orders) {
     const wbOrderId = o.id || o.odid || o.orderId;
     if (!wbOrderId) continue;
     freshIds.push(Number(wbOrderId));
     const barcode = Array.isArray(o.skus) ? o.skus[0] : (o.barcode || null);
+    if (barcode) touchedBarcodes.add(barcode);
     await query(
       `INSERT INTO wms.wb_orders
          (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
@@ -88,6 +90,23 @@ async function syncOrdersForAccount({ tenantId, accountId, apiToken }) {
     [tenantId, accountId, freshIds]
   );
 
+  // Пересчёт и отправка остатка в WB СРАЗУ по товарам, затронутым этой
+  // синхронизацией (точечно, только по их баркодам - см. комментарий у
+  // triggerRedistributionForClient про то, почему не по всему ассортименту).
+  // Без этого шага остаток по товару обновлялся в WB только по приёмке/
+  // инвентаризации/сборке комплекта или раз в 8 часов по крону (wbStockSync) -
+  // а между появлением новых заказов WB (синк каждые 15 минут) и таким
+  // пересчётом могло пройти много времени, и WB продолжал продавать по
+  // старому, уже не актуальному числу поверх только что пришедших заказов.
+  // Именно это и стало причиной инцидента с overselling по 2006784214907
+  // (17.08.2026) - заказы копились в wb_orders, а пересчёт остатка не
+  // триггерился синком заказов вообще. Fire-and-forget, как и остальные
+  // вызовы triggerRedistributionForClient - синк заказов не должен ждать
+  // похода в WB API за остатками.
+  if (clientId && touchedBarcodes.size > 0) {
+    triggerRedistributionForClient({ tenantId, clientId, barcodes: Array.from(touchedBarcodes) });
+  }
+
   return { fetched: orders.length, saved, marked_external: reconciled.rowCount };
 }
 
@@ -97,7 +116,7 @@ async function syncAllAccountsForTenant(tenantId) {
   const results = [];
   for (const acc of accounts) {
     try {
-      const r = await syncOrdersForAccount({ tenantId, accountId: acc.id, apiToken: acc.api_token });
+      const r = await syncOrdersForAccount({ tenantId, accountId: acc.id, apiToken: acc.api_token, clientId: acc.client_id });
       results.push({ account_id: acc.id, account_name: acc.account_name, ok: true, ...r });
     } catch (e) {
       logger.error({ err: e, tenantId, accountId: acc.id }, 'WB sync-all: account sync failed');
@@ -279,15 +298,31 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   // конкретный кейс, который это вскрыл: 2006784216833 (11-12.08.2026).
   // Теперь обнулившиеся товары остаются в выборке и явно уходят в WB как 0.
   const barcodesFilter = Array.isArray(barcodes) && barcodes.length > 0
-    ? ` AND sb.barcode = ANY($4::text[])` : '';
+    ? ` AND wib.barcode = ANY($4::text[])` : '';
   const stockParams = barcodesFilter ? [tenantId, account.client_id, mpAccountId, barcodes]
                                       : [tenantId, account.client_id, mpAccountId];
+  // Считаем остаток ТОЛЬКО по ячейкам отбора (is_pick_location=TRUE) - товар,
+  // который лежит в зоне приёмки/размещения и ещё не разложен в ячейку
+  // сборки, физически недоступен для сборщика прямо сейчас, поэтому в WB его
+  // показывать как "в наличии" нельзя (иначе при больших объёмах WB будет
+  // продавать то, что ещё только предстоит разложить по ячейкам, а не то, что
+  // реально можно взять и собрать).
+  // ВАЖНО: база выборки - wb_item_barcodes (все штрихкоды аккаунта), а не
+  // stock_balances, через LEFT JOIN + FILTER. Если считать наоборот (JOIN от
+  // stock_balances с WHERE is_pick_location=TRUE), то товар, весь остаток
+  // которого лежит в зоне размещения (ещё не разложен по ячейкам отбора),
+  // выпадает из выборки целиком - и тогда никогда не уходит в WB как явный 0,
+  // что воспроизводит уже однажды пофикшенный баг с "зависшим" ненулевым
+  // остатком на стороне WB (см. комментарий выше, кейс 2006784216833).
   const stockRes = await query(
-    `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty
-     FROM wms.stock_balances sb
-     WHERE sb.tenant_id=$1 AND sb.client_id=$2
-       AND EXISTS (SELECT 1 FROM wms.wb_item_barcodes wib WHERE wib.mp_account_id=$3 AND wib.barcode=sb.barcode)${barcodesFilter}
-     GROUP BY sb.barcode`,
+    `SELECT wib.barcode,
+            COALESCE(SUM(sb.qty_available) FILTER (WHERE l.is_pick_location = TRUE), 0)::int AS qty
+     FROM wms.wb_item_barcodes wib
+     LEFT JOIN wms.stock_balances sb
+       ON sb.tenant_id=$1 AND sb.client_id=$2 AND sb.barcode=wib.barcode
+     LEFT JOIN wms.locations l ON l.id = sb.location_id
+     WHERE wib.mp_account_id=$3${barcodesFilter}
+     GROUP BY wib.barcode`,
     stockParams
   );
 

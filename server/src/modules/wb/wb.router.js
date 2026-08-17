@@ -156,7 +156,7 @@ router.post('/sync-orders', requireRole('tenant_admin','supervisor'), async (req
     // дёргался /api/v3/orders (весь архив, включая отменённые за всё время) и
     // в status писался deliveryType ('fbs' для всех подряд), из-за чего
     // фильтр "заказы без поставки" на генерации волны не отсеивал ничего.
-    const result = await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token });
+    const result = await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id });
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
@@ -199,7 +199,7 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     // Это сужает окно гонки "клиент вручную забрал заказ в своём ЛК WB, пока мы не
     // успели сформировать волну" до секунд: любой заказ, который WB уже не считает
     // новым, будет помечен status='external' и не попадёт в выборку ниже.
-    await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token });
+    await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id });
 
     // Список складов WB тоже подтягиваем по свежему — чтобы флаг
     // is_enabled_for_picking ниже применялся к актуальному набору складов
