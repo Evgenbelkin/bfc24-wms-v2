@@ -279,15 +279,31 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   // конкретный кейс, который это вскрыл: 2006784216833 (11-12.08.2026).
   // Теперь обнулившиеся товары остаются в выборке и явно уходят в WB как 0.
   const barcodesFilter = Array.isArray(barcodes) && barcodes.length > 0
-    ? ` AND sb.barcode = ANY($4::text[])` : '';
+    ? ` AND wib.barcode = ANY($4::text[])` : '';
   const stockParams = barcodesFilter ? [tenantId, account.client_id, mpAccountId, barcodes]
                                       : [tenantId, account.client_id, mpAccountId];
+  // Считаем остаток ТОЛЬКО по ячейкам отбора (is_pick_location=TRUE) - товар,
+  // который лежит в зоне приёмки/размещения и ещё не разложен в ячейку
+  // сборки, физически недоступен для сборщика прямо сейчас, поэтому в WB его
+  // показывать как "в наличии" нельзя (иначе при больших объёмах WB будет
+  // продавать то, что ещё только предстоит разложить по ячейкам, а не то, что
+  // реально можно взять и собрать).
+  // ВАЖНО: база выборки - wb_item_barcodes (все штрихкоды аккаунта), а не
+  // stock_balances, через LEFT JOIN + FILTER. Если считать наоборот (JOIN от
+  // stock_balances с WHERE is_pick_location=TRUE), то товар, весь остаток
+  // которого лежит в зоне размещения (ещё не разложен по ячейкам отбора),
+  // выпадает из выборки целиком - и тогда никогда не уходит в WB как явный 0,
+  // что воспроизводит уже однажды пофикшенный баг с "зависшим" ненулевым
+  // остатком на стороне WB (см. комментарий выше, кейс 2006784216833).
   const stockRes = await query(
-    `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty
-     FROM wms.stock_balances sb
-     WHERE sb.tenant_id=$1 AND sb.client_id=$2
-       AND EXISTS (SELECT 1 FROM wms.wb_item_barcodes wib WHERE wib.mp_account_id=$3 AND wib.barcode=sb.barcode)${barcodesFilter}
-     GROUP BY sb.barcode`,
+    `SELECT wib.barcode,
+            COALESCE(SUM(sb.qty_available) FILTER (WHERE l.is_pick_location = TRUE), 0)::int AS qty
+     FROM wms.wb_item_barcodes wib
+     LEFT JOIN wms.stock_balances sb
+       ON sb.tenant_id=$1 AND sb.client_id=$2 AND sb.barcode=wib.barcode
+     LEFT JOIN wms.locations l ON l.id = sb.location_id
+     WHERE wib.mp_account_id=$3${barcodesFilter}
+     GROUP BY wib.barcode`,
     stockParams
   );
 
