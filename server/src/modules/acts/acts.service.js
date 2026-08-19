@@ -172,7 +172,7 @@ async function setActShared({ tenantId, actId, userId, shared }) {
   const r = await query(
     `UPDATE wms.acceptance_acts
      SET shared_with_client_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
-         shared_with_client_by = CASE WHEN $3 THEN $4 ELSE NULL END,
+         shared_with_client_by = CASE WHEN $3 THEN $4::int ELSE NULL END,
          updated_at = NOW()
      WHERE id=$1 AND tenant_id=$2
      RETURNING *`,
