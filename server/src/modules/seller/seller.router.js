@@ -11,6 +11,9 @@ const { ValidationError, ForbiddenError } = require('../../utils/errors');
 const inboundSvc = require('../inbound/inbound.service');
 const stockSvc = require('../stock/stock.service');
 const receivingSvc = require('../receiving/receiving.service');
+const actsSvc = require('../acts/acts.service');
+const tenantSvc = require('../tenant/tenant.service');
+const { validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const billingSvc = require('../billing/billing.service');
 const markingSvc = require('../marking/marking.service');
@@ -481,6 +484,40 @@ router.get('/receiving-history', async (req,res,next)=>{
       offset:   Number(req.query.offset) || 0,
     });
     res.json({ ok:true, rows });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/acts — список актов приёмки клиента (read-only витрина того же
+ *  wms.acceptance_acts, что формирует склад). */
+router.get('/acts', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const acts = await actsSvc.listActs({
+      tenantId: req.user.tenantId, clientId,
+      dateFrom: req.query.date_from || null,
+      dateTo:   req.query.date_to   || null,
+      limit:    Number(req.query.limit)  || 100,
+      offset:   Number(req.query.offset) || 0,
+    });
+    res.json({ ok:true, acts });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/acts/:id — сам акт + строки, для печати в браузере (тот же
+ *  ActPrint, что и на складе). acts.service.getAct не фильтрует по клиенту
+ *  сама (staff-роут доверяет tenant-скоупу) - здесь ПРОВЕРЯЕМ владельца явно,
+ *  иначе продавец по чужому id мог бы подсмотреть акт другого клиента.
+ *  Реквизиты тенанта ("исполнитель" в акте) отдаём тут же одним ответом -
+ *  GET /tenant/profile продавцу недоступен (там requireRole tenant_admin/
+ *  supervisor), а дублировать отдельный публичный роут ради этого не нужно. */
+router.get('/acts/:id', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const actId = validatePositiveInt(req.params.id, 'id');
+    const result = await actsSvc.getAct({ tenantId: req.user.tenantId, actId });
+    if (result.act.client_id !== clientId) throw new ForbiddenError('Act belongs to a different client');
+    const tenantProfile = await tenantSvc.getMyTenantProfile({ tenantId: req.user.tenantId });
+    res.json({ ok:true, act: result.act, lines: result.lines, tenant: tenantProfile });
   } catch(e){ next(e); }
 });
 
