@@ -258,6 +258,8 @@
     create:    (d)       => post('/acts', d),
     update:    (id, d)   => patch(`/acts/${id}`, d),
     freeLines: (p)        => get('/acts/free-lines', p),
+    uncovered: (p)        => get('/acts/uncovered', p),
+    share:     (id, shared) => post(`/acts/${id}/share`, { shared }),
   };
 
   // ─────────────── Receiving ───────────────
@@ -491,6 +493,11 @@
     wbReturnClaims: (p) => get('/seller/wb-return-claims', p),
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
+    receivingHistory: (p) => get('/seller/receiving-history', p),
+    acts: {
+      list: (p)  => get('/seller/acts', p),
+      get:  (id) => get(`/seller/acts/${id}`),
+    },
     billing:  (p)     => get('/seller/billing', p),
     billingBalance:  ()   => get('/seller/billing/balance'),
     billingInvoices: (p)  => get('/seller/billing/invoices', p),

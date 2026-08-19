@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Приёмка товара — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:4px;}
+    .filters input[type="date"]{padding:10px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .filters input[type="text"]{flex:1;min-width:180px;padding:10px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .qty-damaged{color:var(--danger,#e5484d);font-weight:700;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> Приёмка товара</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <input type="text" id="f-search" placeholder="Поиск по названию или штрихкоду..." oninput="renderRows()"/>
+      <input type="date" id="f-from"/>
+      <input type="date" id="f-to"/>
+      <button class="btn-sm" onclick="loadHistory()">Показать</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="badge-row" style="margin-bottom:14px;">
+      <div class="badge"><span>Приёмок</span><div id="k-count">0</div></div>
+      <div class="badge"><span>Принято, шт</span><div id="k-received">0</div></div>
+      <div class="badge"><span>Брак, шт</span><div id="k-damaged">0</div></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Дата приёмки</th><th>Товар</th><th>Штрихкод</th><th>Принято</th><th>Брак</th><th>Ячейка</th></tr></thead>
+        <tbody id="rows-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    let rows = [];
+
+    async function loadHistory() {
+      try {
+        const params = {};
+        const from = UI.val('#f-from');
+        const to = UI.val('#f-to');
+        if (from) params.date_from = from;
+        if (to) params.date_to = to;
+        const res = await window.API.seller.receivingHistory(params);
+        rows = res.rows || [];
+        renderRows();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    function renderRows() {
+      const term = UI.val('#f-search').toLowerCase();
+      const filtered = term
+        ? rows.filter(r => (r.item_name||'').toLowerCase().includes(term) || (r.barcode||'').includes(term))
+        : rows;
+
+      document.getElementById('k-count').textContent = filtered.length;
+      document.getElementById('k-received').textContent = UI.fmtQty(filtered.reduce((a,r)=>a+Number(r.qty_received||0),0));
+      document.getElementById('k-damaged').textContent = UI.fmtQty(filtered.reduce((a,r)=>a+Number(r.qty_damaged||0),0));
+
+      const body = document.getElementById('rows-body');
+      if (!filtered.length) {
+        body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Пока ничего не принято</td></tr>`;
+        return;
+      }
+      body.innerHTML = filtered.map(r => `
+        <tr>
+          <td>${r.completed_at ? UI.fmtDateTime(r.completed_at) : '—'}</td>
+          <td>${UI.escHtml(r.item_name || '—')}</td>
+          <td>${UI.escHtml(r.barcode || '—')}</td>
+          <td><strong>${UI.fmtQty(r.qty_received)}</strong></td>
+          <td>${Number(r.qty_damaged||0) > 0 ? `<span class="qty-damaged">${UI.fmtQty(r.qty_damaged)}</span>` : '—'}</td>
+          <td>${UI.escHtml(r.loc_code || r.location_code || '—')}</td>
+        </tr>
+      `).join('');
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>

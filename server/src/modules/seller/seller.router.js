@@ -10,6 +10,10 @@ const { requireModule } = require('../../middleware/tenant');
 const { ValidationError, ForbiddenError } = require('../../utils/errors');
 const inboundSvc = require('../inbound/inbound.service');
 const stockSvc = require('../stock/stock.service');
+const receivingSvc = require('../receiving/receiving.service');
+const actsSvc = require('../acts/acts.service');
+const tenantSvc = require('../tenant/tenant.service');
+const { validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const billingSvc = require('../billing/billing.service');
 const markingSvc = require('../marking/marking.service');
@@ -459,6 +463,70 @@ router.get('/history', async (req,res,next)=>{
       limit:    Number(req.query.limit) || 200,
     });
     res.json({ ok:true, movements:rows });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/receiving-history — что и сколько реально приехало и было принято
+ *  на складе, для витрины "мы приняли ваш товар в таком-то количестве".
+ *  Переиспользует тот же сервис, что и внутренний экран приёмки
+ *  (receiving.service.js:listReceivingHistory) - там уже есть client_id,
+ *  qty_received/qty_expected/qty_damaged, товар и дата, ничего добавлять не
+ *  пришлось. clientId скоупится через resolveClientScope как везде в этом
+ *  роутере - продавец не может подсмотреть чужую приёмку. */
+router.get('/receiving-history', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const rows = await receivingSvc.listReceivingHistory({
+      tenantId: req.user.tenantId, clientId,
+      dateFrom: req.query.date_from || null,
+      dateTo:   req.query.date_to   || null,
+      limit:    Number(req.query.limit)  || 200,
+      offset:   Number(req.query.offset) || 0,
+    });
+    res.json({ ok:true, rows });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/acts — список актов приёмки клиента (read-only витрина того же
+ *  wms.acceptance_acts, что формирует склад).
+ *  ВАЖНО: акты по умолчанию НЕ видны клиенту - склад формирует их для
+ *  внутреннего использования и явно нажимает "Передать клиенту" (см.
+ *  POST /acts/:id/share). Здесь жёстко фильтруем onlyShared:true, иначе
+ *  клиент увидит черновики/внутренние акты раньше, чем склад готов их
+ *  показать. */
+router.get('/acts', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const acts = await actsSvc.listActs({
+      tenantId: req.user.tenantId, clientId,
+      dateFrom: req.query.date_from || null,
+      dateTo:   req.query.date_to   || null,
+      limit:    Number(req.query.limit)  || 100,
+      offset:   Number(req.query.offset) || 0,
+      onlyShared: true,
+    });
+    res.json({ ok:true, acts });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/acts/:id — сам акт + строки, для печати в браузере (тот же
+ *  ActPrint, что и на складе). acts.service.getAct не фильтрует по клиенту
+ *  сама (staff-роут доверяет tenant-скоупу) - здесь ПРОВЕРЯЕМ и владельца, и
+ *  что акт реально передан клиенту (shared_with_client_at) - иначе продавец
+ *  по чужому/непереданному id мог бы подсмотреть акт другого клиента или
+ *  внутренний черновик, до которого склад его ещё не довёл.
+ *  Реквизиты тенанта ("исполнитель" в акте) отдаём тут же одним ответом -
+ *  GET /tenant/profile продавцу недоступен (там requireRole tenant_admin/
+ *  supervisor), а дублировать отдельный публичный роут ради этого не нужно. */
+router.get('/acts/:id', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const actId = validatePositiveInt(req.params.id, 'id');
+    const result = await actsSvc.getAct({ tenantId: req.user.tenantId, actId });
+    if (result.act.client_id !== clientId) throw new ForbiddenError('Act belongs to a different client');
+    if (!result.act.shared_with_client_at) throw new ForbiddenError('Act has not been shared with the client yet');
+    const tenantProfile = await tenantSvc.getMyTenantProfile({ tenantId: req.user.tenantId });
+    res.json({ ok:true, act: result.act, lines: result.lines, tenant: tenantProfile });
   } catch(e){ next(e); }
 });
 

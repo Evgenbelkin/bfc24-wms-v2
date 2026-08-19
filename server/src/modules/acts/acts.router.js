@@ -33,6 +33,23 @@ router.get('/free-lines', requireRole('tenant_admin','supervisor','receiver'), a
   } catch(e){ next(e); }
 });
 
+/** GET /acts/uncovered — есть ли по клиенту непокрытая актом приёмка (гейт
+ *  "нельзя выйти из модуля/сменить клиента/закрыть заявку без акта", см.
+ *  public/app/receiving.html и inbound-orders.html). */
+router.get('/uncovered', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    if (!clientId) throw new ValidationError('client_id is required');
+    const uncovered = await svc.hasUncoveredReceiving({
+      tenantId: req.user.tenantId,
+      clientId,
+      inboundOrderId: req.query.inbound_order_id ? Number(req.query.inbound_order_id) : null,
+      anySource: req.query.any === '1',
+    });
+    res.json({ ok:true, uncovered });
+  } catch(e){ next(e); }
+});
+
 router.get('/', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {
   try {
     const clientId = resolveClientScope(req, req.query.client_id);
@@ -64,6 +81,8 @@ router.post('/', requireRole('tenant_admin','supervisor','receiver'), async (req
       inboundOrderId: req.body.inbound_order_id ? validatePositiveInt(req.body.inbound_order_id, 'inbound_order_id') : null,
       act: req.body.act || {},
       lines: Array.isArray(req.body.lines) ? req.body.lines : [],
+      dateFrom: req.body.date_from || null,
+      dateTo: req.body.date_to || null,
     });
     res.status(201).json({ ok:true, ...result });
   } catch(e){ next(e); }
@@ -73,6 +92,20 @@ router.get('/:id', requireRole('tenant_admin','supervisor','receiver'), async (r
   try {
     const result = await svc.getAct({ tenantId: req.user.tenantId, actId: validatePositiveInt(req.params.id,'id') });
     res.json({ ok:true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** POST /acts/:id/share — передать акт в кабинет клиента ({shared:true}) или
+ *  отозвать ({shared:false}). По умолчанию акты клиенту не видны - см.
+ *  миграцию 040. */
+router.post('/:id/share', requireRole('tenant_admin','supervisor','receiver'), async (req,res,next) => {
+  try {
+    const actId = validatePositiveInt(req.params.id, 'id');
+    const act = await svc.setActShared({
+      tenantId: req.user.tenantId, actId, userId: req.user.id,
+      shared: req.body.shared !== false,
+    });
+    res.json({ ok:true, act });
   } catch(e){ next(e); }
 });
 

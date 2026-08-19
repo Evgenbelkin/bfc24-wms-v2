@@ -25,9 +25,9 @@
 </head>
 <body>
   <div class="header">
-    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <button class="btn-sm btn-back" onclick="tryLeave(() => window.location.href='/app/menu.html')">← Меню</button>
     <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg> Приёмка</h1>
-    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+    <button class="btn-sm btn-logout" onclick="tryLeave(logout)">Выход</button>
   </div>
 
   <div class="card">
@@ -208,12 +208,35 @@
         sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
         const saved = localStorage.getItem(LAST_CLIENT_KEY);
         if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
-        sel.addEventListener('change', () => {
-          localStorage.setItem(LAST_CLIENT_KEY, sel.value);
-          // Клиента могли сменить уже ПОСЛЕ скана штрихкода товара (или список
-          // клиентов догрузился только сейчас) - перечитываем метаданные маркировки,
-          // не теряя уже отсканированные коды DataMatrix.
-          if (UI.val('#free-barcode')) refreshFreeMarkingItemMeta();
+        sel.dataset.prevValue = sel.value || '';
+        // Смена клиента здесь означает "предыдущий клиент закончен на этом
+        // рабочем месте" - если по нему остался непокрытый актом товар, это
+        // тот самый случай, когда приёмщик может забыть сформировать акт
+        // (см. tryLeave/openFreeActModal). Поэтому смену тоже гейтуем: если
+        // по прошлому клиенту есть непокрытая приёмка, откатываем select
+        // назад и предлагаем сначала сформировать акт - сама смена клиента
+        // произойдёт уже ПОСЛЕ сохранения акта (window.__pendingLeaveAction).
+        sel.addEventListener('change', async () => {
+          const prevValue = sel.dataset.prevValue;
+          const newValue = sel.value;
+          const applySwitch = () => {
+            sel.dataset.prevValue = newValue;
+            localStorage.setItem(LAST_CLIENT_KEY, newValue);
+            // Клиента могли сменить уже ПОСЛЕ скана штрихкода товара (или список
+            // клиентов догрузился только сейчас) - перечитываем метаданные маркировки,
+            // не теряя уже отсканированные коды DataMatrix.
+            if (UI.val('#free-barcode')) refreshFreeMarkingItemMeta();
+          };
+          if (!prevValue || prevValue === newValue) { applySwitch(); return; }
+          const blocked = await checkUncovered(Number(prevValue));
+          if (blocked) {
+            sel.value = prevValue;
+            UI.notify.err('У предыдущего клиента есть принятый товар без акта приёмки — сначала сформируйте акт');
+            window.__pendingLeaveAction = applySwitch;
+            openFreeActModal(Number(prevValue));
+            return;
+          }
+          applySwitch();
         });
       } catch (e) {
         sel.innerHTML = `<option value="">Ошибка загрузки клиентов</option>`;
@@ -226,6 +249,34 @@
       return Number(v);
     }
     loadClients();
+
+    // ---------- Гейт "нельзя выйти из модуля / сменить клиента без акта" ----------
+    async function checkUncovered(clientId) {
+      if (!clientId) return false;
+      try {
+        const res = await window.API.acts.uncovered({ client_id: clientId, any: 1 });
+        return !!res.uncovered;
+      } catch (e) { return false; } // не блокируем переход, если сам чек не смог сходить в API
+    }
+    async function checkUncoveredOrder(inboundOrderId, clientId) {
+      if (!inboundOrderId || !clientId) return false;
+      try {
+        const res = await window.API.acts.uncovered({ client_id: clientId, inbound_order_id: inboundOrderId });
+        return !!res.uncovered;
+      } catch (e) { return false; }
+    }
+    // actionFn выполнится сразу, если по текущему клиенту всё покрыто актом,
+    // иначе откроет форму акта и выполнит actionFn ПОСЛЕ его сохранения
+    // (см. window.__pendingLeaveAction в saveAndPrintFreeAct/closeFreeActModal).
+    async function tryLeave(actionFn) {
+      const clientId = Number(UI.val('#client-select')) || null;
+      if (!clientId) { actionFn(); return; }
+      const blocked = await checkUncovered(clientId);
+      if (!blocked) { actionFn(); return; }
+      UI.notify.err('Есть принятый товар без сформированного акта приёмки — сначала сформируйте акт');
+      window.__pendingLeaveAction = actionFn;
+      openFreeActModal(clientId);
+    }
 
     function switchTab(name) {
       ['free','inbound','history'].forEach(t => {
@@ -399,8 +450,8 @@
 
     function todayStr() { return new Date().toISOString().slice(0, 10); }
 
-    async function openFreeActModal() {
-      const clientId = getClientId();
+    async function openFreeActModal(clientIdOverride) {
+      const clientId = clientIdOverride || getClientId();
       if (!clientId) return;
       const dateFrom = todayStr(), dateTo = todayStr();
       let client = null, tenant = null;
@@ -562,6 +613,9 @@
 
     function closeFreeActModal() {
       document.getElementById('act-modal-root').innerHTML = '';
+      // Отмена модалки - отменяем и то действие (уход/смена клиента), ради
+      // которого она была открыта гейтом ниже.
+      window.__pendingLeaveAction = null;
     }
 
     async function saveAndPrintFreeAct() {
@@ -590,11 +644,27 @@
       };
 
       try {
-        const res = await window.API.acts.create({ client_id: window.__actClientId, inbound_order_id: null, act, lines });
-        if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); closeFreeActModal(); return; }
-        ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+        const res = await window.API.acts.create({
+          client_id: window.__actClientId, inbound_order_id: null, act, lines,
+          date_from: window.__actDateFrom, date_to: window.__actDateTo,
+        });
+        // Акт УЖЕ сохранён на сервере в этой точке (запрос выше отработал
+        // успешно) - дальше только печать, её судьба (открылось окно или
+        // браузер заблокировал popup) не должна влиять на то, что акт
+        // считается сформированным и отложенный переход (меню/выход/смена
+        // клиента) должен продолжиться. Забираем pending ДО closeFreeActModal() -
+        // она сама обнуляет __pendingLeaveAction (это нужно для кнопки
+        // "Отмена"), иначе тут он терялся бы до того, как мы успевали его
+        // вызвать - ровно тот баг, что видел пользователь на стейджинге.
+        const pending = window.__pendingLeaveAction;
+        if (!win) {
+          UI.notify.err('Акт сохранён, но окно печати браузер заблокировал — разрешите всплывающие окна и распечатайте акт из списка "Акты приёмки"');
+        } else {
+          ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+        }
         closeFreeActModal();
         UI.notify.ok('Акт сохранён');
+        if (pending) pending();
       } catch (e) {
         if (win) win.close();
         UI.notify.err(e.message);
@@ -648,6 +718,11 @@
 
     async function closeInboundOrderShort() {
       if (!currentOrder) return;
+      const blocked = await checkUncoveredOrder(currentOrder.id, currentOrder.client_id);
+      if (blocked) {
+        UI.notify.err('По этой заявке есть принятый товар без акта приёмки — сформируйте акт на странице "Заявки на поставку", прежде чем закрывать заявку');
+        return;
+      }
       const reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
       if (reason === null) return; // отмена диалога
       if (!UI.confirm(`Закрыть заявку ${currentOrder.order_number || currentOrder.id} как есть? Уже принятый товар останется на складе, заявка станет финальной.`)) return;
