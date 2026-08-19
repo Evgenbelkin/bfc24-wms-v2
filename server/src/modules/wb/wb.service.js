@@ -314,6 +314,20 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   // выпадает из выборки целиком - и тогда никогда не уходит в WB как явный 0,
   // что воспроизводит уже однажды пофикшенный баг с "зависшим" ненулевым
   // остатком на стороне WB (см. комментарий выше, кейс 2006784216833).
+  //
+  // НО: клиент может параллельно работать с НЕСКОЛЬКИМИ фулфилментами на
+  // одном и том же WB-аккаунте - часть товаров физически лежит у нас, часть
+  // у другого ФФ, а карточка в WB (wb_item_barcodes) у них общая, потому что
+  // это один и тот же магазин WB. Раз мы никогда не видели этот товар у себя
+  // (ни одной строки в stock_movements - ни приёмки, ни инвентаризации,
+  // вообще ничего), значит это чужой для нас физически товар - и слать по
+  // нему 0 нельзя ни в коем случае, это затрёт реальный остаток другого ФФ.
+  // Инцидент: баркод 1282578471 (19.08.2026) - товар только у другого ФФ,
+  // у нас 0 строк вообще везде, но мы всё равно отправили за него 0 в WB и
+  // затёрли чужой остаток. Поэтому включаем в выборку только те штрихкоды, у
+  // которых есть ХОТЯ БЫ ОДНО движение в нашем WMS - то есть мы этот товар
+  // хоть раз физически трогали (даже если сейчас остаток честно 0 - тогда
+  // логика выше про явный 0 по-прежнему работает, это НАШ товар).
   const stockRes = await query(
     `SELECT wib.barcode,
             COALESCE(SUM(sb.qty_available) FILTER (WHERE l.is_pick_location = TRUE), 0)::int AS qty
@@ -322,6 +336,10 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
        ON sb.tenant_id=$1 AND sb.client_id=$2 AND sb.barcode=wib.barcode
      LEFT JOIN wms.locations l ON l.id = sb.location_id
      WHERE wib.mp_account_id=$3${barcodesFilter}
+       AND EXISTS (
+         SELECT 1 FROM wms.stock_movements sm
+         WHERE sm.tenant_id=$1 AND sm.client_id=$2 AND sm.barcode=wib.barcode
+       )
      GROUP BY wib.barcode`,
     stockParams
   );
