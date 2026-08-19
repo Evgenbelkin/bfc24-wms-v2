@@ -146,7 +146,9 @@ async function createAct({ tenantId, warehouseId, clientId, userId, inboundOrder
  */
 async function hasUncoveredReceiving({ tenantId, clientId, inboundOrderId = null, anySource = false }) {
   const params = [tenantId, clientId];
-  let cond = `tenant_id=$1 AND client_id=$2 AND act_id IS NULL AND qty_received > 0`;
+  // act_exempt=TRUE - приёмка, случившаяся до включения этого гейта (см.
+  // миграцию 041) - её не требуем закрывать актом задним числом.
+  let cond = `tenant_id=$1 AND client_id=$2 AND act_id IS NULL AND act_exempt=FALSE AND qty_received > 0`;
   if (anySource) {
     // Не важно, откуда - свободная приёмка или по любой заявке - используется
     // для гейта "нельзя выйти из модуля приёмки/сменить клиента вообще".
