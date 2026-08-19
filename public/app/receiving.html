@@ -648,18 +648,23 @@
           client_id: window.__actClientId, inbound_order_id: null, act, lines,
           date_from: window.__actDateFrom, date_to: window.__actDateTo,
         });
-        if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); closeFreeActModal(); return; }
-        ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+        // Акт УЖЕ сохранён на сервере в этой точке (запрос выше отработал
+        // успешно) - дальше только печать, её судьба (открылось окно или
+        // браузер заблокировал popup) не должна влиять на то, что акт
+        // считается сформированным и отложенный переход (меню/выход/смена
+        // клиента) должен продолжиться. Забираем pending ДО closeFreeActModal() -
+        // она сама обнуляет __pendingLeaveAction (это нужно для кнопки
+        // "Отмена"), иначе тут он терялся бы до того, как мы успевали его
+        // вызвать - ровно тот баг, что видел пользователь на стейджинге.
+        const pending = window.__pendingLeaveAction;
+        if (!win) {
+          UI.notify.err('Акт сохранён, но окно печати браузер заблокировал — разрешите всплывающие окна и распечатайте акт из списка "Акты приёмки"');
+        } else {
+          ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+        }
         closeFreeActModal();
         UI.notify.ok('Акт сохранён');
-        // Если это сохранение случилось из гейта "нельзя уйти без акта" -
-        // договорку выполнили, продолжаем прерванное действие (переход в
-        // меню/выход/смена клиента).
-        if (window.__pendingLeaveAction) {
-          const fn = window.__pendingLeaveAction;
-          window.__pendingLeaveAction = null;
-          fn();
-        }
+        if (pending) pending();
       } catch (e) {
         if (win) win.close();
         UI.notify.err(e.message);
