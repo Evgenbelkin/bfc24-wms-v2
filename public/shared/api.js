@@ -491,6 +491,7 @@
     wbReturnClaims: (p) => get('/seller/wb-return-claims', p),
     analytics:(p)     => get('/seller/analytics/sales', p),
     history:  (p)     => get('/seller/history', p),
+    receivingHistory: (p) => get('/seller/receiving-history', p),
     billing:  (p)     => get('/seller/billing', p),
     billingBalance:  ()   => get('/seller/billing/balance'),
     billingInvoices: (p)  => get('/seller/billing/invoices', p),

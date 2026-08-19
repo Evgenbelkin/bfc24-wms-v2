@@ -10,6 +10,7 @@ const { requireModule } = require('../../middleware/tenant');
 const { ValidationError, ForbiddenError } = require('../../utils/errors');
 const inboundSvc = require('../inbound/inbound.service');
 const stockSvc = require('../stock/stock.service');
+const receivingSvc = require('../receiving/receiving.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const billingSvc = require('../billing/billing.service');
 const markingSvc = require('../marking/marking.service');
@@ -459,6 +460,27 @@ router.get('/history', async (req,res,next)=>{
       limit:    Number(req.query.limit) || 200,
     });
     res.json({ ok:true, movements:rows });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/receiving-history — что и сколько реально приехало и было принято
+ *  на складе, для витрины "мы приняли ваш товар в таком-то количестве".
+ *  Переиспользует тот же сервис, что и внутренний экран приёмки
+ *  (receiving.service.js:listReceivingHistory) - там уже есть client_id,
+ *  qty_received/qty_expected/qty_damaged, товар и дата, ничего добавлять не
+ *  пришлось. clientId скоупится через resolveClientScope как везде в этом
+ *  роутере - продавец не может подсмотреть чужую приёмку. */
+router.get('/receiving-history', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const rows = await receivingSvc.listReceivingHistory({
+      tenantId: req.user.tenantId, clientId,
+      dateFrom: req.query.date_from || null,
+      dateTo:   req.query.date_to   || null,
+      limit:    Number(req.query.limit)  || 200,
+      offset:   Number(req.query.offset) || 0,
+    });
+    res.json({ ok:true, rows });
   } catch(e){ next(e); }
 });
 
