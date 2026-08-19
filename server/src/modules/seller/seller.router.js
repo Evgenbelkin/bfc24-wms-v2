@@ -488,7 +488,12 @@ router.get('/receiving-history', async (req,res,next)=>{
 });
 
 /** GET /seller/acts — список актов приёмки клиента (read-only витрина того же
- *  wms.acceptance_acts, что формирует склад). */
+ *  wms.acceptance_acts, что формирует склад).
+ *  ВАЖНО: акты по умолчанию НЕ видны клиенту - склад формирует их для
+ *  внутреннего использования и явно нажимает "Передать клиенту" (см.
+ *  POST /acts/:id/share). Здесь жёстко фильтруем onlyShared:true, иначе
+ *  клиент увидит черновики/внутренние акты раньше, чем склад готов их
+ *  показать. */
 router.get('/acts', async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
@@ -498,6 +503,7 @@ router.get('/acts', async (req,res,next)=>{
       dateTo:   req.query.date_to   || null,
       limit:    Number(req.query.limit)  || 100,
       offset:   Number(req.query.offset) || 0,
+      onlyShared: true,
     });
     res.json({ ok:true, acts });
   } catch(e){ next(e); }
@@ -505,8 +511,10 @@ router.get('/acts', async (req,res,next)=>{
 
 /** GET /seller/acts/:id — сам акт + строки, для печати в браузере (тот же
  *  ActPrint, что и на складе). acts.service.getAct не фильтрует по клиенту
- *  сама (staff-роут доверяет tenant-скоупу) - здесь ПРОВЕРЯЕМ владельца явно,
- *  иначе продавец по чужому id мог бы подсмотреть акт другого клиента.
+ *  сама (staff-роут доверяет tenant-скоупу) - здесь ПРОВЕРЯЕМ и владельца, и
+ *  что акт реально передан клиенту (shared_with_client_at) - иначе продавец
+ *  по чужому/непереданному id мог бы подсмотреть акт другого клиента или
+ *  внутренний черновик, до которого склад его ещё не довёл.
  *  Реквизиты тенанта ("исполнитель" в акте) отдаём тут же одним ответом -
  *  GET /tenant/profile продавцу недоступен (там requireRole tenant_admin/
  *  supervisor), а дублировать отдельный публичный роут ради этого не нужно. */
@@ -516,6 +524,7 @@ router.get('/acts/:id', async (req,res,next)=>{
     const actId = validatePositiveInt(req.params.id, 'id');
     const result = await actsSvc.getAct({ tenantId: req.user.tenantId, actId });
     if (result.act.client_id !== clientId) throw new ForbiddenError('Act belongs to a different client');
+    if (!result.act.shared_with_client_at) throw new ForbiddenError('Act has not been shared with the client yet');
     const tenantProfile = await tenantSvc.getMyTenantProfile({ tenantId: req.user.tenantId });
     res.json({ ok:true, act: result.act, lines: result.lines, tenant: tenantProfile });
   } catch(e){ next(e); }

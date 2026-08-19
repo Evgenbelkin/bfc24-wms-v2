@@ -258,6 +258,8 @@
     create:    (d)       => post('/acts', d),
     update:    (id, d)   => patch(`/acts/${id}`, d),
     freeLines: (p)        => get('/acts/free-lines', p),
+    uncovered: (p)        => get('/acts/uncovered', p),
+    share:     (id, shared) => post(`/acts/${id}/share`, { shared }),
   };
 
   // ─────────────── Receiving ───────────────

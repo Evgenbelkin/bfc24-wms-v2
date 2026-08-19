@@ -71,14 +71,22 @@
           return;
         }
         list.innerHTML = acts.map(a => `
-          <div class="list-row act-row" onclick="reprintAct(${a.id})">
-            <div class="main">
+          <div class="list-row act-row">
+            <div class="main" onclick="reprintAct(${a.id})">
               <div class="title">${UI.escHtml(a.act_number)}</div>
               <div class="sub">${UI.escHtml(a.client_name||'')} · ${UI.fmtDateTime(a.created_at)} · ${a.order_number ? 'заявка ' + UI.escHtml(a.order_number) : 'без заявки'} · позиций: ${a.lines_count||0}</div>
             </div>
-            <span class="pill pill-blue">Печать</span>
+            <span class="pill ${a.shared_with_client_at ? 'pill-green' : 'pill-gray'}" style="cursor:pointer;" onclick="event.stopPropagation();toggleShare(${a.id}, ${!a.shared_with_client_at})" title="${a.shared_with_client_at ? 'Клиент видит акт в кабинете. Нажмите, чтобы отозвать' : 'Клиент не видит акт. Нажмите, чтобы передать в кабинет'}">${a.shared_with_client_at ? 'Передан клиенту' : 'Передать клиенту'}</span>
           </div>
         `).join('');
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function toggleShare(id, shared) {
+      try {
+        await window.API.acts.share(id, shared);
+        UI.notify.ok(shared ? 'Акт передан клиенту' : 'Акт отозван из кабинета клиента');
+        await loadActs();
       } catch (e) { UI.notify.err(e.message); }
     }
 
