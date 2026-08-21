@@ -399,6 +399,54 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     );
     if (locRes.rowCount === 0) throw new ValidationError(`Location '${locCode}' not found or inactive`);
 
+    // Ячейка, к которой привязано задание, могла опустеть между тем, как её
+    // подобрали (см. getNextTask/pinnedMap), и этим моментом - например, её
+    // же забрал параллельно другой сборщик по другому заказу на тот же товар
+    // в этой же волне (несколько заданий на один товар "прикрепляются" к
+    // одной ячейке без учёта суммарной потребности всех сразу). Раньше это
+    // просто падало ошибкой InsufficientStockError и сборщик утыкался в
+    // тупик - теперь, если товар физически есть в ДРУГОЙ ячейке отбора,
+    // молча переносим туда задание и просим сборщика подойти туда, вместо
+    // ошибки.
+    const availRes = await client.query(
+      `SELECT qty_available FROM wms.stock_balances
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
+       FOR UPDATE`,
+      [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
+    );
+    const availAtLoc = availRes.rowCount > 0 ? Number(availRes.rows[0].qty_available) : 0;
+    if (availAtLoc < qtyToPick && task.item_id) {
+      const alt = await findBestPickLocation({
+        tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id,
+      });
+      if (alt && alt.location_code !== locCode && Number(alt.qty_available) >= qtyToPick) {
+        await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'cancelled', dbClient: client });
+        await ledger.reserveStock({
+          tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+          itemId: task.item_id, locationId: alt.location_id, barcode: expected,
+          qty: qtyToPick, refType: 'picking_task', refId: taskId, dbClient: client,
+        });
+        await client.query(
+          `UPDATE wms.picking_tasks
+           SET location_code=$1, scan_step='await_location', qty_picked=0, updated_at=NOW()
+           WHERE id=$2`,
+          [alt.location_code, taskId]
+        );
+        await client.query(
+          `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message)
+           VALUES($1,$2,'item',$3,$4,'relocated',$5)`,
+          [taskId, pickerId, expected, scanned, `Ячейка '${locCode}' пуста, перенаправлено на '${alt.location_code}'`]
+        );
+        return {
+          ok: false, result: 'relocated',
+          new_location_code: alt.location_code,
+          message: `Ячейка ${locCode} пуста — товар нашёлся в ${alt.location_code}, идите туда`,
+        };
+      }
+      // Альтернативы нет — падаем в обычную InsufficientStockError ниже
+      // (consumeStock сам её бросит), сборщику придётся "Пропустить".
+    }
+
     // Снимаем резерв ДО списания: qty_available у ячейки учитывает qty_reserved,
     // а резерв на эту же задачу как раз "съедал" доступность, которую сейчас
     // будет проверять consumeStock. Снимаем как 'fulfilled' — резерв дошёл до цели.

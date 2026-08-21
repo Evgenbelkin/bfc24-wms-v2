@@ -296,6 +296,20 @@
             } else {
               statusEl.innerHTML = `${viaBadge} · Собрано: ${res.qty_picked}/${res.qty_total}`;
             }
+          } else if (res.result === 'relocated') {
+            // Ячейка, к которой было привязано задание, оказалась пустой
+            // (например, её же забрали параллельно под другой заказ этой же
+            // волны) - сервер сам нашёл другую ячейку с реальным остатком и
+            // переназначил задание на неё, вместо ошибки "не хватает".
+            UI.beep('ok');
+            renderTask({
+              ...currentTask,
+              location_code: res.new_location_code,
+              scan_step: 'await_location',
+              qty_picked: 0,
+            });
+            UI.notify.warn(res.message || `Товар перенесён в ячейку ${res.new_location_code}`);
+            statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
           } else {
             UI.beep('err');
             UI.notify.err(`Неверный товар! Ожидается: ${res.expected}`);
