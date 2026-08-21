@@ -183,6 +183,7 @@ async function placeStock({ tenantId, warehouseId, clientId, barcode, fromLocati
   // расхождения, всплывавшие без видимой причины между приёмками. Только по
   // ЭТОМУ штрихкоду, fire-and-forget - как и остальные вызовы
   // triggerRedistributionForClient (см. wb.service.js).
+  logger.info({ tenantId, clientId, barcode: b }, 'Placement triggered WB redistribution');
   triggerRedistributionForClient({ tenantId, clientId, barcodes: [b] });
 
   chargeForOperation({ tenantId, clientId, serviceType: 'placement', quantity: q, refType: 'placement', refId: result.itemId });
@@ -269,6 +270,7 @@ async function placeBatch({ tenantId, warehouseId, clientId, lines, userId }) {
   // триггерить пересчёт остатка для WB (ячейки отбора).
   const placedBarcodes = [...new Set(result.results.map(r => r.barcode))];
   if (placedBarcodes.length) {
+    logger.info({ tenantId, clientId, barcodes: placedBarcodes }, 'Placement batch triggered WB redistribution');
     triggerRedistributionForClient({ tenantId, clientId, barcodes: placedBarcodes });
   }
 
