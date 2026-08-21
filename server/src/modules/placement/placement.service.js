@@ -8,6 +8,7 @@ const {
 } = require('../../utils/errors');
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const { chargeForOperation } = require('../billing/billing.service');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -172,6 +173,18 @@ async function placeStock({ tenantId, warehouseId, clientId, barcode, fromLocati
     };
   });
 
+  // Пересчёт и отправка остатка в WB СРАЗУ после размещения - у нас остаток
+  // для WB считается ТОЛЬКО по ячейкам отбора (is_pick_location), поэтому
+  // перекладка между зоной хранения и зоной отбора МЕНЯЕТ доступное для WB
+  // количество, даже если общий физический остаток товара не изменился.
+  // Раньше это не триггерило пересчёт вообще (комментарий выше в файле про
+  // "WB и так резервирует сам" был верен для заказов, но не учитывал появление
+  // отдельного правила "считать только по ячейкам отбора") - отсюда и
+  // расхождения, всплывавшие без видимой причины между приёмками. Только по
+  // ЭТОМУ штрихкоду, fire-and-forget - как и остальные вызовы
+  // triggerRedistributionForClient (см. wb.service.js).
+  triggerRedistributionForClient({ tenantId, clientId, barcodes: [b] });
+
   chargeForOperation({ tenantId, clientId, serviceType: 'placement', quantity: q, refType: 'placement', refId: result.itemId });
 
   return result;
@@ -251,6 +264,13 @@ async function placeBatch({ tenantId, warehouseId, clientId, lines, userId }) {
 
     return { placed: results.length, results };
   });
+
+  // См. комментарий в placeStock() выше про то, почему размещение обязано
+  // триггерить пересчёт остатка для WB (ячейки отбора).
+  const placedBarcodes = [...new Set(result.results.map(r => r.barcode))];
+  if (placedBarcodes.length) {
+    triggerRedistributionForClient({ tenantId, clientId, barcodes: placedBarcodes });
+  }
 
   const totalQty = result.results.reduce((s, r) => s + Number(r.qty), 0);
   chargeForOperation({ tenantId, clientId, serviceType: 'placement', quantity: totalQty, refType: 'placement_batch', refId: null });
