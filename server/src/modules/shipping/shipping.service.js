@@ -6,6 +6,7 @@ const logger = require('../../utils/logger');
 const wbClient = require('../wb/wb.client');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 const ledger = require('../stock/stock.ledger');
 
 // =============================================================================
@@ -546,6 +547,13 @@ async function returnPickedStock({ tenantId, shipmentCode, barcode, qty, locatio
     refType: 'shipment_cancel', refId: shipment.id, movementType: 'return',
     userId, comment: `Возврат на склад после отмены отгрузки ${shipmentCode} (собрано, но не упаковано/не отгружено)`,
   });
+
+  // Возврат кладёт товар обратно в ячейку (часто ту же ячейку отбора, откуда
+  // его собирали) - тот же класс проблемы, что и в placement/movement/returns:
+  // без явного пересчёта WB не узнает о выросшем остатке сам.
+  logger.info({ tenantId, clientId: shipment.client_id, barcode }, 'Return-picked-stock triggered WB redistribution');
+  triggerRedistributionForClient({ tenantId, clientId: shipment.client_id, barcodes: [barcode] });
+
   return result;
 }
 

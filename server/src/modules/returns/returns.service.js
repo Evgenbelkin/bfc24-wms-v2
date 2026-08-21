@@ -7,6 +7,7 @@ const { getLocationByCode } = require('../masterdata/locations/locations.service
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const { ValidationError } = require('../../utils/errors');
 const { chargeForOperation } = require('../billing/billing.service');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -71,6 +72,17 @@ async function registerReturn({
     );
     return r.rows[0];
   });
+
+  // Возврат "в продажу" кладёт товар в ячейку и сразу увеличивает остаток -
+  // если это ячейка отбора (а это обычный случай для resale), доступное для
+  // WB количество выросло, но WB об этом не узнает сам. Без этого триггера
+  // возвращённый товар не продавался бы на WB до случайного нового заказа по
+  // нему же или планового пересчёта раз в 8ч (см. тот же фикс в
+  // placement.service.js / movement.service.js).
+  if (disposition === 'resale') {
+    logger.info({ tenantId, clientId, barcode: b }, 'Return (resale) triggered WB redistribution');
+    triggerRedistributionForClient({ tenantId, clientId, barcodes: [b] });
+  }
 
   // Начисление клиенту за обработку возврата (silent no-op, если прайс на
   // service_type='returns' не настроен — см. billing.service.js:chargeForOperation).
