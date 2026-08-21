@@ -392,6 +392,17 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     const locCode = task.location_code;
     if (!locCode) throw new ValidationError('Location code is not set for this task');
 
+    // Снимаем резерв на этой задаче ПЕРЕД проверкой остатка. Пока резерв
+    // активен, qty_available на ячейке уже уменьшен на него самого — если
+    // проверять доступность до снятия, ровно "впритык" достаточный остаток
+    // всегда выглядит как недостаточный (задача видит нехватку из-за
+    // собственного же резерва), и сборщика кидает между двумя ячейками
+    // бесконечно (12 → 32 → 12 → 32...), потому что на каждой из них по
+    // очереди свежесозданный резерв этой же задачи "съедает" ровно то, что
+    // требуется. Снимаем сразу — ниже, если решим списывать отсюда же,
+    // это чисто техническая деталь аудита резервов.
+    await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'cancelled', dbClient: client });
+
     // Ищем location_id
     const locRes = await client.query(
       `SELECT id FROM wms.locations WHERE tenant_id=$1 AND location_code=$2 AND is_active=TRUE LIMIT 1`,
@@ -399,15 +410,13 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     );
     if (locRes.rowCount === 0) throw new ValidationError(`Location '${locCode}' not found or inactive`);
 
-    // Ячейка, к которой привязано задание, могла опустеть между тем, как её
-    // подобрали (см. getNextTask/pinnedMap), и этим моментом - например, её
-    // же забрал параллельно другой сборщик по другому заказу на тот же товар
-    // в этой же волне (несколько заданий на один товар "прикрепляются" к
-    // одной ячейке без учёта суммарной потребности всех сразу). Раньше это
-    // просто падало ошибкой InsufficientStockError и сборщик утыкался в
-    // тупик - теперь, если товар физически есть в ДРУГОЙ ячейке отбора,
-    // молча переносим туда задание и просим сборщика подойти туда, вместо
-    // ошибки.
+    // Ячейка, к которой привязано задание, могла реально опустеть между тем,
+    // как её подобрали (см. getNextTask/pinnedMap), и этим моментом -
+    // например, её же забрал параллельно другой сборщик по другому заказу на
+    // тот же товар в этой же волне (несколько заданий на один товар
+    // "прикрепляются" к одной ячейке без учёта суммарной потребности всех
+    // сразу). Теперь, когда собственный резерв уже снят, эта проверка
+    // отражает истинную доступность, а не искажённую своим же резервом.
     const availRes = await client.query(
       `SELECT qty_available FROM wms.stock_balances
        WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
@@ -415,15 +424,38 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
       [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
     );
     const availAtLoc = availRes.rowCount > 0 ? Number(availRes.rows[0].qty_available) : 0;
+
     if (availAtLoc < qtyToPick && task.item_id) {
       const alt = await findBestPickLocation({
         tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id,
       });
-      if (alt && alt.location_code !== locCode && Number(alt.qty_available) >= qtyToPick) {
-        await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'cancelled', dbClient: client });
+      // findBestPickLocation читает вне этой транзакции — снимок мог чуть
+      // устареть. Перед тем как реально перенаправлять туда сборщика,
+      // перепроверяем доступность живым запросом в этой же транзакции
+      // (FOR UPDATE), иначе рискуем перенаправить на ячейку, которая
+      // на самом деле тоже недостаточна, и получить тот же бесконечный скачок.
+      let altLocId = null, altAvail = 0;
+      if (alt && alt.location_code !== locCode) {
+        const altLocRes = await client.query(
+          `SELECT id FROM wms.locations WHERE tenant_id=$1 AND location_code=$2 AND is_active=TRUE LIMIT 1`,
+          [tenantId, alt.location_code]
+        );
+        if (altLocRes.rowCount > 0) {
+          altLocId = altLocRes.rows[0].id;
+          const altAvailRes = await client.query(
+            `SELECT qty_available FROM wms.stock_balances
+             WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
+             FOR UPDATE`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, altLocId]
+          );
+          altAvail = altAvailRes.rowCount > 0 ? Number(altAvailRes.rows[0].qty_available) : 0;
+        }
+      }
+
+      if (altLocId && altAvail >= qtyToPick) {
         await ledger.reserveStock({
           tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
-          itemId: task.item_id, locationId: alt.location_id, barcode: expected,
+          itemId: task.item_id, locationId: altLocId, barcode: expected,
           qty: qtyToPick, refType: 'picking_task', refId: taskId, dbClient: client,
         });
         await client.query(
@@ -443,14 +475,17 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
           message: `Ячейка ${locCode} пуста — товар нашёлся в ${alt.location_code}, идите туда`,
         };
       }
-      // Альтернативы нет — падаем в обычную InsufficientStockError ниже
-      // (consumeStock сам её бросит), сборщику придётся "Пропустить".
-    }
 
-    // Снимаем резерв ДО списания: qty_available у ячейки учитывает qty_reserved,
-    // а резерв на эту же задачу как раз "съедал" доступность, которую сейчас
-    // будет проверять consumeStock. Снимаем как 'fulfilled' — резерв дошёл до цели.
-    await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'fulfilled', dbClient: client });
+      // Реальной альтернативы нет — восстанавливаем резерв на исходной ячейке
+      // (сняли его выше) и бросаем обычную ошибку, сборщику придётся
+      // "Пропустить".
+      await ledger.reserveStock({
+        tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+        itemId: task.item_id, locationId: locRes.rows[0].id, barcode: expected,
+        qty: qtyToPick, refType: 'picking_task', refId: taskId, dbClient: client,
+      });
+      throw new InsufficientStockError(availAtLoc, qtyToPick, task.item_id, locRes.rows[0].id);
+    }
 
     await ledger.consumeStock({
       tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
