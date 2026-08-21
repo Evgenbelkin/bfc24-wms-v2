@@ -259,6 +259,13 @@
 
     async function handleScan(scanned) {
       if (!currentTask) return;
+      // Сканер иногда шлёт один скан как два быстрых Enter подряд — вторая
+      // попытка стартует раньше, чем пришёл ответ на первую, и бьёт по уже
+      // изменившемуся на сервере scan_step (например, после того как первый
+      // скан сам перевёл задачу в 'await_location' из-за релокации). Пока
+      // предыдущий скан не обработан — игнорируем повторный.
+      if (window.__scanBusy) return;
+      window.__scanBusy = true;
       const step = currentTask.scan_step || 'await_location';
       const statusEl = document.getElementById('status-msg');
 
@@ -318,6 +325,8 @@
       } catch(e) {
         UI.beep('err');
         UI.notify.err(e.message);
+      } finally {
+        window.__scanBusy = false;
       }
     }
 
