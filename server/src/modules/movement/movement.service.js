@@ -9,6 +9,7 @@ const {
 } = require('../../utils/errors');
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const logger = require('../../utils/logger');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 
 // =============================================================================
 // Movement Service
@@ -48,7 +49,7 @@ async function moveItem({
   const toCode   = String(toLocationCode).trim().toUpperCase();
   if (fromCode === toCode) throw new ValidationError('From and to locations must differ');
 
-  return transaction(async (client) => {
+  const result = await transaction(async (client) => {
     // Резолвим FROM
     const fromRes = await client.query(
       `SELECT id, location_code, location_type, is_active FROM wms.locations
@@ -134,6 +135,16 @@ async function moveItem({
       toLocationId:     toLoc.id,   toLocationCode:   toLoc.location_code,
     };
   });
+
+  // Остаток для WB считается ТОЛЬКО по ячейкам отбора (is_pick_location) -
+  // перемещение между любыми ячейками (в отличие от placement, тут разрешено
+  // rack↔rack, buffer↔rack и т.п.) точно так же может выводить товар из
+  // ячейки отбора в обычную и обратно, меняя доступное для WB количество без
+  // изменения физического остатка. См. тот же фикс в placement.service.js.
+  logger.info({ tenantId, clientId, barcode: b }, 'Movement triggered WB redistribution');
+  triggerRedistributionForClient({ tenantId, clientId, barcodes: [b] });
+
+  return result;
 }
 
 /**
@@ -142,7 +153,7 @@ async function moveItem({
 async function moveBatch({ tenantId, warehouseId, clientId, lines, userId }) {
   if (!lines || !lines.length) throw new ValidationError('lines array is required');
 
-  return transaction(async (client) => {
+  const result = await transaction(async (client) => {
     const results = [];
 
     for (const line of lines) {
@@ -213,6 +224,15 @@ async function moveBatch({ tenantId, warehouseId, clientId, lines, userId }) {
 
     return { moved: results.length, results };
   });
+
+  // См. комментарий в moveItem() выше.
+  const movedBarcodes = [...new Set(result.results.map(r => r.barcode))];
+  if (movedBarcodes.length) {
+    logger.info({ tenantId, clientId, barcodes: movedBarcodes }, 'Movement batch triggered WB redistribution');
+    triggerRedistributionForClient({ tenantId, clientId, barcodes: movedBarcodes });
+  }
+
+  return result;
 }
 
 /**
