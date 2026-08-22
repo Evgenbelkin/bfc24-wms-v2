@@ -2,7 +2,7 @@
 
 const { query, transaction } = require('../../config/database');
 const ledger = require('../stock/stock.ledger');
-const { resolveOrCreateItem } = require('../masterdata/items/items.service');
+const { resolveExistingItem } = require('../masterdata/items/items.service');
 const { getLocationByCode } = require('../masterdata/locations/locations.service');
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const { ValidationError } = require('../../utils/errors');
@@ -39,7 +39,12 @@ async function registerReturn({
   }
 
   const result = await transaction(async (client) => {
-    const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
+    // Раньше тут стоял resolveOrCreateItem — любой отсканированный (или
+    // вбитый вручную) штрихкод, даже кривой (слипшиеся два скана подряд,
+    // опечатка), тихо заводил новый "товар" в каталоге клиента и создавал
+    // возврат на него. Требуем, чтобы товар уже существовал в каталоге —
+    // ровно та же защита, что и в приёмке (receiving.service.js:acceptFree).
+    const itemId = await resolveExistingItem({ tenantId, clientId, barcode: b, dbClient: client });
 
     let locationId = null;
     let locCode = null;
