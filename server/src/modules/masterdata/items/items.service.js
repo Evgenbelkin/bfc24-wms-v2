@@ -329,6 +329,56 @@ async function bulkDeleteItems({ tenantId, itemIds }) {
   return { deleted, deactivated, skipped, skipped_items: skippedItems };
 }
 
+/**
+ * Материалы упаковки товара ("во что упаковывать") — список расходников
+ * (wms.consumables) с нормой на 1 штуку товара. Используется на экране
+ * упаковки, чтобы сборщику/упаковщику не приходилось угадывать/помнить,
+ * что класть в короб — и автоматически списывается там же (см.
+ * packing.service.js:scanItem → consumables.service.js:recordUsage).
+ */
+async function getItemPackagingMaterials({ tenantId, itemId }) {
+  const r = await query(
+    `SELECT ipm.consumable_id, ipm.qty_per_unit, c.name, c.unit,
+            c.qty_on_hand, c.client_unit_price, c.currency, c.is_active
+     FROM wms.item_packaging_materials ipm
+     JOIN wms.consumables c ON c.id = ipm.consumable_id
+     WHERE ipm.tenant_id=$1 AND ipm.item_id=$2
+     ORDER BY c.name`,
+    [tenantId, itemId]
+  );
+  return r.rows;
+}
+
+/** Полностью заменить список материалов упаковки товара (проще для UI —
+ *  один "Сохранить" вместо построчного добавления/удаления по одному). */
+async function setItemPackagingMaterials({ tenantId, itemId, materials }) {
+  return transaction(async (client) => {
+    const itemCheck = await client.query(
+      `SELECT id FROM wms.items WHERE id=$1 AND tenant_id=$2`, [itemId, tenantId]
+    );
+    if (itemCheck.rowCount === 0) throw new NotFoundError('Item', itemId);
+
+    await client.query(
+      `DELETE FROM wms.item_packaging_materials WHERE tenant_id=$1 AND item_id=$2`,
+      [tenantId, itemId]
+    );
+
+    const list = Array.isArray(materials) ? materials : [];
+    for (const m of list) {
+      const consumableId = Number(m.consumable_id);
+      const qtyPerUnit = Number(m.qty_per_unit) || 1;
+      if (!consumableId) continue;
+      await client.query(
+        `INSERT INTO wms.item_packaging_materials (tenant_id, item_id, consumable_id, qty_per_unit)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (item_id, consumable_id) DO UPDATE SET qty_per_unit=EXCLUDED.qty_per_unit`,
+        [tenantId, itemId, consumableId, qtyPerUnit]
+      );
+    }
+    return { ok: true };
+  });
+}
+
 /** Гарантировать наличие item + SKU registry */
 async function resolveOrCreateItem({ tenantId, clientId, barcode, dbClient = null }) {
   const db = dbClient || { query: (sql, params) => query(sql, params) };
@@ -402,4 +452,5 @@ module.exports = {
   listItems, getItemById, getItemByBarcode, findItemByKizCode,
   createItem, updateItem, deleteItem, bulkDeleteItems,
   resolveOrCreateItem, resolveExistingItem,
+  getItemPackagingMaterials, setItemPackagingMaterials,
 };

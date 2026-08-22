@@ -6,6 +6,7 @@ const { validatePositiveInt } = require('../../utils/validators');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
 const marking = require('../marking/marking.service');
+const { recordUsage: recordConsumableUsage } = require('../consumables/consumables.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -78,6 +79,7 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
   const planRes = await query(
     `SELECT
        pt.barcode,
+       MAX(pt.item_id) AS item_id,
        MAX(pt.location_code) AS location_code,
        SUM(pt.qty)::int AS qty_plan,
        i.item_name, i.vendor_code, i.size, i.unit, i.preview_url,
@@ -90,6 +92,25 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
      ORDER BY i.item_name, pt.barcode`,
     [tenantId, shipment.external_id]
   );
+
+  // Материалы упаковки ("во что упаковывать") — см. миграцию 043. Тянем
+  // одним запросом по всем товарам поставки сразу, чтобы не плодить по
+  // запросу на каждую строку.
+  const itemIds = [...new Set(planRes.rows.map(r => r.item_id).filter(Boolean))];
+  const materialsByItem = {};
+  if (itemIds.length) {
+    const matRes = await query(
+      `SELECT ipm.item_id, c.name, c.unit, ipm.qty_per_unit
+       FROM wms.item_packaging_materials ipm
+       JOIN wms.consumables c ON c.id = ipm.consumable_id
+       WHERE ipm.tenant_id=$1 AND ipm.item_id = ANY($2::int[])
+       ORDER BY c.name`,
+      [tenantId, itemIds]
+    );
+    for (const r of matRes.rows) {
+      (materialsByItem[r.item_id] ||= []).push({ name: r.name, unit: r.unit, qty_per_unit: Number(r.qty_per_unit) });
+    }
+  }
 
   // Уже упаковано из movements
   const packedRes = await query(
@@ -135,6 +156,7 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
       qty_packed: packedMap[row.barcode] || 0,
       stickers,                                   // [{code, order_id}, ...] — по одному на каждую единицу товара, картинка подгружается по клику
       wb_sticker_code: stickers[0]?.code  || null,
+      packaging_materials: materialsByItem[row.item_id] || [], // "во что упаковывать"
     };
   });
 
@@ -185,7 +207,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
     // Ищем item_id явно — нужен для INSERT. Заодно тянем item_name/маркировку —
     // пригодится ниже для печати кода "Честный знак" вместе со стикером ВБ.
     const itemRes = await client.query(
-      `SELECT id, item_name, requires_marking, marking_trigger, marking_mode
+      `SELECT id, item_name, requires_marking, marking_trigger, marking_mode, needs_packaging
        FROM wms.items WHERE tenant_id=$1 AND barcode=$2 AND client_id=$3 LIMIT 1`,
       [tenantId, barcode, shipment.client_id]
     );
@@ -228,6 +250,32 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       [tenantId, shipment.warehouse_id, shipment.client_id, itemId, barcode,
        fromLocationId, fromLocationCode, shipment.id, packerId]
     );
+
+    // Автосписание материалов упаковки ("во что упаковывать", см. миграцию
+    // 043) — если у товара стоит галочка "Требует упаковки" и к нему привязаны
+    // расходники, списываем их со склада прямо здесь, в той же транзакции, что
+    // и сам скан: если упаковка ниже упадёт (например, не хватит кодов
+    // маркировки), откат вернёт и расходник, а не спишет его "в никуда".
+    // Списываем в той же транзакции через dbClient — см. consumables.service.js.
+    const usedMaterials = [];
+    if (item.needs_packaging) {
+      const matRes = await client.query(
+        `SELECT ipm.consumable_id, ipm.qty_per_unit, c.name
+         FROM wms.item_packaging_materials ipm
+         JOIN wms.consumables c ON c.id = ipm.consumable_id
+         WHERE ipm.tenant_id=$1 AND ipm.item_id=$2 AND c.is_active=TRUE`,
+        [tenantId, itemId]
+      );
+      for (const m of matRes.rows) {
+        const usage = await recordConsumableUsage({
+          tenantId, consumableId: m.consumable_id, clientId: shipment.client_id,
+          warehouseId: shipment.warehouse_id, qty: Number(m.qty_per_unit),
+          refType: 'packing', refId: shipment.id, userId: packerId,
+          comment: `Упаковка ${barcode} (${shipmentCode})`, dbClient: client,
+        });
+        usedMaterials.push({ name: m.name, qty: Number(m.qty_per_unit), qty_on_hand: usage.qty_on_hand });
+      }
+    }
 
     // Обновляем total_packed_qty
     const newPacked = alreadyPacked + 1;
@@ -366,6 +414,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
       marking:           markingJob,
       marking_remaining: markingJob ? markingJob.remaining : null,
+      used_materials:    usedMaterials, // [{name, qty, qty_on_hand}] — что списалось со склада на эту единицу
     };
   });
 }

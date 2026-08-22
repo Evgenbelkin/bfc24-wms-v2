@@ -12,6 +12,7 @@
     .line-photo-placeholder{width:44px;height:44px;border-radius:8px;background:var(--card2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--muted);}
     .line-name{font-size:14px;font-weight:600;}
     .line-barcode{font-size:15px;color:var(--text);font-family:'SF Mono',Consolas,monospace;font-weight:700;letter-spacing:.3px;}
+    .line-pkg-materials{font-size:12px;color:var(--muted);margin-top:2px;}
     .line-next-tag{background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 7px;border-radius:5px;margin-left:8px;white-space:nowrap;}
     .line-stickers{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
     .sticker-chip{font-family:'SF Mono',Consolas,monospace;font-weight:800;font-size:13px;padding:2px 9px 2px 2px;border-radius:6px;background:#fef3c7;color:#b45309;white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
@@ -97,6 +98,7 @@
             <div class="big-photo-name" id="big-photo-name"></div>
             <div id="big-photo-vendor" style="font-size:13px;color:var(--muted);margin-top:2px;"></div>
             <div class="big-photo-barcode" id="big-photo-barcode"></div>
+            <div id="big-photo-pkg-materials" style="margin-top:6px;"></div>
           </div>
 
           <!-- Именно тот стикер ВБ, который реально ушёл на печать для только
@@ -332,6 +334,7 @@
         document.getElementById('big-photo-name').textContent = '';
         document.getElementById('big-photo-vendor').textContent = '';
         document.getElementById('big-photo-barcode').textContent = '';
+        document.getElementById('big-photo-pkg-materials').innerHTML = '';
         return;
       }
 
@@ -340,6 +343,7 @@
       document.getElementById('big-photo-barcode').innerHTML = isExpected
         ? `<div class="big-photo-expect-tag">Ожидается по заданию</div>${UI.escHtml(line.barcode)}`
         : UI.escHtml(line.barcode);
+      document.getElementById('big-photo-pkg-materials').innerHTML = fmtPackagingMaterialsHint(line.packaging_materials);
 
       if (line.preview_url) {
         img.src = line.preview_url;
@@ -362,6 +366,16 @@
       div.className = 'line-photo-placeholder';
       div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>';
       imgEl.replaceWith(div);
+    }
+
+    // "Во что упаковывать" — расходники, привязанные к товару (см. items.html:
+    // Материалы для упаковки). Показываем прямо в строке, чтобы упаковщик не
+    // угадывал — списываются они всё равно автоматически на скане, это только
+    // подсказка глазами.
+    function fmtPackagingMaterialsHint(materials) {
+      if (!materials || !materials.length) return '';
+      const text = materials.map(m => `${m.name}${Number(m.qty_per_unit) !== 1 ? ' ×'+m.qty_per_unit : ''}`).join(', ');
+      return `<div class="line-pkg-materials"><svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px;"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Упаковать в: ${UI.escHtml(text)}</div>`;
     }
 
     function renderLines() {
@@ -399,6 +413,7 @@
             <div class="main" style="flex:1;min-width:0;">
               <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}${isNext ? '<span class="line-next-tag">Далее</span>' : ''}</div>
               <div class="line-barcode">${[l.vendor_code, l.size ? 'р.'+l.size : null, l.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div>
+              ${fmtPackagingMaterialsHint(l.packaging_materials)}
               ${stickersHtml}
             </div>
             <div class="line-progress" style="color:${done ? 'var(--green2)' : 'var(--amber)'}">
@@ -585,7 +600,10 @@
         renderBigPhoto();
         renderStickerCard();
         const viaBadge = dataMatrixCode ? ' · <span style="color:var(--green);font-weight:700;">✓ КИЗ</span>' : '';
-        statusEl.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> ${UI.escHtml(res.barcode)}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '') + viaBadge;
+        const materialsBadge = (res.used_materials && res.used_materials.length)
+          ? ' · <span style="color:var(--muted);">списано: ' + UI.escHtml(res.used_materials.map(m => `${m.name} ×${m.qty}`).join(', ')) + '</span>'
+          : '';
+        statusEl.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> ${UI.escHtml(res.barcode)}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '') + viaBadge + materialsBadge;
         renderMarkingCounter(res);
         UI.notify.ok(res.marking && res.marking.manual_override
           ? `Упаковано БЕЗ отправки КИЗ в WB (обход супервайзера): ${res.qty_packed}/${res.qty_plan}`

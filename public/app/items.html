@@ -251,7 +251,15 @@
               <div class="field"><label>Вес, г</label><input id="m-weight" type="number" value="${it && it.weight_grams!=null ? it.weight_grams:''}"/></div>
               <div class="field"><label>Объём, л</label><input id="m-volume" type="number" value="${it && it.volume_liters!=null ? it.volume_liters:''}"/></div>
             </div>
-            <div class="field"><label style="display:inline;">Требует упаковки</label> <input type="checkbox" id="m-needspkg" ${it && it.needs_packaging ? 'checked':''}/></div>
+            <div class="field"><label style="display:inline;">Требует упаковки</label> <input type="checkbox" id="m-needspkg" ${it ? `onchange="document.getElementById('pkg-materials-wrap').style.display=this.checked?'block':'none';"` : ''} ${it && it.needs_packaging ? 'checked':''}/></div>
+            ${it ? `
+            <div class="field" id="pkg-materials-wrap" style="display:${it.needs_packaging ? 'block':'none'};border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+              <label>Материалы для упаковки (спишутся со склада автоматически при упаковке этого товара, и если у расходника задана цена клиенту — начислится сумма за услугу)</label>
+              <div id="pkg-materials-rows" style="margin-top:8px;"></div>
+              <button type="button" class="btn-sm btn-back" style="margin-top:8px;" onclick="addPkgMaterialRow()">+ Добавить материал</button>
+              <button type="button" class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="savePkgMaterials(${idx})">Сохранить материалы</button>
+            </div>
+            ` : ''}
             <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!it || it.is_active ? 'checked':''}/></div>
             <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
               <label style="display:inline;">Требует маркировки "Честный знак"</label> <input type="checkbox" id="m-marking" onchange="document.getElementById('marking-trigger-wrap').style.display=this.checked?'block':'none'" ${it && it.requires_marking ? 'checked':''}/>
@@ -340,6 +348,74 @@
       markingCodesListOpen = false;
       if (it) loadMarkingSummary(it.id);
       if (it) wireMarkingScanInput();
+      if (it) loadPkgMaterials(it.id);
+    }
+
+    // ─────────────── Материалы для упаковки ───────────────
+    // "Во что упаковывать" — список расходников (см. модуль "Расходники") с
+    // нормой на 1 шт. товара. Списываются автоматически на упаковке, отсюда
+    // только настройка состава для конкретного товара.
+    let consumablesCache = [];
+    let pkgMaterialsState = [];
+
+    async function loadPkgMaterials(itemId) {
+      const rowsBox = document.getElementById('pkg-materials-rows');
+      if (!rowsBox) return;
+      rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Загрузка…</div>';
+      try {
+        if (!consumablesCache.length) {
+          const cRes = await window.API.consumables.list();
+          consumablesCache = cRes.rows || [];
+        }
+        const res = await window.API.items.packagingMaterials(itemId);
+        pkgMaterialsState = (res.rows || []).map(r => ({ consumable_id: r.consumable_id, qty_per_unit: Number(r.qty_per_unit) }));
+        renderPkgMaterialRows();
+      } catch (e) {
+        rowsBox.innerHTML = `<div style="font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
+      }
+    }
+
+    function renderPkgMaterialRows() {
+      const rowsBox = document.getElementById('pkg-materials-rows');
+      if (!rowsBox) return;
+      if (!consumablesCache.length) {
+        rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Нет расходников в справочнике — сначала заведите их в разделе "Расходники".</div>';
+        return;
+      }
+      if (!pkgMaterialsState.length) {
+        rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Материалы не привязаны</div>';
+        return;
+      }
+      rowsBox.innerHTML = pkgMaterialsState.map((m, i) => {
+        const options = consumablesCache.map(c =>
+          `<option value="${c.id}" ${Number(m.consumable_id)===c.id ? 'selected':''}>${UI.escHtml(c.name)} (остаток: ${c.qty_on_hand} ${UI.escHtml(c.unit)})</option>`
+        ).join('');
+        return `
+          <div class="field-row2" style="align-items:center;margin-bottom:6px;">
+            <select onchange="pkgMaterialsState[${i}].consumable_id=Number(this.value)" style="flex:2;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);">${options}</select>
+            <input type="number" min="0.001" step="0.001" value="${m.qty_per_unit}" style="flex:1;max-width:90px;" onchange="pkgMaterialsState[${i}].qty_per_unit=Number(this.value)||1"/>
+            <button type="button" onclick="removePkgMaterialRow(${i})" style="border:none;background:none;color:var(--red);font-size:18px;cursor:pointer;">✕</button>
+          </div>`;
+      }).join('');
+    }
+
+    function addPkgMaterialRow() {
+      if (!consumablesCache.length) { UI.notify.err('Сначала заведите расходники в разделе "Расходники"'); return; }
+      pkgMaterialsState.push({ consumable_id: consumablesCache[0].id, qty_per_unit: 1 });
+      renderPkgMaterialRows();
+    }
+
+    function removePkgMaterialRow(i) {
+      pkgMaterialsState.splice(i, 1);
+      renderPkgMaterialRows();
+    }
+
+    async function savePkgMaterials(idx) {
+      const it = itemCache[idx];
+      try {
+        await window.API.items.setPackagingMaterials(it.id, pkgMaterialsState.filter(m => m.consumable_id));
+        UI.notify.ok('Материалы упаковки сохранены');
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     // Раньше коды в пул можно было только вставить текстом (Ctrl+V списка) —

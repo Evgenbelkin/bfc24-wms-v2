@@ -140,4 +140,28 @@ router.post('/:id/print-label', requireRole('tenant_admin','supervisor','warehou
   } catch(e){ next(e); }
 });
 
+/** GET /items/:id/packaging-materials — расходники, привязанные к товару
+ *  ("во что упаковывать"), с текущим остатком по каждому — чтобы UI мог
+ *  показать, если расходника не хватает. */
+router.get('/:id/packaging-materials', async (req,res,next)=>{
+  try {
+    const rows = await svc.getItemPackagingMaterials({
+      tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id'),
+    });
+    res.json({ ok: true, rows });
+  } catch(e){ next(e); }
+});
+
+/** PUT /items/:id/packaging-materials { materials: [{consumable_id, qty_per_unit}] }
+ *  — полностью заменяет список (проще для UI, чем построчный add/remove). */
+router.put('/:id/packaging-materials', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.setItemPackagingMaterials({
+      tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id'),
+      materials: req.body.materials,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;

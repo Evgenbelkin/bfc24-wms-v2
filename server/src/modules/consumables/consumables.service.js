@@ -107,11 +107,11 @@ async function adjustStock({ tenantId, consumableId, delta, userId, comment }) {
  * Списание расходника на операцию (упаковка/отгрузка и т.п.).
  * Если у расходника задана client_unit_price и передан clientId — начисляем клиенту.
  */
-async function recordUsage({ tenantId, consumableId, clientId, warehouseId, qty, refType, refId, userId, comment }) {
+async function recordUsage({ tenantId, consumableId, clientId, warehouseId, qty, refType, refId, userId, comment, dbClient = null }) {
   const q = Number(qty);
   if (!q || q <= 0) throw new ValidationError('qty must be a positive number');
 
-  return transaction(async (client) => {
+  const exec = async (client) => {
     const cRes = await client.query(
       `SELECT id, name, qty_on_hand, client_unit_price, currency
        FROM wms.consumables WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE FOR UPDATE`,
@@ -157,7 +157,16 @@ async function recordUsage({ tenantId, consumableId, clientId, warehouseId, qty,
     }
 
     return { usageId, consumableId, name: c.name, qty: q, qty_on_hand: newQty, chargeId };
-  });
+  };
+
+  // dbClient — чтобы списание расходника при упаковке (packing.service.js)
+  // было частью ТОЙ ЖЕ транзакции, что и сам скан: если упаковка потом
+  // упадёт по другой причине (например, не хватило кодов маркировки), откат
+  // должен вернуть расходник обратно на склад, а не оставить его списанным
+  // "в никуда". Без dbClient (ручное списание из consumables.html) — как раньше,
+  // своя отдельная транзакция.
+  if (dbClient) return exec(dbClient);
+  return transaction(exec);
 }
 
 async function listUsageHistory({ tenantId, clientId = null, consumableId = null, dateFrom = null, dateTo = null, limit = 200, offset = 0 }) {

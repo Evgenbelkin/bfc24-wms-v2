@@ -188,6 +188,8 @@
     delete:    (id) => del(`/items/${id}`),
     bulkDelete:(itemIds) => post('/items/bulk-delete', { item_ids: itemIds }),
     printLabel:(id,copies=1)=>post(`/items/${id}/print-label`, { copies }),
+    packagingMaterials:      (id)   => get(`/items/${id}/packaging-materials`),
+    setPackagingMaterials:   (id,materials) => put(`/items/${id}/packaging-materials`, { materials }),
   };
 
   // ─────────────── Marking (Честный знак) ───────────────
