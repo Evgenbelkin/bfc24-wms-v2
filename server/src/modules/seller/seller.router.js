@@ -389,7 +389,7 @@ router.get('/returns', requireModule('returns'), async (req,res,next)=>{
       disposition: req.query.disposition || null,
       dateFrom: req.query.date_from || null,
       dateTo:   req.query.date_to   || null,
-      limit:    Number(req.query.limit)  || 200,
+      limit:    Number(req.query.limit)  || 50000,
       offset:   Number(req.query.offset) || 0,
     });
     res.json({ ok:true, ...result });

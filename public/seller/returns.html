@@ -52,7 +52,7 @@
       <div class="card-title">Возвраты — всего <span id="r-total">0</span></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Когда</th><th>Товар</th><th>Кол-во</th><th>Решение</th><th>Заказ МП</th></tr></thead>
+          <thead><tr><th>Когда</th><th>Товар</th><th>Артикул</th><th>Размер</th><th>Штрихкод</th><th>Кол-во</th><th>Решение</th><th>Заказ МП</th></tr></thead>
           <tbody id="r-body"></tbody>
         </table>
       </div>
@@ -118,9 +118,16 @@
       }
     }
 
+    // Технический размер "0" у товаров без реального размера (не одежда) —
+    // прячем так же, как на экране приёмки (см. receiving-history.html).
+    function fmtSize(size) {
+      const s = String(size ?? '').trim();
+      return (!s || s === '0') ? '—' : UI.escHtml(s);
+    }
+
     async function loadHistory() {
       try {
-        const params = { limit: 300 };
+        const params = {};
         const from = UI.val('#f-from'); if (from) params.date_from = from;
         const to = UI.val('#f-to'); if (to) params.date_to = to;
         const disposition = UI.val('#f-disposition'); if (disposition) params.disposition = disposition;
@@ -130,12 +137,15 @@
         document.getElementById('r-body').innerHTML = rows.length ? rows.map(r => `
           <tr>
             <td>${UI.fmtDateTime(r.created_at)}</td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
+            <td>${UI.escHtml(r.item_name || '—')}</td>
+            <td>${UI.escHtml(r.vendor_code || '—')}</td>
+            <td>${fmtSize(r.size)}</td>
+            <td>${UI.escHtml(r.barcode || '—')}</td>
             <td>${UI.fmtQty(r.qty)}</td>
             <td><span class="disp-pill disp-${r.disposition}">${DISP_LABELS[r.disposition]||r.disposition}</span></td>
             <td>${UI.escHtml(r.marketplace_order_no||'—')}</td>
           </tr>
-        `).join('') : `<tr><td colspan="5">Возвратов нет</td></tr>`;
+        `).join('') : `<tr><td colspan="8">Возвратов нет</td></tr>`;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);

@@ -112,11 +112,14 @@ async function listReturns({ tenantId, clientId = null, disposition = null, date
   const countRes = await query(`SELECT COUNT(*)::int AS total FROM wms.returns r WHERE ${conds.join(' AND ')}`, params);
   const total = countRes.rows[0].total;
 
-  params.push(Math.min(limit, 1000), Math.max(offset, 0));
+  // См. тот же фикс в receiving.service.js:listReceivingHistory — потолок в
+  // 1000 обрезал историю без пагинации на клиентском экране, из-за чего
+  // старые возвраты выглядели пропавшими. Поднимаем запас с большим кол-вом.
+  params.push(Math.min(limit, 50000), Math.max(offset, 0));
   const res = await query(
     `SELECT r.id, r.barcode, r.qty, r.disposition, r.marketplace_order_no,
             r.location_code, r.comment, r.created_at,
-            i.item_name, c.client_name, u.username AS received_by_name
+            i.item_name, i.vendor_code, i.size, c.client_name, u.username AS received_by_name
      FROM wms.returns r
      LEFT JOIN wms.items i ON i.id=r.item_id
      LEFT JOIN wms.clients c ON c.id=r.client_id
