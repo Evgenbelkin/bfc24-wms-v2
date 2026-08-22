@@ -480,7 +480,9 @@ router.get('/receiving-history', async (req,res,next)=>{
       tenantId: req.user.tenantId, clientId,
       dateFrom: req.query.date_from || null,
       dateTo:   req.query.date_to   || null,
-      limit:    Number(req.query.limit)  || 200,
+      // Витрина клиента не пагинирует — грузит сразу всю историю за период
+      // (см. комментарий у listReceivingHistory про прежний потолок в 200).
+      limit:    Number(req.query.limit)  || 50000,
       offset:   Number(req.query.offset) || 0,
     });
     res.json({ ok:true, rows });

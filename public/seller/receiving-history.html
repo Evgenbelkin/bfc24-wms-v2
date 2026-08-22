@@ -21,10 +21,11 @@
 
   <div class="card">
     <div class="filters">
-      <input type="text" id="f-search" placeholder="Поиск по названию или штрихкоду..." oninput="renderRows()"/>
+      <input type="text" id="f-search" placeholder="Поиск по названию, артикулу или штрихкоду..." oninput="renderRows()"/>
       <input type="date" id="f-from"/>
       <input type="date" id="f-to"/>
       <button class="btn-sm" onclick="loadHistory()">Показать</button>
+      <button class="btn-sm" onclick="exportExcel()">⬇ Выгрузить в Excel</button>
     </div>
   </div>
 
@@ -36,7 +37,7 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Дата приёмки</th><th>Товар</th><th>Штрихкод</th><th>Принято</th><th>Брак</th><th>Ячейка</th></tr></thead>
+        <thead><tr><th>Дата приёмки</th><th>Товар</th><th>Артикул</th><th>Размер</th><th>Штрихкод</th><th>Принято</th><th>Брак</th></tr></thead>
         <tbody id="rows-body"></tbody>
       </table>
     </div>
@@ -67,11 +68,18 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
-    function renderRows() {
+    function getFiltered() {
       const term = UI.val('#f-search').toLowerCase();
-      const filtered = term
-        ? rows.filter(r => (r.item_name||'').toLowerCase().includes(term) || (r.barcode||'').includes(term))
+      return term
+        ? rows.filter(r =>
+            (r.item_name||'').toLowerCase().includes(term) ||
+            (r.barcode||'').includes(term) ||
+            (r.vendor_code||'').toLowerCase().includes(term))
         : rows;
+    }
+
+    function renderRows() {
+      const filtered = getFiltered();
 
       document.getElementById('k-count').textContent = filtered.length;
       document.getElementById('k-received').textContent = UI.fmtQty(filtered.reduce((a,r)=>a+Number(r.qty_received||0),0));
@@ -79,19 +87,53 @@
 
       const body = document.getElementById('rows-body');
       if (!filtered.length) {
-        body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Пока ничего не принято</td></tr>`;
+        body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">Пока ничего не принято</td></tr>`;
         return;
       }
       body.innerHTML = filtered.map(r => `
         <tr>
           <td>${r.completed_at ? UI.fmtDateTime(r.completed_at) : '—'}</td>
           <td>${UI.escHtml(r.item_name || '—')}</td>
+          <td>${UI.escHtml(r.vendor_code || '—')}</td>
+          <td>${UI.escHtml(r.size || '—')}</td>
           <td>${UI.escHtml(r.barcode || '—')}</td>
           <td><strong>${UI.fmtQty(r.qty_received)}</strong></td>
           <td>${Number(r.qty_damaged||0) > 0 ? `<span class="qty-damaged">${UI.fmtQty(r.qty_damaged)}</span>` : '—'}</td>
-          <td>${UI.escHtml(r.loc_code || r.location_code || '—')}</td>
         </tr>
       `).join('');
+    }
+
+    // Выгрузка в Excel — берём ровно то, что сейчас отфильтровано на экране
+    // (поиск + диапазон дат), а не только видимую страницу — пагинации тут
+    // нет, всё уже загружено. Формат CSV с BOM и разделителем ";" — Excel
+    // на русской локали открывает такой файл сразу с кириллицей и без
+    // "текста в одну колонку", без сторонних библиотек на странице.
+    function exportExcel() {
+      const filtered = getFiltered();
+      if (!filtered.length) { UI.notify.warn('Нечего выгружать'); return; }
+      const headers = ['Дата приёмки','Товар','Артикул','Размер','Штрихкод','Принято','Брак'];
+      const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+      const lines = [headers.map(escCsv).join(';')];
+      for (const r of filtered) {
+        lines.push([
+          r.completed_at ? UI.fmtDateTime(r.completed_at) : '',
+          r.item_name || '',
+          r.vendor_code || '',
+          r.size || '',
+          r.barcode || '',
+          r.qty_received || 0,
+          r.qty_damaged || 0,
+        ].map(escCsv).join(';'));
+      }
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Приёмка_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     }
 
     loadHistory();

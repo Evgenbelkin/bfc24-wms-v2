@@ -280,9 +280,15 @@ async function listReceivingHistory({ tenantId, clientId = null, dateFrom = null
   if (clientId) { conds.push(`rt.client_id=$${idx++}`); params.push(clientId); }
   if (dateFrom) { conds.push(`rt.completed_at>=$${idx++}::date`); params.push(dateFrom); }
   if (dateTo)   { conds.push(`rt.completed_at<($${idx++}::date+interval '1 day')`); params.push(dateTo); }
-  params.push(Math.min(limit,1000), Math.max(offset,0));
+  // Раньше жёсткий потолок был 1000, а витрина в кабинете клиента вообще не
+  // передавала offset/пагинацию — в итоге список молча обрезался на первых
+  // (самых свежих) 200 строках, и вся более старая приёмка выглядела так,
+  // будто она "потерялась". Это отчётный экран за всё время работы одного
+  // конкретного клиента — поднимаем потолок до размера, который с большим
+  // запасом покрывает всю историю, а не только последние месяцы.
+  params.push(Math.min(limit,50000), Math.max(offset,0));
   const r = await query(
-    `SELECT rt.*, i.item_name, c.client_name, l.location_code AS loc_code, u.username AS receiver_name
+    `SELECT rt.*, i.item_name, i.vendor_code, i.size, c.client_name, l.location_code AS loc_code, u.username AS receiver_name
      FROM wms.receiving_tasks rt
      LEFT JOIN wms.items i ON i.id=rt.item_id
      LEFT JOIN wms.clients c ON c.id=rt.client_id
