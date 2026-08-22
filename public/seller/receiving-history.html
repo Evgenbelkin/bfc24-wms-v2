@@ -68,6 +68,14 @@
       } catch (e) { UI.notify.err(e.message); }
     }
 
+    // Для многих товаров (не одежда — двери, лопатки, игрушки и т.п.) размер
+    // не задан и в базе лежит технический "0" — показывать его как настоящий
+    // размер вводит в заблуждение, прячем так же, как прячем пустой размер.
+    function fmtSize(size) {
+      const s = String(size ?? '').trim();
+      return (!s || s === '0') ? '—' : UI.escHtml(s);
+    }
+
     function getFiltered() {
       const term = UI.val('#f-search').toLowerCase();
       return term
@@ -95,7 +103,7 @@
           <td>${r.completed_at ? UI.fmtDateTime(r.completed_at) : '—'}</td>
           <td>${UI.escHtml(r.item_name || '—')}</td>
           <td>${UI.escHtml(r.vendor_code || '—')}</td>
-          <td>${UI.escHtml(r.size || '—')}</td>
+          <td>${fmtSize(r.size)}</td>
           <td>${UI.escHtml(r.barcode || '—')}</td>
           <td><strong>${UI.fmtQty(r.qty_received)}</strong></td>
           <td>${Number(r.qty_damaged||0) > 0 ? `<span class="qty-damaged">${UI.fmtQty(r.qty_damaged)}</span>` : '—'}</td>
@@ -119,7 +127,7 @@
           r.completed_at ? UI.fmtDateTime(r.completed_at) : '',
           r.item_name || '',
           r.vendor_code || '',
-          r.size || '',
+          (String(r.size ?? '').trim() === '0') ? '' : (r.size || ''),
           r.barcode || '',
           r.qty_received || 0,
           r.qty_damaged || 0,
