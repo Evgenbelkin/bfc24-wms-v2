@@ -566,7 +566,7 @@
 
     async function printItemLabel(idx) {
       const it = itemCache[idx];
-      const copies = Math.min(Math.max(Number(UI.val('#m-print-copies')) || 1, 1), 200);
+      const copies = Math.min(Math.max(Number(UI.val('#m-print-copies')) || 1, 1), 500);
       try {
         const res = await window.API.items.printLabel(it.id, copies);
         UI.notify.ok(`Отправлено на печать: ${res.printed} шт.`);

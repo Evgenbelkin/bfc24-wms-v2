@@ -109,7 +109,7 @@ router.post('/bulk-delete', requireRole('tenant_admin','supervisor'), async (req
 router.post('/:id/print-label', requireRole('tenant_admin','supervisor','warehouse_worker','receiver'), async (req,res,next)=>{
   try {
     const itemId = validatePositiveInt(req.params.id, 'id');
-    const copies = Math.min(Math.max(Number(req.body.copies) || 1, 1), 200);
+    const copies = Math.min(Math.max(Number(req.body.copies) || 1, 1), 500);
 
     const itemRes = await query(
       `SELECT id, barcode, item_name, vendor_code FROM wms.items WHERE id=$1 AND tenant_id=$2`,
