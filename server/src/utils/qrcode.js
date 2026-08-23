@@ -57,6 +57,47 @@ async function generateShipmentLabelSvg(shipmentCode, { qrSize = 260, width = 32
  * НАШИМ <text> поверх, через тот же шрифт DejaVuSans, что и в остальных
  * составных этикетках (см. generateShipmentLabelSvg выше).
  */
+// Название товара раньше рисовалось ОДНОЙ строкой фиксированным font-size=26
+// без переноса - у длинных названий текст просто уезжал за края этикетки
+// (в SVG нет автопереноса/autofit, как в HTML). Тут грубая, но рабочая
+// прикидка: подбираем шрифт помельче и переносим на до 2 строк по количеству
+// символов, оценивая среднюю ширину символа жирного кириллического текста
+// как ~0.62 от размера шрифта - не идеальная типографика, но гарантированно
+// не даёт тексту вылезти за viewBox. Если и в 2 строки при самом мелком
+// шрифте не влезает - обрезаем последнюю строку многоточием.
+function wrapItemTitle(text, { width = 400, marginX = 20, maxLines = 2 } = {}) {
+  const usableWidth = width - marginX * 2;
+  const fontSizes = [26, 22, 18];
+  const avgCharWidthFactor = 0.62;
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return { fontSize: fontSizes[0], lines: [''] };
+
+  function wrapAt(maxCharsPerLine) {
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length <= maxCharsPerLine) { current = candidate; continue; }
+      if (current) lines.push(current);
+      current = word.length > maxCharsPerLine ? word.slice(0, maxCharsPerLine) : word;
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  for (const fontSize of fontSizes) {
+    const maxCharsPerLine = Math.max(6, Math.floor(usableWidth / (fontSize * avgCharWidthFactor)));
+    const lines = wrapAt(maxCharsPerLine);
+    if (lines.length <= maxLines) return { fontSize, lines };
+  }
+  const fontSize = fontSizes[fontSizes.length - 1];
+  const maxCharsPerLine = Math.max(6, Math.floor(usableWidth / (fontSize * avgCharWidthFactor)));
+  const lines = wrapAt(maxCharsPerLine).slice(0, maxLines);
+  const last = lines[maxLines - 1] || '';
+  lines[maxLines - 1] = (last.length > maxCharsPerLine - 1 ? last.slice(0, maxCharsPerLine - 1).replace(/\s+$/, '') : last) + '…';
+  return { fontSize, lines };
+}
+
 function generateItemLabelSvg(barcode, itemName, { vendorCode = null, width = 400, height = 260, barcodeHeightMm = 10 } = {}) {
   const barcodeSvg = bwipjs.toSVG({
     bcid: 'code128',
@@ -92,12 +133,18 @@ function generateItemLabelSvg(barcode, itemName, { vendorCode = null, width = 40
   const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(barcodeSvg);
   const barcodeInner = innerMatch ? innerMatch[1] : barcodeSvg;
 
-  const titleLine = escapeXml(itemName || '');
+  const { fontSize: titleFontSize, lines: titleLines } = wrapItemTitle(itemName, { width });
+  const lineHeight = titleFontSize + 6;
+  const titleStartY = titleFontSize + 6;
+  const titleSvg = titleLines.map((line, i) =>
+    `<text x="${width / 2}" y="${titleStartY + i * lineHeight}" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="${titleFontSize}">${escapeXml(line)}</text>`
+  ).join('');
+  const subLineY = titleStartY + (titleLines.length - 1) * lineHeight + 28;
   const subLine = vendorCode ? escapeXml(`Артикул: ${vendorCode}`) : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
-    `<text x="${width / 2}" y="34" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="26">${titleLine}</text>` +
-    (subLine ? `<text x="${width / 2}" y="62" text-anchor="middle" font-family="sans-serif" font-size="20">${subLine}</text>` : '') +
+    titleSvg +
+    (subLine ? `<text x="${width / 2}" y="${subLineY}" text-anchor="middle" font-family="sans-serif" font-size="20">${subLine}</text>` : '') +
     `<g transform="translate(${barcodeX}, ${barcodeY}) scale(${scale})">${barcodeInner}</g>` +
     `</svg>`;
 }
