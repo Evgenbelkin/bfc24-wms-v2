@@ -132,7 +132,12 @@
     // "тихое" падение агента (истёк доступ, выключен компьютер и т.п.) было видно
     // сразу здесь, а не обнаруживалось по зависшей очереди печати.
     function agentStatusHtml(p) {
-      if (p.connection_type !== 'agent') return '';
+      // Раньше показывали только для connection_type='agent'. Печать "по IP"
+      // (connection_type='network') технически тоже идёт ЧЕРЕЗ АГЕНТА и его
+      // ключ — просто на компьютере агента этот принтер добавлен в Windows не
+      // по USB, а через TCP/IP-порт (см. onConnChange hint ниже), поэтому и
+      // тут статус связи агента актуален и важен так же, как для обычного.
+      if (p.connection_type !== 'agent' && p.connection_type !== 'network') return '';
       if (!p.has_agent_key) return ' · <span class="pill pill-yellow">ключ агента не выпущен</span>';
       if (!p.agent_last_seen_at) return ' · <span class="pill pill-gray">ключ выпущен, агент ещё не выходил на связь</span>';
       const diffMs = Date.now() - new Date(p.agent_last_seen_at).getTime();
@@ -179,28 +184,29 @@
             <div class="field"><label>Склад (опционально)</label><select id="m-warehouse" ${p?'disabled':''}>${whOptions}</select></div>
             <div class="field"><label>Способ подключения</label><select id="m-conn" onchange="onConnChange()" ${p?'disabled':''}>${connOptions}</select></div>
             <div id="conn-hint"></div>
-            <div class="field">
-              <label>Точное имя устройства (для способа «Через агент»)</label>
+            <div class="field" id="device-fields">
+              <label>Точное имя устройства в Windows</label>
               <input id="m-device" value="${p && p.device_name ? UI.escHtml(p.device_name):''}" placeholder="например: Xprinter XP-365B"/>
-              <div class="hint-box" style="margin-top:6px;">Как принтер называется в самой Windows на компьютере с принтером: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).</div>
+              <div class="hint-box" style="margin-top:6px;" id="device-fields-hint">Как принтер называется в самой Windows на компьютере с агентом: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).</div>
             </div>
-            <div class="field">
+            <div class="field" id="paper-size-fields">
               <label>Имя формата бумаги в драйвере (опционально)</label>
               <input id="m-paper-size" value="${p && p.paper_size_name ? UI.escHtml(p.paper_size_name):''}" placeholder="например: 58x40"/>
               <div class="hint-box" style="margin-top:6px;">Если в настройках драйвера этого принтера (обычно "Свойства принтера" → "Настройка страницы"/Page Setup → список Stock/Paper Size) заведён свой именованный формат бумаги — впишите его точное имя сюда. Агент будет ссылаться на этот формат по имени при автоматической печати, а не создавать размер заново — это важно, если в именованном формате настроена ещё и калибровка датчика зазора между этикетками. Если оставить пустым, агент подставит размер просто в мм.</div>
             </div>
             <div class="field-row2" id="network-fields" style="display:none">
-              <div class="field"><label>IP-адрес</label><input id="m-ip" value="${p && p.ip_address ? UI.escHtml(p.ip_address):''}"/></div>
-              <div class="field"><label>Порт</label><input id="m-port" type="number" value="${p && p.port ? p.port:''}"/></div>
+              <div class="field"><label>IP-адрес принтера (справочно)</label><input id="m-ip" value="${p && p.ip_address ? UI.escHtml(p.ip_address):''}" placeholder="192.168.1.50"/></div>
+              <div class="field"><label>Порт (справочно)</label><input id="m-port" type="number" value="${p && p.port ? p.port:9100}" placeholder="9100"/></div>
             </div>
             <div class="field"><label style="display:inline;">Принтер по умолчанию</label> <input type="checkbox" id="m-default" ${p && p.is_default ? 'checked':''}/></div>
             ${p ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${p.is_active ? 'checked':''}/></div>` : ''}
-            ${p && p.connection_type === 'agent' ? `
+            ${p && (p.connection_type === 'agent' || p.connection_type === 'network') ? `
               <div class="field">
                 <label>Доступ агента печати</label>
                 <div class="hint-box" style="margin-top:0;">${p.has_agent_key ? 'Ключ уже выпущен.' : 'Ключ ещё не выпущен — без него агент не сможет подключиться.'} ${agentStatusHtml(p)}</div>
                 <button class="btn-sm btn-blue" style="margin-top:8px;" onclick="issueAgentKey(${p.id})"><svg class="i" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3"/></svg> ${p.has_agent_key ? 'Перевыпустить ключ' : 'Выпустить ключ агента'}</button>
                 <div id="agent-key-reveal"></div>
+                ${p.connection_type === 'agent' ? `
                 <div class="hint-box" style="margin-top:8px;">
                   Для термопринтеров этикеток (один раз на компьютер с агентом): скачайте
                   <a href="https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" target="_blank">SumatraPDF 3.6.1 (portable, .zip)</a>,
@@ -208,6 +214,20 @@
                   <code>printer-agent\bin\SumatraPDF.exe</code>. Без этого файла агент работает по старой,
                   менее надёжной логике печати.
                 </div>
+                ` : `
+                <div class="hint-box" style="margin-top:8px;">
+                  Для способа «По сети (IP)» печать всё равно идёт через обычный драйвер Windows и
+                  SumatraPDF (та же откалиброванная логика: формат бумаги, кириллица, разворот), просто
+                  сам принтер в Windows подключён не по USB-кабелю, а по сети. Один раз на компьютере
+                  с агентом: <b>Параметры → Устройства → Принтеры и сканеры → Добавить принтер → «Нужного
+                  принтера нет в списке» → «Добавить принтер по TCP/IP-адресу или имени узла»</b> — укажите
+                  IP-адрес ${p.ip_address ? `<b>${UI.escHtml(p.ip_address)}</b>` : 'принтера'} и порт
+                  <b>${p.port || 9100}</b>, выберите обычный драйвер этого принтера (тот же, что и для USB —
+                  установите его заранее, если ещё не стоит) и задайте принтеру любое имя. Это имя впишите
+                  в поле «Точное имя устройства в Windows» выше — дальше всё работает как для обычного
+                  принтера на агенте.
+                </div>
+                `}
               </div>
             ` : ''}
             <div class="btn-row">
@@ -254,9 +274,24 @@
       const val = forceVal || UI.val('#m-conn');
       const hint = document.getElementById('conn-hint');
       document.getElementById('network-fields').style.display = (val === 'network') ? 'flex' : 'none';
+      // Имя устройства Windows и именованный формат бумаги драйвера нужны и
+      // для "агент" (USB), и для "по IP" (сетевой Windows-принтер через
+      // TCP/IP-порт) — в обоих случаях печать идёт через один и тот же
+      // драйвер+SumatraPDF, разница только в том, как этот принтер подключён
+      // физически на уровне Windows. Показываем оба поля в обоих случаях.
+      const deviceFields = document.getElementById('device-fields');
+      const paperFields = document.getElementById('paper-size-fields');
+      const deviceHint = document.getElementById('device-fields-hint');
+      if (deviceFields) deviceFields.style.display = 'block';
+      if (paperFields)  paperFields.style.display  = 'block';
+      if (deviceHint) {
+        deviceHint.textContent = val === 'network'
+          ? 'Имя, которое вы зададите принтеру при добавлении его в Windows через TCP/IP-порт (см. подсказку про способ «По сети (IP)» ниже) — не путать с IP-адресом.'
+          : 'Как принтер называется в самой Windows на компьютере с агентом: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).';
+      }
       const hints = {
         agent:   'Нужна небольшая программа-агент (устанавливается один раз на компьютер, к которому физически подключён принтер, — <a href="/downloads/printer-agent.zip" target="_blank" onclick="event.stopPropagation()">скачать установщик (.zip)</a>, внутри есть install.bat и подробная инструкция для склада). Дальше агент сам забирает задания на печать и отправляет на принтер — ничего в самой WMS донастраивать не нужно, кроме ключа доступа (появится после сохранения принтера).',
-        network: 'Печать напрямую по IP-адресу принтера в локальной сети склада (для сетевых термопринтеров этикеток).',
+        network: 'Принтер подключён не по USB, а по сети (IP), но печать всё равно идёт через тот же агент и тот же драйвер Windows — просто сам принтер добавлен в Windows через TCP/IP-порт вместо кабеля (пошагово — см. подсказку ниже после сохранения). Нужен агент на любом компьютере склада (не обязательно физически рядом с принтером), ключ доступа появится после сохранения принтера.',
         usb:     'Печать через обычное диалоговое окно браузера на этом устройстве — просто выбирается принтер из тех, что уже подключены к компьютеру/телефону.',
       };
       hint.innerHTML = `<div class="hint-box">${hints[val] || ''}</div>`;
@@ -277,6 +312,7 @@
           data.is_default = document.getElementById('m-default').checked;
           if (p.connection_type === 'network') {
             data.ip_address = UI.val('#m-ip');
+            data.port = UI.val('#m-port') || null;
           }
           await window.API.printing.printers.update(p.id, data);
           UI.notify.ok('Принтер обновлён');
@@ -292,11 +328,11 @@
           const res = await window.API.printing.printers.create(data);
           UI.notify.ok('Принтер создан');
           await loadPrinters();
-          // Для "через агент" сразу открываем карточку заново, в режиме
-          // редактирования уже сохранённого принтера — именно там появляется
-          // ссылка на установщик и кнопка выпуска ключа (их не видно на форме
-          // создания, что раньше сбивало с толку).
-          if (data.connection_type === 'agent' && res?.printer?.id) {
+          // Для "через агент" и "по IP" сразу открываем карточку заново, в
+          // режиме редактирования уже сохранённого принтера — именно там
+          // появляется ссылка на установщик и кнопка выпуска ключа (их не
+          // видно на форме создания, что раньше сбивало с толку).
+          if ((data.connection_type === 'agent' || data.connection_type === 'network') && res?.printer?.id) {
             const newIdx = printersList.findIndex(x => x.id === res.printer.id);
             if (newIdx !== -1) { openPrinterModal(newIdx); return; }
           }

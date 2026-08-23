@@ -139,11 +139,12 @@ router.post('/printers/bulk-import', requireRole('tenant_admin','supervisor'), a
 router.patch('/printers/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const id = validatePositiveInt(req.params.id,'id');
-    const { printer_name, device_name, ip_address, zone_code, is_active, is_default, paper_size_name } = req.body;
+    const { printer_name, device_name, ip_address, port, zone_code, is_active, is_default, paper_size_name } = req.body;
     const fields=[]; const params=[]; let idx=1;
     if (printer_name !== undefined) { fields.push(`printer_name=$${idx++}`); params.push(printer_name); }
     if (device_name  !== undefined) { fields.push(`device_name=$${idx++}`);  params.push(device_name||null); }
     if (ip_address   !== undefined) { fields.push(`ip_address=$${idx++}`);   params.push(ip_address||null); }
+    if (port         !== undefined) { fields.push(`port=$${idx++}`);        params.push(port ? Number(port) : null); }
     if (zone_code    !== undefined) { fields.push(`zone_code=$${idx++}`);    params.push(zone_code||null); }
     if (is_active    !== undefined) { fields.push(`is_active=$${idx++}`);    params.push(!!is_active); }
     if (is_default   !== undefined) { fields.push(`is_default=$${idx++}`);   params.push(!!is_default); }

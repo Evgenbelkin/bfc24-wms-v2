@@ -76,8 +76,16 @@ router.get('/jobs', agentKeyAuth, async (req,res,next)=>{
     // из настроек драйвера конкретного принтера (см. migration 016) - агент
     // подставляет его в paperSize при печати вместо generic custom-size, если
     // оно задано в карточке принтера.
+    // connection_type/ip_address/port — печать "по IP": ip_address/port тут
+    // чисто справочные (показываются админу в панели принтеров), сама печать
+    // всё равно идёт через device_name — агент шлёт задание через обычный
+    // Windows-драйвер (SumatraPDF), а физически этот Windows-принтер добавлен
+    // администратором через TCP/IP-порт вместо USB-кабеля (см. printer-panel.html).
+    // Раньше эти поля сюда не попадали, и способ подключения "По сети (IP)"
+    // в панели принтеров ничего физически не печатал.
     const r = await query(
-      `SELECT pj.*, p.printer_name, p.device_name, p.paper_size_name
+      `SELECT pj.*, p.printer_name, p.device_name, p.paper_size_name,
+              p.connection_type, p.ip_address, p.port
        FROM wms.print_jobs pj
        JOIN wms.printers p ON p.id = pj.printer_id
        WHERE pj.tenant_id=$1 AND pj.printer_id=$2 AND pj.status=$3
