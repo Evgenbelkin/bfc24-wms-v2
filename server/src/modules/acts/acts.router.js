@@ -40,13 +40,13 @@ router.get('/uncovered', requireRole('tenant_admin','supervisor','receiver'), as
   try {
     const clientId = resolveClientScope(req, req.query.client_id);
     if (!clientId) throw new ValidationError('client_id is required');
-    const uncovered = await svc.hasUncoveredReceiving({
+    const result = await svc.hasUncoveredReceiving({
       tenantId: req.user.tenantId,
       clientId,
       inboundOrderId: req.query.inbound_order_id ? Number(req.query.inbound_order_id) : null,
       anySource: req.query.any === '1',
     });
-    res.json({ ok:true, uncovered });
+    res.json({ ok:true, uncovered: result.uncovered, earliest_date: result.earliestDate });
   } catch(e){ next(e); }
 });
 

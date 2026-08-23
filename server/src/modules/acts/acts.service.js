@@ -158,11 +158,19 @@ async function hasUncoveredReceiving({ tenantId, clientId, inboundOrderId = null
   } else {
     cond += ` AND inbound_order_id IS NULL`;
   }
+  // earliest_date — самая ранняя непокрытая приёмка. Нужна, чтобы форма акта
+  // могла сама подставить период "от" не как "сегодня" (см. баг ниже), а от
+  // реально самой старой непокрытой даты — иначе если непокрытый хвост копился
+  // несколько дней (приёмщик не формировал акт вовремя), модалка акта по
+  // умолчанию покажет только сегодняшние позиции, оператор сохранит акт
+  // «за сегодня», а вчерашний непокрытый остаток так и останется непокрытым —
+  // и гейт при следующей попытке сменить клиента снова заблокирует, выглядя
+  // так, будто акт "не сохранился", хотя он сохранился, просто не тот период.
   const r = await query(
-    `SELECT COUNT(*)::int AS n FROM wms.receiving_tasks WHERE ${cond}`,
+    `SELECT COUNT(*)::int AS n, MIN(completed_at)::date AS earliest_date FROM wms.receiving_tasks WHERE ${cond}`,
     params
   );
-  return r.rows[0].n > 0;
+  return { uncovered: r.rows[0].n > 0, earliestDate: r.rows[0].earliest_date };
 }
 
 /** Передать/отозвать акт в личный кабинет клиента - см. миграцию 040 и

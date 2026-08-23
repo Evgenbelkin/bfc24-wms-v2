@@ -453,7 +453,19 @@
     async function openFreeActModal(clientIdOverride) {
       const clientId = clientIdOverride || getClientId();
       if (!clientId) return;
-      const dateFrom = todayStr(), dateTo = todayStr();
+      // По умолчанию период - "сегодня", НО если по клиенту уже накопился
+      // непокрытый хвост за прошлые дни (приёмщик забыл сформировать акт
+      // раньше), подставляем самую раннюю непокрытую дату - иначе форма
+      // покажет только сегодняшние позиции, оператор сохранит акт "за
+      // сегодня", а старый хвост так и останется непокрытым: гейт при
+      // следующей попытке сменить клиента/выйти снова заблокирует, и выглядит
+      // это так, будто акт "не сохранился", хотя он просто не за тот период.
+      let dateFrom = todayStr();
+      const dateTo = todayStr();
+      try {
+        const uncoveredRes = await window.API.acts.uncovered({ client_id: clientId, any: 1 });
+        if (uncoveredRes.earliest_date) dateFrom = uncoveredRes.earliest_date;
+      } catch (e) { /* не блокируем открытие формы - просто останется "сегодня" */ }
       let client = null, tenant = null;
       try {
         const [clientRes, tenantRes, freeLinesRes] = await Promise.all([
