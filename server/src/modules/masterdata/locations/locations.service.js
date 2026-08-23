@@ -392,7 +392,21 @@ async function getLocationFillReport({ tenantId, warehouseId = null, pickOnly = 
   });
 }
 
-/** Найти лучшую ячейку для SKU (с максимальным остатком) */
+/** Найти лучшую ячейку для SKU.
+ *  РАНЬШЕ сортировали по sb.qty_available DESC — то есть выбирали ячейку с
+ *  БОЛЬШИМ остатком. На практике это почти всегда оказывалась ячейка со
+ *  свежей приёмкой (её только что заполнили целиком), а старый остаток в
+ *  других ячейках к этому моменту уже подраспродан и в них лежит немного
+ *  (1-3 шт.) — получалось, что на сборку систематически уходил СЕГОДНЯШНИЙ
+ *  товар, а старый копился и не расходовался вообще (не FIFO). У нас нет
+ *  партионного/лотового учёта в stock_balances (остаток агрегирован по
+ *  item+location без даты конкретной партии), поэтому точного FIFO нет - но
+ *  last_movement_at (когда последний раз меняли physически qty_on_hand в этой
+ *  ячейке — приход/расход/инвентаризация; резервирование его не трогает, см.
+ *  wms.reserve_stock) - неплохой прокси: ячейка, которую давно не трогали,
+ *  почти наверняка содержит старый товар. Сортируем по ней по возрастанию
+ *  (сначала самая "нетронутая" = самая старая), остаток - только как
+ *  вторичный критерий при равных датах. */
 async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId }) {
   const res = await query(
     `SELECT
@@ -406,7 +420,7 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId })
        AND sb.qty_available > 0
        AND l.is_active = TRUE
        AND l.is_pick_location = TRUE
-     ORDER BY sb.qty_available DESC, l.location_code
+     ORDER BY sb.last_movement_at ASC NULLS FIRST, sb.qty_available DESC, l.location_code
      LIMIT 1`,
     [tenantId, warehouseId, itemId, clientId]
   );
