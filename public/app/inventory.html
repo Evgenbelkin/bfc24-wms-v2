@@ -207,7 +207,16 @@
           qty_actual: actualQty, comment: UI.val('#count-comment') || undefined,
         });
         const delta = res.task?.qty_delta ?? (actualQty - Number(currentTask.qty_system||0));
-        UI.notify.ok(`Счёт внесён. Расхождение: ${delta > 0 ? '+' : ''}${delta}`);
+        if (!res.task?.item_id) {
+          // item_id=NULL - товар этой задачи не привязан к каталогу (обычно
+          // значит, что штрихкод не найден у выбранного клиента - см. фикс в
+          // inventory.service.js createTask). В таком случае остаток НЕ
+          // меняется, хотя задача и закрывается - явно предупреждаем, а не
+          // молча показываем "Расхождение: 0", как будто всё ок.
+          UI.notify.warn('Счёт внесён, но товар не привязан к каталогу - остаток НЕ изменён. Проверьте, что был выбран правильный клиент.');
+        } else {
+          UI.notify.ok(`Счёт внесён. Расхождение: ${delta > 0 ? '+' : ''}${delta}`);
+        }
         closeCountCard();
       } catch (e) { UI.notify.err(e.message); }
     }

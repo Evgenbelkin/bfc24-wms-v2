@@ -79,6 +79,35 @@ async function createTask({
           [tenantId, warehouseId, clientId, itemId, location.id]
         );
         qtySystem = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_on_hand) : 0;
+      } else {
+        // Штрихкод не нашёлся у ВЫБРАННОГО клиента - barcode уникален только в
+        // пределах (tenant_id, client_id, barcode) (см. UNIQUE в 003_masterdata.sql),
+        // так что разные клиенты в принципе МОГУТ иметь разные товары с одним и
+        // тем же значением barcode. Раньше в этом случае задача молча создавалась
+        // с item_id=NULL и qty_system=NULL ("По системе: —") - пересчёт визуально
+        // проходил нормально, но submitCount() ничего не мог применить к остаткам
+        // (нет item_id), и товар в ячейке оставался как был - выглядело как "баг
+        // с инвентаризацией", а на деле просто был выбран не тот клиент вверху
+        // экрана. Проверяем, кому РЕАЛЬНО принадлежит остаток с этим штрихкодом
+        // именно в этой ячейке - это физическая правда, ей и доверяем.
+        const actualRes = await client.query(
+          `SELECT i.client_id, c.client_name
+           FROM wms.stock_balances sb
+           JOIN wms.items i ON i.id = sb.item_id
+           LEFT JOIN wms.clients c ON c.id = i.client_id
+           WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.location_id=$3
+             AND i.barcode=$4 AND sb.qty_on_hand > 0
+           LIMIT 1`,
+          [tenantId, warehouseId, location.id, b]
+        );
+        if (actualRes.rowCount > 0 && actualRes.rows[0].client_id !== clientId) {
+          throw new ValidationError(
+            `Штрихкод '${b}' в ячейке '${loc}' числится за клиентом "${actualRes.rows[0].client_name || actualRes.rows[0].client_id}", а не за выбранным вверху экрана. Переключите клиента и создайте пересчёт заново.`
+          );
+        }
+        // Иначе - штрихкода действительно нет ни у одного клиента в этой ячейке
+        // (или он вообще не заведён в каталоге) - это законный случай "нашли
+        // незнакомый товар", создаём задачу без привязки к каталогу, как раньше.
       }
     }
 
