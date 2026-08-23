@@ -127,7 +127,14 @@ function ensureCyrillicFont(doc) {
 // (без своих отступов), поэтому нижние строки текста физически обрезались
 // принтером. Отступ съедает немного места под QR, но гарантирует, что
 // ничего не уходит в мёртвую зону у края.
-function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = false, marginMm = 1.5 } = {}) {
+// copies>1 — рисуем ту же этикетку на нескольких страницах ОДНОГО PDF, а не
+// делаем copies отдельных print_jobs. Раньше (тиражная печать этикеток
+// товара из справочника, кнопка "Напечатать N шт.") каждая копия была своим
+// заданием - агент на каждую копию заново опрашивал сервер, запускал
+// SumatraPDF и ждал PRINTER_COOLDOWN_MS - на 100 шт. это растягивалось на
+// минуты. Один многостраничный PDF печатается одним запуском SumatraPDF,
+// принтер получает все страницы подряд без пауз агента между ними.
+function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = false, marginMm = 1.5, copies = 1 } = {}) {
   return new Promise((resolve, reject) => {
     const w = mmToPt(widthMm);
     const h = mmToPt(heightMm);
@@ -136,14 +143,22 @@ function buildPdf(svgText, pdfPath, { widthMm = 58, heightMm = 40, rotate90 = fa
     ensureCyrillicFont(doc);
     const stream = fs.createWriteStream(pdfPath);
     doc.pipe(stream);
-    if (rotate90) {
-      doc.save();
-      doc.translate(w, 0);
-      doc.rotate(90);
-      SVGtoPDF(doc, svgText, m, m, { width: h - 2 * m, height: w - 2 * m, preserveAspectRatio: 'xMidYMid meet' });
-      doc.restore();
-    } else {
-      SVGtoPDF(doc, svgText, m, m, { width: w - 2 * m, height: h - 2 * m, preserveAspectRatio: 'xMidYMid meet' });
+    const drawLabel = () => {
+      if (rotate90) {
+        doc.save();
+        doc.translate(w, 0);
+        doc.rotate(90);
+        SVGtoPDF(doc, svgText, m, m, { width: h - 2 * m, height: w - 2 * m, preserveAspectRatio: 'xMidYMid meet' });
+        doc.restore();
+      } else {
+        SVGtoPDF(doc, svgText, m, m, { width: w - 2 * m, height: h - 2 * m, preserveAspectRatio: 'xMidYMid meet' });
+      }
+    };
+    const n = Math.max(1, Number(copies) || 1);
+    drawLabel();
+    for (let i = 1; i < n; i++) {
+      doc.addPage({ size: [w, h], margin: 0 });
+      drawLabel();
     }
     doc.end();
     stream.on('finish', resolve);
@@ -297,7 +312,7 @@ async function markJob(jobId, status, errorText = null) {
 // Обработать один job
 async function processJob(job) {
   const pdfPath = path.join(TMP_DIR, `job-${job.id}-${Date.now()}.pdf`);
-  console.log(`[JOB ${job.id}] doc_type=${job.doc_type} printer=${job.printer_name}`);
+  console.log(`[JOB ${job.id}] doc_type=${job.doc_type} printer=${job.printer_name} copies=${job.copies || 1}`);
 
   try {
     await markJob(job.id, 'processing');
@@ -330,7 +345,12 @@ async function processJob(job) {
     // rotate90 - это НЕПРАВИЛЬНО, результат получал двойной поворот и почти
     // весь уезжал за край страницы (см. фото - пусто, обрезанный QR). Рендерим
     // SVG "как есть", без какого-либо дополнительного поворота с нашей стороны.
-    const dims = { widthMm: 58, heightMm: 40 };
+    // job.copies — сколько одинаковых этикеток нужно на выходе (см. комментарий
+    // у buildPdf выше). Раньше это поле в БД всегда было 1 (тираж делали N
+    // отдельными print_jobs) - теперь для "печать этикетки товара N шт." сервер
+    // кладёт реальное N сюда одним заданием.
+    const copies = Math.min(Math.max(Number(job.copies) || 1, 1), 500);
+    const dims = { widthMm: 58, heightMm: 40, copies };
 
     await buildPdf(svgText, pdfPath, dims);
     try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
