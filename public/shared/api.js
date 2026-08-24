@@ -337,6 +337,7 @@
 
   const shipping = {
     board:   (p) => get('/shipping/board', p),
+    header:  (code) => get('/shipping/header', { shipment_code: code }),
     details: (code) => get('/shipping/details', { shipment_code: code }),
     confirm: (d) => post('/shipping/confirm', d),
     markDelivered: (code) => post('/shipping/mark-delivered', { shipment_code: code }),

@@ -55,7 +55,43 @@ async function listShipments({
   return r.rows;
 }
 
-/** Детали отгрузки */
+/**
+ * Лёгкая "шапка" отгрузки — без полного состава (без join на items/wb_orders
+ * и без LATERAL по stock_movements на каждую строку picking_tasks). Только
+ * сам shipment + план/собрано агрегатом.
+ *
+ * Нужна отдельно от getShipmentDetails() потому что на карточке отгрузки
+ * самое важное и срочное — как можно быстрее показать поле сканирования
+ * (отгрузчику часто нужно просто отсканировать код поставки, состав его не
+ * интересует), а полный список позиций на отгрузках с полсотней строк
+ * (полсотни JOIN'ов на items + wb_orders + LATERAL-подзапрос по движениям на
+ * КАЖДУЮ строку) заметно тормозит открытие карточки. См. shipping.html —
+ * шапка запрашивается и рисуется сразу, состав подтягивается следом отдельным
+ * запросом, не блокируя возможность сканировать.
+ */
+async function getShipmentHeader({ tenantId, shipmentCode }) {
+  const shipRes = await query(
+    `SELECT s.*, c.client_name, w.warehouse_name, su.username AS shipper_name
+     FROM wms.shipments s
+     JOIN wms.clients c ON c.id=s.client_id
+     JOIN wms.warehouses w ON w.id=s.warehouse_id
+     LEFT JOIN wms.users su ON su.id=s.shipper_id
+     WHERE s.tenant_id=$1 AND s.external_id=$2 ORDER BY s.id DESC LIMIT 1`,
+    [tenantId, shipmentCode]
+  );
+  if (shipRes.rowCount === 0) throw new NotFoundError(`Shipment '${shipmentCode}'`);
+  const shipment = shipRes.rows[0];
+
+  const totalsRes = await query(
+    `SELECT COALESCE(SUM(qty),0)::int AS plan, COALESCE(SUM(qty_picked),0)::int AS picked
+     FROM wms.picking_tasks WHERE tenant_id=$1 AND shipment_code=$2`,
+    [tenantId, shipmentCode]
+  );
+
+  return { shipment, totals: totalsRes.rows[0] };
+}
+
+/** Детали отгрузки (полный состав — тяжелее, см. getShipmentHeader выше) */
 async function getShipmentDetails({ tenantId, shipmentCode }) {
   const shipRes = await query(
     `SELECT s.*, c.client_name, w.warehouse_name, su.username AS shipper_name
@@ -557,4 +593,4 @@ async function returnPickedStock({ tenantId, shipmentCode, barcode, qty, locatio
   return result;
 }
 
-module.exports = { listShipments, getShipmentDetails, confirmShipment, markDelivered, cancelShipment, returnPickedStock };
+module.exports = { listShipments, getShipmentHeader, getShipmentDetails, confirmShipment, markDelivered, cancelShipment, returnPickedStock };

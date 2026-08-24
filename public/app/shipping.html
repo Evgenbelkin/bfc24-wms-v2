@@ -226,10 +226,19 @@
     // только кликом по строке в собственном списке этой страницы, но и
     // переходом с другого экрана (Диспетчерская, Табло — см. ?code= в URL
     // ниже), не важно на каком этапе сейчас отгрузка (сборка/упаковка/отгрузка).
+    // Открытие карточки — в два прохода. Отгрузчику почти всегда нужно
+    // ПРОСТО СКАНИРОВАТЬ код поставки, состав его в моменте не интересует —
+    // а полный список позиций (join на items+wb_orders + подзапрос по
+    // движениям на каждую строку) на отгрузках в полсотни позиций ощутимо
+    // тормозил открытие. Поэтому сначала лёгкий /shipping/header (только сам
+    // shipment + план/собрано агрегатом) — карточка и поле скана появляются
+    // почти мгновенно, фокус сразу в скан. Полный состав (/shipping/details)
+    // подтягивается следом, отдельным запросом, не блокируя сканирование.
     async function openShipmentByCode(code) {
       try {
-        const res = await window.API.shipping.details(code);
+        const res = await window.API.shipping.header(code);
         currentShipment = res.shipment;
+        currentLines = [];
         document.getElementById('list-view').style.display = 'none';
         document.getElementById('detail-view').style.display = 'block';
         document.getElementById('d-code').textContent = currentShipment.external_id;
@@ -243,30 +252,9 @@
         } else {
           shippedBadge.style.display = 'none';
         }
-        const totalPlan = (res.lines||[]).reduce((a,l)=>a+Number(l.qty||0),0);
-        const totalPicked = (res.lines||[]).reduce((a,l)=>a+Number(l.qty_picked||0),0);
-        document.getElementById('d-picked').textContent = `${totalPicked}/${totalPlan}`;
-        currentLines = res.lines || [];
-        UI.renderTable('#lines-body', currentLines, (l, idx) => `
-          <tr>
-            <td>${UI.escHtml(l.item_name || l.barcode)}</td>
-            <td>${UI.escHtml(l.vendor_code || '—')}</td>
-            <td>${l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—'}</td>
-            <td>${UI.escHtml(l.size || '—')}</td>
-            <td>${UI.fmtQty(l.qty)}</td>
-            <td>${UI.fmtQty(l.qty_picked)}</td>
-            <td>${UI.fmtQty(l.qty_packed)}</td>
-            <td>${l.preview_url ? `<a href="#" onclick="openLinePhoto(${idx});return false;">Открыть</a>` : '—'}</td>
-            <td>${l.wb_sticker ? `<a href="#" onclick="openLineSticker(${idx});return false;">Открыть</a>` : '—'}</td>
-            <td>${
-              l.picking_status === 'skipped'
-                ? (canRequeue
-                    ? `<button class="btn-sm btn-back" onclick="requeueLine(${idx});return false;">↩ Вернуть в сборку</button>`
-                    : `<span class="pill pill-red">пропущено</span>`)
-                : '—'
-            }</td>
-          </tr>
-        `);
+        document.getElementById('d-picked').textContent = `${res.totals.picked}/${res.totals.plan}`;
+        document.getElementById('lines-body').innerHTML =
+          `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px;">Загрузка состава…</td></tr>`;
         document.getElementById('qr-result').style.display = 'none';
         document.getElementById('confirm-status').textContent = '';
         renderWbQrCard();
@@ -300,6 +288,38 @@
         const cancelCard = document.getElementById('cancel-card');
         cancelCard.style.display = (canRequeue && !['done','cancelled'].includes(currentShipment.status)) ? 'block' : 'none';
 
+        loadShipmentLines(code);
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    // Тяжёлая часть — полный состав отгрузки, подгружается после того как
+    // карточка уже открыта и можно сканировать. Если пока грузится успели
+    // открыть другую отгрузку — не подставляем устаревший результат.
+    async function loadShipmentLines(code) {
+      try {
+        const res = await window.API.shipping.details(code);
+        if (!currentShipment || currentShipment.external_id !== code) return;
+        currentLines = res.lines || [];
+        UI.renderTable('#lines-body', currentLines, (l, idx) => `
+          <tr>
+            <td>${UI.escHtml(l.item_name || l.barcode)}</td>
+            <td>${UI.escHtml(l.vendor_code || '—')}</td>
+            <td>${l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—'}</td>
+            <td>${UI.escHtml(l.size || '—')}</td>
+            <td>${UI.fmtQty(l.qty)}</td>
+            <td>${UI.fmtQty(l.qty_picked)}</td>
+            <td>${UI.fmtQty(l.qty_packed)}</td>
+            <td>${l.preview_url ? `<a href="#" onclick="openLinePhoto(${idx});return false;">Открыть</a>` : '—'}</td>
+            <td>${l.wb_sticker ? `<a href="#" onclick="openLineSticker(${idx});return false;">Открыть</a>` : '—'}</td>
+            <td>${
+              l.picking_status === 'skipped'
+                ? (canRequeue
+                    ? `<button class="btn-sm btn-back" onclick="requeueLine(${idx});return false;">↩ Вернуть в сборку</button>`
+                    : `<span class="pill pill-red">пропущено</span>`)
+                : '—'
+            }</td>
+          </tr>
+        `);
         renderReturnPickedCard(canRequeue ? (res.already_picked || []) : []);
       } catch (e) { UI.notify.err(e.message); }
     }

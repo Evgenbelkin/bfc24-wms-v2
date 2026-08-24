@@ -27,6 +27,16 @@ router.get('/board', requireRole('tenant_admin','supervisor','picker','packer','
   } catch(e){ next(e); }
 });
 
+// Лёгкая шапка (для мгновенного открытия карточки под скан) — см. комментарий
+// у getShipmentHeader() в shipping.service.js.
+router.get('/header', async (req,res,next)=>{
+  try {
+    const { shipment_code } = req.query;
+    const result = await svc.getShipmentHeader({ tenantId: req.user.tenantId, shipmentCode: shipment_code });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 router.get('/details', async (req,res,next)=>{
   try {
     const { shipment_code } = req.query;
