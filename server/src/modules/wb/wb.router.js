@@ -45,9 +45,19 @@ router.post('/accounts', requireRole('tenant_admin'), async (req,res,next)=>{
   try {
     const { client_id, marketplace='wb', account_name, account_code, supplier_id, api_token } = req.body;
     const clientId = resolveClientScope(req, client_id);
+    // Рубильник отправки остатков (settings.stock_sync_disabled, см.
+    // distributeStockForAccount) по умолчанию должен быть ВЫКЛЮЧЕН для новых
+    // аккаунтов - раньше поле settings не задавалось при создании, падало на
+    // DEFAULT '{}' у колонки, а это читается как stock_sync_disabled=false,
+    // то есть отправка остатков включалась сама, без явного решения селлера.
+    // Явно прописываем settings=true здесь, а не меняем DEFAULT колонки, чтобы
+    // не трогать уже существующие аккаунты (у них осознанно выбранное
+    // состояние переключателя, менять его задним числом нельзя).
     const r = await query(
-      `INSERT INTO wms.mp_accounts(tenant_id,client_id,marketplace,account_name,account_code,supplier_id,api_token,created_by)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,client_id,marketplace,account_name,is_active`,
+      `INSERT INTO wms.mp_accounts(tenant_id,client_id,marketplace,account_name,account_code,supplier_id,api_token,created_by,settings)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'{"stock_sync_disabled":true}'::jsonb)
+       RETURNING id,client_id,marketplace,account_name,is_active,
+         COALESCE((settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled`,
       [req.user.tenantId, clientId, marketplace, account_name, account_code||null, supplier_id||null, api_token||null, req.user.id]
     );
     res.status(201).json({ ok: true, account: r.rows[0] });
