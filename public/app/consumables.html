@@ -33,6 +33,7 @@
   <div id="content">
     <div class="tabs">
       <button class="tab active" data-tab="stock" onclick="switchTab('stock')">Остатки</button>
+      <button class="tab" data-tab="receiving" onclick="switchTab('receiving')">Приёмка</button>
       <button class="tab" data-tab="usage" onclick="switchTab('usage')">Списания</button>
     </div>
 
@@ -43,6 +44,26 @@
         <div id="c-list"></div>
       </div>
       <button class="btn-big btn-green btn-full" onclick="openConsumableModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый расходник</button>
+    </div>
+
+    <!-- ============ Приёмка ============ -->
+    <div id="tab-receiving" style="display:none">
+      <div class="card">
+        <div class="card-title">Принять расходник</div>
+        <div class="field"><label>Расходник</label><select id="r-consumable"></select></div>
+        <div class="field"><label>Количество</label><input id="r-qty" type="number" step="0.01" value="1"/></div>
+        <div class="field"><label>Комментарий (например, номер накладной)</label><input id="r-comment"/></div>
+        <button class="btn-big btn-green btn-full" onclick="recordReceiving()">Принять</button>
+      </div>
+      <div class="card">
+        <div class="card-title">История приёмок</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Когда</th><th>Расходник</th><th>Кол-во</th><th>Комментарий</th><th>Кто</th></tr></thead>
+            <tbody id="r-body"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- ============ Списания ============ -->
@@ -90,11 +111,12 @@
     }
 
     function switchTab(name) {
-      ['stock','usage'].forEach(t => {
+      ['stock','receiving','usage'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
       if (name==='stock') loadConsumables();
+      if (name==='receiving') { loadReceivingConsumableSelect(); loadReceivingHistory(); }
       if (name==='usage') { loadConsumableSelect(); loadClientSelect(); loadUsageHistory(); }
     }
 
@@ -194,6 +216,50 @@
       }
     }
 
+    async function loadReceivingConsumableSelect() {
+      try {
+        const res = await window.API.consumables.list();
+        consumableCache = res.rows || [];
+        const sel = document.getElementById('r-consumable');
+        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${c.qty_on_hand} ${UI.escHtml(c.unit)})</option>`).join('');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); }
+      }
+    }
+
+    async function recordReceiving() {
+      const consumableId = Number(UI.val('#r-consumable'));
+      if (!consumableId) { UI.notify.err('Выберите расходник'); return; }
+      const qty = Number(UI.val('#r-qty'));
+      if (!qty || qty <= 0) { UI.notify.err('Укажите количество'); return; }
+      try {
+        await window.API.consumables.adjust(consumableId, qty, UI.val('#r-comment') || null, 'receiving');
+        UI.notify.ok('Принято на склад');
+        document.getElementById('r-qty').value = 1;
+        document.getElementById('r-comment').value = '';
+        await loadReceivingConsumableSelect();
+        await loadReceivingHistory();
+      } catch (e) { UI.notify.err(e.message); }
+    }
+
+    async function loadReceivingHistory() {
+      try {
+        const res = await window.API.consumables.usageHistory({ ref_type: 'receiving', limit: 200 });
+        const rows = res.rows || [];
+        document.getElementById('r-body').innerHTML = rows.length ? rows.map(r => `
+          <tr>
+            <td>${new Date(r.created_at).toLocaleString('ru-RU')}</td>
+            <td>${UI.escHtml(r.consumable_name)}</td>
+            <td>+${Math.abs(Number(r.qty))} ${UI.escHtml(r.unit)}</td>
+            <td>${r.comment ? UI.escHtml(r.comment) : '—'}</td>
+            <td>${r.user_name ? UI.escHtml(r.user_name) : '—'}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="5">Приёмок пока нет</td></tr>`;
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); }
+      }
+    }
+
     async function loadClientSelect() {
       try {
         const res = await window.API.clients.short();
@@ -242,9 +308,16 @@
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 
     // Не-админам (packer/shipper) сразу открываем вкладку списаний — им не нужен
-    // раздел управления остатками/ценами.
+    // раздел управления остатками/ценами. "Приёмка" тоже скрыта для них: сервер
+    // всё равно отклонит POST /consumables/:id/adjust не от tenant_admin/supervisor
+    // (см. requireRole в consumables.router.js) - показывать форму, которая
+    // гарантированно упадёт 403, хуже, чем просто её не показывать.
     if (canManage) { loadConsumables(); }
-    else { switchTab('usage'); document.querySelector('.tab[data-tab="stock"]').style.display = 'none'; }
+    else {
+      switchTab('usage');
+      document.querySelector('.tab[data-tab="stock"]').style.display = 'none';
+      document.querySelector('.tab[data-tab="receiving"]').style.display = 'none';
+    }
   </script>
 </body>
 </html>

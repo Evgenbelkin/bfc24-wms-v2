@@ -442,7 +442,7 @@
     list:      (all)   => get('/consumables', all ? { all: 'true' } : undefined),
     upsert:    (d)      => post('/consumables', d),
     delete:    (id)     => del(`/consumables/${id}`),
-    adjust:    (id, delta, comment) => post(`/consumables/${id}/adjust`, { delta, comment }),
+    adjust:    (id, delta, comment, refType) => post(`/consumables/${id}/adjust`, { delta, comment, ref_type: refType }),
     recordUsage:(id, d) => post(`/consumables/${id}/usage`, d),
     usageHistory:(p)    => get('/consumables/usage', p),
   };

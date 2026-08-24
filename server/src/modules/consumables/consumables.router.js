@@ -62,6 +62,7 @@ router.post('/:id/adjust', requireRole('tenant_admin', 'supervisor'), async (req
       delta: Number(req.body.delta),
       userId: req.user.id,
       comment: req.body.comment || null,
+      refType: req.body.ref_type === 'receiving' ? 'receiving' : 'adjustment',
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
@@ -93,6 +94,7 @@ router.get('/usage', requireRole('tenant_admin', 'supervisor', 'packer', 'shippe
       tenantId: req.user.tenantId,
       clientId,
       consumableId: req.query.consumable_id ? Number(req.query.consumable_id) : null,
+      refType: req.query.ref_type || null,
       dateFrom: req.query.date_from || null,
       dateTo: req.query.date_to || null,
       limit: Number(req.query.limit) || 200,

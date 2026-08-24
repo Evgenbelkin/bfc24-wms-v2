@@ -79,8 +79,14 @@ async function deactivateConsumable({ tenantId, id }) {
   return r.rows[0];
 }
 
-/** Ручная корректировка остатка (приход/инвентаризация), без начисления клиенту */
-async function adjustStock({ tenantId, consumableId, delta, userId, comment }) {
+/** Ручная корректировка остатка (приход/инвентаризация), без начисления клиенту.
+ *  refType='receiving' - для отдельной вкладки "Приёмка" в consumables.html
+ *  (раньше единственный способ увеличить остаток был "+/-" в карточке
+ *  расходника, всегда логировался как ref_type='adjustment' - нельзя было
+ *  отличить "приняли новую партию" от "поправили ошибку остатка", и не было
+ *  отдельного списка "что и когда приняли", о чём и попросили). По умолчанию
+ *  остаётся 'adjustment', чтобы не менять поведение существующих вызовов. */
+async function adjustStock({ tenantId, consumableId, delta, userId, comment, refType = 'adjustment' }) {
   return transaction(async (client) => {
     const cRes = await client.query(
       `SELECT id, qty_on_hand FROM wms.consumables WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
@@ -96,8 +102,8 @@ async function adjustStock({ tenantId, consumableId, delta, userId, comment }) {
     await client.query(
       `INSERT INTO wms.consumable_usage
          (tenant_id, consumable_id, qty, ref_type, user_id, comment)
-       VALUES ($1,$2,$3,'adjustment',$4,$5)`,
-      [tenantId, consumableId, -Number(delta), userId || null, comment || null]
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [tenantId, consumableId, -Number(delta), refType === 'receiving' ? 'receiving' : 'adjustment', userId || null, comment || null]
     );
     return { consumableId, qty_on_hand: newQty };
   });
@@ -169,12 +175,13 @@ async function recordUsage({ tenantId, consumableId, clientId, warehouseId, qty,
   return transaction(exec);
 }
 
-async function listUsageHistory({ tenantId, clientId = null, consumableId = null, dateFrom = null, dateTo = null, limit = 200, offset = 0 }) {
+async function listUsageHistory({ tenantId, clientId = null, consumableId = null, refType = null, dateFrom = null, dateTo = null, limit = 200, offset = 0 }) {
   const params = [tenantId];
   const conds = ['u.tenant_id=$1'];
   let idx = 2;
   if (clientId)     { conds.push(`u.client_id=$${idx++}`);     params.push(clientId); }
   if (consumableId) { conds.push(`u.consumable_id=$${idx++}`); params.push(consumableId); }
+  if (refType)      { conds.push(`u.ref_type=$${idx++}`);      params.push(refType); }
   if (dateFrom) { conds.push(`u.created_at>=$${idx++}::date`); params.push(dateFrom); }
   if (dateTo)   { conds.push(`u.created_at<($${idx++}::date+interval '1 day')`); params.push(dateTo); }
 
