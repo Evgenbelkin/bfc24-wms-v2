@@ -299,15 +299,27 @@
       try {
         const res = await window.API.consumables.usageHistory({ limit: 200 });
         const rows = res.rows || [];
-        document.getElementById('u-body').innerHTML = rows.length ? rows.map(r => `
+        // qty в БД: положительное = списание, отрицательное = приход/корректировка
+        // (см. комментарий в consumable_usage). Эта таблица показывает ОБА вида
+        // (приёмки через вкладку "Приёмка" тоже сюда попадают, т.к. это общая
+        // история движений) - раньше отрицательное число выводилось как есть
+        // ("-1000.000 шт"), выглядело как ошибка. Теперь явно подписываем
+        // направление и убираем лишние .000.
+        document.getElementById('u-body').innerHTML = rows.length ? rows.map(r => {
+          const q = Number(r.qty);
+          const isIncoming = q < 0;
+          const qtyHtml = isIncoming
+            ? `<span style="color:var(--green);">+${fmtQty(Math.abs(q))} ${UI.escHtml(r.unit)} (приход)</span>`
+            : `${fmtQty(q)} ${UI.escHtml(r.unit)}`;
+          return `
           <tr>
             <td>${new Date(r.created_at).toLocaleString('ru-RU')}</td>
             <td>${UI.escHtml(r.consumable_name)}</td>
-            <td>${r.qty} ${UI.escHtml(r.unit)}</td>
+            <td>${qtyHtml}</td>
             <td>${r.client_name ? UI.escHtml(r.client_name) : '—'}</td>
             <td>${r.user_name ? UI.escHtml(r.user_name) : '—'}</td>
           </tr>
-        `).join('') : `<tr><td colspan="5">Списаний нет</td></tr>`;
+        `; }).join('') : `<tr><td colspan="5">Списаний нет</td></tr>`;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); }
       }
