@@ -228,7 +228,31 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
       if (c.location_code) { resolvedById.set(c.id, { code: c.location_code, id: null }); return; }
       if (!c.item_id) { resolvedById.set(c.id, { code: null, id: null }); return; }
       const pinned = c.wave_id ? pinnedMap.get(`${c.wave_id}:${c.item_id}`) : null;
-      if (pinned) { resolvedById.set(c.id, { code: pinned, id: null }); return; }
+      if (pinned) {
+        // РЕГРЕССИЯ (найдено по жалобе "сборка гонит в пустую ячейку"): после
+        // перехода findBestPickLocation на примерный FIFO (сначала самая давно
+        // нетронутая ячейка) она стала осознанно выбирать ячейки с МАЛЫМ
+        // остатком (старый товар обычно почти распродан именно там - см.
+        // комментарий в locations.service.js). Раньше сортировка "сначала
+        // наибольший остаток" случайно гарантировала, что запиненная на первую
+        // задачу ячейка хватит и на остальные заказы этой волны по тому же
+        // товару. Теперь это НЕ гарантировано: 2-й, 3-й... заказ волны на тот
+        // же товар слепо переиспользовал pinned-ячейку, даже если её уже
+        // выбрали в ноль предыдущими сборщиками этой же волны - сборщика
+        // отправляло в ячейку, где по системе тоже пусто. Проверяем остаток
+        // ПРЯМО ПЕРЕД тем, как довериться пину; если он кончился - падаем в
+        // обычный подбор лучшей ячейки ниже (FIFO сам возьмёт следующую по
+        // старшинству, у которой остаток ещё есть).
+        const pinnedStockRes = await query(
+          `SELECT sb.qty_available FROM wms.stock_balances sb
+           JOIN wms.locations l ON l.id = sb.location_id
+           WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.item_id=$3 AND sb.client_id=$4
+             AND UPPER(l.location_code)=UPPER($5)`,
+          [tenantId, c.warehouse_id, c.item_id, c.client_id, pinned]
+        );
+        const pinnedHasStock = pinnedStockRes.rowCount > 0 && Number(pinnedStockRes.rows[0].qty_available) > 0;
+        if (pinnedHasStock) { resolvedById.set(c.id, { code: pinned, id: null }); return; }
+      }
       const best = await findBestPickLocation({
         tenantId, warehouseId: c.warehouse_id, itemId: c.item_id, clientId: c.client_id,
       });
