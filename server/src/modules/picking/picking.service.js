@@ -842,9 +842,18 @@ async function requeueSkippedTask({ tenantId, taskId, actorId }) {
       }
     }
 
+    // location_code/location_id ОБЯЗАТЕЛЬНО в NULL, а не просто status='new':
+    // при взятии задания кандидат с уже проставленной ячейкой переиспользуется
+    // as-is, БЕЗ повторного подбора (см. resolvedById в claimNextTask — если
+    // c.location_code уже есть, findBestPickLocation вообще не вызывается).
+    // Если оставить старую ячейку, сборщика после карантина/инвентаризации
+    // снова отправит в ту же (уже пустую) ячейку — тот же пропуск по кругу.
+    // С NULL — при следующем взятии ячейка подбирается заново (findBestPickLocation
+    // уже сам исключает и карантин, и обнулившиеся остатки).
     await client.query(
       `UPDATE wms.picking_tasks
        SET status='new', qty_picked=0, scan_step='await_location',
+           location_code=NULL, location_id=NULL,
            reason=NULL, comment=NULL, started_at=NULL, finished_at=NULL,
            updated_at=NOW(), updated_by=$1
        WHERE id=$2`,
