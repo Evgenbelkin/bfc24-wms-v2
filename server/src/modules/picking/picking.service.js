@@ -9,7 +9,10 @@ const { validateBarcode, validateQty, validatePositiveInt, isValidKizCode } = re
 const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
+const { triggerRedistributionForClient } = require('../wb/wb.service');
 const logger = require('../../utils/logger');
+
+const QUARANTINE_LOCATION_CODE = 'КАРАНТИН';
 
 // =============================================================================
 // Picking Service — Waves + Tasks + Scan flows
@@ -594,28 +597,123 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       [reason||'not_found', comment||null, taskId]
     );
 
-    // Создаём inventory task если есть ячейка
+    // Создаём inventory task если есть ячейка.
+    //
+    // Карантин (шаг 2): если по системе в этой ячейке числится товар, которого
+    // сборщик не нашёл, — считаем остаток "подозрительным" (фантомным) и сразу
+    // физически переносим его ВЕСЬ (весь qty_on_hand по этой ячейке+товару) в
+    // виртуальную карантинную ячейку склада (location_type='quarantine',
+    // is_pick_location=FALSE). Благодаря этому флагу карантинный остаток
+    // автоматически перестаёт быть доступным и для сборки (findBestPickLocation
+    // фильтрует is_pick_location=TRUE), и для выгрузки в WB (та же фильтрация
+    // в wb.service.js) — без единой правки в этих местах.
+    //
+    // Задачу инвентаризации создаём/обновляем НЕ на исходной ячейке (там после
+    // переноса физически и по системе уже 0 — считать там больше нечего), а на
+    // самой карантинной ячейке: qty_system = то, что реально там лежит. Так
+    // пересчёт остаётся содержательным — подтвердили "нашли" (факт=система,
+    // расхождения нет, дальше вручную перемещают из карантина обратно обычным
+    // перемещением) или подтвердили "не нашли" (факт=0, излишек списывается
+    // по инвентаризации прямо с карантинной ячейки).
     let inventoryTaskId = null;
+    let quarantined = false;
     if (task.barcode && task.location_code) {
-      const existing = await client.query(
-        `SELECT id FROM wms.inventory_tasks
-         WHERE tenant_id=$1 AND barcode=$2 AND location_code=$3 AND status IN ('open','in_progress') LIMIT 1`,
-        [tenantId, task.barcode, task.location_code]
-      );
-      if (existing.rowCount === 0) {
-        const inv = await client.query(
-          `INSERT INTO wms.inventory_tasks
-             (tenant_id,warehouse_id,client_id,item_id,barcode,location_code,location_id,
-              status,priority,reason,comment,created_by)
-           VALUES($1,$2,$3,$4,$5,$6,$7,'open',1,'picker_not_found',$8,$9)
-           RETURNING id`,
-          [tenantId, task.warehouse_id, task.client_id, task.item_id,
-           task.barcode, task.location_code, task.location_id,
-           comment||'Picker не нашёл товар', pickerId]
+      let movedQty = 0;
+
+      if (task.item_id && task.location_id) {
+        const balRes = await client.query(
+          `SELECT qty_on_hand FROM wms.stock_balances
+           WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
+           FOR UPDATE`,
+          [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id]
         );
-        inventoryTaskId = inv.rows[0].id;
-      } else {
-        inventoryTaskId = existing.rows[0].id;
+        const qtyAtOrigin = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_on_hand) : 0;
+
+        if (qtyAtOrigin > 0) {
+          const quarantineLoc = await getOrCreateQuarantineLocation(client, tenantId, task.warehouse_id, pickerId);
+
+          await client.query(
+            `INSERT INTO wms.stock_movements
+               (tenant_id,warehouse_id,client_id,item_id,barcode,movement_type,qty,
+                from_location_id,from_location_code,to_location_id,to_location_code,
+                ref_type,ref_id,user_id,comment)
+             VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'picking_task',$11,$12,$13)`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, -qtyAtOrigin,
+             task.location_id, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
+             taskId, pickerId, 'Карантин: сборщик не нашёл товар']
+          );
+          await client.query(
+            `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id, task.barcode, -qtyAtOrigin, null]
+          );
+          await client.query(
+            `INSERT INTO wms.stock_movements
+               (tenant_id,warehouse_id,client_id,item_id,barcode,movement_type,qty,
+                from_location_id,from_location_code,to_location_id,to_location_code,
+                ref_type,ref_id,user_id,comment)
+             VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'picking_task',$11,$12,$13)`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, qtyAtOrigin,
+             task.location_id, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
+             taskId, pickerId, 'Карантин: сборщик не нашёл товар']
+          );
+          const quarBal = await client.query(
+            `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, quarantineLoc.id, task.barcode, qtyAtOrigin, null]
+          );
+          movedQty = Number(quarBal.rows[0].qty_on_hand);
+          quarantined = true;
+
+          const existingQuar = await client.query(
+            `SELECT id FROM wms.inventory_tasks
+             WHERE tenant_id=$1 AND item_id=$2 AND location_id=$3 AND status IN ('open','in_progress') LIMIT 1`,
+            [tenantId, task.item_id, quarantineLoc.id]
+          );
+          if (existingQuar.rowCount === 0) {
+            const inv = await client.query(
+              `INSERT INTO wms.inventory_tasks
+                 (tenant_id,warehouse_id,client_id,item_id,barcode,location_code,location_id,
+                  qty_system,status,priority,reason,comment,created_by)
+               VALUES($1,$2,$3,$4,$5,$6,$7,$8,'open',1,'picker_not_found',$9,$10)
+               RETURNING id`,
+              [tenantId, task.warehouse_id, task.client_id, task.item_id,
+               task.barcode, quarantineLoc.location_code, quarantineLoc.id, movedQty,
+               `${comment || 'Picker не нашёл товар'} (исходная ячейка: ${task.location_code})`, pickerId]
+            );
+            inventoryTaskId = inv.rows[0].id;
+          } else {
+            inventoryTaskId = existingQuar.rows[0].id;
+            await client.query(
+              `UPDATE wms.inventory_tasks SET qty_system=$1, updated_at=NOW() WHERE id=$2`,
+              [movedQty, inventoryTaskId]
+            );
+          }
+        }
+      }
+
+      // Фолбэк: нечего было переносить (нет привязки к товару в системе, или
+      // остаток по этой ячейке уже 0) — оставляем старое поведение как
+      // подстраховку на случай "штрихкод в системе вообще не значится тут".
+      if (!inventoryTaskId) {
+        const existing = await client.query(
+          `SELECT id FROM wms.inventory_tasks
+           WHERE tenant_id=$1 AND barcode=$2 AND location_code=$3 AND status IN ('open','in_progress') LIMIT 1`,
+          [tenantId, task.barcode, task.location_code]
+        );
+        if (existing.rowCount === 0) {
+          const inv = await client.query(
+            `INSERT INTO wms.inventory_tasks
+               (tenant_id,warehouse_id,client_id,item_id,barcode,location_code,location_id,
+                status,priority,reason,comment,created_by)
+             VALUES($1,$2,$3,$4,$5,$6,$7,'open',1,'picker_not_found',$8,$9)
+             RETURNING id`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id,
+             task.barcode, task.location_code, task.location_id,
+             comment||'Picker не нашёл товар', pickerId]
+          );
+          inventoryTaskId = inv.rows[0].id;
+        } else {
+          inventoryTaskId = existing.rows[0].id;
+        }
       }
     }
 
@@ -634,8 +732,46 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
     }
 
-    return { ok: true, taskId, inventoryTaskId };
+    return { ok: true, taskId, inventoryTaskId, quarantined, clientId: task.client_id, barcode: task.barcode };
   });
+
+  // Перенос в карантин меняет qty_available в ячейках отбора (было в обычной
+  // ячейке — стало в карантинной, is_pick_location=FALSE) — так же, как и
+  // обычное перемещение (см. moveItem в movement.service.js), нужно сразу
+  // пересчитать остаток, отдаваемый в WB, а не ждать следующего цикла синка.
+  if (result.quarantined && result.barcode) {
+    logger.info({ tenantId, barcode: result.barcode }, 'Skip→quarantine triggered WB redistribution');
+    triggerRedistributionForClient({ tenantId, clientId: result.clientId, barcodes: [result.barcode] });
+  }
+
+  return { ok: true, taskId: result.taskId, inventoryTaskId: result.inventoryTaskId };
+}
+
+/**
+ * Get-or-create виртуальной ячейки "КАРАНТИН" на складе — используется при
+ * пропуске сборщика (skipTask), чтобы физически изолировать фантомный
+ * остаток. is_pick_location=FALSE — этого одного флага достаточно, чтобы
+ * ячейка автоматически перестала участвовать и в подборе (findBestPickLocation),
+ * и в остатке, отдаваемом в WB (wb.service.js), без отдельных правок там.
+ * location_type='quarantine' уже существует в wms.location_type (миграция 003).
+ */
+async function getOrCreateQuarantineLocation(client, tenantId, warehouseId, userId) {
+  const existing = await client.query(
+    `SELECT id, location_code FROM wms.locations
+     WHERE tenant_id=$1 AND warehouse_id=$2 AND location_code=$3 LIMIT 1`,
+    [tenantId, warehouseId, QUARANTINE_LOCATION_CODE]
+  );
+  if (existing.rowCount > 0) return existing.rows[0];
+
+  const created = await client.query(
+    `INSERT INTO wms.locations
+       (tenant_id, warehouse_id, location_code, description, location_type, is_active, is_pick_location, created_by)
+     VALUES ($1,$2,$3,'Карантин: спорные остатки после пропуска сборки','quarantine',TRUE,FALSE,$4)
+     ON CONFLICT (tenant_id, warehouse_id, location_code) DO UPDATE SET location_code=EXCLUDED.location_code
+     RETURNING id, location_code`,
+    [tenantId, warehouseId, QUARANTINE_LOCATION_CODE, userId]
+  );
+  return created.rows[0];
 }
 
 /**
