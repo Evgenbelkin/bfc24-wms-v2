@@ -620,7 +620,17 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
     if (task.barcode && task.location_code) {
       let movedQty = 0;
 
-      if (task.item_id && task.location_id) {
+      // wms.picking_tasks.location_id НИКОГДА не заполняется (ни при создании
+      // волны, ни при взятии задания — везде пишется только текстовый
+      // location_code, id резолвится ad-hoc где нужен) — поэтому task.location_id
+      // всегда NULL, и проверка на него ниже раньше всегда проваливалась в
+      // фолбэк, даже когда остаток на ячейке реально был. Резолвим id сами.
+      const origLoc = task.item_id
+        ? await getLocationByCode({ tenantId, warehouseId: task.warehouse_id, locationCode: task.location_code }).catch(() => null)
+        : null;
+      const origLocId = origLoc?.id || null;
+
+      if (task.item_id && origLocId) {
         // qty_available (= qty_on_hand - qty_reserved) — а не весь qty_on_hand.
         // Часть остатка в этой же ячейке может быть уже зарезервирована под
         // ДРУГОЕ сборочное задание (другая волна, тот же товар) — её трогать
@@ -632,7 +642,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
           `SELECT qty_on_hand, qty_available FROM wms.stock_balances
            WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
            FOR UPDATE`,
-          [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id]
+          [tenantId, task.warehouse_id, task.client_id, task.item_id, origLocId]
         );
         const qtyFree = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_available) : 0;
 
@@ -646,12 +656,12 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
                 ref_type,ref_id,user_id,comment)
              VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'picking_task',$11,$12,$13)`,
             [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, -qtyFree,
-             task.location_id, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
+             origLocId, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
              taskId, pickerId, 'Карантин: сборщик не нашёл товар']
           );
           await client.query(
             `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id, task.barcode, -qtyFree, null]
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, origLocId, task.barcode, -qtyFree, null]
           );
           await client.query(
             `INSERT INTO wms.stock_movements
@@ -660,7 +670,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
                 ref_type,ref_id,user_id,comment)
              VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'picking_task',$11,$12,$13)`,
             [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, qtyFree,
-             task.location_id, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
+             origLocId, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
              taskId, pickerId, 'Карантин: сборщик не нашёл товар']
           );
           const quarBal = await client.query(
@@ -708,11 +718,11 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       // не удаляет товар из ячейки").
       if (!inventoryTaskId) {
         let fallbackQtySystem = null;
-        if (task.item_id && task.location_id) {
+        if (task.item_id && origLocId) {
           const balRes2 = await client.query(
             `SELECT qty_on_hand FROM wms.stock_balances
              WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id]
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, origLocId]
           );
           fallbackQtySystem = balRes2.rowCount > 0 ? Number(balRes2.rows[0].qty_on_hand) : 0;
         }
@@ -729,7 +739,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
              VALUES($1,$2,$3,$4,$5,$6,$7,$8,'open',1,'picker_not_found',$9,$10)
              RETURNING id`,
             [tenantId, task.warehouse_id, task.client_id, task.item_id,
-             task.barcode, task.location_code, task.location_id, fallbackQtySystem,
+             task.barcode, task.location_code, origLocId, fallbackQtySystem,
              comment||'Picker не нашёл товар', pickerId]
           );
           inventoryTaskId = inv.rows[0].id;
