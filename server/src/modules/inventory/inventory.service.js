@@ -360,16 +360,23 @@ async function submitCount({ tenantId, taskId, qtyActual, userId, comment }) {
         );
       } else {
         // Расход (delta < 0)
-        // Проверяем доступный остаток
+        // Клэмп по qty_available (= qty_on_hand - qty_reserved), А НЕ по
+        // голому qty_on_hand: часть остатка в этой ячейке может быть прямо
+        // сейчас зарезервирована под активное задание сборки (например —
+        // тот же самый пропущенный и заново взятый в работу товар). Если
+        // списать больше свободного, qty_on_hand уйдёт ниже qty_reserved и
+        // упадёт constraint balance_reserved_le_on_hand ("An unexpected error
+        // occurred" на экране) — см. тот же приём в перемещении в карантин
+        // (picking.service.js/skipTask).
         const balRes = await client.query(
-          `SELECT qty_on_hand FROM wms.stock_balances
+          `SELECT qty_on_hand, qty_available FROM wms.stock_balances
            WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
            FOR UPDATE`,
           [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id]
         );
-        const currentQty = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_on_hand) : 0;
-        // Если списываем больше чем есть — списываем сколько есть
-        const safeAbsDelta = Math.min(Math.abs(delta), currentQty);
+        const currentAvail = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_available) : 0;
+        // Если списываем больше чем реально свободно — списываем сколько свободно
+        const safeAbsDelta = Math.min(Math.abs(delta), Math.max(currentAvail, 0));
 
         if (safeAbsDelta > 0) {
           await client.query(
