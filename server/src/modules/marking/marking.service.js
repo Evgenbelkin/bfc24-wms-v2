@@ -283,6 +283,7 @@ async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient 
  */
 async function consumeScannedCodeAtPacking({
   tenantId, itemId, code, wbOrderId, apiToken, refType, refId, userId, dbClient = null,
+  skipWbSubmit = false,
 }) {
   const doConsume = async (client) => {
     const codeStr = String(code || '').trim();
@@ -307,6 +308,29 @@ async function consumeScannedCodeAtPacking({
     if (row.status !== 'available') {
       throw new ValidationError(`Код "Честный знак" (${codeStr}) уже использован — повторно применить нельзя.`);
     }
+
+    // skipWbSubmit — рубильник клиента (settings.marking_wb_submit_disabled,
+    // см. clients.service.js). Физическая привязка "этот код ушёл в этот
+    // заказ" сохраняется ВСЕГДА (см. UPDATE ниже) - это нужно для трассировки
+    // и для выгрузки по поставке. В WB API код в этом случае не шлём вообще:
+    // право собственности на код в Честном знаке ещё не передано на нужное
+    // ИП (см. миграцию 044), а WB проверяет код при отправке от секунд до
+    // нескольких минут - отправка здесь могла бы не пройти проверку.
+    if (skipWbSubmit) {
+      await client.query(
+        `UPDATE wms.marking_codes
+         SET status='used', used_at=NOW(), used_ref_type=$1, used_ref_id=$2, used_by=$3,
+             wb_order_id=$4, wb_submit_status='export_only'
+         WHERE id=$5`,
+        [refType, refId, userId, wbOrderId || null, row.id]
+      );
+      const remainingRes = await client.query(
+        `SELECT COUNT(*)::int AS n FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND status='available'`,
+        [tenantId, itemId]
+      );
+      return { code: codeStr, wb_submitted: false, export_only: true, remaining: remainingRes.rows[0].n };
+    }
+
     if (!wbOrderId) {
       throw new ValidationError(
         `Не найден номер заказа WB для этой единицы — невозможно привязать код маркировки к заказу.`
@@ -521,9 +545,43 @@ async function allocateAndPrint({
   return dbClient ? doAllocateAndPrint(dbClient) : transaction(doAllocateAndPrint);
 }
 
+/**
+ * Выгрузка кодов "Честный знак", ушедших в конкретную поставку WB (одна
+ * поставка = один склад WB, см. wms.shipments.external_id = wb_supply_id) —
+ * для клиентов с рубильником marking_wb_submit_disabled (см. clients.service.js
+ * и consumeScannedCodeAtPacking выше): код упакован и привязан к заказу, но
+ * НЕ отправлен в WB — клиент сам заводит эти пары штрихкод/код в Тотал Марк
+ * (или в Честный знак напрямую), передаёт право собственности на нужное ИП,
+ * и дальше сам решает, довносить ли код в кабинет WB вручную.
+ *
+ * Возвращает ВСЕ коды по поставке (не только export_only) - так на выгрузке
+ * видно целиком, что реально ушло в эту поставку, а не только "недостающую"
+ * часть; wb_submit_status в каждой строке показывает, что уже отправлено в WB
+ * автоматически, а что ждёт ручной обработки.
+ */
+async function listCodesForShipment({ tenantId, shipmentExternalId }) {
+  const shipRes = await query(
+    `SELECT id, external_id, client_id FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 ORDER BY id DESC LIMIT 1`,
+    [tenantId, shipmentExternalId]
+  );
+  if (shipRes.rowCount === 0) throw new ValidationError(`Поставка '${shipmentExternalId}' не найдена`);
+  const shipment = shipRes.rows[0];
+
+  const r = await query(
+    `SELECT mc.code, mc.wb_submit_status, mc.used_at,
+            i.barcode, i.item_name, i.vendor_code, i.size
+     FROM wms.marking_codes mc
+     JOIN wms.items i ON i.id = mc.item_id
+     WHERE mc.tenant_id=$1 AND mc.used_ref_type='packing' AND mc.used_ref_id=$2
+     ORDER BY i.item_name, mc.used_at`,
+    [tenantId, shipment.id]
+  );
+  return { shipment, rows: r.rows };
+}
+
 module.exports = {
   parseCodesText, importCodes, importCodesFromExcel, getCodesSummary, listCodes, deleteCode,
   shouldMarkAt, allocateAndPrint,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
-  listPendingManualOverrides,
+  listPendingManualOverrides, listCodesForShipment,
 };

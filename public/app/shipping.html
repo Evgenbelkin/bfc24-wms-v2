@@ -114,6 +114,17 @@
       </div>
     </div>
 
+    <!-- Выгрузка кодов "Честный знак" по этой поставке — для клиентов, у
+         которых на упаковке отправка кода в WB выключена (рубильник
+         settings.marking_wb_submit_disabled в карточке клиента, см.
+         clients.html). Кнопка полезна и для остальных клиентов — просто
+         покажет "нет кодов", если у поставки нет промаркированных товаров. -->
+    <div class="card">
+      <div class="card-title">Честный знак</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Штрихкоды и коды маркировки, которые ушли в эту поставку при упаковке — для передачи в Тотал Марк/Честный знак (если у клиента выключена автоотправка кода в WB).</div>
+      <button type="button" class="btn-sm btn-back" onclick="exportMarkingCodes()"><svg class="i" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Выгрузить кизы</button>
+    </div>
+
     <div class="card">
       <div class="card-title">Состав</div>
       <div class="table-wrap">
@@ -407,6 +418,45 @@
           <img src="data:image/svg+xml;base64,${b64}" style="max-width:90vw;max-height:90vh;" onload="window.print()"/>
         </body>`);
       w.document.close();
+    }
+
+    async function exportMarkingCodes() {
+      if (!currentShipment) return;
+      try {
+        const res = await window.API.marking.exportForShipment(currentShipment.external_id);
+        const rows = res.rows || [];
+        if (!rows.length) { UI.notify.warn('По этой поставке нет кодов "Честный знак"'); return; }
+        const statusLabel = { sent: 'отправлен в WB', export_only: 'ожидает передачи', manual_override: 'проведён без отправки' };
+        const headers = ['Штрихкод','Код маркировки','Товар','Артикул','Размер','Статус','Когда упаковано'];
+        const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+        const lines = [headers.map(escCsv).join(';')];
+        for (const r of rows) {
+          lines.push([
+            r.barcode || '',
+            r.code || '',
+            r.item_name || '',
+            r.vendor_code || '',
+            (String(r.size ?? '').trim() === '0') ? '' : (r.size || ''),
+            statusLabel[r.wb_submit_status] || r.wb_submit_status || '',
+            r.used_at ? UI.fmtDateTime(r.used_at) : '',
+          ].map(escCsv).join(';'));
+        }
+        // ВАЖНО: код маркировки может содержать служебный байт-разделитель GS1
+        // (0x1D, невидимый) внутри строки — это часть самого кода, не наша
+        // ошибка форматирования. CSV его не трогает при простом скачивании,
+        // но если файл потом открыть и пересохранить в самом Excel, разделитель
+        // может потеряться — при первом использовании стоит проверить, что
+        // код после импорта в Тотал Марк/Честный знак прошёл целиком.
+        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Кизы_${currentShipment.external_id}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) { UI.notify.err(e.message); }
     }
 
     function backToList() {

@@ -380,12 +380,25 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
             dbClient: client,
           });
         } else {
+          // Рубильник клиента (settings.marking_wb_submit_disabled, см.
+          // clients.service.js и миграцию 044) — для клиентов, у которых
+          // право собственности на код в Честном знаке ещё не передано на
+          // нужное ИП в момент упаковки (например, production-компания с
+          // несколькими ИП на WB). Код всё равно обязательно сканируется и
+          // привязывается к заказу, просто не летит в WB API прямо сейчас.
+          const clientSettingsRes = await client.query(
+            `SELECT COALESCE((settings->>'marking_wb_submit_disabled')::boolean, false) AS skip_wb
+             FROM wms.clients WHERE id=$1 AND tenant_id=$2`,
+            [shipment.client_id, tenantId]
+          );
+          const skipWbSubmit = clientSettingsRes.rows[0]?.skip_wb || false;
+
           markingJob = await marking.consumeScannedCodeAtPacking({
             tenantId, itemId, code: dataMatrixCode,
             wbOrderId: wbOrderRow ? wbOrderRow.wb_order_id : null,
             apiToken: wbOrderRow ? wbOrderRow.api_token : null,
             refType: 'packing', refId: shipment.id, userId: packerId,
-            dbClient: client,
+            dbClient: client, skipWbSubmit,
           });
         }
       } else {

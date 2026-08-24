@@ -162,6 +162,21 @@ router.delete('/items/:itemId/codes/:codeId', requireRole('tenant_admin', 'super
   } catch (e) { next(e); }
 });
 
+/** GET /marking/export?shipment_code=WB-GI-... — коды "Честный знак", ушедшие
+ *  в конкретную поставку (для клиентов с рубильником marking_wb_submit_disabled,
+ *  см. clients.service.js/миграцию 044) — выгрузка штрихкод+код для передачи
+ *  в Тотал Марк/Честный знак. Роль как у остальных операций упаковки/отгрузки,
+ *  не только у tenant_admin/supervisor — экспорт может понадобиться прямо на
+ *  месте у сотрудника отгрузки. */
+router.get('/export', requireRole('tenant_admin', 'supervisor', 'shipper', 'packer'), async (req, res, next) => {
+  try {
+    const shipmentCode = String(req.query.shipment_code || '').trim();
+    if (!shipmentCode) throw new ValidationError('shipment_code is required');
+    const result = await svc.listCodesForShipment({ tenantId: req.user.tenantId, shipmentExternalId: shipmentCode });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** GET /marking/pending-manual-overrides — коды, проведённые без отправки в WB (требуют ручной привязки) */
 router.get('/pending-manual-overrides', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {

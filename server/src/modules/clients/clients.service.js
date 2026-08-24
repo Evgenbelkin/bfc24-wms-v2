@@ -116,6 +116,16 @@ async function updateClient({ tenantId, clientId, data }) {
     params.push(parseBool(data.is_active));
   }
 
+  // Рубильник "не отправлять код Честного знака в WB на упаковке" (settings
+  // JSONB, тот же приём, что и stock_sync_disabled у mp_accounts) — для
+  // клиентов, которым нужно сначала передать право собственности на код в
+  // Честном знаке на нужное ИП (например, через Тотал Марк) ПОСЛЕ упаковки,
+  // а не отправлять его в WB сразу при скане (см. marking.consumeScannedCodeAtPacking).
+  if (data.marking_wb_submit_disabled !== undefined) {
+    fields.push(`settings = COALESCE(settings,'{}'::jsonb) || jsonb_build_object('marking_wb_submit_disabled', $${idx++}::boolean)`);
+    params.push(parseBool(data.marking_wb_submit_disabled));
+  }
+
   if (fields.length === 0) throw new ValidationError('No fields to update');
 
   fields.push(`updated_at = NOW()`);
@@ -124,7 +134,7 @@ async function updateClient({ tenantId, clientId, data }) {
   const res = await query(
     `UPDATE wms.clients SET ${fields.join(', ')}
      WHERE id = $${idx++} AND tenant_id = $${idx}
-     RETURNING id, client_code, client_name, is_active, updated_at`,
+     RETURNING id, client_code, client_name, is_active, settings, updated_at`,
     params
   );
   return res.rows[0];

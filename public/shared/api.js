@@ -203,6 +203,7 @@
     updateSettings:(itemId, d)    => patch(`/marking/items/${itemId}/settings`, d),
     bulkUpdateSettings: (itemIds, d) => patch('/marking/items/bulk-settings', { item_ids: itemIds, ...d }),
     pendingOverrides: (p)          => get('/marking/pending-manual-overrides', p),
+    exportForShipment: (shipmentCode) => get('/marking/export', { shipment_code: shipmentCode }),
   };
 
   // ─────────────── Locations ───────────────

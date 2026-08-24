@@ -102,6 +102,18 @@
             <div class="field"><label>Юр. адрес</label><input id="m-legal-address" value="${full && full.legal_address ? UI.escHtml(full.legal_address):''}"/></div>
             <div class="field"><label>Заметки</label><textarea id="m-notes" rows="3">${full && full.notes ? UI.escHtml(full.notes):''}</textarea></div>
             <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!full || full.is_active ? 'checked':''}/></div>
+            ${full ? `
+            <div class="field">
+              <label style="display:inline;">Отправлять коды "Честный знак" в WB сразу на упаковке</label>
+              <input type="checkbox" id="m-marking-wb-submit" ${full.settings && full.settings.marking_wb_submit_disabled ? '' : 'checked'}/>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+                Если выключить — на упаковке код всё равно обязательно сканируется (для привязки единицы к заказу),
+                но в WB не отправляется. Для клиентов, которым сначала нужно передать право собственности на код
+                в "Честном знаке" на нужное ИП (например, через Тотал Марк) — коды берутся из выгрузки по поставке
+                (кнопка "Выгрузить кизы" в карточке поставки на отгрузке).
+              </div>
+            </div>
+            ` : ''}
             <div class="btn-row">
               ${canEdit ? `<button class="btn-big btn-green" onclick="saveClient(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
               <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
@@ -127,6 +139,8 @@
         notes: UI.val('#m-notes'),
         is_active: document.getElementById('m-active').checked,
       };
+      const markingCb = document.getElementById('m-marking-wb-submit');
+      if (markingCb) data.marking_wb_submit_disabled = !markingCb.checked;
       try {
         if (c) {
           await window.API.clients.update(c.id, data);
