@@ -243,11 +243,21 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
         // ПРЯМО ПЕРЕД тем, как довериться пину; если он кончился - падаем в
         // обычный подбор лучшей ячейки ниже (FIFO сам возьмёт следующую по
         // старшинству, у которой остаток ещё есть).
+        // Заодно та же проверка "карантина" (см. findBestPickLocation в
+        // locations.service.js) - если по этой ячейке+товару уже открыта
+        // задача инвентаризации из-за "не найден" (пусть и по другой задаче
+        // этой же волны), пин на неё доверять нельзя, даже если сам остаток
+        // формально ещё не обнулился.
         const pinnedStockRes = await query(
           `SELECT sb.qty_available FROM wms.stock_balances sb
            JOIN wms.locations l ON l.id = sb.location_id
            WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.item_id=$3 AND sb.client_id=$4
-             AND UPPER(l.location_code)=UPPER($5)`,
+             AND UPPER(l.location_code)=UPPER($5)
+             AND NOT EXISTS (
+               SELECT 1 FROM wms.inventory_tasks it
+               WHERE it.tenant_id=sb.tenant_id AND it.item_id=sb.item_id AND it.location_id=l.id
+                 AND it.status IN ('open','in_progress') AND it.reason='picker_not_found'
+             )`,
           [tenantId, c.warehouse_id, c.item_id, c.client_id, pinned]
         );
         const pinnedHasStock = pinnedStockRes.rowCount > 0 && Number(pinnedStockRes.rows[0].qty_available) > 0;

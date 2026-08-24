@@ -420,6 +420,22 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId })
        AND sb.qty_available > 0
        AND l.is_active = TRUE
        AND l.is_pick_location = TRUE
+       -- "Карантин": если сборщик уже сообщил "товар не найден" на этой ячейке
+       -- по этому товару, автоматически создаётся задача инвентаризации
+       -- (см. picking.service.js skipTask, reason='picker_not_found') с
+       -- ПРИОРИТЕТОМ 1. Пока эта задача не закрыта (товар физически не
+       -- подтверждён или остаток не обнулён) - не предлагаем эту ячейку
+       -- сборщикам повторно: без этой проверки один и тот же фантомный
+       -- остаток продолжал уходить на сборку раз за разом, пока кто-то
+       -- вручную не находил и не чинил задачу инвентаризации.
+       AND NOT EXISTS (
+         SELECT 1 FROM wms.inventory_tasks it
+         WHERE it.tenant_id = sb.tenant_id
+           AND it.item_id = sb.item_id
+           AND it.location_id = l.id
+           AND it.status IN ('open','in_progress')
+           AND it.reason = 'picker_not_found'
+       )
      ORDER BY sb.last_movement_at ASC NULLS FIRST, sb.qty_available DESC, l.location_code
      LIMIT 1`,
     [tenantId, warehouseId, itemId, clientId]
