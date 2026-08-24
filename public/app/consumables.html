@@ -110,6 +110,14 @@
       document.getElementById('content').style.display = 'none';
     }
 
+    // qty_on_hand приходит из БД как NUMERIC(14,3) (строка вида "-5.000") -
+    // без этого в остатках/списках выбора висели лишние ".000" на каждом
+    // целом количестве.
+    function fmtQty(n) {
+      const num = Number(n);
+      return num % 1 ? num.toFixed(3).replace(/0+$/,'').replace(/\.$/,'') : String(num);
+    }
+
     function switchTab(name) {
       ['stock','receiving','usage'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
@@ -210,7 +218,7 @@
         const res = await window.API.consumables.list();
         consumableCache = res.rows || [];
         const sel = document.getElementById('u-consumable');
-        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${c.qty_on_hand} ${UI.escHtml(c.unit)})</option>`).join('');
+        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${fmtQty(c.qty_on_hand)} ${UI.escHtml(c.unit)})</option>`).join('');
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); }
       }
@@ -221,7 +229,7 @@
         const res = await window.API.consumables.list();
         consumableCache = res.rows || [];
         const sel = document.getElementById('r-consumable');
-        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${c.qty_on_hand} ${UI.escHtml(c.unit)})</option>`).join('');
+        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${fmtQty(c.qty_on_hand)} ${UI.escHtml(c.unit)})</option>`).join('');
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); }
       }
