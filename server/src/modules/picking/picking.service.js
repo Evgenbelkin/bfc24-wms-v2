@@ -698,9 +698,24 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
 
       // Фолбэк: нечего было переносить (нет привязки к товару в системе, или
-      // остаток по этой ячейке уже 0) — оставляем старое поведение как
-      // подстраховку на случай "штрихкод в системе вообще не значится тут".
+      // остаток по этой ячейке уже 0/полностью зарезервирован) — оставляем
+      // старое поведение (задача на исходной ячейке) как подстраховку на
+      // случай "штрихкод в системе вообще не значится тут". qty_system всё
+      // равно заполняем реальным остатком, если item_id/location_id известны —
+      // раньше это поле оставалось NULL ("По системе: —"), и submitCount()
+      // считал расхождение как факт-0, а не факт-реальный_остаток, из-за чего
+      // ввод "0" при пересчёте ничего физически не списывал (баг: "инвентаризация
+      // не удаляет товар из ячейки").
       if (!inventoryTaskId) {
+        let fallbackQtySystem = null;
+        if (task.item_id && task.location_id) {
+          const balRes2 = await client.query(
+            `SELECT qty_on_hand FROM wms.stock_balances
+             WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id]
+          );
+          fallbackQtySystem = balRes2.rowCount > 0 ? Number(balRes2.rows[0].qty_on_hand) : 0;
+        }
         const existing = await client.query(
           `SELECT id FROM wms.inventory_tasks
            WHERE tenant_id=$1 AND barcode=$2 AND location_code=$3 AND status IN ('open','in_progress') LIMIT 1`,
@@ -710,11 +725,11 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
           const inv = await client.query(
             `INSERT INTO wms.inventory_tasks
                (tenant_id,warehouse_id,client_id,item_id,barcode,location_code,location_id,
-                status,priority,reason,comment,created_by)
-             VALUES($1,$2,$3,$4,$5,$6,$7,'open',1,'picker_not_found',$8,$9)
+                qty_system,status,priority,reason,comment,created_by)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,'open',1,'picker_not_found',$9,$10)
              RETURNING id`,
             [tenantId, task.warehouse_id, task.client_id, task.item_id,
-             task.barcode, task.location_code, task.location_id,
+             task.barcode, task.location_code, task.location_id, fallbackQtySystem,
              comment||'Picker не нашёл товар', pickerId]
           );
           inventoryTaskId = inv.rows[0].id;
