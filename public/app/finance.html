@@ -269,7 +269,7 @@
                 const row = (res.storage_series || []).find(r => r.period === p);
                 return row ? row.total : 0;
               }),
-              borderColor: PALETTE[2] || '#16a34a', backgroundColor: PALETTE[2] || '#16a34a', tension: 0.25, fill: true }],
+              borderColor: PALETTE[2] || '#16a34a', backgroundColor: PALETTE[2] || '#16a34a', tension: 0.25, fill: false }],
           },
           options: { responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
