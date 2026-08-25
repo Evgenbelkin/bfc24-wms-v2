@@ -11,7 +11,11 @@
     .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:10px;}
     .legend .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
     .fill-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;}
-    .fill-cell{border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;color:#fff;min-height:64px;display:flex;flex-direction:column;justify-content:center;}
+    .fill-cell{position:relative;border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;color:#fff;min-height:64px;display:flex;flex-direction:column;justify-content:center;}
+    .fill-cell.selected{outline:3px solid var(--yellow,#f59e0b);outline-offset:-3px;}
+    .fill-cell .sel-check{position:absolute;top:5px;right:5px;width:18px;height:18px;cursor:pointer;accent-color:var(--yellow,#f59e0b);}
+    .select-bar{position:sticky;bottom:0;left:0;right:0;background:var(--card);border-top:2px solid var(--border);padding:12px 20px;margin:12px -20px -20px;border-radius:0 0 14px 14px;display:none;align-items:center;gap:10px;flex-wrap:wrap;z-index:50;}
+    .select-bar.show{display:flex;}
     .fill-cell .code{font-size:12px;font-weight:700;word-break:break-all;}
     .fill-cell .pct{font-size:15px;font-weight:800;margin-top:2px;}
     .fill-cell .lit{font-size:10px;opacity:.9;margin-top:1px;}
@@ -38,6 +42,7 @@
     <div class="filters-row">
       <select id="f-warehouse" onchange="loadFillReport()"><option value="">Все склады</option></select>
       <select id="f-zone" onchange="renderGrid()"><option value="">Все зоны</option></select>
+      <button type="button" class="btn-sm btn-back" id="select-mode-btn" onclick="toggleSelectMode()">☑ Выбрать ячейки</button>
     </div>
     <div class="legend">
       <span><span class="dot" style="background:var(--green)"></span>занято &lt; 20% — много места</span>
@@ -63,6 +68,14 @@
   <div class="card">
     <div class="card-title">Ячейки (<span id="grid-count">0</span>)</div>
     <div id="fill-grid" class="fill-grid"></div>
+    <div id="select-bar" class="select-bar">
+      <span style="font-weight:700;">Выбрано: <span id="sel-count">0</span></span>
+      <button type="button" class="btn-sm btn-back" onclick="clearSelection()">Снять выбор</button>
+      <button type="button" class="btn-sm btn-blue" style="margin-left:auto;" onclick="createInventoryForSelected()">
+        <svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;"><path d="M12 5v14M5 12h14"/></svg>
+        Создать проверку по выбранным
+      </button>
+    </div>
   </div>
 
   <div id="modal-root"></div>
@@ -78,6 +91,63 @@
 
     let warehouses = [];
     let fillCache = [];
+
+    // ---------- Выбор ячеек галкой → пачечная инвентаризация ----------
+    // Отдельный режим, не трогающий обычное поведение клика по ячейке
+    // (открыть детали) — чтобы точно ничего не сломать для всех, кто просто
+    // смотрит заполняемость. Пока режим выключен, чекбоксы не показываются
+    // и клик по ячейке работает как раньше.
+    let selectMode = false;
+    let selectedCells = new Set();
+
+    function toggleSelectMode() {
+      selectMode = !selectMode;
+      const btn = document.getElementById('select-mode-btn');
+      btn.textContent = selectMode ? '✕ Отменить выбор' : '☑ Выбрать ячейки';
+      btn.classList.toggle('btn-blue', selectMode);
+      if (!selectMode) selectedCells.clear();
+      renderGrid();
+      updateSelectBar();
+    }
+
+    function toggleCellSelect(code, checked) {
+      if (checked) selectedCells.add(code); else selectedCells.delete(code);
+      updateSelectBar();
+      // Обновляем точечно (рамку + чекбокс), без полного renderGrid() — иначе
+      // при быстрых кликах чекбокс теряет фокус/моргает. Синхронизируем оба
+      // источника клика (сам чекбокс и клик по всей плитке) на одно и то же
+      // визуальное состояние.
+      const cellEl = document.querySelector(`.fill-cell[data-code="${CSS.escape(code)}"]`);
+      if (cellEl) {
+        cellEl.classList.toggle('selected', checked);
+        const cb = cellEl.querySelector('.sel-check');
+        if (cb) cb.checked = checked;
+      }
+    }
+
+    function clearSelection() {
+      selectedCells.clear();
+      renderGrid();
+      updateSelectBar();
+    }
+
+    function updateSelectBar() {
+      const bar = document.getElementById('select-bar');
+      document.getElementById('sel-count').textContent = selectedCells.size;
+      bar.classList.toggle('show', selectMode && selectedCells.size > 0);
+    }
+
+    async function createInventoryForSelected() {
+      if (!selectedCells.size) return;
+      const codes = [...selectedCells];
+      if (!UI.confirm(`Создать проверки инвентаризации по ${codes.length} ячейкам?`)) return;
+      try {
+        const res = await window.API.inventory.createBatchMulti({ location_codes: codes });
+        const failed = (res.results || []).filter(r => !r.ok);
+        UI.notify.ok(`Создано задач: ${res.created}, пропущено (уже есть): ${res.skipped}` + (failed.length ? `, ошибок: ${failed.length}` : ''));
+        clearSelection();
+      } catch (e) { UI.notify.err(e.message); }
+    }
 
     function colorClass(loc) {
       if (loc.capacity_liters == null || loc.capacity_liters <= 0) return 'fill-nodata';
@@ -150,8 +220,17 @@
         const litText = l.capacity_liters != null
           ? `${l.occupied_liters} / ${l.capacity_liters} л`
           : (l.occupied_liters > 0 ? `${l.occupied_liters} л занято` : 'нет размеров');
+        const isSel = selectedCells.has(l.location_code);
+        const codeAttr = UI.escHtml(l.location_code);
+        const cellClick = selectMode
+          ? `toggleCellSelect('${codeAttr}', !this.classList.contains('selected'))`
+          : `openCellDetails(${idx}, '${zone ? UI.escHtml(zone) : ''}')`;
+        const checkboxHtml = selectMode
+          ? `<input type="checkbox" class="sel-check" ${isSel ? 'checked' : ''} onclick="event.stopPropagation(); toggleCellSelect('${codeAttr}', this.checked);"/>`
+          : '';
         return `
-          <div class="fill-cell ${cls}" onclick="openCellDetails(${idx}, '${zone ? UI.escHtml(zone) : ''}')">
+          <div class="fill-cell ${cls} ${isSel ? 'selected' : ''}" data-code="${codeAttr}" onclick="${cellClick}">
+            ${checkboxHtml}
             <div class="code">${UI.escHtml(l.location_code)}</div>
             <div class="pct">${pctText}</div>
             <div class="lit">${litText}</div>
