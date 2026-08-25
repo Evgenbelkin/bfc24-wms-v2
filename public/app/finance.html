@@ -50,6 +50,7 @@
       <div class="kpi-cell"><div class="num" id="kpi-payroll" style="color:var(--red)">—</div><div class="lbl">Начислено сотрудникам</div></div>
       <div class="kpi-cell"><div class="num" id="kpi-diff">—</div><div class="lbl">Выручка − ЗП</div></div>
       <div class="kpi-cell"><div class="num" id="kpi-shipped-qty" style="color:var(--text)">—</div><div class="lbl">Отгружено, шт</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-storage" style="color:var(--text)">—</div><div class="lbl">Хранение за период</div></div>
     </div>
   </div>
 
@@ -58,6 +59,12 @@
     <div id="revenue-series-note" class="refresh-note" style="margin-bottom:8px;"></div>
     <div class="chart-wrap"><canvas id="chart-revenue-series"></canvas></div>
     <div id="revenue-module-off" class="module-off" style="display:none;">Модуль биллинга не подключён.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Динамика по хранению</div>
+    <div class="refresh-note" style="margin-bottom:8px;">Начисляется раз в сутки (по остатку на складе), поэтому отдельно от разовых операций — на общем графике выручки суточное хранение теряется на фоне всплесков по отгрузкам.</div>
+    <div class="chart-wrap" style="height:220px;"><canvas id="chart-storage-series"></canvas></div>
   </div>
 
   <div class="card">
@@ -146,7 +153,7 @@
       UI.setVal('#f-to', iso(to));
     }
 
-    let chartRevenueSeries = null, chartRevenueType = null, chartPayrollSeries = null, chartPayrollType = null;
+    let chartRevenueSeries = null, chartRevenueType = null, chartPayrollSeries = null, chartPayrollType = null, chartStorageSeries = null;
     function destroyChart(c) { if (c) c.destroy(); return null; }
 
     async function loadRevenue(params) {
@@ -156,6 +163,7 @@
         const res = await window.API.billing.analytics.revenue(params);
         document.getElementById('kpi-revenue').textContent = fmtMoney(res.grand_total);
         document.getElementById('kpi-shipped-qty').textContent = fmtInt(res.shipped_qty_total);
+        document.getElementById('kpi-storage').textContent = fmtMoney(res.storage_total);
 
         // Сводим series (period, client_id, total) в датасеты по клиентам поверх
         // общего списка периодов - если выбран конкретный клиент, там будет всего
@@ -248,6 +256,24 @@
               y:  { beginAtZero: true, position: 'left' },
               y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } },
             } },
+        });
+
+        // Отдельный график по хранению — тот же period_grid, что и у основной
+        // "Динамики выручки", просто одна линия по service_type='storage'.
+        chartStorageSeries = destroyChart(chartStorageSeries);
+        chartStorageSeries = new Chart(document.getElementById('chart-storage-series'), {
+          type: 'line',
+          data: {
+            labels: periods,
+            datasets: [{ label: 'Хранение', data: periods.map(p => {
+                const row = (res.storage_series || []).find(r => r.period === p);
+                return row ? row.total : 0;
+              }),
+              borderColor: PALETTE[2] || '#16a34a', backgroundColor: PALETTE[2] || '#16a34a', tension: 0.25, fill: true }],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } } },
         });
 
         chartRevenueType = destroyChart(chartRevenueType);

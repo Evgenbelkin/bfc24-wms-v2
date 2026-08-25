@@ -612,8 +612,25 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     [...baseParams, granularity]
   );
 
+  // Отдельная динамика по "Хранение" (service_type='storage') — начисляется
+  // раз в сутки фоновой джобой (chargeStorageForClientToday), в отличие от
+  // событийных услуг (сборка/упаковка/отгрузка), поэтому и просят смотреть её
+  // отдельным графиком: на общей линии "Динамика выручки" (сумма ВСЕХ типов)
+  // ежедневное хранение просто тонет на фоне разовых всплесков по отгрузкам.
+  const storageSeriesRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
+            SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     WHERE sc.tenant_id=$1 AND sc.service_type='storage'
+       AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+     GROUP BY period
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
   const grandTotal = byTypeRes.rows.reduce((s, r) => s + Number(r.total), 0);
   const shippedQtyTotal = shippedQtyRes.rows.reduce((s, r) => s + Number(r.qty), 0);
+  const storageTotal = storageSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
 
   return {
     period_from: dateFrom, period_to: dateTo, granularity,
@@ -625,6 +642,8 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     by_client: byClientRes.rows.map(r => ({ client_id: r.client_id, client_name: r.client_name, total: Number(r.total) })),
     shipped_qty_series: shippedQtyRes.rows.map(r => ({ period: r.period, qty: Number(r.qty) })),
     shipped_qty_total: shippedQtyTotal,
+    storage_series: storageSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
+    storage_total: storageTotal,
     grand_total: grandTotal,
   };
 }
