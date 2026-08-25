@@ -300,6 +300,7 @@
     task:         (id)     => get(`/inventory/tasks/${id}`),
     createTask:   (d)      => post('/inventory/tasks', d),
     createBatch:  (d)      => post('/inventory/tasks/batch', d),
+    createBatchMulti: (d)  => post('/inventory/tasks/batch-multi', d),
     assign:       (id, d)  => post(`/inventory/tasks/${id}/assign`, d),
     count:        (id, d)  => post(`/inventory/tasks/${id}/count`, d),
     close:        (id, d)  => post(`/inventory/tasks/${id}/close`, d),

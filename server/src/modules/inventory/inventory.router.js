@@ -99,6 +99,29 @@ router.post('/tasks/batch', requireRole('tenant_admin','supervisor','inventory_m
   } catch (e) { next(e); }
 });
 
+// Пачкой по нескольким ячейкам сразу — location_codes: массив ИЛИ строка с
+// кодами через перенос строки/запятую (сканер шлёт Enter после каждого скана,
+// так что можно просто сканировать ячейку за ячейкой в одно текстовое поле).
+router.post('/tasks/batch-multi', requireRole('tenant_admin','supervisor','inventory_manager'), async (req, res, next) => {
+  try {
+    const { location_codes, reason, client_id, warehouse_id } = req.body;
+    const clientId = resolveClientScope(req, client_id);
+    const wh = warehouse_id
+      ? { id: Number(warehouse_id) }
+      : await getDefaultWarehouse(req.user.tenantId);
+
+    const result = await svc.createBatchTasksMulti({
+      tenantId:      req.user.tenantId,
+      warehouseId:   wh.id,
+      clientId,
+      locationCodes: location_codes,
+      reason:        reason || null,
+      userId:        req.user.id,
+    });
+    res.status(201).json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 router.post('/tasks/:id/assign', requireRole('tenant_admin','supervisor','inventory_manager'), async (req, res, next) => {
   try {
     const task = await svc.assignTask({

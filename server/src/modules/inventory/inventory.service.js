@@ -214,6 +214,37 @@ async function createBatchTasks({ tenantId, warehouseId, clientId, locationCode,
 }
 
 /**
+ * Создать задачи по НЕСКОЛЬКИМ ячейкам сразу (по всем позициям каждой) —
+ * чтобы не выбирать ячейки по одной вручную, когда нужно пересчитать сразу
+ * пачку (например, весь стеллаж или список подозрительных мест). Каждая
+ * ячейка обрабатывается независимо своей отдельной транзакцией (через
+ * createBatchTasks) — если одна ячейка не найдена/с ошибкой, это не должно
+ * прерывать создание задач по остальным, только попасть в error для неё.
+ */
+async function createBatchTasksMulti({ tenantId, warehouseId, clientId, locationCodes, reason, userId }) {
+  const codes = [...new Set(
+    (Array.isArray(locationCodes) ? locationCodes : String(locationCodes || '').split(/[\n,;]+/))
+      .map(c => String(c || '').trim().toUpperCase())
+      .filter(Boolean)
+  )];
+  if (!codes.length) throw new ValidationError('location_codes is required');
+
+  const results = [];
+  let totalCreated = 0, totalSkipped = 0;
+  for (const loc of codes) {
+    try {
+      const r = await createBatchTasks({ tenantId, warehouseId, clientId, locationCode: loc, reason, userId });
+      totalCreated += r.created;
+      totalSkipped += r.skipped;
+      results.push({ location_code: loc, created: r.created, skipped: r.skipped, ok: true });
+    } catch (e) {
+      results.push({ location_code: loc, ok: false, error: e.message });
+    }
+  }
+  return { locations: codes.length, created: totalCreated, skipped: totalSkipped, results };
+}
+
+/**
  * Список задач инвентаризации
  */
 async function listTasks({
@@ -597,6 +628,7 @@ async function assembleKit({ tenantId, warehouseId, clientId, kitItemId, qty, lo
 module.exports = {
   createTask,
   createBatchTasks,
+  createBatchTasksMulti,
   listTasks,
   getTask,
   assignTask,

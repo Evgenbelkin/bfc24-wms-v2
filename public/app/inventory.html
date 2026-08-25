@@ -84,6 +84,14 @@
     </div>
     <button class="btn-big btn-blue btn-full" onclick="createCheck()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Создать проверку</button>
     <div id="new-status" class="refresh-note"></div>
+
+    <div class="card" style="margin-top:18px;border-top:2px dashed var(--border);padding-top:16px;">
+      <div class="card-title">Пачкой по нескольким ячейкам</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Сканируйте ячейки одну за другой (сканер сам переносит на новую строку) или впишите коды через запятую/с новой строки. По каждой ячейке создастся проверка по всем товарам в ней.</div>
+      <textarea id="new-locations-batch" rows="5" placeholder="A-01-01&#10;A-01-02&#10;A-01-03 ..." style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:'SF Mono',Consolas,monospace;resize:vertical;"></textarea>
+    </div>
+    <button class="btn-big btn-blue btn-full" onclick="createCheckBatchMulti()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Создать проверки по всем ячейкам</button>
+    <div id="new-status-multi" class="refresh-note"></div>
   </div>
 
   <!-- ============ Расхождения ============ -->
@@ -254,6 +262,28 @@
     }
     UI.onScan('#new-location', (v) => { UI.setVal('#new-location', v); document.getElementById('new-barcode').focus(); });
     UI.onScan('#new-barcode', (v) => UI.setVal('#new-barcode', v));
+
+    // ---------- Новая проверка: пачкой по нескольким ячейкам ----------
+    // Textarea, а не отдельные скан-поля — сканер сам шлёт Enter после
+    // каждого скана, что в <textarea> и так превращается в перенос строки,
+    // так что можно просто сканировать ячейку за ячейкой без лишних кликов.
+    async function createCheckBatchMulti() {
+      const raw = UI.val('#new-locations-batch');
+      const clientId = getClientId();
+      if (!raw || !raw.trim()) { UI.notify.err('Отсканируйте или впишите хотя бы одну ячейку'); return; }
+      if (!clientId) { UI.notify.err('Выберите клиента вверху страницы'); return; }
+      const statusEl = document.getElementById('new-status-multi');
+      statusEl.textContent = 'Создаю...';
+      try {
+        const res = await window.API.inventory.createBatchMulti({ location_codes: raw, client_id: clientId });
+        const failed = (res.results || []).filter(r => !r.ok);
+        statusEl.innerHTML = `Ячеек обработано: ${res.locations}. Создано задач: ${res.created}, пропущено (уже есть): ${res.skipped}` +
+          (failed.length ? `<br><span style="color:var(--red);">Ошибки (${failed.length}): ${failed.map(f => UI.escHtml(f.location_code)+' — '+UI.escHtml(f.error)).join('; ')}</span>` : '');
+        UI.notify.ok('Готово');
+        UI.setVal('#new-locations-batch', '');
+        switchTab('tasks');
+      } catch (e) { UI.notify.err(e.message); statusEl.textContent = ''; }
+    }
 
     // ---------- Расхождения ----------
     async function loadDiscrepancies() {
