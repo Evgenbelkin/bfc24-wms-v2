@@ -61,13 +61,27 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
     const barcode = Array.isArray(o.skus) ? o.skus[0] : (o.barcode || null);
     if (barcode) touchedBarcodes.add(barcode);
     await query(
+      // ВАЖНО (найдено по жалобе "в 'Новых' заказах видно то, что уже в
+      // поставке"): WB в /api/v3/orders/new продолжает отдавать заказ ещё
+      // какое-то время ПОСЛЕ того как он добавлен в поставку (wb_supply_id
+      // проставлен, статус у нас уже 'confirm') - не только пока он реально
+      // "новый". Раньше ON CONFLICT слепо перезаписывал status=EXCLUDED.status
+      // (буквально строка 'new' из VALUES) при КАЖДОЙ синхронизации - это
+      // откатывало уже продвинутый статус ('confirm'/'shipped'/'external'/
+      // 'complete'/'cancel') обратно на 'new', пока wb_supply_id оставался
+      // на месте (он в UPDATE не участвует). Раньше это било редко (только
+      // по фоновому крону раз в 15 минут/ручной синк), но после добавления
+      // pre-push синка перед КАЖДЫМ пересчётом остатка (см. distributeStockForAccount)
+      // стало происходить на порядок чаще - отсюда и жалоба. status на
+      // конфликте теперь не трогаем вообще - "новым" он проставляется только
+      // при первой вставке заказа, которого мы раньше не видели.
       `INSERT INTO wms.wb_orders
          (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
           warehouse_id,warehouse_name,region_name,price,converted_price,currency_code,
           status,created_at,raw)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT(mp_account_id,wb_order_id) DO UPDATE SET
-         status=EXCLUDED.status, fetched_at=NOW(), raw=EXCLUDED.raw`,
+         fetched_at=NOW(), raw=EXCLUDED.raw`,
       [
         tenantId, accountId, wbOrderId,
         o.nmId||o.nmID||null, o.chrtId||null, o.article||null, barcode,
