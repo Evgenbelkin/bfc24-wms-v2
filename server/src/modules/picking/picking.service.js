@@ -759,7 +759,44 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
     }
 
-    // Обновляем волну — как в scanItem, иначе волна никогда не станет 'ready'
+    // Авто-повтор в конце волны: если по факту пропуска остаток реально ушёл в
+    // карантин (значит на исходной ячейке для этого товара сейчас 0), и по
+    // системе есть тот же товар в ДРУГОЙ ячейке отбора (не карантин, не под
+    // открытой инвентаризацией "не найден" — см. фильтры внутри
+    // findBestPickLocation) — не оставляем задачу висеть 'skipped' до
+    // ручного возврата супервайзером, а сразу переоткрываем её на новую
+    // ячейку. Приоритет намеренно поднимаем выше остальных задач волны, чтобы
+    // сборщик сначала прошёл весь обычный маршрут и только в конце вернулся
+    // за этим товаром, а не прыгал туда-сюда посреди волны.
+    // Если альтернативной ячейки с остатком нет — поведение как раньше:
+    // задача остаётся 'skipped', и уже супервайзер решает (см.
+    // requeueSkippedTask) после того как разберётся с самим карантином
+    // (нашёлся товар — вернуть, не нашёлся — списать по инвентаризации).
+    let requeued = false;
+    if (quarantined && task.item_id) {
+      const alt = await findBestPickLocation({
+        tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id,
+      });
+      if (alt) {
+        const prioRes = await client.query(
+          `SELECT COALESCE(MAX(priority),0)+1 AS next_priority FROM wms.picking_tasks WHERE wave_id=$1`,
+          [task.wave_id]
+        );
+        await client.query(
+          `UPDATE wms.picking_tasks
+           SET status='new', location_code=NULL, picker_id=NULL, started_at=NULL,
+               finished_at=NULL, scan_step=NULL, qty_picked=0, priority=$1, updated_at=NOW()
+           WHERE id=$2`,
+          [prioRes.rows[0].next_priority, taskId]
+        );
+        requeued = true;
+      }
+    }
+
+    // Обновляем волну — как в scanItem, иначе волна никогда не станет 'ready'.
+    // Если requeued=true, задача снова 'new' и естественным образом попадёт
+    // в remaining ниже — волна не станет 'ready', пока сборщик не дойдёт и до
+    // неё (уже в конце маршрута, см. приоритет выше).
     if (task.wave_id) {
       const progress = await client.query(
         `SELECT COUNT(*) FILTER(WHERE status NOT IN ('done','skipped','cancelled'))::int AS remaining
@@ -774,7 +811,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
     }
 
-    return { ok: true, taskId, inventoryTaskId, quarantined, clientId: task.client_id, barcode: task.barcode };
+    return { ok: true, taskId, inventoryTaskId, quarantined, requeued, clientId: task.client_id, barcode: task.barcode };
   });
 
   // Перенос в карантин меняет qty_available в ячейках отбора (было в обычной

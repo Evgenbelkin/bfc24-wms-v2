@@ -334,8 +334,10 @@
       if (!currentTask) return;
       if (!confirm('Пропустить задачу? Будет создана инвентаризация.')) return;
       try {
-        await window.API.picking.skip({ picking_task_id: currentTask.id, reason: 'not_found' });
-        UI.notify.warn('Задача пропущена');
+        const res = await window.API.picking.skip({ picking_task_id: currentTask.id, reason: 'not_found' });
+        UI.notify.warn(res.requeued
+          ? 'Задача пропущена — товар нашёлся в другой ячейке, вернёмся к нему в конце волны'
+          : 'Задача пропущена');
         await loadNextTask();
         await loadWaveStatus();
       } catch(e) { UI.notify.err(e.message); }
