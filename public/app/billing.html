@@ -639,6 +639,11 @@
                 data: periods.map(p => { const r = res.paid_series.find(x => x.period === p); return r ? r.total : 0; }),
                 borderColor: PALETTE[1], backgroundColor: PALETTE[1], tension: 0.25, fill: false,
               },
+              {
+                label: 'Не выставлено',
+                data: periods.map(p => { const r = res.uninvoiced_series.find(x => x.period === p); return r ? r.total : 0; }),
+                borderColor: PALETTE[2], backgroundColor: PALETTE[2], borderDash: [5,3], tension: 0.25, fill: false,
+              },
             ],
           },
           options: { responsive: true, maintainAspectRatio: false,

@@ -697,6 +697,23 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     [...baseParams, granularity]
   );
 
+  // Не выставлено — по периоду НАЧИСЛЕНИЯ (period_date), а не по "сейчас":
+  // сколько из начисленного в каждом периоде так и остаётся без счёта на
+  // сегодня (is_invoiced=FALSE — снимок на текущий момент, накладывается на
+  // дату начисления). Показывает, за какие периоды скопился хвост, который
+  // ещё не выставлен.
+  const scClientCond = clientId ? ` AND sc.client_id=$4` : '';
+  const uninvoicedSeriesRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
+            SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     WHERE sc.tenant_id=$1 AND sc.is_invoiced=FALSE
+       AND sc.period_date>=$2::date AND sc.period_date<=$3::date${scClientCond}
+     GROUP BY period
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
   // Разбивка по клиентам за весь период: сколько выставлено/оплачено внутри
   // диапазона дат, плюс ТЕКУЩИЙ непогашенный остаток (status='sent') —
   // это снимок на сейчас, а не событие внутри диапазона, поэтому считается
@@ -779,6 +796,7 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     period_grid: gridRes.rows.map(r => r.period),
     sent_series: sentSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
     paid_series: paidSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
+    uninvoiced_series: uninvoicedSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
     sent_total: sentTotal,
     paid_total: paidTotal,
     outstanding_total: Number(outstandingRes.rows[0].total),
