@@ -33,13 +33,23 @@ const QUARANTINE_LOCATION_CODE = 'КАРАНТИН';
  */
 function locationWalkKey(code) {
   const raw = String(code || '').trim().toUpperCase();
-  const m = /^([A-ZА-Я]+)-(\d+)-(\d+)$/.exec(raw);
+  // Первый сегмент — буква(ы) зоны + необязательное число ряда, слитно (A, A1, A12...)
+  const m = /^([A-ZА-Я]+)(\d*)-(\d+)-(\d+)$/.exec(raw);
   if (!m) return { pattern: false, raw };
-  return { pattern: true, zone: m[1], row: parseInt(m[2], 10), position: parseInt(m[3], 10) };
+  return {
+    pattern: true,
+    zoneLetter: m[1],
+    zoneNum: m[2] ? parseInt(m[2], 10) : null,
+    row: parseInt(m[3], 10),
+    position: parseInt(m[4], 10),
+  };
 }
 function compareWalkKeys(a, b) {
   if (a.pattern && b.pattern) {
-    if (a.zone !== b.zone) return a.zone < b.zone ? -1 : 1;
+    if (a.zoneLetter !== b.zoneLetter) return a.zoneLetter < b.zoneLetter ? -1 : 1;
+    const an = a.zoneNum === null ? -1 : a.zoneNum;
+    const bn = b.zoneNum === null ? -1 : b.zoneNum;
+    if (an !== bn) return an - bn;
     if (a.position !== b.position) return a.position - b.position;
     return a.row - b.row;
   }
