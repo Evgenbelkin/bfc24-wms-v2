@@ -196,6 +196,19 @@ router.post('/accounts/:id/redistribute-stock', requireRole('tenant_admin','supe
   } catch(e){ next(e); }
 });
 
+/** GET /wb/reconcile — живая сверка "что WB реально отдаёт по своим складам"
+ *  против "что сейчас доступно в WMS", по всем WB-аккаунтам тенанта. Спрашивает
+ *  сам WB API напрямую (не наши расчёты) - чтобы можно было зайти и посмотреть
+ *  без похода по SSH (см. server/scripts/wb-stock-reconcile.js - та же логика,
+ *  консольный вариант). Может идти небыстро (несколько запросов к WB на
+ *  аккаунт, с паузами против 429) - поэтому дергать по кнопке, не по крону. */
+router.get('/reconcile', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await wbService.reconcileStockForTenant(req.user.tenantId);
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Генерация FBS-волны ───────────────
 
 router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{

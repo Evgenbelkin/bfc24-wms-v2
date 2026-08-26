@@ -44,6 +44,7 @@
       <button class="tab active" data-tab="accounts" onclick="switchTab('accounts')">МР Аккаунты</button>
       <button class="tab" data-tab="catalog" onclick="switchTab('catalog')">Справочник WB</button>
       <button class="tab" data-tab="orders" onclick="switchTab('orders')">WB Заказы</button>
+      <button class="tab" data-tab="reconcile" onclick="switchTab('reconcile')">Сверка остатков</button>
     </div>
 
     <!-- ============ Аккаунты ============ -->
@@ -128,6 +129,23 @@
         </div>
       </div>
     </div>
+
+    <!-- ============ Сверка остатков ============ -->
+    <div id="tab-reconcile" style="display:none">
+      <div class="card">
+        <div class="card-title">Живая сверка с WB</div>
+        <div class="refresh-note" style="text-align:left;margin-bottom:8px;">
+          Спрашивает у самого WB, что он сейчас показывает по каждому складу и штрихкоду, и сравнивает
+          с тем, что реально доступно в WMS. Показывает только случаи, где у WB БОЛЬШЕ, чем в WMS —
+          именно это и есть риск продать то, чего физически нет. Идёт по всем магазинам, может занять
+          минуту-другую (запросы к WB API с паузами).
+        </div>
+        <button class="btn-big btn-blue btn-full" id="reconcile-btn" onclick="reconcileStock()">
+          <svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Проверить сейчас
+        </button>
+        <div id="reconcile-result"></div>
+      </div>
+    </div>
   </div>
 
   <div id="modal-root"></div>
@@ -149,7 +167,7 @@
     }
 
     function switchTab(name) {
-      ['accounts','catalog','orders'].forEach(t => {
+      ['accounts','catalog','orders','reconcile'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
@@ -461,6 +479,59 @@
       }
     }
     document.getElementById('ord-account').addEventListener('change', () => loadOrders());
+
+    // ---------- Сверка остатков ----------
+    async function reconcileStock() {
+      const btn = document.getElementById('reconcile-btn');
+      const box = document.getElementById('reconcile-result');
+      btn.disabled = true;
+      box.innerHTML = `<div class="result-box">Спрашиваем у WB, это может занять минуту-другую...</div>`;
+      try {
+        const res = await window.API.wb.reconcile();
+        const when = UI.fmtDateTime(res.checked_at);
+        if (!res.accounts || !res.accounts.length) {
+          box.innerHTML = `<div class="result-box">Нет активных WB-аккаунтов с токеном для проверки.</div>`;
+          return;
+        }
+        const blocks = res.accounts.map(a => {
+          if (a.skipped === 'no_warehouses') {
+            return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>Нет складов WB — пропущено.</div>`;
+          }
+          if (a.skipped === 'no_barcodes') {
+            return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>Нет зарегистрированных штрихкодов — пропущено.</div>`;
+          }
+          const errBlock = (a.errors && a.errors.length)
+            ? `<div style="color:var(--red);font-size:12px;margin-top:4px;">Ошибки запроса: ${a.errors.map(UI.escHtml).join('; ')}</div>` : '';
+          if (!a.mismatches.length) {
+            return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>
+              <span style="color:var(--green);">✓ OK, везде WB ≤ WMS, расхождений нет.</span>${errBlock}</div>`;
+          }
+          const rows = a.mismatches.map(m => `
+            <div class="loc-row">
+              <span>${UI.escHtml(m.name)}<br/><span style="color:var(--muted);font-size:12px;">${UI.escHtml(m.barcode)}</span></span>
+              <span style="color:var(--red);white-space:nowrap;">WB ${m.wb_qty} / WMS ${m.wms_qty} (+${m.diff})</span>
+            </div>
+          `).join('');
+          return `<div class="result-box">
+            <strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)} ·
+            <span style="color:var(--red);">расхождений: ${a.mismatches.length}</span>${errBlock}
+            <div class="locations-box" style="margin-top:6px;">${rows}</div>
+          </div>`;
+        }).join('');
+        box.innerHTML = `
+          <div class="result-box">Проверено: ${when} · всего расхождений (WB &gt; WMS): <strong style="${res.total_mismatches ? 'color:var(--red);' : 'color:var(--green);'}">${res.total_mismatches}</strong></div>
+          ${blocks}
+        `;
+        if (res.total_mismatches) UI.notify.err(`Найдено расхождений: ${res.total_mismatches}`);
+        else UI.notify.ok('Всё чисто, расхождений нет');
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        box.innerHTML = `<div class="result-box" style="color:var(--red);">${UI.escHtml(e.message)}</div>`;
+        UI.notify.err(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
 
     (async () => { await loadClients(); await loadAccounts(); })();
   </script>

@@ -791,6 +791,115 @@ async function listTenantsWithWbIntegration() {
   return r.rows.map(row => row.id);
 }
 
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/** Живая сверка "что WB реально отдаёт по /api/v3/stocks" против "что сейчас
+ *  физически доступно в WMS" — по ВСЕМ активным WB-аккаунтам тенанта.
+ *
+ *  Специально НЕ смотрит в wms.wb_stock_distribution (это только то, что мы
+ *  сами в последний раз посчитали и попытались отправить — она может быть
+ *  устаревшей, ровно это и стало причиной инцидента с 2006784216833).
+ *  Спрашивает у WB напрямую, что у него сейчас записано по каждому SKU на
+ *  каждом складе — это единственный способ увидеть реальное расхождение, а
+ *  не ещё раз довериться собственным расчётам. Раньше это была ручная
+ *  консольная утилита (scripts/wb-stock-reconcile.js, тот же алгоритм) — эта
+ *  функция даёт то же самое из интерфейса, кнопкой, по своему тенанту. */
+async function reconcileStockForTenant(tenantId) {
+  const SKU_CHUNK = 1000; // лимит WB на кол-во skus в одном запросе
+  const PAUSE_MS = 350;   // пауза между запросами к WB, чтобы не словить 429
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  const accountsRes = await query(
+    `SELECT ma.id, ma.client_id, ma.api_token, ma.account_name, c.client_name
+     FROM wms.mp_accounts ma
+     JOIN wms.clients c ON c.id = ma.client_id
+     WHERE ma.tenant_id=$1 AND ma.marketplace='wb' AND ma.is_active=TRUE AND ma.api_token IS NOT NULL
+     ORDER BY ma.id`,
+    [tenantId]
+  );
+
+  const accounts = [];
+  let totalMismatches = 0;
+  let checkedAt = new Date().toISOString();
+
+  for (const acc of accountsRes.rows) {
+    const whRes = await query(
+      `SELECT wb_warehouse_id, warehouse_name FROM wms.wb_seller_warehouses
+       WHERE mp_account_id=$1 AND is_active=TRUE ORDER BY warehouse_name`,
+      [acc.id]
+    );
+    if (whRes.rowCount === 0) {
+      accounts.push({ account_id: acc.id, account_name: acc.account_name, client_name: acc.client_name, skipped: 'no_warehouses', mismatches: [] });
+      continue;
+    }
+
+    const barcodesRes = await query(
+      `SELECT DISTINCT barcode FROM wms.wb_item_barcodes WHERE mp_account_id=$1`,
+      [acc.id]
+    );
+    const skus = barcodesRes.rows.map(r => r.barcode).filter(Boolean);
+    if (skus.length === 0) {
+      accounts.push({ account_id: acc.id, account_name: acc.account_name, client_name: acc.client_name, skipped: 'no_barcodes', mismatches: [] });
+      continue;
+    }
+    const skuChunks = chunkArray(skus, SKU_CHUNK);
+
+    const wbTotals = new Map();
+    const errors = [];
+    for (const w of whRes.rows) {
+      for (const c of skuChunks) {
+        let stocks;
+        try {
+          stocks = await wbClient.fetchFbsStocks(acc.api_token, w.wb_warehouse_id, c);
+        } catch (e) {
+          errors.push(`${w.warehouse_name}: ${e.message}`);
+          continue;
+        }
+        for (const s of stocks) {
+          const barcode = s.sku;
+          const qty = Number(s.amount || 0);
+          if (!barcode || qty <= 0) continue;
+          wbTotals.set(barcode, (wbTotals.get(barcode) || 0) + qty);
+        }
+        await sleep(PAUSE_MS);
+      }
+    }
+
+    const wmsRes = await query(
+      `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty, MAX(i.item_name) AS item_name
+       FROM wms.stock_balances sb
+       JOIN wms.items i ON i.id = sb.item_id
+       WHERE sb.client_id=$1
+       GROUP BY sb.barcode`,
+      [acc.client_id]
+    );
+    const wmsMap = new Map(wmsRes.rows.map(r => [r.barcode, { qty: Number(r.qty), name: r.item_name }]));
+
+    const mismatches = [];
+    for (const [barcode, wbQty] of wbTotals.entries()) {
+      const wms = wmsMap.get(barcode) || { qty: 0, name: '(нет остатка в WMS)' };
+      const diff = wbQty - wms.qty;
+      if (diff > 0) mismatches.push({ barcode, name: wms.name, wb_qty: wbQty, wms_qty: wms.qty, diff });
+    }
+    mismatches.sort((a, b) => b.diff - a.diff);
+    totalMismatches += mismatches.length;
+
+    accounts.push({
+      account_id: acc.id,
+      account_name: acc.account_name,
+      client_name: acc.client_name,
+      mismatches,
+      errors,
+    });
+  }
+
+  return { checked_at: checkedAt, accounts, total_mismatches: totalMismatches };
+}
+
 module.exports = {
   getMpAccount,
   listActiveAccounts,
@@ -805,4 +914,5 @@ module.exports = {
   triggerRedistributionForClient,
   listReturnClaimsForClient,
   getStockDistributionReport,
+  reconcileStockForTenant,
 };

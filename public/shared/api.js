@@ -371,6 +371,7 @@
     generateWave:(d) => post('/wb/generate-wave', d),
     orders:      (p) => get('/wb/orders', p),
     wbItems:     (p) => get('/wb/items', p),
+    reconcile:   ()  => get('/wb/reconcile'),
   };
 
   // ─────────────── Printing ───────────────
