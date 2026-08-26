@@ -29,6 +29,10 @@ router.use(authRequired, tenantMiddleware, requireModule('billing'));
 // GET  /billing/invoices/:id          — детальный инвойс
 // POST /billing/invoices              — создать инвойс за период
 // PATCH /billing/invoices/:id/status  — обновить статус
+//
+// --- Analytics ---
+// GET /billing/analytics/revenue      — динамика выручки
+// GET /billing/analytics/invoices     — динамика по счетам (выставлено/оплачено) + разбивка по клиентам
 // =============================================================================
 
 // ─────────────── Price List ───────────────
@@ -141,6 +145,20 @@ router.get('/analytics/revenue', requireRole('tenant_admin', 'supervisor', 'anal
   try {
     const clientId = resolveClientScope(req, req.query.client_id);
     const result = await svc.getRevenueAnalytics({
+      tenantId:    req.user.tenantId,
+      clientId:    clientId || null,
+      dateFrom:    req.query.date_from,
+      dateTo:      req.query.date_to,
+      granularity: req.query.granularity || 'day',
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+router.get('/analytics/invoices', requireRole('tenant_admin', 'supervisor', 'analyst'), async (req, res, next) => {
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const result = await svc.getInvoiceAnalytics({
       tenantId:    req.user.tenantId,
       clientId:    clientId || null,
       dateFrom:    req.query.date_from,

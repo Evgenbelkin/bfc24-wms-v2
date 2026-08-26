@@ -22,6 +22,18 @@
     .status-sent{color:var(--yellow);}
     .status-paid{color:var(--green);}
     .status-cancelled{color:var(--red);text-decoration:line-through;}
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+    .kpi-cell{background:var(--card2);border-radius:10px;padding:14px;text-align:center;}
+    .kpi-cell .num{font-size:20px;font-weight:700;}
+    .kpi-cell .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+    .chart-wrap{position:relative;height:260px;}
+    .rank-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;gap:10px;}
+    .rank-row:last-child{border-bottom:none;}
+    .rank-row .name{color:var(--text);}
+    .rank-row .amts{display:flex;gap:12px;font-size:13px;white-space:nowrap;}
+    .rank-row .amts .sent{color:var(--muted2);}
+    .rank-row .amts .paid{color:var(--green);}
+    .rank-row .amts .out{color:var(--yellow);font-weight:700;}
   </style>
 </head>
 <body>
@@ -49,6 +61,7 @@
       <button class="tab" data-tab="pricelist" onclick="switchTab('pricelist')">Прайс-лист</button>
       <button class="tab" data-tab="charges"   onclick="switchTab('charges')">Начисления</button>
       <button class="tab" data-tab="invoices"  onclick="switchTab('invoices')">Счета</button>
+      <button class="tab" data-tab="analytics" onclick="switchTab('analytics')">Аналитика</button>
     </div>
 
     <!-- ============ Баланс ============ -->
@@ -116,10 +129,52 @@
         <div id="inv-list"></div>
       </div>
     </div>
+
+    <!-- ============ Аналитика по счетам ============ -->
+    <div id="tab-analytics" style="display:none">
+      <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-row">
+          <select id="an-client"><option value="">Все клиенты</option></select>
+        </div>
+        <div class="filters-row">
+          <input id="an-from" type="date"/>
+          <input id="an-to" type="date"/>
+        </div>
+        <div class="tabs">
+          <button class="tab active" data-ag="day" onclick="setAnalyticsGranularity('day')">По дням</button>
+          <button class="tab" data-ag="week" onclick="setAnalyticsGranularity('week')">По неделям</button>
+          <button class="tab" data-ag="month" onclick="setAnalyticsGranularity('month')">По месяцам</button>
+        </div>
+        <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadInvoiceAnalytics()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+      </div>
+
+      <div class="card">
+        <div class="kpi-grid">
+          <div class="kpi-cell"><div class="num" id="kpi-inv-sent" style="color:var(--muted2)">—</div><div class="lbl">Выставлено за период</div></div>
+          <div class="kpi-cell"><div class="num" id="kpi-inv-paid" style="color:var(--green)">—</div><div class="lbl">Оплачено за период</div></div>
+          <div class="kpi-cell"><div class="num" id="kpi-inv-outstanding" style="color:var(--yellow)">—</div><div class="lbl">Непогашено сейчас</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Динамика по счетам</div>
+        <div class="chart-wrap"><canvas id="chart-invoices"></canvas></div>
+        <div id="inv-analytics-off" class="module-off" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:16px;">Модуль биллинга не подключён.</div>
+      </div>
+
+      <div class="card" id="inv-by-client-card" style="display:none;">
+        <div class="card-title">Разбивка по клиентам</div>
+        <div id="inv-by-client-list"></div>
+      </div>
+    </div>
   </div>
 
   <div id="modal-root"></div>
 
+  <!-- Chart.js подключён локальным файлом, а не с CDN, чтобы график не ломался
+       при недоступности cdnjs/jsdelivr у части пользователей (см. finance.html). -->
+  <script src="/shared/chart.umd.min.js"></script>
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script>
@@ -139,7 +194,7 @@
     }
 
     function switchTab(name) {
-      ['balance','pricelist','charges','invoices'].forEach(t => {
+      ['balance','pricelist','charges','invoices','analytics'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
@@ -147,6 +202,7 @@
       if (name==='pricelist') loadPriceList();
       if (name==='charges') loadCharges();
       if (name==='invoices') loadInvoices();
+      if (name==='analytics') { initAnalyticsTab(); loadInvoiceAnalytics(); }
     }
 
     let clients = [];
@@ -160,6 +216,9 @@
         clients = res.clients || [];
         const sel = document.getElementById('f-client');
         sel.innerHTML = clients.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+        const anSel = document.getElementById('an-client');
+        anSel.innerHTML = '<option value="">Все клиенты</option>' +
+          clients.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
         if (clients.length) { loadBalance(); }
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
@@ -515,6 +574,94 @@
     }
 
     function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+    // ============ Аналитика по счетам ============
+
+    const cs = getComputedStyle(document.documentElement);
+    const PALETTE = [
+      cs.getPropertyValue('--accent').trim() || '#0284c7',
+      cs.getPropertyValue('--green').trim()  || '#16a34a',
+      cs.getPropertyValue('--yellow').trim() || '#d97706',
+    ];
+    function fmtMoney(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'; }
+    function destroyChart(c) { if (c) c.destroy(); return null; }
+
+    let analyticsGranularity = 'day';
+    let analyticsInited = false;
+    let chartInvoices = null;
+
+    function setAnalyticsGranularity(g) {
+      analyticsGranularity = g;
+      document.querySelectorAll('.tab[data-ag]').forEach(t => t.classList.toggle('active', t.dataset.ag === g));
+      loadInvoiceAnalytics();
+    }
+
+    function initAnalyticsTab() {
+      if (analyticsInited) return;
+      analyticsInited = true;
+      const to = new Date();
+      const from = new Date(); from.setDate(from.getDate() - 29);
+      const iso = (d) => d.toISOString().slice(0, 10);
+      UI.setVal('#an-from', iso(from));
+      UI.setVal('#an-to', iso(to));
+    }
+
+    async function loadInvoiceAnalytics() {
+      const dateFrom = UI.val('#an-from'), dateTo = UI.val('#an-to');
+      if (!dateFrom || !dateTo) return;
+      document.getElementById('inv-analytics-off').style.display = 'none';
+      document.getElementById('inv-by-client-card').style.display = 'none';
+      const clientId = Number(UI.val('#an-client')) || null;
+      const params = { date_from: dateFrom, date_to: dateTo, granularity: analyticsGranularity };
+      if (clientId) params.client_id = clientId;
+      try {
+        const res = await window.API.billing.analytics.invoices(params);
+        document.getElementById('kpi-inv-sent').textContent = fmtMoney(res.sent_total);
+        document.getElementById('kpi-inv-paid').textContent = fmtMoney(res.paid_total);
+        document.getElementById('kpi-inv-outstanding').textContent = fmtMoney(res.outstanding_total);
+
+        const periods = res.period_grid;
+        chartInvoices = destroyChart(chartInvoices);
+        chartInvoices = new Chart(document.getElementById('chart-invoices'), {
+          type: 'line',
+          data: {
+            labels: periods,
+            datasets: [
+              {
+                label: 'Выставлено',
+                data: periods.map(p => { const r = res.sent_series.find(x => x.period === p); return r ? r.total : 0; }),
+                borderColor: PALETTE[0], backgroundColor: PALETTE[0], tension: 0.25, fill: false,
+              },
+              {
+                label: 'Оплачено',
+                data: periods.map(p => { const r = res.paid_series.find(x => x.period === p); return r ? r.total : 0; }),
+                borderColor: PALETTE[1], backgroundColor: PALETTE[1], tension: 0.25, fill: false,
+              },
+            ],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: true } } },
+        });
+
+        if (!clientId && res.by_client.length > 0) {
+          document.getElementById('inv-by-client-card').style.display = 'block';
+          document.getElementById('inv-by-client-list').innerHTML = res.by_client.map(c => `
+            <div class="rank-row">
+              <span class="name">${UI.escHtml(c.client_name)}</span>
+              <span class="amts">
+                <span class="sent">Выст. ${fmtMoney(c.sent_total)}</span>
+                <span class="paid">Опл. ${fmtMoney(c.paid_total)}</span>
+                <span class="out">Долг ${fmtMoney(c.outstanding_total)}</span>
+              </span>
+            </div>
+          `).join('');
+        }
+      } catch (e) {
+        if (isModuleDisabled(e)) { document.getElementById('inv-analytics-off').style.display = 'block'; return; }
+        UI.notify.err(e.message);
+      }
+    }
 
     loadClients();
   </script>

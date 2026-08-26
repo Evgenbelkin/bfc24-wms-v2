@@ -403,9 +403,11 @@ async function updateInvoiceStatus({ tenantId, invoiceId, status, notes }) {
 
   const r = await query(
     `UPDATE billing.invoices
-     SET status=$1, notes=COALESCE($2,notes), updated_at=NOW()
+     SET status=$1, notes=COALESCE($2,notes), updated_at=NOW(),
+         sent_at = CASE WHEN $1 IN ('sent','paid') THEN COALESCE(sent_at, NOW()) ELSE sent_at END,
+         paid_at = CASE WHEN $1 = 'paid' THEN COALESCE(paid_at, NOW()) ELSE paid_at END
      WHERE id=$3 AND tenant_id=$4
-     RETURNING id, invoice_number, status, updated_at`,
+     RETURNING id, invoice_number, status, updated_at, sent_at, paid_at`,
     [status, notes || null, invoiceId, tenantId]
   );
   return r.rows[0];
@@ -648,6 +650,106 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
   };
 }
 
+// ─────────────── Invoice analytics (выставлено/оплачено/разбивка по клиентам) ───────────────
+
+const INVOICE_GRANULARITIES = ['day', 'week', 'month'];
+
+async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo, granularity = 'day' }) {
+  if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
+  if (!INVOICE_GRANULARITIES.includes(granularity)) {
+    throw new ValidationError(`granularity must be one of: ${INVOICE_GRANULARITIES.join(', ')}`);
+  }
+
+  const baseParams = [tenantId, dateFrom, dateTo];
+  const clientCond = clientId ? ` AND inv.client_id=$4` : '';
+  if (clientId) baseParams.push(clientId);
+
+  // Полная сетка периодов (та же логика, что и в getRevenueAnalytics) —
+  // чтобы дни/недели/месяцы без событий не выпадали из оси X графика.
+  const gridRes = await query(
+    `SELECT DISTINCT date_trunc($3, d)::date AS period
+     FROM generate_series($1::date, $2::date, interval '1 day') AS d
+     ORDER BY period`,
+    [dateFrom, dateTo, granularity]
+  );
+
+  // Выставлено по периодам — момент перехода в статус sent (sent_at)
+  const sentSeriesRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, inv.sent_at)::date AS period,
+            SUM(inv.total_amount)::numeric AS total
+     FROM billing.invoices inv
+     WHERE inv.tenant_id=$1 AND inv.sent_at IS NOT NULL
+       AND inv.sent_at::date>=$2::date AND inv.sent_at::date<=$3::date${clientCond}
+     GROUP BY period
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
+  // Оплачено по периодам — момент перехода в статус paid (paid_at)
+  const paidSeriesRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, inv.paid_at)::date AS period,
+            SUM(inv.total_amount)::numeric AS total
+     FROM billing.invoices inv
+     WHERE inv.tenant_id=$1 AND inv.paid_at IS NOT NULL
+       AND inv.paid_at::date>=$2::date AND inv.paid_at::date<=$3::date${clientCond}
+     GROUP BY period
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
+  // Разбивка по клиентам за весь период: сколько выставлено/оплачено внутри
+  // диапазона дат, плюс ТЕКУЩИЙ непогашенный остаток (status='sent') —
+  // это снимок на сейчас, а не событие внутри диапазона, поэтому считается
+  // без фильтра по датам.
+  const byClientCond = clientId ? ` AND inv.client_id=$4` : '';
+  const byClientRes = await query(
+    `SELECT inv.client_id, c.client_name,
+            COALESCE(SUM(inv.total_amount) FILTER (
+              WHERE inv.sent_at IS NOT NULL AND inv.sent_at::date>=$2::date AND inv.sent_at::date<=$3::date
+            ), 0)::numeric AS sent_total,
+            COALESCE(SUM(inv.total_amount) FILTER (
+              WHERE inv.paid_at IS NOT NULL AND inv.paid_at::date>=$2::date AND inv.paid_at::date<=$3::date
+            ), 0)::numeric AS paid_total,
+            COALESCE(SUM(inv.total_amount) FILTER (WHERE inv.status='sent'), 0)::numeric AS outstanding_total
+     FROM billing.invoices inv
+     JOIN wms.clients c ON c.id = inv.client_id
+     WHERE inv.tenant_id=$1${byClientCond}
+     GROUP BY inv.client_id, c.client_name
+     HAVING SUM(inv.total_amount) FILTER (
+              WHERE inv.sent_at IS NOT NULL AND inv.sent_at::date>=$2::date AND inv.sent_at::date<=$3::date
+            ) IS NOT NULL
+         OR SUM(inv.total_amount) FILTER (WHERE inv.status='sent') > 0
+     ORDER BY outstanding_total DESC, sent_total DESC`,
+    baseParams
+  );
+
+  // Текущий непогашенный остаток (снимок на сейчас), для KPI-плашки
+  const outstandingRes = await query(
+    `SELECT COALESCE(SUM(inv.total_amount),0)::numeric AS total, COUNT(*)::int AS n
+     FROM billing.invoices inv
+     WHERE inv.tenant_id=$1 AND inv.status='sent'${clientId ? ' AND inv.client_id=$2' : ''}`,
+    clientId ? [tenantId, clientId] : [tenantId]
+  );
+
+  const sentTotal = sentSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
+  const paidTotal  = paidSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
+
+  return {
+    period_from: dateFrom, period_to: dateTo, granularity,
+    period_grid: gridRes.rows.map(r => r.period),
+    sent_series: sentSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
+    paid_series: paidSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
+    sent_total: sentTotal,
+    paid_total: paidTotal,
+    outstanding_total: Number(outstandingRes.rows[0].total),
+    outstanding_count: outstandingRes.rows[0].n,
+    by_client: byClientRes.rows.map(r => ({
+      client_id: r.client_id, client_name: r.client_name,
+      sent_total: Number(r.sent_total), paid_total: Number(r.paid_total), outstanding_total: Number(r.outstanding_total),
+    })),
+  };
+}
+
 // ─────────────── Summary ───────────────
 
 async function getClientBalance({ tenantId, clientId }) {
@@ -679,6 +781,7 @@ module.exports = {
   updateInvoiceStatus,
   getClientBalance,
   getRevenueAnalytics,
+  getInvoiceAnalytics,
   listClientsWithActiveStoragePrice,
   chargeStorageForClientToday,
 };

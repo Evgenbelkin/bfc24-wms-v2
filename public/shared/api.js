@@ -429,7 +429,8 @@
     },
     clientBalance: (clientId) => get(`/billing/clients/${clientId}/balance`),
     analytics: {
-      revenue: (p) => get('/billing/analytics/revenue', p),
+      revenue:  (p) => get('/billing/analytics/revenue', p),
+      invoices: (p) => get('/billing/analytics/invoices', p),
     },
     invoices: {
       list:         (p)      => get('/billing/invoices', p),
