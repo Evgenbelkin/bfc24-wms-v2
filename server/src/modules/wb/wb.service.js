@@ -48,7 +48,7 @@ async function listActiveAccounts(tenantId) {
  *  15 минут) мы сверяем, какие из наших "new"-заказов пропали из свежего ответа WB,
  *  и помечаем их status='external' — это выводит их из очереди на волну и делает
  *  видимыми в фильтре как "Занято в кабинете WB", вместо того чтобы бесконечно висеть. */
-async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = null }) {
+async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
   const orders = await wbClient.fetchNewOrders(apiToken);
 
   let saved = 0;
@@ -90,6 +90,26 @@ async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = 
     [tenantId, accountId, freshIds]
   );
 
+  return { fetched: orders.length, saved, marked_external: reconciled.rowCount, touchedBarcodes };
+}
+
+/** Синхронизация новых заказов по одному аккаунту (acc уже должен содержать api_token).
+ *
+ *  Помимо сохранения новых заказов, здесь же живёт РЕКОНСИЛИАЦИЯ: WB отдаёт в
+ *  /api/v3/orders/new только те заказы, которые ВСЁ ЕЩЁ ждут сборки. Если владелец
+ *  кабинета вручную сгруппировал заказ в поставку прямо в своём ЛК WB (в обход
+ *  нашего софта), этот заказ просто перестаёт приходить в ответе — а наша старая
+ *  запись в БД как была 'new' без wb_supply_id, так и остаётся, будто заказ всё ещё
+ *  ждёт нас. Раньше это "зависшее" состояние ничем не лечилось: такой заказ мог
+ *  попасть в "Сформировать волну" и упасть с ошибкой WB (заказ уже в другой поставке).
+ *  Теперь при КАЖДОЙ синхронизации (ручной, "синхронизировать всё", фоновой раз в
+ *  15 минут) мы сверяем, какие из наших "new"-заказов пропали из свежего ответа WB,
+ *  и помечаем их status='external' — это выводит их из очереди на волну и делает
+ *  видимыми в фильтре как "Занято в кабинете WB", вместо того чтобы бесконечно висеть. */
+async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = null }) {
+  const { fetched, saved, marked_external, touchedBarcodes } =
+    await fetchAndUpsertOrders({ tenantId, accountId, apiToken });
+
   // Пересчёт и отправка остатка в WB СРАЗУ по товарам, затронутым этой
   // синхронизацией (точечно, только по их баркодам - см. комментарий у
   // triggerRedistributionForClient про то, почему не по всему ассортименту).
@@ -107,7 +127,7 @@ async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = 
     triggerRedistributionForClient({ tenantId, clientId, barcodes: Array.from(touchedBarcodes) });
   }
 
-  return { fetched: orders.length, saved, marked_external: reconciled.rowCount };
+  return { fetched, saved, marked_external };
 }
 
 /** Синхронизировать заказы по ВСЕМ активным WB-аккаунтам тенанта (кнопка "Синхронизировать все") */
@@ -277,6 +297,23 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   if (accRes.rowCount === 0) return { skipped: true, reason: 'account_not_found' };
   const account = accRes.rows[0];
   if (!account.api_token) return { skipped: true, reason: 'no_api_token' };
+
+  // Свежий подсинк заказов ПЕРЕД расчётом (а не полагаемся на то, что уже
+  // лежит в wb_orders после последнего фонового синка). Раньше окно риска
+  // было ровно в промежуток между "покупатель заказал на WB" и "фоновый
+  // wbAutoSync это увидел" (до 15 минут, WB_AUTO_SYNC_INTERVAL_MINUTES) - всё
+  // это время distributeStockForAccount мог не знать о свежем заказе и
+  // отправить в WB завышенный остаток. Теперь сам расчёт всегда тянет
+  // актуальный список заказов непосредственно перед вычитанием - окно риска
+  // схлопывается до времени одного похода в WB API (секунды), а не до
+  // интервала фонового крона. Мягкий отказ: если WB API недоступен прямо
+  // сейчас, не блокируем весь пересчёт целиком - считаем по тому, что уже
+  // есть в базе (это не хуже, чем было раньше).
+  try {
+    await fetchAndUpsertOrders({ tenantId, accountId: mpAccountId, apiToken: account.api_token });
+  } catch (e) {
+    logger.warn({ err: e, tenantId, mpAccountId }, 'distributeStockForAccount: pre-sync заказов не удался, считаем по данным из БД');
+  }
 
   // Рубильник "не отправлять остатки в WB для этого аккаунта" — нужен,
   // например, когда клиент тестирует систему и не хочет, чтобы WMS автоматом
