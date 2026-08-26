@@ -349,7 +349,11 @@
       const code = String(v || '').trim();
       if (!code) return;
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
-      if (!UI.hasValidKizStructure(code)) { UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона'); return; }
+      if (!UI.hasValidKizStructure(code)) {
+        UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
+        window.API.marking.logRejectedCode({ item_id: freeMarkingItem?.id || null, code, reason: 'broken_structure', source: 'receiving_free' }).catch(() => {});
+        return;
+      }
       if (freeDmCodes.length >= freeQty) { UI.notify.err(`Уже отсканировано ${freeQty} код(ов) — этого достаточно`); return; }
       if (freeDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       freeDmCodes.push(code);
@@ -819,7 +823,11 @@
       const code = String(v || '').trim();
       if (!code) return;
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
-      if (!UI.hasValidKizStructure(code)) { UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона'); return; }
+      if (!UI.hasValidKizStructure(code)) {
+        UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
+        window.API.marking.logRejectedCode({ item_id: inbMarkingItem?.id || null, code, reason: 'broken_structure', source: 'receiving_inbound' }).catch(() => {});
+        return;
+      }
       if (inbDmCodes.length >= inbQty) { UI.notify.err(`Уже отсканировано ${inbQty} код(ов) — этого достаточно`); return; }
       if (inbDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
       inbDmCodes.push(code);

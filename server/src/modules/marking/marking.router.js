@@ -9,8 +9,38 @@ const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
 const { ValidationError } = require('../../utils/errors');
 const { query } = require('../../config/database');
+const logger = require('../../utils/logger');
 
 router.use(authRequired, tenantMiddleware, requireModule('marking'));
+
+/**
+ * POST /marking/diagnostics/rejected-code — best-effort лог кода, отклонённого
+ * ПРОВЕРКОЙ НА ФРОНТЕНДЕ (UI.hasValidKizStructure в receiving.html) ещё ДО
+ * похода на сервер. Реальный инцидент показал: фронтовая проверка — зеркало
+ * серверной (validators.js) и отклоняет код мгновенно в браузере, но раз
+ * запрос до сервера не долетает вовсе, обычный серверный logger.warn (см.
+ * registerScannedCodes) никогда не срабатывает — расследовать нечем, кроме
+ * слов оператора "код был правильный, но не прошёл". Этот роут явно шлёт
+ * "плохой" код на сервер ЦЕЛЕНАПРАВЛЕННО только для лога (не для валидации/
+ * сохранения) — чтобы при повторении инцидента можно было поднять байты кода
+ * из pm2-логов, а не гадать. Никогда не бросает ошибку и не требует роли
+ * выше обычного оператора приёмки — это диагностика, а не бизнес-операция.
+ */
+router.post('/diagnostics/rejected-code', async (req, res) => {
+  try {
+    const itemId = req.body.item_id ? Number(req.body.item_id) : null;
+    const code = String(req.body.code || '');
+    const reason = String(req.body.reason || 'unknown').slice(0, 100);
+    logger.warn(
+      {
+        tenantId: req.user.tenantId, itemId, reason, source: req.body.source || 'unknown',
+        len: code.length, hex: Buffer.from(code, 'binary').toString('hex'),
+      },
+      'marking: код отклонён проверкой НА ФРОНТЕНДЕ (diagnostics/rejected-code)'
+    );
+  } catch (e) { /* диагностика best-effort - не должна ломать сканирование */ }
+  res.json({ ok: true });
+});
 
 /** GET /marking/items/:itemId/codes/summary — сколько кодов свободно/использовано */
 router.get('/items/:itemId/codes/summary', async (req, res, next) => {

@@ -204,6 +204,7 @@
     bulkUpdateSettings: (itemIds, d) => patch('/marking/items/bulk-settings', { item_ids: itemIds, ...d }),
     pendingOverrides: (p)          => get('/marking/pending-manual-overrides', p),
     exportForShipment: (shipmentCode) => get('/marking/export', { shipment_code: shipmentCode }),
+    logRejectedCode: (d) => post('/marking/diagnostics/rejected-code', d),
   };
 
   // ─────────────── Locations ───────────────
