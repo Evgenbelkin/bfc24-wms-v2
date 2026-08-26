@@ -93,7 +93,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Когда</th><th>Клиент</th><th>Товар</th><th>Кол-во</th><th>Решение</th><th>Заказ МП</th><th>Кто принял</th></tr></thead>
+            <thead><tr><th>Когда</th><th>Клиент</th><th>Товар</th><th>Кол-во</th><th>Решение</th><th>Ячейка</th><th>Заказ МП</th><th>Кто принял</th></tr></thead>
             <tbody id="h-body"></tbody>
           </table>
         </div>
@@ -239,10 +239,11 @@
             <td>${UI.escHtml(r.item_name || r.barcode)}</td>
             <td>${UI.fmtQty(r.qty)}</td>
             <td><span class="disp-pill disp-${r.disposition}">${DISP_LABELS[r.disposition]||r.disposition}</span></td>
+            <td>${UI.escHtml(r.location_code||'—')}</td>
             <td>${UI.escHtml(r.marketplace_order_no||'—')}</td>
             <td>${UI.escHtml(r.received_by_name||'—')}</td>
           </tr>
-        `).join('') : `<tr><td colspan="7">Возвратов нет</td></tr>`;
+        `).join('') : `<tr><td colspan="8">Возвратов нет</td></tr>`;
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);
