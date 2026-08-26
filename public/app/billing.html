@@ -159,9 +159,14 @@
       </div>
 
       <div class="card">
+        <div class="card-title">Итого за период</div>
+        <div class="chart-wrap" style="height:220px;"><canvas id="chart-invoices-totals"></canvas></div>
+        <div id="inv-analytics-off" class="module-off" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:16px;">Модуль биллинга не подключён.</div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Динамика по счетам</div>
         <div class="chart-wrap"><canvas id="chart-invoices"></canvas></div>
-        <div id="inv-analytics-off" class="module-off" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:16px;">Модуль биллинга не подключён.</div>
       </div>
 
       <div class="card" id="inv-by-client-card" style="display:none;">
@@ -580,16 +585,17 @@
 
     const cs = getComputedStyle(document.documentElement);
     const PALETTE = [
-      cs.getPropertyValue('--accent').trim() || '#0284c7',
-      cs.getPropertyValue('--green').trim()  || '#16a34a',
-      cs.getPropertyValue('--yellow').trim() || '#d97706',
+      cs.getPropertyValue('--accent').trim()  || '#0284c7',
+      cs.getPropertyValue('--green').trim()   || '#16a34a',
+      cs.getPropertyValue('--yellow').trim()  || '#d97706',
+      cs.getPropertyValue('--muted2').trim()  || '#94a3b8',
     ];
     function fmtMoney(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'; }
     function destroyChart(c) { if (c) c.destroy(); return null; }
 
     let analyticsGranularity = 'day';
     let analyticsInited = false;
-    let chartInvoices = null;
+    let chartInvoices = null, chartInvoicesTotals = null;
 
     function setAnalyticsGranularity(g) {
       analyticsGranularity = g;
@@ -621,6 +627,21 @@
         document.getElementById('kpi-inv-paid').textContent = fmtMoney(res.paid_total);
         document.getElementById('kpi-inv-outstanding').textContent = fmtMoney(res.outstanding_total);
         document.getElementById('kpi-inv-uninvoiced').textContent = fmtMoney(res.uninvoiced_total);
+
+        chartInvoicesTotals = destroyChart(chartInvoicesTotals);
+        chartInvoicesTotals = new Chart(document.getElementById('chart-invoices-totals'), {
+          type: 'bar',
+          data: {
+            labels: ['Выставлено', 'Оплачено', 'Непогашено', 'Не выставлено'],
+            datasets: [{
+              data: [res.sent_total, res.paid_total, res.outstanding_total, res.uninvoiced_total],
+              backgroundColor: [PALETTE[0], PALETTE[1], PALETTE[2], PALETTE[3]],
+            }],
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } } },
+        });
 
         const periods = res.period_grid;
         chartInvoices = destroyChart(chartInvoices);
