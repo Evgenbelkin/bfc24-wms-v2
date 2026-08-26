@@ -154,6 +154,7 @@
           <div class="kpi-cell"><div class="num" id="kpi-inv-sent" style="color:var(--muted2)">—</div><div class="lbl">Выставлено за период</div></div>
           <div class="kpi-cell"><div class="num" id="kpi-inv-paid" style="color:var(--green)">—</div><div class="lbl">Оплачено за период</div></div>
           <div class="kpi-cell"><div class="num" id="kpi-inv-outstanding" style="color:var(--yellow)">—</div><div class="lbl">Непогашено сейчас</div></div>
+          <div class="kpi-cell"><div class="num" id="kpi-inv-uninvoiced" style="color:var(--muted2)">—</div><div class="lbl">Не выставлено сейчас</div></div>
         </div>
       </div>
 
@@ -619,6 +620,7 @@
         document.getElementById('kpi-inv-sent').textContent = fmtMoney(res.sent_total);
         document.getElementById('kpi-inv-paid').textContent = fmtMoney(res.paid_total);
         document.getElementById('kpi-inv-outstanding').textContent = fmtMoney(res.outstanding_total);
+        document.getElementById('kpi-inv-uninvoiced').textContent = fmtMoney(res.uninvoiced_total);
 
         const periods = res.period_grid;
         chartInvoices = destroyChart(chartInvoices);
@@ -653,6 +655,7 @@
                 <span class="sent">Выст. ${fmtMoney(c.sent_total)}</span>
                 <span class="paid">Опл. ${fmtMoney(c.paid_total)}</span>
                 <span class="out">Долг ${fmtMoney(c.outstanding_total)}</span>
+                <span class="sent">Не выст. ${fmtMoney(c.uninvoiced_total)}</span>
               </span>
             </div>
           `).join('');

@@ -731,8 +731,48 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     clientId ? [tenantId, clientId] : [tenantId]
   );
 
+  // "Не выставлено" — начисления, которым ещё даже не создан счёт
+  // (sc.is_invoiced=FALSE). Это снимок на сейчас, как и outstanding_total.
+  // Отдельная выборка (не через billing.invoices), поэтому клиенты, у которых
+  // ЕЩЁ не было ни одного счёта, но уже накопились начисления, тоже должны
+  // попасть в разбивку — учитываем это ниже через merge по client_id.
+  const uninvoicedRes = await query(
+    `SELECT sc.client_id, c.client_name, SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     JOIN wms.clients c ON c.id = sc.client_id
+     WHERE sc.tenant_id=$1 AND sc.is_invoiced=FALSE${clientId ? ' AND sc.client_id=$2' : ''}
+     GROUP BY sc.client_id, c.client_name`,
+    clientId ? [tenantId, clientId] : [tenantId]
+  );
+  const uninvoicedTotal = uninvoicedRes.rows.reduce((s, r) => s + Number(r.total), 0);
+
   const sentTotal = sentSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
   const paidTotal  = paidSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
+
+  // Мёрджим разбивку по счетам (byClientRes) и по неучтённым начислениям
+  // (uninvoicedRes) в единую карту по client_id — клиент может присутствовать
+  // только в одном из источников (например, ни разу не выставляли счёт, но
+  // начисления уже копятся).
+  const byClientMap = new Map();
+  for (const r of byClientRes.rows) {
+    byClientMap.set(r.client_id, {
+      client_id: r.client_id, client_name: r.client_name,
+      sent_total: Number(r.sent_total), paid_total: Number(r.paid_total),
+      outstanding_total: Number(r.outstanding_total), uninvoiced_total: 0,
+    });
+  }
+  for (const r of uninvoicedRes.rows) {
+    const existing = byClientMap.get(r.client_id);
+    if (existing) { existing.uninvoiced_total = Number(r.total); }
+    else {
+      byClientMap.set(r.client_id, {
+        client_id: r.client_id, client_name: r.client_name,
+        sent_total: 0, paid_total: 0, outstanding_total: 0, uninvoiced_total: Number(r.total),
+      });
+    }
+  }
+  const byClient = [...byClientMap.values()]
+    .sort((a, b) => (b.outstanding_total + b.uninvoiced_total) - (a.outstanding_total + a.uninvoiced_total));
 
   return {
     period_from: dateFrom, period_to: dateTo, granularity,
@@ -743,10 +783,8 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     paid_total: paidTotal,
     outstanding_total: Number(outstandingRes.rows[0].total),
     outstanding_count: outstandingRes.rows[0].n,
-    by_client: byClientRes.rows.map(r => ({
-      client_id: r.client_id, client_name: r.client_name,
-      sent_total: Number(r.sent_total), paid_total: Number(r.paid_total), outstanding_total: Number(r.outstanding_total),
-    })),
+    uninvoiced_total: uninvoicedTotal,
+    by_client: byClient,
   };
 }
 
