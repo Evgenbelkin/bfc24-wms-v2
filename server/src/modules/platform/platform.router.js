@@ -14,6 +14,7 @@ const { invalidateTenantCache } = require('../../middleware/tenant');
 const { sendTelegramMessage } = require('../../utils/telegram');
 const { slugify } = require('../../utils/slugify');
 const logger = require('../../utils/logger');
+const wbTariffsService = require('./wbTariffs.service');
 
 const REFRESH_TOKEN_BYTES = 48;
 
@@ -406,6 +407,39 @@ router.get('/stats', async (req, res, next) => {
     const u = await query(`SELECT COUNT(*)::int AS total FROM wms.users WHERE is_active=TRUE`);
     const o = await query(`SELECT COUNT(*)::int AS total FROM wms.shipments WHERE created_at >= date_trunc('month', NOW())`);
     res.json({ ok: true, stats: { ...s.rows[0], active_users: u.rows[0].total, orders_this_month: o.rows[0].total } });
+  } catch (e) { next(e); }
+});
+
+// =============================================================================
+// Тарифы приёмки/логистики/хранения WB по складам — только для владельца
+// платформы (уже под router.use(platformAuthRequired) выше). Данные общие
+// для всех тенантов, здесь не видны и не нужны — раздел только в public/platform/.
+// =============================================================================
+
+router.get('/wb-tariffs', async (req, res, next) => {
+  try {
+    const [hasToken, latest] = await Promise.all([
+      wbTariffsService.hasTariffsToken(),
+      wbTariffsService.listLatestTariffs(),
+    ]);
+    res.json({ ok: true, has_token: hasToken, ...latest });
+  } catch (e) { next(e); }
+});
+
+router.put('/wb-tariffs/token', async (req, res, next) => {
+  try {
+    const { api_token } = req.body || {};
+    if (!api_token || !String(api_token).trim()) throw new ValidationError('api_token required');
+    await wbTariffsService.setTariffsToken(api_token, req.platformUser.id);
+    logger.info({ platformUserId: req.platformUser.id }, 'WB tariffs token updated');
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.post('/wb-tariffs/refresh', async (req, res, next) => {
+  try {
+    const result = await wbTariffsService.fetchAndStoreTariffs();
+    res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
 

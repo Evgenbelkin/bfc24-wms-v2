@@ -567,6 +567,11 @@
     plans:   () => platformRequest('GET', '/platform/plans'),
     modules: () => platformRequest('GET', '/platform/modules'),
     stats:   () => platformRequest('GET', '/platform/stats'),
+    wbTariffs: {
+      get:         () => platformRequest('GET', '/platform/wb-tariffs'),
+      setToken:    (api_token) => platformRequest('PUT', '/platform/wb-tariffs/token', { api_token }),
+      refresh:     () => platformRequest('POST', '/platform/wb-tariffs/refresh'),
+    },
   };
 
   // ─────────────── Export ───────────────

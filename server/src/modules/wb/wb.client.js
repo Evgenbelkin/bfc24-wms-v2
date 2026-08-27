@@ -15,6 +15,7 @@ const WB_BASE = 'https://marketplace-api.wildberries.ru';
 const WB_STATISTICS_BASE = 'https://statistics-api.wildberries.ru';
 const WB_CONTENT_BASE = 'https://content-api.wildberries.ru';
 const WB_RETURNS_BASE = 'https://returns-api.wildberries.ru';
+const WB_COMMON_BASE = 'https://common-api.wildberries.ru';
 
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_RETRIES = 5;
@@ -346,6 +347,30 @@ async function setOrderKiz(token, orderId, sgtins) {
   return true;
 }
 
+/**
+ * Тарифы приёмки/логистики/хранения по складам WB (Общий раздел API, не
+ * привязан к конкретному продавцу - одинаковый ответ для любого валидного
+ * токена категории "Тарифы"). date - на какую дату смотреть тарифы, по
+ * умолчанию сегодня (WB отдаёт данные на сегодня и прогноз до dtNextBox).
+ * Формат ответа: { response: { data: { dtNextBox, dtTillMax, warehouseList: [...] } } }
+ */
+async function fetchBoxTariffs(token, date = null) {
+  const params = {};
+  if (date) params.date = date;
+  const data = await wbRequest({
+    token,
+    baseUrl: WB_COMMON_BASE,
+    path: '/api/v1/tariffs/box',
+    params,
+  });
+  const payload = data?.response?.data || data?.data || data || {};
+  return {
+    dtNextBox: payload.dtNextBox || null,
+    dtTillMax: payload.dtTillMax || null,
+    warehouseList: Array.isArray(payload.warehouseList) ? payload.warehouseList : [],
+  };
+}
+
 /** Нормализовать shipment code в формат WB-GI-XXXXX */
 function normalizeShipmentCode(rawId) {
   const s = String(rawId || '').trim();
@@ -382,5 +407,6 @@ module.exports = {
   fetchFbsStocks, updateFbsStocks,
   fetchReturnClaims,
   setOrderKiz,
+  fetchBoxTariffs,
   normalizeShipmentCode, extractStickerCode,
 };

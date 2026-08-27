@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Тарифы WB по складам — BFC24</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .table-wrap{overflow-x:auto;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+    th:first-child,td:first-child{text-align:left;}
+    th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;}
+    tbody tr:hover{background:var(--card2);}
+    .field-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    .field-row .field{flex:1;min-width:220px;}
+    .refresh-note{font-size:12px;color:var(--muted);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/platform/dashboard.html" class="btn-sm btn-back">← Клиенты</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/></svg> Тарифы WB по складам</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="refresh-note" style="margin-bottom:10px;">
+    Стоимость приёмки ФБС и хранения по складам Wildberries. Виден только тебе, клиенты этот раздел не видят.
+  </div>
+
+  <div class="card">
+    <div class="card-title">Токен WB (личный кабинет)</div>
+    <div class="refresh-note" style="margin-bottom:10px;">
+      Тарифы одинаковые для любого продавца — используем токен твоего личного кабинета WB (категория «Тарифы»), не токены клиентов.
+    </div>
+    <div class="field-row">
+      <div class="field"><label>API-токен</label><input id="f-token" type="password" placeholder="вставь токен, если ещё не задан"/></div>
+      <button class="btn-sm btn-blue" style="background:var(--accent);color:#fff;" onclick="saveToken()">Сохранить токен</button>
+    </div>
+    <div class="refresh-note" id="token-status" style="margin-top:8px;">—</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Тарифы по складам</div>
+    <div class="field-row" style="margin-bottom:10px;">
+      <div class="refresh-note" id="tariffs-meta">—</div>
+      <button class="btn-sm btn-green" style="background:var(--green2, #2e9e5b);color:#fff;" onclick="refreshTariffs()" id="btn-refresh">↻ Обновить сейчас</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Склад</th>
+            <th>Округ</th>
+            <th>Логистика, база ₽</th>
+            <th>Логистика, коэф. %</th>
+            <th>Логистика, ₽/л</th>
+            <th>Хранение, база ₽</th>
+            <th>Хранение, коэф. %</th>
+            <th>Хранение, ₽/л</th>
+          </tr>
+        </thead>
+        <tbody id="tariffs-body"><tr><td colspan="8" style="text-align:center;">Загрузка…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!window.API.platform.isLoggedIn()) window.location.href = '/platform/login.html';
+
+    function logout() { window.API.platform.logout(); window.location.href = '/platform/login.html'; }
+
+    function fmt(n) {
+      if (n === null || n === undefined) return '—';
+      const num = Number(n);
+      if (!Number.isFinite(num)) return '—';
+      return num.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+    }
+
+    async function loadTariffs() {
+      try {
+        const res = await window.API.platform.wbTariffs.get();
+        document.getElementById('token-status').textContent = res.has_token
+          ? 'Токен задан.'
+          : 'Токен ещё не задан — введи его выше, иначе автообновление тарифов не работает.';
+
+        const tariffs = res.tariffs || [];
+        const meta = document.getElementById('tariffs-meta');
+        if (!tariffs.length) {
+          meta.textContent = res.has_token ? 'Данных пока нет — нажми «Обновить сейчас».' : 'Сначала задай токен.';
+          document.getElementById('tariffs-body').innerHTML = '<tr><td colspan="8" style="text-align:center;">Нет данных</td></tr>';
+          return;
+        }
+        meta.textContent = `На дату: ${res.tariff_date}. Складов: ${tariffs.length}.`;
+
+        document.getElementById('tariffs-body').innerHTML = tariffs.map(t => `
+          <tr>
+            <td>${UI.escHtml(t.warehouse_name || '')}</td>
+            <td>${UI.escHtml(t.geo_name || '—')}</td>
+            <td>${fmt(t.box_delivery_base)}</td>
+            <td>${fmt(t.box_delivery_coef_expr)}</td>
+            <td>${fmt(t.box_delivery_liter)}</td>
+            <td>${fmt(t.box_storage_base)}</td>
+            <td>${fmt(t.box_storage_coef_expr)}</td>
+            <td>${fmt(t.box_storage_liter)}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка загрузки тарифов', 'error');
+      }
+    }
+
+    async function saveToken() {
+      const token = document.getElementById('f-token').value.trim();
+      if (!token) { UI.toast('Введите токен', 'error'); return; }
+      try {
+        await window.API.platform.wbTariffs.setToken(token);
+        document.getElementById('f-token').value = '';
+        UI.toast('Токен сохранён', 'success');
+        await loadTariffs();
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка сохранения токена', 'error');
+      }
+    }
+
+    async function refreshTariffs() {
+      const btn = document.getElementById('btn-refresh');
+      btn.disabled = true;
+      try {
+        const res = await window.API.platform.wbTariffs.refresh();
+        UI.toast(`Обновлено складов: ${res.saved}`, 'success');
+        await loadTariffs();
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка обновления', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    loadTariffs();
+  </script>
+</body>
+</html>

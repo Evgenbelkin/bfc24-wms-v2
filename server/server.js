@@ -10,6 +10,7 @@ const wbAutoSync = require('./src/jobs/wbAutoSync');
 const wbStockSync = require('./src/jobs/wbStockSync');
 const wbItemsSync = require('./src/jobs/wbItemsSync');
 const storageBilling = require('./src/jobs/storageBilling');
+const wbTariffsSync = require('./src/jobs/wbTariffsSync');
 
 // =============================================================================
 // Server entry point с graceful shutdown
@@ -51,6 +52,7 @@ async function start() {
   wbStockSync.start();
   wbItemsSync.start();
   storageBilling.start();
+  wbTariffsSync.start();
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +64,7 @@ async function shutdown(signal) {
   wbStockSync.stop();
   wbItemsSync.stop();
   storageBilling.stop();
+  wbTariffsSync.stop();
 
   if (server) {
     server.close(async () => {

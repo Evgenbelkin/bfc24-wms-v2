@@ -113,6 +113,11 @@ const config = {
     // Фоновая синхронизация карточек товаров WB (размер/габариты в wms.items).
     // Карточки меняются редко - по умолчанию раз в сутки (0 = выключено).
     itemsSyncIntervalMinutes: intEnv('WB_ITEMS_SYNC_INTERVAL_MINUTES', 1440),
+    // Тарифы приёмки/логистики/хранения по складам WB (platform.wb_warehouse_rates) -
+    // общеплатформенная фича только для владельца (см. server/src/jobs/wbTariffsSync.js,
+    // server/src/modules/platform/wbTariffs.service.js). Тарифы одинаковые для
+    // любого продавца, обновляются WB раз в сутки - раз в сутки достаточно и нам.
+    tariffsSyncIntervalMinutes: intEnv('WB_TARIFFS_SYNC_INTERVAL_MINUTES', 1440),
   },
 
   urls: {
