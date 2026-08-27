@@ -16,7 +16,7 @@ const WB_STATISTICS_BASE = 'https://statistics-api.wildberries.ru';
 const WB_CONTENT_BASE = 'https://content-api.wildberries.ru';
 const WB_RETURNS_BASE = 'https://returns-api.wildberries.ru';
 const WB_COMMON_BASE = 'https://common-api.wildberries.ru';
-const WB_SUPPLIES_BASE = 'https://supplies-api.wildberries.ru';
+const WB_SUPPLIES_BASE = 'https://supplies-api.wildberries.ru'; // не используется fetchAcceptanceCoefficients - см. комментарий там; оставлено для других методов категории "Поставки"
 
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_RETRIES = 5;
@@ -401,13 +401,16 @@ async function fetchAcceptanceCoefficients(token, warehouseIds = null) {
   if (Array.isArray(warehouseIds) && warehouseIds.length) {
     params.warehouseIDs = warehouseIds.join(',');
   }
+  // Метод переехал из раздела "Поставки" (supplies-api) в раздел "Тарифы"
+  // (common-api) - подтверждено пробой напрямую (27.08.2026): на supplies-api
+  // ни один путь не найден (проверили /ping тем же токеном - 200 OK, то есть
+  // дело не в правах), а на common-api путь /api/tariffs/v1/acceptance/
+  // coefficients распознаётся шлюзом (просто ответил "temporarily disabled",
+  // см. dev.wildberries.ru/release-notes?id=570 - это временно и на стороне
+  // WB, не у нас; когда включат обратно, джоба сама подхватит без правок).
   const data = await wbRequest({
     token,
-    baseUrl: WB_SUPPLIES_BASE,
-    // Путь у метода поменялся в 2025/2026 - было /api/v1/acceptance/coefficients
-    // (устаревший путь из старых сторонних SDK/статей, WB отдаёт на него 404
-    // "path not found" от шлюза ag-supplies), актуальный - под /api/tariffs/v1/.
-    // Хост и категория токена ("Поставки") при этом не изменились.
+    baseUrl: WB_COMMON_BASE,
     path: '/api/tariffs/v1/acceptance/coefficients',
     params,
   });
