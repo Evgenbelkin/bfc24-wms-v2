@@ -65,6 +65,43 @@ async function main() {
   `);
   console.log(r3.rows);
 
+  // Гипотеза №2 (28.08.2026): distributeStockForAccount вычитает из остатка
+  // ВСЕ заказы со статусом 'new' ИЛИ 'confirm' (см. newOrdersByBarcode).
+  // 'confirm' закрывается в 'shipped' ТОЛЬКО в момент, когда
+  // syncDeliveryStatusForTenant ловит переход отгрузки 'in_transit'->'done' -
+  // то есть только на САМОМ ПЕРЕХОДЕ. Если отгрузка стала 'done' ДО того, как
+  // этот код вообще появился (задеплоен 26.08.2026 вечером), либо стала
+  // 'done' каким-то другим путём (см. migration 020, ручное подтверждение
+  // MANUAL-отгрузок) - переход 'in_transit'->'done' для неё уже никогда не
+  // произойдёт повторно, и её wb_orders так и останутся в 'confirm' НАВСЕГДА,
+  // продолжая вычитаться из остатка для WB - хотя WB эти заказы либо уже
+  // продал, либо давно принял поставку. Проверяем, сколько таких "зависших"
+  // confirm-заказов уже накопилось (это может быть весь объём проблемы).
+  console.log('\n=== "Зависшие" confirm-заказы (WB) - их отгрузка уже done, но статус заказа не обновился ===\n');
+  const r4 = await query(`
+    SELECT wo.tenant_id, ma.account_name, COUNT(*)::int AS stuck_orders,
+           COUNT(DISTINCT wo.barcode)::int AS skus, SUM(1)::int AS units
+    FROM wms.wb_orders wo
+    JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+    JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+    WHERE wo.status = 'confirm' AND s.status = 'done'
+    GROUP BY wo.tenant_id, ma.account_name
+    ORDER BY stuck_orders DESC
+  `);
+  console.log(r4.rows);
+
+  console.log('\n=== Всего confirm-заказов (любых) и сколько из них "зависшие" ===\n');
+  const r5 = await query(`
+    SELECT
+      COUNT(*)::int AS total_confirm,
+      COUNT(*) FILTER (WHERE s.status = 'done')::int AS stuck_confirm_done,
+      COUNT(*) FILTER (WHERE s.status IS NULL)::int AS confirm_no_shipment_match
+    FROM wms.wb_orders wo
+    LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+    WHERE wo.status = 'confirm'
+  `);
+  console.log(r5.rows);
+
   await pool.end();
 }
 
