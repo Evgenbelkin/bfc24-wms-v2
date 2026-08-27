@@ -206,6 +206,54 @@ async function syncAllAccountsForTenant(tenantId) {
  *  поставки wbStatus вышел из 'waiting' (sorted/sold/и т.п. — WB реально
  *  принял), переводим отгрузку в status='done' локально. */
 async function syncDeliveryStatusForTenant(tenantId) {
+  // Самолечение (добавлено 28.08.2026, инцидент с массовым "не ушло в WB" по
+  // множеству клиентов одновременно): 'confirm'-заказы, чья отгрузка УЖЕ
+  // 'done' - неважно, каким путём она туда попала (реакция на переход
+  // in_transit->done ниже по этой же функции, ручное подтверждение доставки
+  // MANUAL-отгрузки - см. shipping.service.js:460, либо отгрузка была done
+  // ещё ДО того как вычитание 'confirm' из остатка вообще появилось,
+  // см. distributeStockForAccount) - таким заказам следующий вызов этой
+  // функции уже не поможет: ветка ниже переводит 'confirm'->'shipped' только
+  // В МОМЕНТ обнаружения перехода 'in_transit'->'done', а если отгрузка
+  // сейчас уже 'done', этот момент никогда больше не наступит - заказ
+  // навсегда зависает в 'confirm' и бесконечно вычитается из остатка,
+  // доступного для отправки в WB (см. newOrdersByBarcode в
+  // distributeStockForAccount). Именно так по множеству клиентов накопилось
+  // расхождение "в WMS есть, в WB нет" (обнаружено 27.08.2026, "Сверка
+  // остатков" смотри wb-stock-reconcile.js). Закрываем такие заказы здесь же,
+  // при каждом прогоне (идемпотентно - WHERE status='confirm' сам собой
+  // перестаёт находить уже закрытые строки), и сразу пересчитываем/пушим
+  // освободившийся остаток по затронутым штрихкодам, а не ждём случайного
+  // следующего события или редкого полного пересчёта (раз в 8 часов).
+  const healedRes = await query(
+    `UPDATE wms.wb_orders wo
+     SET status='shipped'
+     FROM wms.shipments s
+     WHERE wo.tenant_id=$1 AND wo.status='confirm'
+       AND s.tenant_id=wo.tenant_id AND s.external_id=wo.wb_supply_id AND s.status='done'
+     RETURNING wo.barcode, wo.mp_account_id`,
+    [tenantId]
+  );
+  if (healedRes.rowCount > 0) {
+    const accIds = [...new Set(healedRes.rows.map(r => r.mp_account_id))];
+    const accRes = await query(`SELECT id, client_id FROM wms.mp_accounts WHERE id = ANY($1::int[])`, [accIds]);
+    const accToClient = new Map(accRes.rows.map(r => [r.id, r.client_id]));
+    const byClient = new Map();
+    for (const row of healedRes.rows) {
+      const clientId = accToClient.get(row.mp_account_id);
+      if (!clientId || !row.barcode) continue;
+      if (!byClient.has(clientId)) byClient.set(clientId, new Set());
+      byClient.get(clientId).add(row.barcode);
+    }
+    for (const [clientId, barcodes] of byClient.entries()) {
+      triggerRedistributionForClient({ tenantId, clientId, barcodes: Array.from(barcodes) });
+    }
+    logger.info(
+      { tenantId, healed: healedRes.rowCount, clients: byClient.size },
+      'syncDeliveryStatusForTenant: закрыты зависшие confirm-заказы (отгрузка уже done) и запущен пересчёт остатка по затронутым штрихкодам'
+    );
+  }
+
   const shipRes = await query(
     `SELECT id, external_id FROM wms.shipments WHERE tenant_id=$1 AND status='in_transit'`,
     [tenantId]
