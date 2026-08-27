@@ -479,6 +479,23 @@ router.get('/fbs-analytics/summary', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** GET /seller/fbs-analytics/speed — сроки обработки ЭТОГО клиента (см.
+ *  комментарий в fbsAnalytics.service.js:getProcessingSpeed). */
+router.get('/fbs-analytics/speed', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const to = req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : new Date();
+    const from = req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : new Date(to.getTime() - 6*86400000);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new ValidationError('Некорректный диапазон дат (from/to)');
+    }
+    const result = await fbsAnalyticsSvc.getProcessingSpeed({
+      tenantId: req.user.tenantId, clientId, dateFrom: from, dateTo: to,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── История операций ───────────────
 
 /** GET /seller/history */

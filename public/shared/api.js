@@ -382,6 +382,7 @@
 
   const fbsAnalytics = {
     summary:    (p) => get('/fbs-analytics/summary', p),
+    speed:      (p) => get('/fbs-analytics/speed', p),
     refreshNow: ()  => post('/fbs-analytics/refresh-now', {}),
   };
 
@@ -512,6 +513,7 @@
     wbReturnClaims: (p) => get('/seller/wb-return-claims', p),
     analytics:(p)     => get('/seller/analytics/sales', p),
     fbsAnalyticsSummary: (p) => get('/seller/fbs-analytics/summary', p),
+    fbsAnalyticsSpeed:   (p) => get('/seller/fbs-analytics/speed', p),
     history:  (p)     => get('/seller/history', p),
     receivingHistory: (p) => get('/seller/receiving-history', p),
     acts: {

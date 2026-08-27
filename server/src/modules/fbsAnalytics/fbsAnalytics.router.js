@@ -41,6 +41,22 @@ router.get('/summary', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/** GET /fbs-analytics/speed — сроки обработки (0-13/13-42/42-48/48-54/54-60/60+ч)
+ *  и доля "доставлено вовремя" (<=48ч от создания до передачи в WB) - от этого
+ *  напрямую зависит скидка/наценка на комиссию WB. */
+router.get('/speed', async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req.query);
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const mpAccountId = req.query.mp_account_id ? Number(req.query.mp_account_id) : null;
+
+    const result = await fbsAnalyticsService.getProcessingSpeed({
+      tenantId: req.user.tenantId, clientId, mpAccountId, dateFrom, dateTo,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** POST /fbs-analytics/refresh-now — ручной принудительный опрос wbStatus
  *  (обычно обновляется фоновой джобой раз в 30 минут). */
 router.post('/refresh-now', async (req, res, next) => {

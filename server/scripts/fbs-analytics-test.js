@@ -35,6 +35,15 @@ async function main() {
     console.log(`  ${b.label.padEnd(20)} ${String(b.qty).padStart(6)} шт   ${b.amount.toFixed(2)} ₽`);
   }
 
+  const speed = await fbsAnalyticsService.getProcessingSpeed({ tenantId, dateFrom: from, dateTo: to });
+  console.log(`\nСроки обработки (заказ→передача в WB), учтено: ${speed.processed} шт:`);
+  console.log(`Вовремя (<=48ч): ${speed.on_time_rate === null ? '—' : speed.on_time_rate.toFixed(1) + '%'}`);
+  console.log(`Ср. время заказ->WB: ${speed.avg_hours_to_wb === null ? '—' : speed.avg_hours_to_wb.toFixed(1) + ' ч'}`);
+  console.log(`Ср. время заказ->выкуп: ${speed.avg_hours_to_sold === null ? '—' : speed.avg_hours_to_sold.toFixed(1) + ' ч'}`);
+  for (const b of speed.buckets) {
+    console.log(`  ${b.label.padEnd(28)} ${String(b.qty).padStart(6)} шт   ${b.pct.toFixed(1)}%`);
+  }
+
   await pool.end();
 }
 

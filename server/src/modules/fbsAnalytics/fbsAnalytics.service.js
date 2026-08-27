@@ -72,12 +72,25 @@ async function refreshWbStatusesForAccount({ tenantId, mpAccountId, apiToken }) 
     for (const s of statuses) {
       const orderId = s.id ?? s.orderId ?? s.nmId;
       if (!orderId || !s.wbStatus) continue;
-      await query(
+      const upd = await query(
         `UPDATE wms.wb_orders SET wb_status=$1, wb_status_updated_at=NOW()
-         WHERE tenant_id=$2 AND mp_account_id=$3 AND wb_order_id=$4 AND (wb_status IS DISTINCT FROM $1)`,
+         WHERE tenant_id=$2 AND mp_account_id=$3 AND wb_order_id=$4 AND (wb_status IS DISTINCT FROM $1)
+         RETURNING id`,
         [s.wbStatus, tenantId, mpAccountId, orderId]
       );
-      updated++;
+      if (upd.rowCount > 0) {
+        updated++;
+        // История ПЕРВЫХ переходов - для расчёта сроков обработки (фаза 2).
+        // ON CONFLICT DO NOTHING: UNIQUE(mp_account_id, wb_order_id, wb_status)
+        // гарантирует, что сохраняется именно первое наблюдение этого статуса,
+        // даже если тот же статус вернётся повторно позже (не должно
+        // случаться у WB, но на всякий случай не даём это задвоить).
+        await query(
+          `INSERT INTO wms.wb_order_status_events (tenant_id, mp_account_id, wb_order_id, wb_status, observed_at)
+           VALUES ($1,$2,$3,$4,NOW()) ON CONFLICT (mp_account_id, wb_order_id, wb_status) DO NOTHING`,
+          [tenantId, mpAccountId, orderId, s.wbStatus]
+        );
+      }
     }
   }
   return { checked: orderIds.length, updated };
@@ -167,8 +180,108 @@ async function getFbsSummary({ tenantId, clientId = null, mpAccountId = null, da
   return { current, previous, period: { from: dateFrom, to: dateTo }, previous_period: { from: prevFrom.toISOString(), to: prevTo.toISOString() } };
 }
 
+// -----------------------------------------------------------------------------
+// Фаза 2: сроки обработки и комиссия WB.
+//
+// WB меняет комиссию в зависимости от того, СКОЛЬКО ВРЕМЕНИ ПРОШЛО ОТ
+// СОЗДАНИЯ ЗАКАЗА ДО ПЕРЕДАЧИ ЕГО В WB (не до доставки покупателю!) - это
+// момент, когда wbStatus впервые перестаёт быть 'waiting' (WB реально принял
+// поставку физически). Пороги те же, что в документации WB/конкурентов:
+//   0–13ч   — максимальная скидка на комиссию (-5 п.п.)
+//   13–42ч  — скидка (-3.5 п.п.)
+//   42–48ч  — базовая ставка ("вовремя")
+//   48–54ч  — штраф +0.30 п.п./ч
+//   54–60ч  — штраф +0.35 п.п./ч
+//   >60ч    — штраф +0.45 п.п./ч
+// "Доставлено вовремя" = доля заказов, уложившихся в 48ч.
+//
+// Точность ограничена частотой опроса статуса (по умолчанию раз в 30 минут,
+// wbFbsStatusSync.js) - наблюдаемый момент "заказ покинул waiting" может
+// отставать от реального на несколько десятков минут. Для решения "уложились
+// мы в 48ч или нет" такой точности достаточно с большим запасом.
+// -----------------------------------------------------------------------------
+
+const SPEED_BUCKETS = [
+  { key: 'h0_13',  label: '0–13 ч (макс. скидка)',   maxHours: 13 },
+  { key: 'h13_42', label: '13–42 ч (скидка)',         maxHours: 42 },
+  { key: 'h42_48', label: '42–48 ч (база)',           maxHours: 48 },
+  { key: 'h48_54', label: '48–54 ч (штраф +0.30 п.п./ч)', maxHours: 54 },
+  { key: 'h54_60', label: '54–60 ч (штраф +0.35 п.п./ч)', maxHours: 60 },
+  { key: 'h60plus',label: '>60 ч (штраф +0.45 п.п./ч)',   maxHours: Infinity },
+];
+
+function bucketForHours(hours) {
+  for (const b of SPEED_BUCKETS) if (hours <= b.maxHours) return b.key;
+  return 'h60plus';
+}
+
+async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = null, dateFrom, dateTo }) {
+  const params = [tenantId, dateFrom, dateTo];
+  const conds = ['wo.tenant_id=$1', 'wo.created_at >= $2', 'wo.created_at < $3'];
+  let idx = 4;
+  if (clientId) { conds.push(`ma.client_id=$${idx++}`); params.push(clientId); }
+  if (mpAccountId) { conds.push(`wo.mp_account_id=$${idx++}`); params.push(mpAccountId); }
+
+  // Первый момент, когда заказ покинул 'waiting' (LEFT JOIN LATERAL -
+  // берём самое раннее событие с wb_status != 'waiting' на этот заказ).
+  const r = await query(
+    `SELECT wo.created_at, ev.observed_at AS left_waiting_at, sold.observed_at AS sold_at
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e
+       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status != 'waiting'
+       ORDER BY observed_at ASC LIMIT 1
+     ) ev ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e2
+       WHERE e2.mp_account_id = wo.mp_account_id AND e2.wb_order_id = wo.wb_order_id AND e2.wb_status = 'sold'
+       ORDER BY observed_at ASC LIMIT 1
+     ) sold ON TRUE
+     WHERE ${conds.join(' AND ')}`,
+    params
+  );
+
+  const buckets = {};
+  for (const b of SPEED_BUCKETS) buckets[b.key] = 0;
+  let onTime = 0, processed = 0;
+  let sumToWb = 0, cntToWb = 0;
+  let sumWbToSold = 0, cntWbToSold = 0;
+  let sumToSold = 0, cntToSold = 0;
+
+  for (const row of r.rows) {
+    if (row.left_waiting_at) {
+      const hoursToWb = (new Date(row.left_waiting_at) - new Date(row.created_at)) / 3600000;
+      buckets[bucketForHours(hoursToWb)]++;
+      processed++;
+      if (hoursToWb <= 48) onTime++;
+      sumToWb += hoursToWb; cntToWb++;
+
+      if (row.sold_at) {
+        const hoursWbToSold = (new Date(row.sold_at) - new Date(row.left_waiting_at)) / 3600000;
+        if (hoursWbToSold >= 0) { sumWbToSold += hoursWbToSold; cntWbToSold++; }
+        const hoursToSold = (new Date(row.sold_at) - new Date(row.created_at)) / 3600000;
+        sumToSold += hoursToSold; cntToSold++;
+      }
+    }
+  }
+
+  return {
+    processed, // сколько заказов из периода уже успели покинуть 'waiting' (по ним считаем сроки)
+    on_time_rate: processed > 0 ? (onTime / processed) * 100 : null,
+    avg_hours_to_wb:      cntToWb > 0     ? sumToWb / cntToWb          : null,
+    avg_hours_wb_to_sold: cntWbToSold > 0 ? sumWbToSold / cntWbToSold  : null,
+    avg_hours_to_sold:    cntToSold > 0   ? sumToSold / cntToSold      : null,
+    buckets: SPEED_BUCKETS.map(b => ({
+      key: b.key, label: b.label, qty: buckets[b.key],
+      pct: processed > 0 ? (buckets[b.key] / processed) * 100 : 0,
+    })),
+  };
+}
+
 module.exports = {
   refreshWbStatusesForAccount,
   refreshWbStatusesForTenant,
   getFbsSummary,
+  getProcessingSpeed,
 };
