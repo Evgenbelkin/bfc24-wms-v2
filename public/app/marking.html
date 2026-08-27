@@ -56,7 +56,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Дата</th><th>Клиент</th><th>Товар</th><th>Размер</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Поставка</th><th>Статус в WB</th></tr></thead>
+            <thead><tr><th>Дата</th><th>Клиент</th><th>Товар</th><th>Размер</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Стикер ВБ</th><th>Поставка</th><th>Статус в WB</th></tr></thead>
             <tbody id="shipped-body"></tbody>
           </table>
         </div>
@@ -95,7 +95,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Штрихкод</th><th>Товар</th><th>Клиент</th><th>Код "Честный знак"</th><th>Статус</th><th>Приход</th><th>Расход</th><th>Поставка</th></tr></thead>
+            <thead><tr><th>Штрихкод</th><th>Товар</th><th>Клиент</th><th>Код "Честный знак"</th><th>Стикер ВБ</th><th>Статус</th><th>Приход</th><th>Расход</th><th>Поставка</th></tr></thead>
             <tbody id="journal-body"></tbody>
           </table>
         </div>
@@ -208,6 +208,7 @@
             <td>${UI.escHtml(r.size||'—')}</td>
             <td>${UI.escHtml(r.barcode||'—')}</td>
             <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
+            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.wb_sticker_code||'—')}</td>
             <td>${UI.escHtml(r.shipment_code||'—')}</td>
             <td><span class="pill ${WB_STATUS_PILL[r.wb_submit_status]||'pill-gray'}">${WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status||'—')}</span></td>
           </tr>
@@ -223,7 +224,7 @@
     // (см. public/seller/receiving-history.html), без сторонних библиотек.
     function exportShippedCsv() {
       if (!shippedRows.length) { UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"'); return; }
-      const headers = ['Дата','Клиент','Товар','Артикул','Размер','Штрихкод','Код Честный знак','Поставка','Статус в WB'];
+      const headers = ['Дата','Клиент','Товар','Артикул','Размер','Штрихкод','Код Честный знак','Стикер ВБ','Поставка','Статус в WB'];
       const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
       const lines = [headers.map(escCsv).join(';')];
       for (const r of shippedRows) {
@@ -235,6 +236,7 @@
           r.size || '',
           r.barcode || '',
           r.code || '',
+          r.wb_sticker_code || '',
           r.shipment_code || '',
           WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || '',
         ].map(escCsv).join(';'));
@@ -273,6 +275,7 @@
             <td>${UI.escHtml(r.item_name||'—')}<div style="font-size:11px;color:var(--muted);">${UI.escHtml(r.vendor_code||'')} ${UI.escHtml(r.size||'')}</div></td>
             <td>${UI.escHtml(r.client_name||'—')}</td>
             <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
+            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.wb_sticker_code||'—')}</td>
             <td><span class="pill ${CODE_STATUS_PILL[r.status]||'pill-gray'}">${CODE_STATUS_LABELS[r.status] || UI.escHtml(r.status||'—')}</span></td>
             <td>${UI.fmtDateTime(r.created_at)}<div style="font-size:11px;color:var(--muted);">${SOURCE_LABELS[r.source]||UI.escHtml(r.source||'')}</div></td>
             <td>${r.used_at ? UI.fmtDateTime(r.used_at) : '—'}${r.used_at ? `<div style="font-size:11px;color:var(--muted);">${WB_STATUS_LABELS[r.wb_submit_status]||UI.escHtml(r.wb_submit_status||'')}</div>` : ''}</td>
@@ -287,7 +290,7 @@
 
     function exportJournalCsv() {
       if (!journalRows.length) { UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"'); return; }
-      const headers = ['Штрихкод','Товар','Артикул','Размер','Клиент','Код Честный знак','Статус','Приход (дата)','Приход (источник)','Расход (дата)','Статус в WB','Поставка'];
+      const headers = ['Штрихкод','Товар','Артикул','Размер','Клиент','Код Честный знак','Стикер ВБ','Статус','Приход (дата)','Приход (источник)','Расход (дата)','Статус в WB','Поставка'];
       const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
       const lines = [headers.map(escCsv).join(';')];
       for (const r of journalRows) {
@@ -298,6 +301,7 @@
           r.size || '',
           r.client_name || '',
           r.code || '',
+          r.wb_sticker_code || '',
           CODE_STATUS_LABELS[r.status] || r.status || '',
           r.created_at ? UI.fmtDateTime(r.created_at) : '',
           SOURCE_LABELS[r.source] || r.source || '',

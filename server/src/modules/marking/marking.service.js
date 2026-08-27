@@ -665,11 +665,17 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
     `SELECT mc.code, mc.used_at, mc.wb_submit_status, mc.wb_order_id,
             i.barcode, i.item_name, i.vendor_code, i.size,
             s.external_id AS shipment_code, s.marketplace, s.shipped_at,
-            c.client_name
+            c.client_name,
+            wo.wb_sticker_code
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
      LEFT JOIN wms.clients c ON c.id = s.client_id
+     LEFT JOIN LATERAL (
+       SELECT wo2.wb_sticker_code FROM wms.wb_orders wo2
+       WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       LIMIT 1
+     ) wo ON mc.wb_order_id IS NOT NULL
      WHERE ${conds.join(' AND ')}
      ORDER BY mc.used_at DESC
      LIMIT $${idx}`,
@@ -708,11 +714,17 @@ async function getCodesJournal({
             mc.used_at, mc.wb_submit_status, mc.wb_order_id,
             i.barcode, i.item_name, i.vendor_code, i.size,
             c.client_name,
-            s.external_id AS shipment_code
+            s.external_id AS shipment_code,
+            wo.wb_sticker_code
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
      LEFT JOIN wms.clients c ON c.id = i.client_id
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
+     LEFT JOIN LATERAL (
+       SELECT wo2.wb_sticker_code FROM wms.wb_orders wo2
+       WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       LIMIT 1
+     ) wo ON mc.wb_order_id IS NOT NULL
      WHERE ${conds.join(' AND ')}
      ORDER BY mc.created_at DESC
      LIMIT $${idx}`,
