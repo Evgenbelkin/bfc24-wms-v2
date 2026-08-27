@@ -375,6 +375,7 @@
     wbItems:     (p) => get('/wb/items', p),
     reconcile:   ()  => get('/wb/reconcile'),
     tariffs:     ()  => get('/wb/tariffs'),
+    acceptanceCoefficients: () => get('/wb/acceptance-coefficients'),
   };
 
   // ─────────────── Printing ───────────────

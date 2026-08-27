@@ -16,6 +16,7 @@ const WB_STATISTICS_BASE = 'https://statistics-api.wildberries.ru';
 const WB_CONTENT_BASE = 'https://content-api.wildberries.ru';
 const WB_RETURNS_BASE = 'https://returns-api.wildberries.ru';
 const WB_COMMON_BASE = 'https://common-api.wildberries.ru';
+const WB_SUPPLIES_BASE = 'https://supplies-api.wildberries.ru';
 
 const DEFAULT_TIMEOUT = 30_000;
 const MAX_RETRIES = 5;
@@ -378,6 +379,29 @@ async function fetchBoxTariffs(token, date = null) {
   };
 }
 
+/**
+ * Коэффициенты приёмки ФБС по складам на ближайшие ~14 дней (категория
+ * токена "Поставки", хост supplies-api.wildberries.ru - ДРУГОЙ хост и ДРУГАЯ
+ * категория токена, чем fetchBoxTariffs выше). 0 - бесплатно, >0 - платно
+ * (множитель к базовой ставке), -1 - склад закрыт для приёмки на эту дату.
+ * Лимит WB для этого метода мягче (6 запросов/мин), поэтому обычный retries
+ * из wbRequest тут безопасен (в отличие от tariffs/box). warehouseIds - через
+ * запятую, необязательно - без него WB отдаёт по всем складам сразу.
+ */
+async function fetchAcceptanceCoefficients(token, warehouseIds = null) {
+  const params = {};
+  if (Array.isArray(warehouseIds) && warehouseIds.length) {
+    params.warehouseIDs = warehouseIds.join(',');
+  }
+  const data = await wbRequest({
+    token,
+    baseUrl: WB_SUPPLIES_BASE,
+    path: '/api/v1/acceptance/coefficients',
+    params,
+  });
+  return Array.isArray(data) ? data : [];
+}
+
 /** Нормализовать shipment code в формат WB-GI-XXXXX */
 function normalizeShipmentCode(rawId) {
   const s = String(rawId || '').trim();
@@ -415,5 +439,6 @@ module.exports = {
   fetchReturnClaims,
   setOrderKiz,
   fetchBoxTariffs,
+  fetchAcceptanceCoefficients,
   normalizeShipmentCode, extractStickerCode,
 };

@@ -118,6 +118,11 @@ const config = {
     // server/src/modules/platform/wbTariffs.service.js). Тарифы одинаковые для
     // любого продавца, обновляются WB раз в сутки - раз в сутки достаточно и нам.
     tariffsSyncIntervalMinutes: intEnv('WB_TARIFFS_SYNC_INTERVAL_MINUTES', 1440),
+    // Коэффициенты приёмки ФБС по складам (platform.wb_acceptance_coefficients) -
+    // в отличие от тарифов, эти данные меняются в течение дня, поэтому
+    // обновляем чаще (по умолчанию раз в час). Лимит WB для этого метода
+    // мягче (6 запросов/мин), часто дёргать не страшно.
+    acceptanceSyncIntervalMinutes: intEnv('WB_ACCEPTANCE_SYNC_INTERVAL_MINUTES', 60),
   },
 
   urls: {

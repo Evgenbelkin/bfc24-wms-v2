@@ -6,6 +6,7 @@ const { query, transaction } = require('../../config/database');
 const wbClient = require('./wb.client');
 const wbService = require('./wb.service');
 const wbTariffsService = require('../platform/wbTariffs.service');
+const wbAcceptanceService = require('../platform/wbAcceptance.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
@@ -220,6 +221,17 @@ router.get('/reconcile', requireRole('tenant_admin','supervisor'), async (req,re
 router.get('/tariffs', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const result = await wbTariffsService.listLatestTariffs();
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** GET /wb/acceptance-coefficients — коэффициенты приёмки ФБС по складам:
+ *  бесплатно/платно/закрыто сегодня + ближайшая бесплатная дата. Тоже
+ *  read-only снимок общих данных (см. platform/wbAcceptance.service.js), не
+ *  свой запрос к WB на тенанта. */
+router.get('/acceptance-coefficients', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await wbAcceptanceService.listNearestFreeSlots();
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
