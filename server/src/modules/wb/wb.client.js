@@ -357,11 +357,18 @@ async function setOrderKiz(token, orderId, sgtins) {
 async function fetchBoxTariffs(token, date = null) {
   const params = {};
   if (date) params.date = date;
+  // У этого метода WB жёсткий лимит - 1 запрос в минуту, burst 1 (см. доку
+  // dev.wildberries.ru). Общий retries=5 из wbRequest (5s/10s/15s/20s/25s/30s,
+  // ~105с суммарно) для такого лимита контрпродуктивен: 6 запросов подряд от
+  // одного вызова сами провоцируют WB продлевать бан. Один retry с одной
+  // паузой (backoff по retry-after или 5с по умолчанию) - максимум, что тут
+  // разумно; при 429 просто ждём следующего вызова (ручного или daily cron).
   const data = await wbRequest({
     token,
     baseUrl: WB_COMMON_BASE,
     path: '/api/v1/tariffs/box',
     params,
+    retries: 1,
   });
   const payload = data?.response?.data || data?.data || data || {};
   return {
