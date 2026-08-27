@@ -49,10 +49,16 @@ async function wbRequest({ token, method = 'GET', baseUrl = WB_BASE, path, param
         validateStatus: () => true, // обрабатываем все статусы сами
       });
 
-      // 429 Rate Limit — backoff
+      // 429 Rate Limit — backoff. WB отдаёт своё собственное имя заголовка
+      // (X-Ratelimit-Retry - сколько секунд реально ждать), а не стандартный
+      // Retry-After - раньше читали только Retry-After, которого в ответах WB
+      // обычно нет, поэтому всегда ждали "наугад" по 5с и множили на номер
+      // попытки. Теперь читаем оба варианта, приоритет - у заголовка WB.
       if (response.status === 429) {
-        const retryAfter = Number(response.headers['retry-after'] || 5);
-        const waitMs = Math.max(retryAfter * 1000, 1000) * (attempt + 1);
+        const retryAfter = Number(
+          response.headers['x-ratelimit-retry'] || response.headers['retry-after'] || 5
+        );
+        const waitMs = Math.max(retryAfter * 1000, 1000);
         logger.warn({ path, attempt, waitMs }, 'WB rate limit 429, retrying...');
         await sleep(waitMs);
         attempt++;
@@ -398,7 +404,11 @@ async function fetchAcceptanceCoefficients(token, warehouseIds = null) {
   const data = await wbRequest({
     token,
     baseUrl: WB_SUPPLIES_BASE,
-    path: '/api/v1/acceptance/coefficients',
+    // Путь у метода поменялся в 2025/2026 - было /api/v1/acceptance/coefficients
+    // (устаревший путь из старых сторонних SDK/статей, WB отдаёт на него 404
+    // "path not found" от шлюза ag-supplies), актуальный - под /api/tariffs/v1/.
+    // Хост и категория токена ("Поставки") при этом не изменились.
+    path: '/api/tariffs/v1/acceptance/coefficients',
     params,
   });
   return Array.isArray(data) ? data : [];
