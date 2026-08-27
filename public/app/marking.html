@@ -28,6 +28,7 @@
   <div id="marking-content">
     <div class="tabs">
       <button class="tab active" data-tab="shipped" onclick="switchTab('shipped')">Отгружено в WB</button>
+      <button class="tab" data-tab="journal" onclick="switchTab('journal')">Журнал кодов</button>
       <button class="tab" data-tab="overrides" onclick="switchTab('overrides')">Требуют ручной привязки</button>
     </div>
 
@@ -57,6 +58,45 @@
           <table>
             <thead><tr><th>Дата</th><th>Клиент</th><th>Товар</th><th>Размер</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Поставка</th><th>Статус в WB</th></tr></thead>
             <tbody id="shipped-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Журнал кодов (приход/расход) ============ -->
+    <div id="tab-journal" style="display:none">
+      <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-row">
+          <select id="j-client"><option value="">Все клиенты</option></select>
+          <select id="j-status">
+            <option value="">Все статусы</option>
+            <option value="available">В пуле (не использован)</option>
+            <option value="used">Использован</option>
+          </select>
+        </div>
+        <div class="filters-row">
+          <input type="text" id="j-barcode" placeholder="Штрихкод товара (точное совпадение)"/>
+          <input type="date" id="j-date-from"/>
+          <input type="date" id="j-date-to"/>
+        </div>
+        <div class="refresh-note" style="text-align:left;margin-bottom:8px;">Период фильтрует по дате прихода кода (когда добавлен в систему) — так в выборку попадают и коды, ещё лежащие в пуле.</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-big btn-blue" style="flex:1;" onclick="loadJournal()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+          <button class="btn-big btn-back" style="flex:1;" onclick="exportJournalCsv()"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg> Выгрузить в Excel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="badge-row">
+          <div class="badge"><span>Кодов</span><div id="j-count">0</div></div>
+          <div class="badge"><span>В пуле</span><div id="j-available">0</div></div>
+          <div class="badge"><span>Использовано</span><div id="j-used">0</div></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Штрихкод</th><th>Товар</th><th>Клиент</th><th>Код "Честный знак"</th><th>Статус</th><th>Приход</th><th>Расход</th><th>Поставка</th></tr></thead>
+            <tbody id="journal-body"></tbody>
           </table>
         </div>
       </div>
@@ -97,22 +137,29 @@
     }
 
     function switchTab(name) {
-      ['shipped','overrides'].forEach(t => {
+      ['shipped','journal','overrides'].forEach(t => {
         document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
         document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
       });
       if (name === 'overrides' && !overridesLoaded) loadOverrides();
+      if (name === 'journal' && !journalLoaded) loadJournal();
     }
 
     const WB_STATUS_LABELS = { sent:'Отправлено в WB', export_only:'Только выгрузка', manual_override:'Без привязки (вручную)' };
     const WB_STATUS_PILL = { sent:'pill-green', export_only:'pill-yellow', manual_override:'pill-red' };
+    const CODE_STATUS_LABELS = { available:'В пуле', used:'Использован' };
+    const CODE_STATUS_PILL = { available:'pill-blue', used:'pill-green' };
+    const SOURCE_LABELS = { import:'импорт', scanned:'скан' };
 
     let shippedRows = [];
+    let journalRows = [];
+    let journalLoaded = false;
 
     async function loadClients() {
       try {
         const res = await window.API.clients.short();
         UI.populateSelect('#f-client', res.clients || [], { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
+        UI.populateSelect('#j-client', res.clients || [], { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
       } catch (e) {
         if (isModuleDisabled(e)) { showModuleDisabled(); return; }
         UI.notify.err(e.message);
@@ -122,8 +169,12 @@
     function defaultDates() {
       const to = new Date();
       const from = new Date(); from.setDate(from.getDate() - 30);
-      document.getElementById('f-date-to').value = to.toISOString().slice(0,10);
-      document.getElementById('f-date-from').value = from.toISOString().slice(0,10);
+      const toStr = to.toISOString().slice(0,10);
+      const fromStr = from.toISOString().slice(0,10);
+      document.getElementById('f-date-to').value = toStr;
+      document.getElementById('f-date-from').value = fromStr;
+      document.getElementById('j-date-to').value = toStr;
+      document.getElementById('j-date-from').value = fromStr;
     }
 
     async function loadShippedReport() {
@@ -184,6 +235,70 @@
       const a = document.createElement('a');
       a.href = url;
       a.download = `chz-otgruzheno-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function loadJournal() {
+      try {
+        journalLoaded = true;
+        const params = {};
+        const clientId = UI.val('#j-client'); if (clientId) params.client_id = clientId;
+        const status = UI.val('#j-status'); if (status) params.status = status;
+        const barcode = UI.val('#j-barcode'); if (barcode) params.barcode = barcode.trim();
+        const dateFrom = UI.val('#j-date-from'); if (dateFrom) params.date_from = dateFrom;
+        const dateTo = UI.val('#j-date-to'); if (dateTo) params.date_to = dateTo;
+        const res = await window.API.marking.codesJournal(params);
+        journalRows = res.rows || [];
+
+        document.getElementById('j-count').textContent = journalRows.length;
+        document.getElementById('j-available').textContent = journalRows.filter(r => r.status==='available').length;
+        document.getElementById('j-used').textContent = journalRows.filter(r => r.status==='used').length;
+
+        UI.renderTable('#journal-body', journalRows, (r) => `
+          <tr>
+            <td>${UI.escHtml(r.barcode||'—')}</td>
+            <td>${UI.escHtml(r.item_name||'—')}<div style="font-size:11px;color:var(--muted);">${UI.escHtml(r.vendor_code||'')} ${UI.escHtml(r.size||'')}</div></td>
+            <td>${UI.escHtml(r.client_name||'—')}</td>
+            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
+            <td><span class="pill ${CODE_STATUS_PILL[r.status]||'pill-gray'}">${CODE_STATUS_LABELS[r.status] || UI.escHtml(r.status||'—')}</span></td>
+            <td>${UI.fmtDateTime(r.created_at)}<div style="font-size:11px;color:var(--muted);">${SOURCE_LABELS[r.source]||UI.escHtml(r.source||'')}</div></td>
+            <td>${r.used_at ? UI.fmtDateTime(r.used_at) : '—'}${r.used_at ? `<div style="font-size:11px;color:var(--muted);">${WB_STATUS_LABELS[r.wb_submit_status]||UI.escHtml(r.wb_submit_status||'')}</div>` : ''}</td>
+            <td>${UI.escHtml(r.shipment_code||'—')}</td>
+          </tr>
+        `);
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function exportJournalCsv() {
+      if (!journalRows.length) { UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"'); return; }
+      const headers = ['Штрихкод','Товар','Артикул','Размер','Клиент','Код Честный знак','Статус','Приход (дата)','Приход (источник)','Расход (дата)','Статус в WB','Поставка'];
+      const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+      const lines = [headers.map(escCsv).join(';')];
+      for (const r of journalRows) {
+        lines.push([
+          r.barcode || '',
+          r.item_name || '',
+          r.vendor_code || '',
+          r.size || '',
+          r.client_name || '',
+          r.code || '',
+          CODE_STATUS_LABELS[r.status] || r.status || '',
+          r.created_at ? UI.fmtDateTime(r.created_at) : '',
+          SOURCE_LABELS[r.source] || r.source || '',
+          r.used_at ? UI.fmtDateTime(r.used_at) : '',
+          r.used_at ? (WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || '') : '',
+          r.shipment_code || '',
+        ].map(escCsv).join(';'));
+      }
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chz-zhurnal-${new Date().toISOString().slice(0,10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     }

@@ -678,9 +678,52 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
   return { rows: r.rows };
 }
 
+/**
+ * Общий журнал кодов "Честный знак" — КАЖДЫЙ код тенанта (не только
+ * отгруженные, как в getShippedReport), с приходом (created_at + source:
+ * импорт в пул / скан на приёмке / скан на упаковке при scan_packing) и
+ * расходом (used_at + поставка, если код уже ушёл). Коды, ещё лежащие в
+ * пуле, тоже видны - used_at/поставка у них просто пустые. Период фильтрует
+ * по ДАТЕ ПРИХОДА (created_at) - это единственное поле, которое есть у
+ * КАЖДОГО кода независимо от статуса, в отличие от used_at.
+ */
+async function getCodesJournal({
+  tenantId, clientId = null, barcode = null, status = null,
+  dateFrom = null, dateTo = null, limit = 5000,
+}) {
+  const params = [tenantId];
+  const conds = [`mc.tenant_id=$1`];
+  let idx = 2;
+  if (clientId) { conds.push(`i.client_id=$${idx++}`); params.push(Number(clientId)); }
+  if (barcode)  { conds.push(`i.barcode=$${idx++}`); params.push(String(barcode).trim()); }
+  if (status && ['available', 'used'].includes(status)) {
+    conds.push(`mc.status=$${idx++}`); params.push(status);
+  }
+  if (dateFrom) { conds.push(`mc.created_at >= $${idx++}::date`); params.push(dateFrom); }
+  if (dateTo)   { conds.push(`mc.created_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(dateTo); }
+  params.push(Math.min(Number(limit) || 5000, 20000));
+
+  const r = await query(
+    `SELECT mc.code, mc.status, mc.source, mc.created_at,
+            mc.used_at, mc.wb_submit_status, mc.wb_order_id,
+            i.barcode, i.item_name, i.vendor_code, i.size,
+            c.client_name,
+            s.external_id AS shipment_code
+     FROM wms.marking_codes mc
+     JOIN wms.items i ON i.id = mc.item_id
+     LEFT JOIN wms.clients c ON c.id = i.client_id
+     LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
+     WHERE ${conds.join(' AND ')}
+     ORDER BY mc.created_at DESC
+     LIMIT $${idx}`,
+    params
+  );
+  return { rows: r.rows };
+}
+
 module.exports = {
   parseCodesText, importCodes, importCodesFromExcel, getCodesSummary, listCodes, deleteCode,
   shouldMarkAt, allocateAndPrint,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
-  listPendingManualOverrides, listCodesForShipment, getShippedReport,
+  listPendingManualOverrides, listCodesForShipment, getShippedReport, getCodesJournal,
 };

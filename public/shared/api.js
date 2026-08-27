@@ -205,6 +205,7 @@
     pendingOverrides: (p)          => get('/marking/pending-manual-overrides', p),
     exportForShipment: (shipmentCode) => get('/marking/export', { shipment_code: shipmentCode }),
     shippedReport: (p)             => get('/marking/shipped-report', p),
+    codesJournal: (p)              => get('/marking/codes-journal', p),
     logRejectedCode: (d) => post('/marking/diagnostics/rejected-code', d),
   };
 

@@ -224,6 +224,25 @@ router.get('/shipped-report', requireRole('tenant_admin', 'supervisor'), async (
   } catch (e) { next(e); }
 });
 
+/** GET /marking/codes-journal?client_id&barcode&status&date_from&date_to —
+ *  общий журнал приход/расход по КАЖДОМУ коду тенанта (не только отгруженным,
+ *  как /shipped-report) - когда пришёл (импорт/скан) и когда/куда ушёл
+ *  (поставка), включая коды, которые ещё лежат в пуле неиспользованными. */
+router.get('/codes-journal', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await svc.getCodesJournal({
+      tenantId: req.user.tenantId,
+      clientId: req.query.client_id ? Number(req.query.client_id) : null,
+      barcode: req.query.barcode || null,
+      status: req.query.status || null,
+      dateFrom: req.query.date_from || null,
+      dateTo: req.query.date_to || null,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** GET /marking/pending-manual-overrides — коды, проведённые без отправки в WB (требуют ручной привязки) */
 router.get('/pending-manual-overrides', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {
