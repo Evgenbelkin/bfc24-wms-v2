@@ -172,10 +172,16 @@ async function listCodes({ tenantId, itemId, status = null, limit = 200, offset 
  * в локальный пул (иначе взять код на сборке будет неоткуда), а на упаковке
  * код сверяется с конкретной физической единицей и уходит в WB API (только
  * там известен orderId). Одно без другого не работает.
+ *
+ * Для marking_mode='scan_packing' (третий сценарий, см. миграцию 046) —
+ * приёмка вообще не участвует: код клиента сканируется ВПЕРВЫЕ прямо на
+ * упаковке, регистрируется в пуле и сразу же гасится тем же действием (см.
+ * consumeScannedCodeAtPacking с autoRegister=true в packing.service.js).
  */
 function shouldMarkAt(item, stage) {
   if (!item || !item.requires_marking) return false;
   if (item.marking_mode === 'scan') return true;
+  if (item.marking_mode === 'scan_packing') return stage === 'packing';
   return (item.marking_trigger || 'packing') === stage;
 }
 
@@ -283,7 +289,7 @@ async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient 
  */
 async function consumeScannedCodeAtPacking({
   tenantId, itemId, code, wbOrderId, apiToken, refType, refId, userId, dbClient = null,
-  skipWbSubmit = false,
+  skipWbSubmit = false, autoRegister = false,
 }) {
   const doConsume = async (client) => {
     const codeStr = String(code || '').trim();
@@ -294,15 +300,53 @@ async function consumeScannedCodeAtPacking({
       );
     }
 
-    const codeRes = await client.query(
+    let codeRes = await client.query(
       `SELECT id, status FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND code=$3 FOR UPDATE`,
       [tenantId, itemId, codeStr]
     );
-    if (codeRes.rowCount === 0) {
+    if (codeRes.rowCount === 0 && !autoRegister) {
       throw new ValidationError(
         `Код "Честный знак" (${codeStr}) не найден в пуле этого товара. Убедитесь, что единица была ` +
         `принята на склад (код регистрируется сканом при приёмке) и что отсканирован код именно с неё.`
       );
+    }
+    if (codeRes.rowCount === 0 && autoRegister) {
+      // Третий сценарий (marking_mode='scan_packing', см. миграцию 046) —
+      // приёмки не было, это первый раз, когда мы вообще видим этот код.
+      // Та же валидация, что и при обычной регистрации на приёмке (см.
+      // registerScannedCodes выше) - это единственный момент, когда можно
+      // поймать битую структуру (потерянный GS1-разделитель и т.п.), другого
+      // шанса не будет.
+      if (!isValidKizCode(codeStr)) {
+        throw new ValidationError(
+          `"${codeStr}" не похож на код "Честный знак" (слишком короткий — похоже, отсканирован обычный штрихкод товара). ` +
+          `Отсканируйте код DataMatrix с этикетки маркировки, а не штрихкод товара.`
+        );
+      }
+      if (!hasValidKizStructure(codeStr)) {
+        logger.warn(
+          { tenantId, itemId, len: codeStr.length, hex: Buffer.from(codeStr, 'binary').toString('hex') },
+          'consumeScannedCodeAtPacking: код отклонён проверкой структуры (авторегистрация на упаковке, scan_packing)'
+        );
+        throw new ValidationError(
+          `Код похож на "Честный знак" по длине, но структура повреждена (потерян или задвоен служебный разделитель) — обычно так бывает при скане камерой телефона. ` +
+          `Пересканируйте физическим сканером в режиме GS1 DataMatrix.`
+        );
+      }
+      const insRes = await client.query(
+        `INSERT INTO wms.marking_codes (tenant_id, item_id, code, status, source, created_by)
+         VALUES ($1,$2,$3,'available','scanned',$4)
+         ON CONFLICT (tenant_id, code) DO NOTHING
+         RETURNING id, status`,
+        [tenantId, itemId, codeStr, userId]
+      );
+      if (insRes.rowCount === 0) {
+        throw new ValidationError(
+          `Код "Честный знак" (${codeStr}) уже зарегистрирован в системе — один код может принадлежать ` +
+          `только одной физической единице.`
+        );
+      }
+      codeRes = insRes;
     }
     const row = codeRes.rows[0];
     if (row.status !== 'available') {
@@ -379,7 +423,7 @@ async function consumeScannedCodeAtPacking({
  */
 async function overrideMarkingAtPacking({
   tenantId, itemId, code, refType, refId, packerId,
-  supervisorUsername, supervisorPassword, reason, dbClient = null,
+  supervisorUsername, supervisorPassword, reason, dbClient = null, autoRegister = false,
 }) {
   const codeStr = String(code || '').trim();
   if (!codeStr) throw new ValidationError('Не указан код "Честный знак" для проведения без отправки в WB');
@@ -402,12 +446,33 @@ async function overrideMarkingAtPacking({
   if (!passOk) throw new ForbiddenError('Неверный логин или пароль супервайзера');
 
   const doOverride = async (client) => {
-    const codeRes = await client.query(
+    let codeRes = await client.query(
       `SELECT id, status FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND code=$3 FOR UPDATE`,
       [tenantId, itemId, codeStr]
     );
-    if (codeRes.rowCount === 0) {
+    if (codeRes.rowCount === 0 && !autoRegister) {
       throw new ValidationError(`Код "Честный знак" (${codeStr}) не найден в пуле этого товара.`);
+    }
+    if (codeRes.rowCount === 0 && autoRegister) {
+      // scan_packing (миграция 046) - см. тот же случай в
+      // consumeScannedCodeAtPacking выше: приёмки не было, регистрируем код
+      // впервые прямо здесь, тем же аварийным проведением супервайзером.
+      if (!isValidKizCode(codeStr) || !hasValidKizStructure(codeStr)) {
+        throw new ValidationError(
+          `Код "Честный знак" (${codeStr}) не похож на корректный DataMatrix (проверьте длину/структуру) — не могу зарегистрировать.`
+        );
+      }
+      const insRes = await client.query(
+        `INSERT INTO wms.marking_codes (tenant_id, item_id, code, status, source, created_by)
+         VALUES ($1,$2,$3,'available','scanned',$4)
+         ON CONFLICT (tenant_id, code) DO NOTHING
+         RETURNING id, status`,
+        [tenantId, itemId, codeStr, packerId]
+      );
+      if (insRes.rowCount === 0) {
+        throw new ValidationError(`Код "Честный знак" (${codeStr}) уже зарегистрирован в системе.`);
+      }
+      codeRes = insRes;
     }
     const row = codeRes.rows[0];
     if (row.status !== 'available') {

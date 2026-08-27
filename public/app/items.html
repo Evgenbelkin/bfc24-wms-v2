@@ -131,7 +131,8 @@
                 <label>Кто маркирует товар</label>
                 <select id="bm-mode">
                   <option value="print">Мы (ФФ) печатаем код из своего пула</option>
-                  <option value="scan">Клиент уже клеит DataMatrix на производстве — мы только сканируем</option>
+                  <option value="scan">Клиент уже клеит DataMatrix на производстве — сканируем на приёмке и на упаковке</option>
+                  <option value="scan_packing">Клиент клеит DataMatrix — сканируем ТОЛЬКО на упаковке, без приёмки</option>
                 </select>
               </div>
             </div>
@@ -268,12 +269,14 @@
                 <select id="m-marking-mode" onchange="
                   document.getElementById('marking-print-wrap').style.display=this.value==='print'?'block':'none';
                   document.getElementById('marking-scan-hint').style.display=this.value==='scan'?'block':'none';
+                  document.getElementById('marking-scan-packing-hint').style.display=this.value==='scan_packing'?'block':'none';
                   document.getElementById('marking-trigger-select-wrap').style.display=this.value==='print'?'block':'none';
                 ">
                   <option value="print" ${!it || (it.marking_mode||'print')==='print' ? 'selected':''}>Мы (ФФ) печатаем код из своего пула</option>
-                  <option value="scan" ${it && it.marking_mode==='scan' ? 'selected':''}>Клиент уже клеит DataMatrix на производстве — мы только сканируем</option>
+                  <option value="scan" ${it && it.marking_mode==='scan' ? 'selected':''}>Клиент уже клеит DataMatrix на производстве — сканируем на приёмке и на упаковке</option>
+                  <option value="scan_packing" ${it && it.marking_mode==='scan_packing' ? 'selected':''}>Клиент клеит DataMatrix — сканируем ТОЛЬКО на упаковке, без приёмки</option>
                 </select>
-                <div id="marking-trigger-select-wrap" style="display:${it && it.marking_mode==='scan' ? 'none':'block'};">
+                <div id="marking-trigger-select-wrap" style="display:${it && (it.marking_mode==='scan' || it.marking_mode==='scan_packing') ? 'none':'block'};">
                   <label style="margin-top:6px;">Когда фиксировать код</label>
                   <select id="m-marking-trigger">
                     <option value="packing" ${!it || (it.marking_trigger||'packing')==='packing' ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
@@ -284,6 +287,12 @@
                   Для этого режима код сканируется на ОБОИХ этапах всегда (выбор "когда фиксировать" здесь не действует):
                   на приёмке DataMatrix каждой единицы заносится в пул, на упаковке он сверяется с конкретной
                   единицей и автоматически уходит в WB через API — вручную в кабинете WB вводить не нужно.
+                </p>
+                <p id="marking-scan-packing-hint" style="display:${it && it.marking_mode==='scan_packing' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:6px;">
+                  Приёмка кизы вообще не спрашивает — код сканируется впервые прямо на упаковке, там же
+                  регистрируется в пул и сразу гасится, привязываясь к штрихкоду товара. Отправка в WB API
+                  зависит от настройки клиента "не отправлять в WB" — если включена, код только копится
+                  для выгрузки в Excel по поставке.
                 </p>
               </div>
               ${it ? `

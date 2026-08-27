@@ -360,12 +360,18 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
     // продолжить, пока в пуле не появятся коды/не настроят принтер).
     let markingJob = null;
     if (marking.shouldMarkAt(item, 'packing')) {
-      if (item.marking_mode === 'scan') {
+      if (item.marking_mode === 'scan' || item.marking_mode === 'scan_packing') {
         // Товар промаркирован клиентом заранее (DataMatrix уже на единице) —
         // не печатаем, а сверяем отсканированный код с пулом и ОТПРАВЛЯЕМ
         // ЕГО В WB, привязывая к конкретному orderId этой единицы (замена
         // ручного ввода кода в кабинете WB на сборке). Жёсткая блокировка
         // (нет try/catch) — см. marking.consumeScannedCodeAtPacking.
+        //
+        // scan_packing (миграция 046) — третий сценарий: приёмки не было,
+        // код регистрируется В ПУЛЕ ВПЕРВЫЕ прямо здесь же, этим же сканом
+        // (autoRegister=true) — см. shouldMarkAt (для scan_packing маркировка
+        // не требуется на приёмке вообще, только на упаковке).
+        const autoRegister = item.marking_mode === 'scan_packing';
         const wbOrderRow = stickerRes.rows[0] || null;
         if (markingOverride && markingOverride.reason) {
           // Аварийный обход супервайзером/админом — WB API недоступен и т.п.
@@ -377,7 +383,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
             supervisorUsername: markingOverride.supervisorUsername,
             supervisorPassword: markingOverride.supervisorPassword,
             reason: markingOverride.reason,
-            dbClient: client,
+            dbClient: client, autoRegister,
           });
         } else {
           // Рубильник клиента (settings.marking_wb_submit_disabled, см.
@@ -386,6 +392,11 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
           // нужное ИП в момент упаковки (например, production-компания с
           // несколькими ИП на WB). Код всё равно обязательно сканируется и
           // привязывается к заказу, просто не летит в WB API прямо сейчас.
+          // Для scan_packing именно эта настройка обычно и включена —
+          // третий сценарий задумывался как "сканируем и выгружаем в Excel",
+          // но это отдельный переключатель клиента, а не жёстко зашитое
+          // поведение — при желании scan_packing прекрасно работает и с
+          // прямой отправкой в WB, как обычный 'scan'.
           const clientSettingsRes = await client.query(
             `SELECT COALESCE((settings->>'marking_wb_submit_disabled')::boolean, false) AS skip_wb
              FROM wms.clients WHERE id=$1 AND tenant_id=$2`,
@@ -398,7 +409,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
             wbOrderId: wbOrderRow ? wbOrderRow.wb_order_id : null,
             apiToken: wbOrderRow ? wbOrderRow.api_token : null,
             refType: 'packing', refId: shipment.id, userId: packerId,
-            dbClient: client, skipWbSubmit,
+            dbClient: client, skipWbSubmit, autoRegister,
           });
         }
       } else {

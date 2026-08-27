@@ -144,8 +144,8 @@ async function createItem({ tenantId, clientId, createdById, data }) {
     throw new ValidationError(`Invalid marking_trigger. Allowed: receiving, packing`);
   }
   const markingMode = data.marking_mode || 'print';
-  if (!['print', 'scan'].includes(markingMode)) {
-    throw new ValidationError(`Invalid marking_mode. Allowed: print, scan`);
+  if (!['print', 'scan', 'scan_packing'].includes(markingMode)) {
+    throw new ValidationError(`Invalid marking_mode. Allowed: print, scan, scan_packing`);
   }
 
   const res = await query(
@@ -229,7 +229,7 @@ async function updateItem({ tenantId, itemId, data }) {
     fields.push(`marking_trigger = $${idx++}`); params.push(data.marking_trigger);
   }
   if (data.marking_mode !== undefined) {
-    if (!['print', 'scan'].includes(data.marking_mode)) throw new ValidationError(`Invalid marking_mode. Allowed: print, scan`);
+    if (!['print', 'scan', 'scan_packing'].includes(data.marking_mode)) throw new ValidationError(`Invalid marking_mode. Allowed: print, scan, scan_packing`);
     fields.push(`marking_mode = $${idx++}`); params.push(data.marking_mode);
   }
 

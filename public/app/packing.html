@@ -528,7 +528,10 @@
     function lineNeedsDataMatrixScan(line) {
       // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на упаковке
       // (независимо от marking_trigger — тот применяется только к печати).
-      return !!(line && line.requires_marking && line.marking_mode === 'scan');
+      // 'scan_packing' — тот же скан на упаковке, но без предварительной
+      // регистрации на приёмке (код регистрируется тем же сканом, см.
+      // marking.service.js consumeScannedCodeAtPacking autoRegister).
+      return !!(line && line.requires_marking && (line.marking_mode === 'scan' || line.marking_mode === 'scan_packing'));
     }
 
     async function handleScan(barcode) {

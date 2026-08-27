@@ -120,8 +120,8 @@ router.patch('/items/:itemId/settings', requireRole('tenant_admin', 'supervisor'
       fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
     }
     if (req.body.marking_mode !== undefined) {
-      if (!['print', 'scan'].includes(req.body.marking_mode)) {
-        throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
+      if (!['print', 'scan', 'scan_packing'].includes(req.body.marking_mode)) {
+        throw new ValidationError(`marking_mode must be 'print', 'scan' or 'scan_packing'`);
       }
       fields.push(`marking_mode=$${idx++}`); params.push(req.body.marking_mode);
     }
@@ -163,8 +163,8 @@ router.patch('/items/bulk-settings', requireRole('tenant_admin', 'supervisor'), 
       fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
     }
     if (req.body.marking_mode !== undefined) {
-      if (!['print', 'scan'].includes(req.body.marking_mode)) {
-        throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
+      if (!['print', 'scan', 'scan_packing'].includes(req.body.marking_mode)) {
+        throw new ValidationError(`marking_mode must be 'print', 'scan' or 'scan_packing'`);
       }
       fields.push(`marking_mode=$${idx++}`); params.push(req.body.marking_mode);
     }

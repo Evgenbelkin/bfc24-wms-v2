@@ -316,6 +316,11 @@ router.patch('/items/:id/marking/settings', requireModule('marking'), async (req
       fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
     }
     if (req.body.marking_mode !== undefined) {
+      // 'scan_packing' (миграция 046) намеренно НЕ доступен клиенту отсюда —
+      // это меняет ожидания склада на приёмке (кизы там не спросят вообще),
+      // решение должен принимать ФФ вместе с клиентом, а не клиент сам себе
+      // молча переключить. Настраивается только со стороны склада
+      // (public/app/items.html, marking.router.js).
       if (!['print','scan'].includes(req.body.marking_mode)) {
         throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
       }
@@ -359,6 +364,11 @@ router.patch('/items/marking/bulk-settings', requireModule('marking'), async (re
       fields.push(`marking_trigger=$${idx++}`); params.push(req.body.marking_trigger);
     }
     if (req.body.marking_mode !== undefined) {
+      // 'scan_packing' (миграция 046) намеренно НЕ доступен клиенту отсюда —
+      // это меняет ожидания склада на приёмке (кизы там не спросят вообще),
+      // решение должен принимать ФФ вместе с клиентом, а не клиент сам себе
+      // молча переключить. Настраивается только со стороны склада
+      // (public/app/items.html, marking.router.js).
       if (!['print','scan'].includes(req.body.marking_mode)) {
         throw new ValidationError(`marking_mode must be 'print' or 'scan'`);
       }
