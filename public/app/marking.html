@@ -177,14 +177,23 @@
       document.getElementById('j-date-from').value = fromStr;
     }
 
+    // Явно передаём limit, чтобы фронт знал, каким лимитом ограничен ответ, и
+    // мог предупредить, если выборка обрезана (иначе на клиентах с большим
+    // потоком заказов срез в 5000 строк выглядел бы как "это все данные",
+    // хотя на самом деле часть за период просто не поместилась).
+    const REPORT_LIMIT = 5000;
+
     async function loadShippedReport() {
       try {
-        const params = {};
+        const params = { limit: REPORT_LIMIT };
         const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
         const dateFrom = UI.val('#f-date-from'); if (dateFrom) params.date_from = dateFrom;
         const dateTo = UI.val('#f-date-to'); if (dateTo) params.date_to = dateTo;
         const res = await window.API.marking.shippedReport(params);
         shippedRows = res.rows || [];
+        if (shippedRows.length >= REPORT_LIMIT) {
+          UI.notify.warn(`Показаны первые ${REPORT_LIMIT} — сузьте период или выберите клиента, возможно есть ещё данные`);
+        }
 
         document.getElementById('k-count').textContent = shippedRows.length;
         document.getElementById('k-sent').textContent = shippedRows.filter(r => r.wb_submit_status==='sent').length;
@@ -242,7 +251,7 @@
     async function loadJournal() {
       try {
         journalLoaded = true;
-        const params = {};
+        const params = { limit: REPORT_LIMIT };
         const clientId = UI.val('#j-client'); if (clientId) params.client_id = clientId;
         const status = UI.val('#j-status'); if (status) params.status = status;
         const barcode = UI.val('#j-barcode'); if (barcode) params.barcode = barcode.trim();
@@ -250,6 +259,9 @@
         const dateTo = UI.val('#j-date-to'); if (dateTo) params.date_to = dateTo;
         const res = await window.API.marking.codesJournal(params);
         journalRows = res.rows || [];
+        if (journalRows.length >= REPORT_LIMIT) {
+          UI.notify.warn(`Показаны первые ${REPORT_LIMIT} — сузьте период/фильтры, возможно есть ещё данные`);
+        }
 
         document.getElementById('j-count').textContent = journalRows.length;
         document.getElementById('j-available').textContent = journalRows.filter(r => r.status==='available').length;

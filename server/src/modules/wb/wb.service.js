@@ -12,6 +12,20 @@ const logger = require('../../utils/logger');
 //  - фонового автосинка (server/src/jobs/wbAutoSync.js)
 // =============================================================================
 
+// Дебаунс pre-push синка заказов (см. distributeStockForAccount) — при
+// высоком темпе событий (приёмка/возврат/инвентаризация одну за другой у
+// клиента с большим потоком заказов) синхронный поход в WB API + апсерт
+// перед КАЖДЫМ пересчётом остатка стал бы дорогим (лишние запросы к WB,
+// лишняя нагрузка на БД на каждое действие сборщика/приёмщика). Свежесть
+// важна для правильности расчёта, но секунд в 20 запаса вполне достаточно -
+// WB не продаёт настолько быстро, чтобы за 20 секунд накопилась ощутимая
+// ошибка, а нагрузка при этом падает на порядки при частых событиях подряд.
+// In-memory (не переживает рестарт процесса) - это осознанно: не критичная
+// для целостности данных оптимизация, а не источник истины. PM2 держит
+// каждое приложение в одном process (fork, не cluster) - общий Map безопасен.
+const PRE_SYNC_DEBOUNCE_MS = 20_000;
+const lastPreSyncAtByAccount = new Map();
+
 async function getMpAccount(tenantId, accountId) {
   const r = await query(
     `SELECT id, client_id, api_token, marketplace FROM wms.mp_accounts
@@ -48,18 +62,48 @@ async function listActiveAccounts(tenantId) {
  *  15 минут) мы сверяем, какие из наших "new"-заказов пропали из свежего ответа WB,
  *  и помечаем их status='external' — это выводит их из очереди на волну и делает
  *  видимыми в фильтре как "Занято в кабинете WB", вместо того чтобы бесконечно висеть. */
+// Сколько строк за один INSERT — на клиентов с большим потоком заказов
+// (обсуждали: у некоторых будет по ~20 000 заказов/сутки) один запрос на
+// заказ означал бы тысячи последовательных round-trip'ов к БД на каждый
+// синк. Батчим по ROWS_PER_INSERT строк за один INSERT ... VALUES(...),(...)
+// - на 16 колонках/строку это ~3200 параметров на батч, далеко от лимита
+// Postgres (65535) и укладывается в разумный размер одного запроса.
+const ORDERS_INSERT_BATCH = 200;
+
 async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
   const orders = await wbClient.fetchNewOrders(apiToken);
 
   let saved = 0;
   const freshIds = [];
   const touchedBarcodes = new Set();
+  const rows = [];
   for (const o of orders) {
     const wbOrderId = o.id || o.odid || o.orderId;
     if (!wbOrderId) continue;
     freshIds.push(Number(wbOrderId));
     const barcode = Array.isArray(o.skus) ? o.skus[0] : (o.barcode || null);
     if (barcode) touchedBarcodes.add(barcode);
+    rows.push([
+      tenantId, accountId, wbOrderId,
+      o.nmId||o.nmID||null, o.chrtId||null, o.article||null, barcode,
+      o.warehouseId||null, (o.offices||[]).join(',')||o.warehouseName||null,
+      o.regionName||null, o.price||null, o.convertedPrice||null, o.currencyCode||null,
+      'new', o.createdAt||null,
+      JSON.stringify(o),
+    ]);
+  }
+
+  const COLS = 16;
+  for (let i = 0; i < rows.length; i += ORDERS_INSERT_BATCH) {
+    const chunk = rows.slice(i, i + ORDERS_INSERT_BATCH);
+    const params = [];
+    const valuesSql = chunk.map((row, ri) => {
+      const base = ri * COLS;
+      params.push(...row);
+      const placeholders = row.map((_, ci) => `$${base + ci + 1}`).join(',');
+      return `(${placeholders})`;
+    }).join(',');
+
     await query(
       // ВАЖНО (найдено по жалобе "в 'Новых' заказах видно то, что уже в
       // поставке"): WB в /api/v3/orders/new продолжает отдавать заказ ещё
@@ -79,19 +123,12 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
          (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
           warehouse_id,warehouse_name,region_name,price,converted_price,currency_code,
           status,created_at,raw)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       VALUES ${valuesSql}
        ON CONFLICT(mp_account_id,wb_order_id) DO UPDATE SET
          fetched_at=NOW(), raw=EXCLUDED.raw`,
-      [
-        tenantId, accountId, wbOrderId,
-        o.nmId||o.nmID||null, o.chrtId||null, o.article||null, barcode,
-        o.warehouseId||null, (o.offices||[]).join(',')||o.warehouseName||null,
-        o.regionName||null, o.price||null, o.convertedPrice||null, o.currencyCode||null,
-        'new', o.createdAt||null,
-        JSON.stringify(o),
-      ]
+      params
     );
-    saved++;
+    saved += chunk.length;
   }
 
   // Реконсилиация: наши "new"-заказы без поставки, которых больше нет в свежем
@@ -323,10 +360,14 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   // интервала фонового крона. Мягкий отказ: если WB API недоступен прямо
   // сейчас, не блокируем весь пересчёт целиком - считаем по тому, что уже
   // есть в базе (это не хуже, чем было раньше).
-  try {
-    await fetchAndUpsertOrders({ tenantId, accountId: mpAccountId, apiToken: account.api_token });
-  } catch (e) {
-    logger.warn({ err: e, tenantId, mpAccountId }, 'distributeStockForAccount: pre-sync заказов не удался, считаем по данным из БД');
+  const lastPreSync = lastPreSyncAtByAccount.get(mpAccountId) || 0;
+  if (Date.now() - lastPreSync >= PRE_SYNC_DEBOUNCE_MS) {
+    try {
+      await fetchAndUpsertOrders({ tenantId, accountId: mpAccountId, apiToken: account.api_token });
+      lastPreSyncAtByAccount.set(mpAccountId, Date.now());
+    } catch (e) {
+      logger.warn({ err: e, tenantId, mpAccountId }, 'distributeStockForAccount: pre-sync заказов не удался, считаем по данным из БД');
+    }
   }
 
   // Рубильник "не отправлять остатки в WB для этого аккаунта" — нужен,
