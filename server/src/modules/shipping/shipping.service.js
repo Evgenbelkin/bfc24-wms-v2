@@ -285,6 +285,26 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
       [userId, totalShipped, shipment.id]
     );
 
+    // Закрываем 'confirm'-заказы WB этой поставки в 'shipped' ПРЯМО ЗДЕСЬ, а
+    // не дожидаясь отдельного опроса WB (syncDeliveryStatusForTenant ловит
+    // только переход 'in_transit'->'done', раз в 15 минут). Правка 28.08.2026
+    // (инцидент с массовым "не ушло в WB"): реальное списание остатка со
+    // склада уже произошло раньше, в picking (см. consumeStock) - к этому
+    // моменту ВСЕ picking_tasks поставки гарантированно 'done' (проверка выше
+    // по коду, "Cannot ship: N picking tasks are still active"). Значит
+    // физически эти единицы уже не часть остатка ни в каком виде - продолжать
+    // вычитать их ещё раз по статусу заказа (distributeStockForAccount,
+    // newOrdersByBarcode) при расчёте остатка для WB - двойной счёт, который
+    // и стал причиной массового расхождения WMS/WB. Раньше это закрывалось
+    // только на 'done' (когда WB сам подтвердит приёмку) - оставляя окно в
+    // среднем в несколько часов/дней, где 'confirm' занижал остаток уже после
+    // реальной физической отгрузки.
+    await client.query(
+      `UPDATE wms.wb_orders SET status='shipped'
+       WHERE tenant_id=$1 AND wb_supply_id=$2 AND status='confirm'`,
+      [tenantId, shipment.external_id]
+    );
+
     shipmentId = shipment.id;
     chargeClientId = shipment.client_id;
     chargeQty = totalShipped;
@@ -319,6 +339,18 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
         quantity: row.shipped_qty, volumeLiters: row.volume_liters,
         refType: 'shipment_item', refId: shipmentId,
       });
+    }
+
+    // Заказы этой поставки только что закрыты 'confirm'->'shipped' (см. выше
+    // в транзакции) - они перестали задваиваться при вычитании открытых
+    // заказов из остатка (distributeStockForAccount), значит доступное для WB
+    // количество по этим штрихкодам могло вырасти. Пересчитываем и пушим
+    // сразу, а не ждём следующего события/периодического крона - иначе
+    // корректный остаток дойдёт до WB с задержкой, как и было в инциденте
+    // 27-28.08.2026.
+    const shippedBarcodes = [...new Set(chargeItemRows.map(r => r.barcode).filter(Boolean))];
+    if (shippedBarcodes.length > 0) {
+      triggerRedistributionForClient({ tenantId, clientId: chargeClientId, barcodes: shippedBarcodes });
     }
   }
 

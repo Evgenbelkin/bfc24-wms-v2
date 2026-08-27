@@ -84,7 +84,7 @@ async function main() {
     FROM wms.wb_orders wo
     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
     JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
-    WHERE wo.status = 'confirm' AND s.status = 'done'
+    WHERE wo.status = 'confirm' AND s.status IN ('in_transit', 'done')
     GROUP BY wo.tenant_id, ma.account_name
     ORDER BY stuck_orders DESC
   `);
@@ -94,7 +94,7 @@ async function main() {
   const r5 = await query(`
     SELECT
       COUNT(*)::int AS total_confirm,
-      COUNT(*) FILTER (WHERE s.status = 'done')::int AS stuck_confirm_done,
+      COUNT(*) FILTER (WHERE s.status IN ('in_transit', 'done'))::int AS stuck_confirm_shipped,
       COUNT(*) FILTER (WHERE s.status IS NULL)::int AS confirm_no_shipment_match
     FROM wms.wb_orders wo
     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id

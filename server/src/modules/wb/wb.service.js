@@ -207,18 +207,24 @@ async function syncAllAccountsForTenant(tenantId) {
  *  принял), переводим отгрузку в status='done' локально. */
 async function syncDeliveryStatusForTenant(tenantId) {
   // Самолечение (добавлено 28.08.2026, инцидент с массовым "не ушло в WB" по
-  // множеству клиентов одновременно): 'confirm'-заказы, чья отгрузка УЖЕ
-  // 'done' - неважно, каким путём она туда попала (реакция на переход
-  // in_transit->done ниже по этой же функции, ручное подтверждение доставки
-  // MANUAL-отгрузки - см. shipping.service.js:460, либо отгрузка была done
-  // ещё ДО того как вычитание 'confirm' из остатка вообще появилось,
-  // см. distributeStockForAccount) - таким заказам следующий вызов этой
-  // функции уже не поможет: ветка ниже переводит 'confirm'->'shipped' только
-  // В МОМЕНТ обнаружения перехода 'in_transit'->'done', а если отгрузка
-  // сейчас уже 'done', этот момент никогда больше не наступит - заказ
-  // навсегда зависает в 'confirm' и бесконечно вычитается из остатка,
-  // доступного для отправки в WB (см. newOrdersByBarcode в
-  // distributeStockForAccount). Именно так по множеству клиентов накопилось
+  // множеству клиентов одновременно): 'confirm'-заказы, чья поставка УЖЕ
+  // физически отгружена ('in_transit' или 'done') - неважно, каким путём это
+  // произошло (реакция на переход in_transit->done ниже по этой же функции,
+  // подтверждение отгрузки - см. shipping.service.js, которое теперь само
+  // закрывает 'confirm'->'shipped' в момент физической отгрузки, ручное
+  // подтверждение доставки MANUAL-отгрузки, либо поставка уехала ещё ДО того
+  // как вычитание 'confirm' из остатка вообще появилось) - таким заказам
+  // следующий вызов этой функции уже не поможет сам по себе: ветка ниже
+  // переводит 'confirm'->'shipped' только В МОМЕНТ обнаружения перехода
+  // 'in_transit'->'done', а если поставка уже физически уехала ('in_transit')
+  // или уже 'done' - этот момент мог уже наступить или никогда не наступить
+  // повторно, и заказ навсегда зависает в 'confirm', бесконечно вычитаясь из
+  // остатка, доступного для отправки в WB (см. newOrdersByBarcode в
+  // distributeStockForAccount). ВАЖНО: 'in_transit' тоже считается "уже
+  // отгружено", а не только 'done' - реальное списание остатка происходит в
+  // picking (до in_transit), к моменту in_transit товар уже физически ушёл
+  // со склада независимо от того, подтвердил ли это ещё сам WB - см.
+  // обсуждение 28.08.2026. Именно так по множеству клиентов накопилось
   // расхождение "в WMS есть, в WB нет" (обнаружено 27.08.2026, "Сверка
   // остатков" смотри wb-stock-reconcile.js). Закрываем такие заказы здесь же,
   // при каждом прогоне (идемпотентно - WHERE status='confirm' сам собой
@@ -230,7 +236,7 @@ async function syncDeliveryStatusForTenant(tenantId) {
      SET status='shipped'
      FROM wms.shipments s
      WHERE wo.tenant_id=$1 AND wo.status='confirm'
-       AND s.tenant_id=wo.tenant_id AND s.external_id=wo.wb_supply_id AND s.status='done'
+       AND s.tenant_id=wo.tenant_id AND s.external_id=wo.wb_supply_id AND s.status IN ('in_transit', 'done')
      RETURNING wo.barcode, wo.mp_account_id`,
     [tenantId]
   );
