@@ -504,14 +504,23 @@
             ? `<div style="color:var(--red);font-size:12px;margin-top:4px;">Ошибки запроса: ${a.errors.map(UI.escHtml).join('; ')}</div>` : '';
           if (!a.mismatches.length) {
             return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>
-              <span style="color:var(--green);">✓ OK, везде WB ≤ WMS, расхождений нет.</span>${errBlock}</div>`;
+              <span style="color:var(--green);">✓ OK, WB и WMS совпадают, расхождений нет.</span>${errBlock}</div>`;
           }
-          const rows = a.mismatches.map(m => `
+          const rows = a.mismatches.map(m => {
+            // diff = wb_qty - wms_qty. diff>0 — WB показывает БОЛЬШЕ, чем реально есть
+            // (риск оверселла, продаст то, чего нет). diff<0 — в WMS остаток есть,
+            // а в WB меньше/ноль (остаток "застрял", недопродажа) — тоже проблема,
+            // но другого рода, поэтому подписываем явно, а не просто цветом.
+            const isOversell = m.diff > 0;
+            const label = isOversell ? `риск оверселла, +${m.diff}` : `не ушло в WB, ${m.diff}`;
+            const color = isOversell ? 'var(--red)' : '#c07a00';
+            return `
             <div class="loc-row">
               <span>${UI.escHtml(m.name)}<br/><span style="color:var(--muted);font-size:12px;">${UI.escHtml(m.barcode)}</span></span>
-              <span style="color:var(--red);white-space:nowrap;">WB ${m.wb_qty} / WMS ${m.wms_qty} (+${m.diff})</span>
+              <span style="color:${color};white-space:nowrap;">WB ${m.wb_qty} / WMS ${m.wms_qty} (${label})</span>
             </div>
-          `).join('');
+          `;
+          }).join('');
           return `<div class="result-box">
             <strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)} ·
             <span style="color:var(--red);">расхождений: ${a.mismatches.length}</span>${errBlock}
@@ -519,7 +528,7 @@
           </div>`;
         }).join('');
         box.innerHTML = `
-          <div class="result-box">Проверено: ${when} · всего расхождений (WB &gt; WMS): <strong style="${res.total_mismatches ? 'color:var(--red);' : 'color:var(--green);'}">${res.total_mismatches}</strong></div>
+          <div class="result-box">Проверено: ${when} · всего расхождений (в любую сторону): <strong style="${res.total_mismatches ? 'color:var(--red);' : 'color:var(--green);'}">${res.total_mismatches}</strong></div>
           ${blocks}
         `;
         if (res.total_mismatches) UI.notify.err(`Найдено расхождений: ${res.total_mismatches}`);

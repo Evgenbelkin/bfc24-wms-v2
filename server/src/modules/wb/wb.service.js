@@ -916,8 +916,18 @@ async function reconcileStockForTenant(tenantId) {
         }
         for (const s of stocks) {
           const barcode = s.sku;
+          if (!barcode) continue;
           const qty = Number(s.amount || 0);
-          if (!barcode || qty <= 0) continue;
+          // ВАЖНО: раньше здесь пропускались строки с qty<=0 - это означало,
+          // что явный ноль от WB вообще не попадал в wbTotals, а ниже цикл
+          // сверки шёл ТОЛЬКО по wbTotals.entries() - то есть случай "в WMS
+          // остаток есть, а в WB реально 0" в принципе не мог быть замечен
+          // (ни как отдельная запись, ни тем более как расхождение). Именно
+          // так был упущен случай 27.08.2026: WB partners показывал 0 по
+          // всем складам при 42 доступных в WMS, а "Сверка остатков" молчала.
+          // Теперь копим amount как есть (в т.ч. 0) - см. also цикл ниже,
+          // который сверяет по ПОЛНОМУ списку зарегистрированных штрихкодов
+          // (skus), а не только по тем, что вернул WB с ненулевым остатком.
           wbTotals.set(barcode, (wbTotals.get(barcode) || 0) + qty);
         }
         await sleep(PAUSE_MS);
@@ -934,13 +944,26 @@ async function reconcileStockForTenant(tenantId) {
     );
     const wmsMap = new Map(wmsRes.rows.map(r => [r.barcode, { qty: Number(r.qty), name: r.item_name }]));
 
+    // ВАЖНО (правка 27.08.2026): раньше цикл шёл только по wbTotals.entries()
+    // и флагом расхождения было ТОЛЬКО diff>0 (WB продаёт больше, чем реально
+    // есть - риск оверселла, ради этого сверку и заводили изначально). Оба
+    // решения вместе давали слепую зону: если WB присылал по штрихкоду 0 (или
+    // не присылал вовсе), а в WMS остаток был - такая пара НИКОГДА не
+    // попадала в отчёт, ни как строка, ни тем более как расхождение. Именно
+    // это скрыло реальный сбой push'а остатков 27.08.2026 - "Сверка остатков"
+    // показывала "всё чисто" при том, что по многим товарам WB реально
+    // показывал 0 при ненулевом остатке в WMS. Теперь идём по ПОЛНОМУ списку
+    // зарегистрированных для аккаунта штрихкодов (skus, весь wb_item_barcodes)
+    // и сравниваем в обе стороны - diff!==0 - не только WB>WMS (риск
+    // оверселла), но и WMS>WB (остаток "застрял", в WB не ушёл - недопродажа).
     const mismatches = [];
-    for (const [barcode, wbQty] of wbTotals.entries()) {
+    for (const barcode of skus) {
+      const wbQty = wbTotals.get(barcode) || 0;
       const wms = wmsMap.get(barcode) || { qty: 0, name: '(нет остатка в WMS)' };
       const diff = wbQty - wms.qty;
-      if (diff > 0) mismatches.push({ barcode, name: wms.name, wb_qty: wbQty, wms_qty: wms.qty, diff });
+      if (diff !== 0) mismatches.push({ barcode, name: wms.name, wb_qty: wbQty, wms_qty: wms.qty, diff });
     }
-    mismatches.sort((a, b) => b.diff - a.diff);
+    mismatches.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
     totalMismatches += mismatches.length;
 
     accounts.push({
