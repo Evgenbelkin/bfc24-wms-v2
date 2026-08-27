@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Тарифы WB по складам — BFC24 WMS</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .table-wrap{overflow-x:auto;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+    th:first-child,td:first-child{text-align:left;}
+    th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;}
+    tbody tr:hover{background:var(--card2);}
+    .refresh-note{font-size:12px;color:var(--muted);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/></svg> Тарифы WB по складам</h1>
+    <span></span>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Приёмка ФБС, логистика и хранение</div>
+    <div class="refresh-note" style="margin-bottom:10px;" id="tariffs-meta">—</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Склад</th>
+            <th>Округ</th>
+            <th>Логистика, база ₽</th>
+            <th>Логистика, коэф. %</th>
+            <th>Логистика, ₽/л</th>
+            <th>Хранение, база ₽</th>
+            <th>Хранение, коэф. %</th>
+            <th>Хранение, ₽/л</th>
+          </tr>
+        </thead>
+        <tbody id="tariffs-body"><tr><td colspan="8" style="text-align:center;">Загрузка…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+
+    function fmt(n) {
+      if (n === null || n === undefined) return '—';
+      const num = Number(n);
+      if (!Number.isFinite(num)) return '—';
+      return num.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+    }
+
+    async function loadTariffs() {
+      try {
+        const res = await window.API.wb.tariffs();
+        const tariffs = res.tariffs || [];
+        const meta = document.getElementById('tariffs-meta');
+        if (!tariffs.length) {
+          meta.textContent = 'Данных пока нет — тарифы обновляются автоматически раз в сутки.';
+          document.getElementById('tariffs-body').innerHTML = '<tr><td colspan="8" style="text-align:center;">Нет данных</td></tr>';
+          return;
+        }
+        meta.textContent = `На дату: ${res.tariff_date}. Складов: ${tariffs.length}. Обновляется автоматически раз в сутки.`;
+
+        document.getElementById('tariffs-body').innerHTML = tariffs.map(t => `
+          <tr>
+            <td>${UI.escHtml(t.warehouse_name || '')}</td>
+            <td>${UI.escHtml(t.geo_name || '—')}</td>
+            <td>${fmt(t.box_delivery_base)}</td>
+            <td>${fmt(t.box_delivery_coef_expr)}</td>
+            <td>${fmt(t.box_delivery_liter)}</td>
+            <td>${fmt(t.box_storage_base)}</td>
+            <td>${fmt(t.box_storage_coef_expr)}</td>
+            <td>${fmt(t.box_storage_liter)}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка загрузки тарифов', 'error');
+      }
+    }
+
+    loadTariffs();
+  </script>
+</body>
+</html>

@@ -5,6 +5,7 @@ const router = express.Router();
 const { query, transaction } = require('../../config/database');
 const wbClient = require('./wb.client');
 const wbService = require('./wb.service');
+const wbTariffsService = require('../platform/wbTariffs.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
@@ -205,6 +206,20 @@ router.post('/accounts/:id/redistribute-stock', requireRole('tenant_admin','supe
 router.get('/reconcile', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const result = await wbService.reconcileStockForTenant(req.user.tenantId);
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** GET /wb/tariffs — тарифы приёмки/логистики/хранения WB по складам,
+ *  read-only для персонала ФФ (не для клиентов-селлеров — те на роли 'seller'
+ *  вообще не доходят до этого меню, см. public/app/menu.html). Тарифы у WB
+ *  одинаковые для любого продавца, поэтому данные общие для всех тенантов -
+ *  собираются одним токеном владельца платформы (platform.wbTariffs.service.js,
+ *  ежедневная джоба). Здесь только читаем последний снимок, никакого
+ *  собственного похода к WB API и никакого ввода токена тенантом. */
+router.get('/tariffs', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await wbTariffsService.listLatestTariffs();
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });

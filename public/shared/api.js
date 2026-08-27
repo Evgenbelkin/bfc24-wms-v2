@@ -374,6 +374,7 @@
     orders:      (p) => get('/wb/orders', p),
     wbItems:     (p) => get('/wb/items', p),
     reconcile:   ()  => get('/wb/reconcile'),
+    tariffs:     ()  => get('/wb/tariffs'),
   };
 
   // ─────────────── Printing ───────────────
