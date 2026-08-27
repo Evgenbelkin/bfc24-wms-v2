@@ -936,9 +936,17 @@ async function reconcileStockForTenant(tenantId) {
   let checkedAt = new Date().toISOString();
 
   for (const acc of accountsRes.rows) {
+    // ВАЖНО (найдено 28.08.2026 на конкретном кейсе): считаем WB-итого ТОЛЬКО
+    // по складам, включённым в автораспределение (is_enabled_for_dist=TRUE) -
+    // ровно тем, куда реально пушит distributeStockForAccount. Склад, который
+    // клиент сознательно выключил из автораспределения, мы никогда не трогаем
+    // (ни цифрой, ни явным нулём) - что бы там ни висело у WB (остаток от
+    // ручного управления или старый), это не в зоне нашей ответственности и
+    // сравнивать с ним нечестно - именно так раньше "находился" ложный
+    // оверселл +5 на товаре, который на самом деле был отправлен верно.
     const whRes = await query(
       `SELECT wb_warehouse_id, warehouse_name FROM wms.wb_seller_warehouses
-       WHERE mp_account_id=$1 AND is_active=TRUE ORDER BY warehouse_name`,
+       WHERE mp_account_id=$1 AND is_active=TRUE AND is_enabled_for_dist=TRUE ORDER BY warehouse_name`,
       [acc.id]
     );
     if (whRes.rowCount === 0) {
