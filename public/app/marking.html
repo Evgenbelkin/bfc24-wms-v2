@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Честный знак — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row select, .filters-row input{flex:1;min-width:140px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .badge-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z"/></svg> Честный знак</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">
+      <div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      Модуль маркировки "Честный знак" не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
+    </div>
+  </div>
+
+  <div id="marking-content">
+    <div class="tabs">
+      <button class="tab active" data-tab="shipped" onclick="switchTab('shipped')">Отгружено в WB</button>
+      <button class="tab" data-tab="overrides" onclick="switchTab('overrides')">Требуют ручной привязки</button>
+    </div>
+
+    <!-- ============ Отгружено в WB ============ -->
+    <div id="tab-shipped">
+      <div class="card">
+        <div class="card-title">Фильтры</div>
+        <div class="filters-row">
+          <select id="f-client"><option value="">Все клиенты</option></select>
+          <input type="date" id="f-date-from"/>
+          <input type="date" id="f-date-to"/>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-big btn-blue" style="flex:1;" onclick="loadShippedReport()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+          <button class="btn-big btn-back" style="flex:1;" onclick="exportShippedCsv()"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg> Выгрузить в Excel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="badge-row">
+          <div class="badge"><span>Кодов</span><div id="k-count">0</div></div>
+          <div class="badge"><span>Отправлено в WB</span><div id="k-sent">0</div></div>
+          <div class="badge"><span>Только выгрузка</span><div id="k-export">0</div></div>
+          <div class="badge"><span>Без привязки</span><div id="k-override">0</div></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Дата</th><th>Клиент</th><th>Товар</th><th>Размер</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Поставка</th><th>Статус в WB</th></tr></thead>
+            <tbody id="shipped-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ Требуют ручной привязки ============ -->
+    <div id="tab-overrides" style="display:none">
+      <div class="card">
+        <div class="refresh-note" style="text-align:left;margin-bottom:8px;">
+          Эти коды упакованы в заказ, но НЕ отправлены в WB автоматически (супервайзер провёл упаковку
+          в обход отправки — например, WB API был недоступен). Код нужно вручную привязать к заказу
+          в кабинете WB, иначе покупателю может прийти товар без корректной маркировки в системе WB.
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Когда</th><th>Товар</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Причина</th><th>Упаковал</th><th>Провёл (супервайзер)</th></tr></thead>
+            <tbody id="overrides-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin','supervisor'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('marking-content').style.display = 'none';
+    }
+
+    function switchTab(name) {
+      ['shipped','overrides'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'overrides' && !overridesLoaded) loadOverrides();
+    }
+
+    const WB_STATUS_LABELS = { sent:'Отправлено в WB', export_only:'Только выгрузка', manual_override:'Без привязки (вручную)' };
+    const WB_STATUS_PILL = { sent:'pill-green', export_only:'pill-yellow', manual_override:'pill-red' };
+
+    let shippedRows = [];
+
+    async function loadClients() {
+      try {
+        const res = await window.API.clients.short();
+        UI.populateSelect('#f-client', res.clients || [], { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    function defaultDates() {
+      const to = new Date();
+      const from = new Date(); from.setDate(from.getDate() - 30);
+      document.getElementById('f-date-to').value = to.toISOString().slice(0,10);
+      document.getElementById('f-date-from').value = from.toISOString().slice(0,10);
+    }
+
+    async function loadShippedReport() {
+      try {
+        const params = {};
+        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
+        const dateFrom = UI.val('#f-date-from'); if (dateFrom) params.date_from = dateFrom;
+        const dateTo = UI.val('#f-date-to'); if (dateTo) params.date_to = dateTo;
+        const res = await window.API.marking.shippedReport(params);
+        shippedRows = res.rows || [];
+
+        document.getElementById('k-count').textContent = shippedRows.length;
+        document.getElementById('k-sent').textContent = shippedRows.filter(r => r.wb_submit_status==='sent').length;
+        document.getElementById('k-export').textContent = shippedRows.filter(r => r.wb_submit_status==='export_only').length;
+        document.getElementById('k-override').textContent = shippedRows.filter(r => r.wb_submit_status==='manual_override').length;
+
+        UI.renderTable('#shipped-body', shippedRows, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.used_at)}</td>
+            <td>${UI.escHtml(r.client_name||'—')}</td>
+            <td>${UI.escHtml(r.item_name||'—')}<div style="font-size:11px;color:var(--muted);">${UI.escHtml(r.vendor_code||'')}</div></td>
+            <td>${UI.escHtml(r.size||'—')}</td>
+            <td>${UI.escHtml(r.barcode||'—')}</td>
+            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
+            <td>${UI.escHtml(r.shipment_code||'—')}</td>
+            <td><span class="pill ${WB_STATUS_PILL[r.wb_submit_status]||'pill-gray'}">${WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status||'—')}</span></td>
+          </tr>
+        `);
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    // Клиентский экспорт в CSV (Excel открывает такие файлы сразу, с BOM для
+    // корректной кириллицы) — тот же подход, что и в других отчётах WMS
+    // (см. public/seller/receiving-history.html), без сторонних библиотек.
+    function exportShippedCsv() {
+      if (!shippedRows.length) { UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"'); return; }
+      const headers = ['Дата','Клиент','Товар','Артикул','Размер','Штрихкод','Код Честный знак','Поставка','Статус в WB'];
+      const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+      const lines = [headers.map(escCsv).join(';')];
+      for (const r of shippedRows) {
+        lines.push([
+          r.used_at ? UI.fmtDateTime(r.used_at) : '',
+          r.client_name || '',
+          r.item_name || '',
+          r.vendor_code || '',
+          r.size || '',
+          r.barcode || '',
+          r.code || '',
+          r.shipment_code || '',
+          WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || '',
+        ].map(escCsv).join(';'));
+      }
+      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chz-otgruzheno-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    let overridesLoaded = false;
+    async function loadOverrides() {
+      try {
+        overridesLoaded = true;
+        const res = await window.API.marking.pendingOverrides({ limit: 200 });
+        const rows = res.rows || [];
+        UI.renderTable('#overrides-body', rows, (r) => `
+          <tr>
+            <td>${UI.fmtDateTime(r.used_at)}</td>
+            <td>${UI.escHtml(r.item_name||'—')}</td>
+            <td>${UI.escHtml(r.barcode||'—')}</td>
+            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
+            <td>${UI.escHtml(r.wb_override_reason||'—')}</td>
+            <td>${UI.escHtml(r.packed_by_name||'—')}</td>
+            <td>${UI.escHtml(r.override_by_name||'—')}</td>
+          </tr>
+        `);
+      } catch (e) {
+        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
+        UI.notify.err(e.message);
+      }
+    }
+
+    (async () => {
+      defaultDates();
+      await loadClients();
+      await loadShippedReport();
+    })();
+  </script>
+</body>
+</html>

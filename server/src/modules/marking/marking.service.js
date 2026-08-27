@@ -505,7 +505,7 @@ async function overrideMarkingAtPacking({
 /** Список кодов, проведённых в обход отправки в WB — требуют ручной привязки в кабинете WB */
 async function listPendingManualOverrides({ tenantId, limit = 200 }) {
   const r = await query(
-    `SELECT mc.id, mc.code, mc.item_id, i.item_name, mc.used_at, mc.wb_override_reason,
+    `SELECT mc.id, mc.code, mc.item_id, i.item_name, i.barcode, mc.used_at, mc.wb_override_reason,
             u1.full_name AS packed_by_name, u2.full_name AS override_by_name
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
@@ -644,9 +644,43 @@ async function listCodesForShipment({ tenantId, shipmentExternalId }) {
   return { shipment, rows: r.rows };
 }
 
+/**
+ * Общая выгрузка "что реально отгружено в WB и в какой поставке" — в отличие
+ * от listCodesForShipment (одна конкретная поставка по её коду), здесь сразу
+ * ВСЕ отгруженные коды по тенанту с фильтрами по клиенту/периоду — то, что
+ * раньше нужно было смотреть поставку за поставкой вручную. Только 'used'
+ * коды (реально ушедшие в заказ на упаковке) - 'available' в отчёт об
+ * отгрузке смысла попадать нет.
+ */
+async function getShippedReport({ tenantId, clientId = null, dateFrom = null, dateTo = null, limit = 5000 }) {
+  const params = [tenantId];
+  const conds = [`mc.tenant_id=$1`, `mc.status='used'`];
+  let idx = 2;
+  if (clientId) { conds.push(`s.client_id=$${idx++}`); params.push(Number(clientId)); }
+  if (dateFrom) { conds.push(`mc.used_at >= $${idx++}::date`); params.push(dateFrom); }
+  if (dateTo)   { conds.push(`mc.used_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(dateTo); }
+  params.push(Math.min(Number(limit) || 5000, 20000));
+
+  const r = await query(
+    `SELECT mc.code, mc.used_at, mc.wb_submit_status, mc.wb_order_id,
+            i.barcode, i.item_name, i.vendor_code, i.size,
+            s.external_id AS shipment_code, s.marketplace, s.shipped_at,
+            c.client_name
+     FROM wms.marking_codes mc
+     JOIN wms.items i ON i.id = mc.item_id
+     LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
+     LEFT JOIN wms.clients c ON c.id = s.client_id
+     WHERE ${conds.join(' AND ')}
+     ORDER BY mc.used_at DESC
+     LIMIT $${idx}`,
+    params
+  );
+  return { rows: r.rows };
+}
+
 module.exports = {
   parseCodesText, importCodes, importCodesFromExcel, getCodesSummary, listCodes, deleteCode,
   shouldMarkAt, allocateAndPrint,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
-  listPendingManualOverrides, listCodesForShipment,
+  listPendingManualOverrides, listCodesForShipment, getShippedReport,
 };
