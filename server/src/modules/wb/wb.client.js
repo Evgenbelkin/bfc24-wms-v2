@@ -364,8 +364,10 @@ async function setOrderKiz(token, orderId, sgtins) {
  * Формат ответа: { response: { data: { dtNextBox, dtTillMax, warehouseList: [...] } } }
  */
 async function fetchBoxTariffs(token, date = null) {
-  const params = {};
-  if (date) params.date = date;
+  // date теперь ОБЯЗАТЕЛЬНЫЙ параметр у WB (раньше можно было не передавать -
+  // проверено на реальном аккаунте 27.08.2026: без него 400 "value is
+  // required but missing"). Если не передали явно - берём сегодняшнюю дату.
+  const params = { date: date || new Date().toISOString().slice(0, 10) };
   // У этого метода WB жёсткий лимит - 1 запрос в минуту, burst 1 (см. доку
   // dev.wildberries.ru). Общий retries=5 из wbRequest (5s/10s/15s/20s/25s/30s,
   // ~105с суммарно) для такого лимита контрпродуктивен: 6 запросов подряд от
