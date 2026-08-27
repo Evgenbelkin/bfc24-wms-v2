@@ -106,6 +106,7 @@
       { href:'location-fill.html',    icon:'grid4',     label:'Заполняемость ячеек', roles:['tenant_admin','supervisor','inventory_manager'] },
       { href:'items.html',            icon:'tag',       label:'Справочник товаров', roles:['tenant_admin','supervisor','receiver','picker','packer'] },
       { href:'clients.html',          icon:'briefcase', label:'Клиенты',         roles:['tenant_admin','supervisor'] },
+      { href:'fbs-analytics.html',    icon:'chart',     label:'Аналитика FBS',   roles:null },
       { href:'wb.html',               icon:'wb',        label:'Wildberries',     roles:['tenant_admin','supervisor'] },
       { href:'wb-acceptance.html',    icon:'inbox',     label:'Приёмка ФБС',     roles:['tenant_admin','supervisor'] },
       { href:'wb-tariffs.html',       icon:'trending',  label:'Тарифы: логистика и хранение', roles:['tenant_admin','supervisor'] },
@@ -126,7 +127,7 @@
     ];
 
     // Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя
-    const tiles = ALL_TILES.filter(t => userRoles.includes('tenant_admin') || t.roles.some(r => userRoles.includes(r)));
+    const tiles = ALL_TILES.filter(t => !t.roles || userRoles.includes('tenant_admin') || t.roles.some(r => userRoles.includes(r)));
 
     document.getElementById('tiles').innerHTML = tiles.map(t => `
       <a class="tile" href="/app/${t.href}">

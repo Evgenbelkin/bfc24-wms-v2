@@ -378,6 +378,13 @@
     acceptanceCoefficients: () => get('/wb/acceptance-coefficients'),
   };
 
+  // ─────────────── FBS-аналитика ───────────────
+
+  const fbsAnalytics = {
+    summary:    (p) => get('/fbs-analytics/summary', p),
+    refreshNow: ()  => post('/fbs-analytics/refresh-now', {}),
+  };
+
   // ─────────────── Printing ───────────────
 
   const printing = {
@@ -593,6 +600,7 @@
     checkin,
     billing, consumables, payroll, marking, returns,
     seller, platform, tenant, acts,
+    fbsAnalytics,
   };
 
 })(window);

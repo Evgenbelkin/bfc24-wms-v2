@@ -123,6 +123,9 @@ const config = {
     // обновляем чаще (по умолчанию раз в час). Лимит WB для этого метода
     // мягче (6 запросов/мин), часто дёргать не страшно.
     acceptanceSyncIntervalMinutes: intEnv('WB_ACCEPTANCE_SYNC_INTERVAL_MINUTES', 60),
+    // Опрос реального статуса заказа у WB (wbStatus) для модуля "Аналитика
+    // FBS" (server/src/jobs/wbFbsStatusSync.js) - по умолчанию раз в 30 минут.
+    fbsStatusSyncIntervalMinutes: intEnv('WB_FBS_STATUS_SYNC_INTERVAL_MINUTES', 30),
   },
 
   urls: {
