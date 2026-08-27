@@ -923,7 +923,7 @@ async function reconcileStockForTenant(tenantId) {
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   const accountsRes = await query(
-    `SELECT ma.id, ma.client_id, ma.api_token, ma.account_name, c.client_name
+    `SELECT ma.id, ma.client_id, ma.api_token, ma.account_name, ma.settings, c.client_name
      FROM wms.mp_accounts ma
      JOIN wms.clients c ON c.id = ma.client_id
      WHERE ma.tenant_id=$1 AND ma.marketplace='wb' AND ma.is_active=TRUE AND ma.api_token IS NOT NULL
@@ -988,15 +988,46 @@ async function reconcileStockForTenant(tenantId) {
       }
     }
 
-    const wmsRes = await query(
-      `SELECT sb.barcode, SUM(sb.qty_available)::int AS qty, MAX(i.item_name) AS item_name
-       FROM wms.stock_balances sb
-       JOIN wms.items i ON i.id = sb.item_id
-       WHERE sb.client_id=$1
-       GROUP BY sb.barcode`,
-      [acc.client_id]
+    // ВАЖНО (правка 28.08.2026, по итогам разбора конкретных "расхождений"):
+    // сравнивать WB нужно не с сырым qty_available, а с тем, сколько реально
+    // ДОЛЖНО быть отправлено - той же формулой, что и сам пуш
+    // (distributeStockForAccount): минус штучно открытые заказы ('new'/
+    // 'confirm', ещё не отгруженные) и минус резерв (settings.stock_reserve_pct,
+    // по умолчанию 5%). Без этого сверка честно показывала МНОГО "расхождений",
+    // которые на самом деле не расхождение, а законные придержанные единицы -
+    // например 878 в WMS, 826 в WB это не баг, а 8 шт под открытыми заказами
+    // + 5% резерва, именно это число и было отправлено. Раньше такие строки
+    // было не отличить от настоящих зависших/непроталкивающихся остатков -
+    // приходилось руками разбирать каждую через diag-barcode-detail.js.
+    const settings = acc.settings || {};
+    const reservePct = Number.isFinite(Number(settings.stock_reserve_pct)) ? Number(settings.stock_reserve_pct) : 5;
+
+    const physicalRes = await query(
+      `SELECT wib.barcode,
+              COALESCE(SUM(sb.qty_available) FILTER (WHERE l.is_pick_location = TRUE), 0)::int AS qty,
+              MAX(i.item_name) AS item_name
+       FROM wms.wb_item_barcodes wib
+       LEFT JOIN wms.stock_balances sb ON sb.tenant_id=$1 AND sb.client_id=$2 AND sb.barcode=wib.barcode
+       LEFT JOIN wms.locations l ON l.id = sb.location_id
+       LEFT JOIN wms.items i ON i.tenant_id=$1 AND i.client_id=$2 AND i.barcode=wib.barcode
+       WHERE wib.mp_account_id=$3
+         AND EXISTS (
+           SELECT 1 FROM wms.stock_movements sm
+           WHERE sm.tenant_id=$1 AND sm.client_id=$2 AND sm.barcode=wib.barcode
+         )
+       GROUP BY wib.barcode`,
+      [tenantId, acc.client_id, acc.id]
     );
-    const wmsMap = new Map(wmsRes.rows.map(r => [r.barcode, { qty: Number(r.qty), name: r.item_name }]));
+    const physicalMap = new Map(physicalRes.rows.map(r => [r.barcode, { qty: Number(r.qty), name: r.item_name }]));
+
+    const openOrdersRes = await query(
+      `SELECT barcode, COUNT(*)::int AS n
+       FROM wms.wb_orders
+       WHERE tenant_id=$1 AND mp_account_id=$2 AND status IN ('new','confirm') AND barcode IS NOT NULL
+       GROUP BY barcode`,
+      [tenantId, acc.id]
+    );
+    const openOrdersMap = new Map(openOrdersRes.rows.map(r => [r.barcode, r.n]));
 
     // ВАЖНО (правка 27.08.2026): раньше цикл шёл только по wbTotals.entries()
     // и флагом расхождения было ТОЛЬКО diff>0 (WB продаёт больше, чем реально
@@ -1009,13 +1040,21 @@ async function reconcileStockForTenant(tenantId) {
     // показывал 0 при ненулевом остатке в WMS. Теперь идём по ПОЛНОМУ списку
     // зарегистрированных для аккаунта штрихкодов (skus, весь wb_item_barcodes)
     // и сравниваем в обе стороны - diff!==0 - не только WB>WMS (риск
-    // оверселла), но и WMS>WB (остаток "застрял", в WB не ушёл - недопродажа).
+    // оверселла), но и "ожидаемое">WB (остаток "застрял", в WB не ушёл).
     const mismatches = [];
     for (const barcode of skus) {
       const wbQty = wbTotals.get(barcode) || 0;
-      const wms = wmsMap.get(barcode) || { qty: 0, name: '(нет остатка в WMS)' };
-      const diff = wbQty - wms.qty;
-      if (diff !== 0) mismatches.push({ barcode, name: wms.name, wb_qty: wbQty, wms_qty: wms.qty, diff });
+      const phys = physicalMap.get(barcode) || { qty: 0, name: '(нет остатка в WMS)' };
+      const openOrders = openOrdersMap.get(barcode) || 0;
+      const afterOrders = Math.max(0, phys.qty - openOrders);
+      const expected = Math.floor(afterOrders * (1 - reservePct / 100));
+      const diff = wbQty - expected;
+      if (diff !== 0) {
+        mismatches.push({
+          barcode, name: phys.name, wb_qty: wbQty, wms_qty: phys.qty,
+          open_orders: openOrders, reserve_pct: reservePct, expected_qty: expected, diff,
+        });
+      }
     }
     mismatches.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
     totalMismatches += mismatches.length;

@@ -504,20 +504,25 @@
             ? `<div style="color:var(--red);font-size:12px;margin-top:4px;">Ошибки запроса: ${a.errors.map(UI.escHtml).join('; ')}</div>` : '';
           if (!a.mismatches.length) {
             return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>
-              <span style="color:var(--green);">✓ OK, WB и WMS совпадают, расхождений нет.</span>${errBlock}</div>`;
+              <span style="color:var(--green);">✓ OK, WB совпадает с ожидаемым (с учётом открытых заказов и резерва), расхождений нет.</span>${errBlock}</div>`;
           }
+          // Сравниваем WB не с сырым остатком WMS, а с "ожидаемым" - тем, что
+          // реально должно быть отправлено (физический остаток минус открытые
+          // заказы минус резерв, та же формула, что и в самом пуше). Поэтому
+          // легитимно придержанные единицы (под открытыми заказами/резервом)
+          // сюда уже НЕ попадают - если строка показана, это настоящее
+          // расхождение между тем, что мы посчитали, и тем, что видно у WB.
           const rows = a.mismatches.map(m => {
-            // diff = wb_qty - wms_qty. diff>0 — WB показывает БОЛЬШЕ, чем реально есть
-            // (риск оверселла, продаст то, чего нет). diff<0 — в WMS остаток есть,
-            // а в WB меньше/ноль (остаток "застрял", недопродажа) — тоже проблема,
-            // но другого рода, поэтому подписываем явно, а не просто цветом.
             const isOversell = m.diff > 0;
             const label = isOversell ? `риск оверселла, +${m.diff}` : `не ушло в WB, ${m.diff}`;
             const color = isOversell ? 'var(--red)' : '#c07a00';
             return `
             <div class="loc-row">
               <span>${UI.escHtml(m.name)}<br/><span style="color:var(--muted);font-size:12px;">${UI.escHtml(m.barcode)}</span></span>
-              <span style="color:${color};white-space:nowrap;">WB ${m.wb_qty} / WMS ${m.wms_qty} (${label})</span>
+              <span style="color:${color};white-space:nowrap;">
+                WB ${m.wb_qty} / Ожидается ${m.expected_qty} (${label})
+                <div style="color:var(--muted);font-size:11px;font-weight:normal;">физ. ${m.wms_qty}, заказов ${m.open_orders}, резерв ${m.reserve_pct}%</div>
+              </span>
             </div>
           `;
           }).join('');
