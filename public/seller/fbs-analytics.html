@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Аналитика FBS — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+    .toolbar input[type=date]{padding:9px 10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    .preset{padding:8px 12px;border-radius:10px;border:2px solid var(--border);background:var(--card2);color:var(--text);font-size:13px;cursor:pointer;}
+    .preset.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+    .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+    @media (min-width:640px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} }
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
+    .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;}
+    .kpi .num{font-size:24px;font-weight:800;margin-top:4px;}
+    .kpi .amount{font-size:13px;color:var(--muted);margin-top:2px;}
+    .kpi .delta{font-size:12px;margin-top:6px;font-weight:600;}
+    .delta.up{color:var(--green2,#2e9e5b);}
+    .delta.down{color:var(--red,#c0392b);}
+    .delta.flat{color:var(--muted);}
+    .total-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .total-card{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+    .total-card .num{font-size:26px;font-weight:800;}
+    .total-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Аналитика FBS</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="toolbar" id="presets">
+    <button class="preset" data-days="0" onclick="setPreset(0)">Сегодня</button>
+    <button class="preset active" data-days="7" onclick="setPreset(7)">7 дней</button>
+    <button class="preset" data-days="30" onclick="setPreset(30)">30 дней</button>
+    <input type="date" id="f-from"/>
+    <span style="color:var(--muted);">—</span>
+    <input type="date" id="f-to"/>
+    <button class="btn-sm btn-back" onclick="loadCustomRange()">Показать</button>
+  </div>
+
+  <div class="refresh-note" id="meta" style="margin-bottom:10px;">—</div>
+
+  <div class="total-row">
+    <div class="total-card">
+      <div class="num" id="total-qty">—</div>
+      <div class="label">Заказов, шт</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="total-amount">—</div>
+      <div class="label">Сумма заказов, ₽</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="purchase-rate">—</div>
+      <div class="label">% выкупа</div>
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="buckets"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+
+    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+
+    function fmtMoney(n) {
+      const num = Number(n) || 0;
+      return num.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
+    }
+    function fmtNum(n) { return (Number(n) || 0).toLocaleString('ru-RU'); }
+    function isoDate(d) { return d.toISOString().slice(0, 10); }
+
+    function setPreset(days) {
+      document.querySelectorAll('.preset').forEach(b => b.classList.toggle('active', Number(b.dataset.days) === days));
+      const to = new Date();
+      const from = new Date(to.getTime() - days * 86400000);
+      document.getElementById('f-from').value = isoDate(from);
+      document.getElementById('f-to').value = isoDate(to);
+      load();
+    }
+
+    function loadCustomRange() {
+      document.querySelectorAll('.preset').forEach(b => b.classList.remove('active'));
+      load();
+    }
+
+    function deltaHtml(curQty, prevQty) {
+      if (!prevQty) return '';
+      const diff = curQty - prevQty;
+      const pct = (diff / prevQty) * 100;
+      const cls = diff > 0 ? 'up' : (diff < 0 ? 'down' : 'flat');
+      const sign = diff > 0 ? '+' : '';
+      return `<div class="delta ${cls}">${sign}${fmtNum(diff)} (${sign}${pct.toFixed(1)}%) к пред. периоду</div>`;
+    }
+
+    async function load() {
+      const from = document.getElementById('f-from').value;
+      const to = document.getElementById('f-to').value;
+      if (!from || !to) return;
+      try {
+        const res = await window.API.seller.fbsAnalyticsSummary({ from, to });
+        document.getElementById('meta').textContent = `Период: ${from} — ${to}. Статус обновляется автоматически (раз в 30 минут).`;
+        document.getElementById('total-qty').textContent = fmtNum(res.current.total.qty);
+        document.getElementById('total-amount').textContent = fmtMoney(res.current.total.amount);
+        document.getElementById('purchase-rate').textContent = res.current.purchase_rate === null ? '—' : res.current.purchase_rate.toFixed(1) + '%';
+
+        const prevByKey = {};
+        for (const b of res.previous.buckets) prevByKey[b.key] = b;
+
+        document.getElementById('buckets').innerHTML = res.current.buckets.map(b => {
+          const prev = prevByKey[b.key] || { qty: 0 };
+          return `
+            <div class="kpi">
+              <div class="label">${UI.escHtml(b.label)}</div>
+              <div class="num">${fmtNum(b.qty)} шт</div>
+              <div class="amount">${fmtMoney(b.amount)}</div>
+              ${deltaHtml(b.qty, prev.qty)}
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка загрузки аналитики', 'error');
+      }
+    }
+
+    setPreset(7);
+  </script>
+</body>
+</html>

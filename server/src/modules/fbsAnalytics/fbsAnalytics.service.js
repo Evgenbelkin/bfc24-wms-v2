@@ -125,12 +125,18 @@ async function computeSummary({ tenantId, clientId = null, mpAccountId = null, d
     params
   );
 
+  // wo.converted_price хранится КАК ПРИШЁЛ ОТ WB - в копейках (WB API:
+  // "convertedPrice ... multiplied by 100"), нигде в проекте раньше не
+  // делился на 100, потому что нигде раньше и не суммировался для показа
+  // денег пользователю. Делим здесь, при чтении - сырое значение в БД не
+  // трогаем, чтобы не ломать другой код, который когда-нибудь тоже до него
+  // доберётся и будет знать про эту особенность.
   const buckets = {};
   for (const key of BUCKET_ORDER) buckets[key] = { qty: 0, amount: 0 };
   for (const row of r.rows) {
     const bucket = classify(row);
     buckets[bucket].qty += 1;
-    buckets[bucket].amount += Number(row.converted_price) || 0;
+    buckets[bucket].amount += (Number(row.converted_price) || 0) / 100;
   }
 
   const totalQty = r.rows.length;

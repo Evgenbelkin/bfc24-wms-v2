@@ -18,6 +18,7 @@ const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const billingSvc = require('../billing/billing.service');
 const markingSvc = require('../marking/marking.service');
 const returnsSvc = require('../returns/returns.service');
+const fbsAnalyticsSvc = require('../fbsAnalytics/fbsAnalytics.service');
 
 // =============================================================================
 // Seller Cabinet Router
@@ -455,6 +456,26 @@ router.get('/analytics/sales', requireModule('analytics'), async (req,res,next)=
       params
     );
     res.json({ ok:true, rows:r.rows });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/fbs-analytics/summary — сводка по статусам FBS-заказов ЭТОГО
+ *  клиента за период (+ сравнение с предыдущим периодом такой же длины).
+ *  clientId ЖЁСТКО из JWT (resolveClientScope) - параметр client_id в query
+ *  тут намеренно не читается, чтобы селлер не мог подсмотреть чужие данные
+ *  подменой параметра. */
+router.get('/fbs-analytics/summary', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const to = req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : new Date();
+    const from = req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : new Date(to.getTime() - 6*86400000);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new ValidationError('Некорректный диапазон дат (from/to)');
+    }
+    const result = await fbsAnalyticsSvc.getFbsSummary({
+      tenantId: req.user.tenantId, clientId, dateFrom: from, dateTo: to,
+    });
+    res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
 
