@@ -19,9 +19,10 @@ const wbClient = require('../src/modules/wb/wb.client');
 // Запуск (с сервера, где лежит server/.env):
 //   cd server && node scripts/wb-stock-reconcile.js
 //
-// Печатает по каждому активному WB-аккаунту товары, где WB суммарно по всем
-// складам показывает БОЛЬШЕ, чем реально есть в WMS сейчас - это и есть
-// кандидаты на overselling, как было с 2006784216833.
+// Печатает по каждому активному WB-аккаунту товары, где остаток в WB не
+// совпадает с WMS в любую сторону: WB больше (кандидаты на оверселл, как
+// было с 2006784216833) или WB меньше/ноль при ненулевом остатке в WMS
+// (остаток не ушёл в WB - недопродажа/сбой push'а, инцидент 27.08.2026).
 // =============================================================================
 
 const SKU_CHUNK = 1000; // лимит WB на кол-во skus в одном запросе
@@ -93,8 +94,11 @@ async function main() {
         }
         for (const s of stocks) {
           const barcode = s.sku;
+          if (!barcode) continue;
           const qty = Number(s.amount || 0);
-          if (!barcode || qty <= 0) continue;
+          // Не пропускаем qty<=0 - явный ноль от WB тоже должен попасть в
+          // wbTotals, иначе (см. правку сравнения ниже) случай "в WMS есть,
+          // в WB реально 0" никогда не будет замечен.
           wbTotals.set(barcode, (wbTotals.get(barcode) || 0) + qty);
         }
         await sleep(PAUSE_MS);
@@ -111,33 +115,42 @@ async function main() {
     `, [acc.client_id]);
     const wmsMap = new Map(wmsRes.rows.map(r => [r.barcode, { qty: Number(r.qty), name: r.item_name }]));
 
-    // 3) Сравнение
+    // 3) Сравнение - идём по ПОЛНОМУ списку зарегистрированных штрихкодов
+    // (skus), а не только по тем, что вернул WB - иначе штрихкод, по которому
+    // WB вообще не прислал строку (или прислал 0, раньше отфильтровывалось
+    // выше), просто не участвовал бы в сравнении. Сравниваем в обе стороны:
+    // diff>0 - WB показывает больше, чем есть (риск оверселла); diff<0 - в
+    // WMS остаток есть, а в WB меньше/ноль (не ушло в WB - тоже проблема,
+    // раньше именно этот случай был не виден вообще).
     let anyMismatch = false;
     const rows = [];
-    for (const [barcode, wbQty] of wbTotals.entries()) {
+    for (const barcode of skus) {
+      const wbQty = wbTotals.get(barcode) || 0;
       const wms = wmsMap.get(barcode) || { qty: 0, name: '(нет остатка в WMS)' };
       const diff = wbQty - wms.qty;
-      if (diff > 0) {
+      if (diff !== 0) {
         anyMismatch = true;
         rows.push({ barcode, name: wms.name, wbQty, wmsQty: wms.qty, diff });
       }
     }
-    rows.sort((a, b) => b.diff - a.diff);
+    rows.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
     if (!anyMismatch) {
-      console.log('  OK: везде WB <= WMS, расхождений нет.');
+      console.log('  OK: WB и WMS совпадают, расхождений нет.');
     } else {
-      console.log('  barcode           | diff | WB итого | WMS сейчас | товар');
+      console.log('  barcode           | diff  | WB итого | WMS сейчас | товар');
       for (const r of rows) {
+        const sign = r.diff > 0 ? '+' : '';
+        const tag = r.diff > 0 ? 'оверселл' : 'не ушло в WB';
         console.log(
-          `  ${r.barcode.padEnd(17)} | +${String(r.diff).padEnd(3)} | ${String(r.wbQty).padEnd(8)} | ${String(r.wmsQty).padEnd(10)} | ${r.name}`
+          `  ${r.barcode.padEnd(17)} | ${(sign + r.diff).padEnd(5)} | ${String(r.wbQty).padEnd(8)} | ${String(r.wmsQty).padEnd(10)} | ${r.name}  [${tag}]`
         );
         totalMismatches++;
       }
     }
   }
 
-  console.log(`\n=== Итого товаров с расхождением (WB > WMS) по всем аккаунтам: ${totalMismatches} ===`);
+  console.log(`\n=== Итого товаров с расхождением (в любую сторону) по всем аккаунтам: ${totalMismatches} ===`);
   await pool.end();
 }
 
