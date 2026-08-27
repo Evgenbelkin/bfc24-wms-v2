@@ -15,7 +15,15 @@ router.use(authRequired, tenantMiddleware);
 // PATCH /tenant/profile — редактировать (только tenant_admin)
 // =============================================================================
 
-router.get('/profile', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+// ВАЖНО: 'receiver' добавлен намеренно (баг, обнаруженный на проде) —
+// receiving.html дёргает этот роут при открытии "Сформировать акт" (нужны
+// реквизиты компании как "Исполнитель" в акте), это штатное действие
+// приёмщика после оприходования. Без 'receiver' здесь приёмщик не может
+// закрыть акт по своей же приёмке и, следовательно, не может выйти из
+// экрана приёмки (гейт "есть непокрытый актом товар" блокирует выход,
+// а форма акта, которая единственная снимает этот гейт, сама не открывалась
+// из-за нехватки роли) — полный тупик для роли receiver.
+router.get('/profile', requireRole('tenant_admin', 'supervisor', 'receiver'), async (req, res, next) => {
   try {
     const profile = await svc.getMyTenantProfile({ tenantId: req.user.tenantId });
     res.json({ ok: true, profile });
