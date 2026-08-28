@@ -223,14 +223,30 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   if (mpAccountId) { conds.push(`wo.mp_account_id=$${idx++}`); params.push(mpAccountId); }
 
   // Первый момент, когда заказ покинул 'waiting' (LEFT JOIN LATERAL -
-  // берём самое раннее событие с wb_status != 'waiting' на этот заказ).
+  // берём самое раннее событие СО СТАТУСОМ ИМЕННО 'sorted' - это тот
+  // конкретный статус, который WB проставляет при обработке/сортировке
+  // отправления (см. classify(): 'sorted' -> 'в пути к клиенту'). ВАЖНО:
+  // раньше здесь стояло "любой статус != 'waiting'" - из-за того, что
+  // история переходов (wms.wb_order_status_events, миграция 052) завелась
+  // ПОЗЖЕ, чем уже шёл опрос wb_status (миграция 051), у многих старых
+  // заказов реальный переход waiting->sorted никогда не попал в историю
+  // (статус на момент запуска 052 уже был sorted, менять было нечего -
+  // событие не пишется). Первым записанным событием у такого заказа
+  // оказывался следующий по времени переход - например waiting->...->'sold'
+  // (при полном выкупе) - и такой заказ ошибочно засчитывался как "ехал до
+  // WB" все те дни, что на самом деле ушли на доставку и выкуп. Отсюда
+  // ложно раздутая доля ">60ч" (см. жалобу 28.08.2026 - метрика выглядела
+  // подозрительно близкой к avg_hours_to_sold). Фильтр на конкретно
+  // 'sorted' исключает такие заказы из расчёта (пока по ним нет честного
+  // события) вместо того чтобы посчитать неправильно - выборка будет расти
+  // по мере накопления истории.
   const r = await query(
     `SELECT wo.created_at, ev.observed_at AS left_waiting_at, sold.observed_at AS sold_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      LEFT JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e
-       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status != 'waiting'
+       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status = 'sorted'
        ORDER BY observed_at ASC LIMIT 1
      ) ev ON TRUE
      LEFT JOIN LATERAL (
@@ -286,13 +302,16 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
  *  что и в общем виджете - только каждая строка теперь на одного клиента. */
 async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
   const r = await query(
+    // e.wb_status = 'sorted' (не "!= waiting") - см. подробное объяснение
+    // в getProcessingSpeed() выше про баг с "ложно засчитанным" временем
+    // до sold у заказов без честной истории до 052.
     `SELECT ma.client_id, c.client_name, wo.created_at, ev.observed_at AS left_waiting_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
      LEFT JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e
-       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status != 'waiting'
+       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status = 'sorted'
        ORDER BY observed_at ASC LIMIT 1
      ) ev ON TRUE
      WHERE wo.tenant_id=$1 AND wo.created_at >= $2 AND wo.created_at < $3`,
