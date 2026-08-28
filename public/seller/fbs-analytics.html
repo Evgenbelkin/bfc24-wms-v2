@@ -24,14 +24,6 @@
     .total-card{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
     .total-card .num{font-size:26px;font-weight:800;}
     .total-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
-    .speed-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
-    .speed-label{width:220px;font-size:12px;color:var(--muted);flex-shrink:0;}
-    .speed-bar-wrap{flex:1;background:var(--card2);border-radius:8px;height:20px;overflow:hidden;}
-    .speed-bar{height:100%;}
-    .speed-bar.discount{background:var(--green2,#2e9e5b);}
-    .speed-bar.base{background:var(--accent);}
-    .speed-bar.penalty{background:var(--red,#c0392b);}
-    .speed-qty{width:110px;text-align:right;font-size:12px;color:var(--muted);flex-shrink:0;}
   </style>
 </head>
 <body>
@@ -70,16 +62,11 @@
 
   <div class="kpi-grid" id="buckets"></div>
 
-  <div class="card">
-    <div class="card-title">Скорость обработки (влияет на комиссию WB)</div>
-    <div class="total-row" style="margin-bottom:12px;">
-      <div class="total-card"><div class="num" id="speed-ontime">—</div><div class="label">Вовремя (≤48ч), %</div></div>
-      <div class="total-card"><div class="num" id="speed-avg-towb">—</div><div class="label">Ср. время заказ→WB</div></div>
-      <div class="total-card"><div class="num" id="speed-avg-tosold">—</div><div class="label">Ср. время заказ→выкуп</div></div>
-    </div>
-    <div id="speed-buckets"></div>
-    <div class="refresh-note" id="speed-meta" style="margin-top:8px;"></div>
-  </div>
+  <!-- Блок "Скорость обработки" пока скрыт от селлеров (см. обсуждение
+       28.08.2026) - метрика ещё не настроена/не выверена, показываем её
+       пока только себе в app/fbs-analytics.html. Включить обратно для
+       селлеров: вернуть карточку отсюда (см. историю git) и раскомментировать
+       вызов loadSpeed(from, to) в load() ниже. -->
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
@@ -118,41 +105,10 @@
       return `<div class="delta ${cls}">${sign}${fmtNum(diff)} (${sign}${pct.toFixed(1)}%) к пред. периоду</div>`;
     }
 
-    function fmtHours(h) {
-      if (h === null || h === undefined) return '—';
-      return h.toFixed(1) + ' ч';
-    }
-    function bucketClass(key) {
-      if (key === 'h0_13' || key === 'h13_42') return 'discount';
-      if (key === 'h42_48') return 'base';
-      return 'penalty';
-    }
-
-    async function loadSpeed(from, to) {
-      try {
-        const res = await window.API.seller.fbsAnalyticsSpeed({ from, to });
-        document.getElementById('speed-ontime').textContent = res.on_time_rate === null ? '—' : res.on_time_rate.toFixed(1) + '%';
-        document.getElementById('speed-avg-towb').textContent = fmtHours(res.avg_hours_to_wb);
-        document.getElementById('speed-avg-tosold').textContent = fmtHours(res.avg_hours_to_sold);
-        document.getElementById('speed-meta').textContent = `Учтено заказов (уже переданы в WB): ${fmtNum(res.processed)}`;
-        const maxPct = Math.max(...res.buckets.map(b => b.pct), 1);
-        document.getElementById('speed-buckets').innerHTML = res.buckets.map(b => `
-          <div class="speed-row">
-            <div class="speed-label">${UI.escHtml(b.label)}</div>
-            <div class="speed-bar-wrap"><div class="speed-bar ${bucketClass(b.key)}" style="width:${(b.pct / maxPct * 100).toFixed(1)}%"></div></div>
-            <div class="speed-qty">${fmtNum(b.qty)} шт (${b.pct.toFixed(1)}%)</div>
-          </div>
-        `).join('');
-      } catch (e) {
-        UI.toast(e.message || 'Ошибка загрузки сроков', 'error');
-      }
-    }
-
     async function load() {
       const from = document.getElementById('f-from').value;
       const to = document.getElementById('f-to').value;
       if (!from || !to) return;
-      loadSpeed(from, to);
       try {
         const res = await window.API.seller.fbsAnalyticsSummary({ from, to });
         document.getElementById('meta').textContent = `Период: ${from} — ${to}. Статус обновляется автоматически (раз в 30 минут).`;
