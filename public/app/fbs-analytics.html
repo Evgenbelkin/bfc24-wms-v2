@@ -81,6 +81,17 @@
     <div class="refresh-note" id="speed-meta" style="margin-top:8px;"></div>
   </div>
 
+  <div class="card">
+    <div class="card-title">Скорость обработки по клиентам</div>
+    <table>
+      <thead>
+        <tr><th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th><th>&gt;60ч</th></tr>
+      </thead>
+      <tbody id="speed-by-client"></tbody>
+    </table>
+    <div class="refresh-note" id="speed-by-client-empty" style="margin-top:8px;display:none;">Нет данных за период (заказы ещё не покинули статус "ожидание").</div>
+  </div>
+
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script>
@@ -146,11 +157,43 @@
       }
     }
 
+    function rateColor(pct) {
+      if (pct >= 90) return 'var(--green2,#2e9e5b)';
+      if (pct >= 70) return 'var(--text)';
+      return 'var(--red,#c0392b)';
+    }
+
+    async function loadSpeedByClient(from, to) {
+      try {
+        const res = await window.API.fbsAnalytics.speedByClient({ from, to });
+        const tbody = document.getElementById('speed-by-client');
+        const empty = document.getElementById('speed-by-client-empty');
+        if (!res.clients.length) {
+          tbody.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        tbody.innerHTML = res.clients.map(c => `
+          <tr>
+            <td>${UI.escHtml(c.client_name)}</td>
+            <td>${fmtNum(c.processed)}</td>
+            <td style="color:${rateColor(c.on_time_rate)};font-weight:600;">${c.on_time_rate.toFixed(1)}%</td>
+            <td>${fmtHours(c.avg_hours_to_wb)}</td>
+            <td>${c.over60_rate.toFixed(1)}%</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка загрузки сроков по клиентам', 'error');
+      }
+    }
+
     async function load() {
       const from = document.getElementById('f-from').value;
       const to = document.getElementById('f-to').value;
       if (!from || !to) return;
       loadSpeed(from, to);
+      loadSpeedByClient(from, to);
       try {
         const res = await window.API.fbsAnalytics.summary({ from, to });
         document.getElementById('meta').textContent = `Период: ${from} — ${to}. Статус обновляется автоматически (раз в 30 минут).`;

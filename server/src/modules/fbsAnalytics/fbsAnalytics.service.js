@@ -279,9 +279,59 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   };
 }
 
+/** Тот же расчёт "сроки до передачи в WB", но в разрезе по клиентам - чтобы
+ *  видеть, кто из клиентов регулярно затягивает сборку и получает штраф к
+ *  комиссии WB. Только для персонала (в seller-роутере такого нет - там
+ *  клиент видит только себя, разрез не нужен). Не считаем buckets/avg_to_sold
+ *  на клиента - для списка "кто хуже всех" достаточно on_time_rate/ср.часов/
+ *  доли ">60ч", подробные корзины и так видны в общем виджете выше. */
+async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
+  const r = await query(
+    `SELECT ma.client_id, c.client_name, wo.created_at, ev.observed_at AS left_waiting_at
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     JOIN wms.clients c ON c.id = ma.client_id
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e
+       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status != 'waiting'
+       ORDER BY observed_at ASC LIMIT 1
+     ) ev ON TRUE
+     WHERE wo.tenant_id=$1 AND wo.created_at >= $2 AND wo.created_at < $3`,
+    [tenantId, dateFrom, dateTo]
+  );
+
+  const byClient = new Map();
+  for (const row of r.rows) {
+    if (!row.left_waiting_at) continue; // ещё не покинул 'waiting' - в сроки пока не считаем
+    const hoursToWb = (new Date(row.left_waiting_at) - new Date(row.created_at)) / 3600000;
+    if (!byClient.has(row.client_id)) {
+      byClient.set(row.client_id, { client_id: row.client_id, client_name: row.client_name, processed: 0, onTime: 0, over60: 0, sumHours: 0 });
+    }
+    const agg = byClient.get(row.client_id);
+    agg.processed++;
+    agg.sumHours += hoursToWb;
+    if (hoursToWb <= 48) agg.onTime++;
+    if (hoursToWb > 60) agg.over60++;
+  }
+
+  const clients = [...byClient.values()].map(a => ({
+    client_id: a.client_id,
+    client_name: a.client_name,
+    processed: a.processed,
+    on_time_rate: (a.onTime / a.processed) * 100,
+    avg_hours_to_wb: a.sumHours / a.processed,
+    over60_rate: (a.over60 / a.processed) * 100,
+  }));
+  // Худшие (по доле "вовремя") - первыми, чтобы сразу было видно, кого подтянуть.
+  clients.sort((x, y) => x.on_time_rate - y.on_time_rate);
+
+  return { clients };
+}
+
 module.exports = {
   refreshWbStatusesForAccount,
   refreshWbStatusesForTenant,
   getFbsSummary,
   getProcessingSpeed,
+  getProcessingSpeedByClient,
 };

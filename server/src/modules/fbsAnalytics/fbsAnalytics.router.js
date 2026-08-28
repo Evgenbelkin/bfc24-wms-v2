@@ -57,6 +57,18 @@ router.get('/speed', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/** GET /fbs-analytics/speed-by-client — сроки обработки в разрезе по клиентам
+ *  (только для персонала - видно, кто из клиентов регулярно затягивает сборку). */
+router.get('/speed-by-client', async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req.query);
+    const result = await fbsAnalyticsService.getProcessingSpeedByClient({
+      tenantId: req.user.tenantId, dateFrom, dateTo,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** POST /fbs-analytics/refresh-now — ручной принудительный опрос wbStatus
  *  (обычно обновляется фоновой джобой раз в 30 минут). */
 router.post('/refresh-now', async (req, res, next) => {

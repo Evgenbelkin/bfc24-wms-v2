@@ -381,9 +381,10 @@
   // ─────────────── FBS-аналитика ───────────────
 
   const fbsAnalytics = {
-    summary:    (p) => get('/fbs-analytics/summary', p),
-    speed:      (p) => get('/fbs-analytics/speed', p),
-    refreshNow: ()  => post('/fbs-analytics/refresh-now', {}),
+    summary:       (p) => get('/fbs-analytics/summary', p),
+    speed:         (p) => get('/fbs-analytics/speed', p),
+    speedByClient: (p) => get('/fbs-analytics/speed-by-client', p),
+    refreshNow:    ()  => post('/fbs-analytics/refresh-now', {}),
   };
 
   // ─────────────── Printing ───────────────
