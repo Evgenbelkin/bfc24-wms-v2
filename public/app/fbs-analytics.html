@@ -32,6 +32,11 @@
     .speed-bar.base{background:var(--accent);}
     .speed-bar.penalty{background:var(--red,#c0392b);}
     .speed-qty{width:110px;text-align:right;font-size:12px;color:var(--muted);flex-shrink:0;}
+    .bc{display:inline-block;min-width:52px;padding:3px 6px;border-radius:6px;font-size:12px;font-weight:600;text-align:center;}
+    .bc.discount{background:rgba(46,158,91,.15);color:var(--green2,#2e9e5b);}
+    .bc.base{background:rgba(59,130,246,.15);color:var(--accent);}
+    .bc.penalty{background:rgba(192,57,43,.15);color:var(--red,#c0392b);}
+    .bc.zero{background:transparent;color:var(--muted);font-weight:400;}
   </style>
 </head>
 <body>
@@ -85,7 +90,10 @@
     <div class="card-title">Скорость обработки по клиентам</div>
     <table>
       <thead>
-        <tr><th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th><th>&gt;60ч</th></tr>
+        <tr>
+          <th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th>
+          <th>0–13ч</th><th>13–42ч</th><th>42–48ч</th><th>48–54ч</th><th>54–60ч</th><th>&gt;60ч</th>
+        </tr>
       </thead>
       <tbody id="speed-by-client"></tbody>
     </table>
@@ -174,15 +182,24 @@
           return;
         }
         empty.style.display = 'none';
-        tbody.innerHTML = res.clients.map(c => `
+        tbody.innerHTML = res.clients.map(c => {
+          const byKey = {};
+          for (const b of c.buckets) byKey[b.key] = b;
+          const bucketCell = (key) => {
+            const b = byKey[key];
+            const cls = b.qty === 0 ? 'zero' : bucketClass(key);
+            return `<td><span class="bc ${cls}">${b.pct.toFixed(0)}%</span></td>`;
+          };
+          return `
           <tr>
             <td>${UI.escHtml(c.client_name)}</td>
             <td>${fmtNum(c.processed)}</td>
             <td style="color:${rateColor(c.on_time_rate)};font-weight:600;">${c.on_time_rate.toFixed(1)}%</td>
             <td>${fmtHours(c.avg_hours_to_wb)}</td>
-            <td>${c.over60_rate.toFixed(1)}%</td>
+            ${bucketCell('h0_13')}${bucketCell('h13_42')}${bucketCell('h42_48')}${bucketCell('h48_54')}${bucketCell('h54_60')}${bucketCell('h60plus')}
           </tr>
-        `).join('');
+        `;
+        }).join('');
       } catch (e) {
         UI.toast(e.message || 'Ошибка загрузки сроков по клиентам', 'error');
       }

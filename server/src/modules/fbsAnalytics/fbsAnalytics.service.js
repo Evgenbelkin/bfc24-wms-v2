@@ -282,9 +282,8 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
 /** Тот же расчёт "сроки до передачи в WB", но в разрезе по клиентам - чтобы
  *  видеть, кто из клиентов регулярно затягивает сборку и получает штраф к
  *  комиссии WB. Только для персонала (в seller-роутере такого нет - там
- *  клиент видит только себя, разрез не нужен). Не считаем buckets/avg_to_sold
- *  на клиента - для списка "кто хуже всех" достаточно on_time_rate/ср.часов/
- *  доли ">60ч", подробные корзины и так видны в общем виджете выше. */
+ *  клиент видит только себя, разрез не нужен). Корзины те же (SPEED_BUCKETS),
+ *  что и в общем виджете - только каждая строка теперь на одного клиента. */
 async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
   const r = await query(
     `SELECT ma.client_id, c.client_name, wo.created_at, ev.observed_at AS left_waiting_at
@@ -305,13 +304,15 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
     if (!row.left_waiting_at) continue; // ещё не покинул 'waiting' - в сроки пока не считаем
     const hoursToWb = (new Date(row.left_waiting_at) - new Date(row.created_at)) / 3600000;
     if (!byClient.has(row.client_id)) {
-      byClient.set(row.client_id, { client_id: row.client_id, client_name: row.client_name, processed: 0, onTime: 0, over60: 0, sumHours: 0 });
+      const buckets = {};
+      for (const b of SPEED_BUCKETS) buckets[b.key] = 0;
+      byClient.set(row.client_id, { client_id: row.client_id, client_name: row.client_name, processed: 0, onTime: 0, sumHours: 0, buckets });
     }
     const agg = byClient.get(row.client_id);
     agg.processed++;
     agg.sumHours += hoursToWb;
     if (hoursToWb <= 48) agg.onTime++;
-    if (hoursToWb > 60) agg.over60++;
+    agg.buckets[bucketForHours(hoursToWb)]++;
   }
 
   const clients = [...byClient.values()].map(a => ({
@@ -320,7 +321,10 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
     processed: a.processed,
     on_time_rate: (a.onTime / a.processed) * 100,
     avg_hours_to_wb: a.sumHours / a.processed,
-    over60_rate: (a.over60 / a.processed) * 100,
+    buckets: SPEED_BUCKETS.map(b => ({
+      key: b.key, label: b.label, qty: a.buckets[b.key],
+      pct: (a.buckets[b.key] / a.processed) * 100,
+    })),
   }));
   // Худшие (по доле "вовремя") - первыми, чтобы сразу было видно, кого подтянуть.
   clients.sort((x, y) => x.on_time_rate - y.on_time_rate);
