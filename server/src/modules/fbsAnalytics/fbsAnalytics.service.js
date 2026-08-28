@@ -184,9 +184,10 @@ async function getFbsSummary({ tenantId, clientId = null, mpAccountId = null, da
 // Фаза 2: сроки обработки и комиссия WB.
 //
 // WB меняет комиссию в зависимости от того, СКОЛЬКО ВРЕМЕНИ ПРОШЛО ОТ
-// СОЗДАНИЯ ЗАКАЗА ДО ПЕРЕДАЧИ ЕГО В WB (не до доставки покупателю!) - это
-// момент, когда wbStatus впервые перестаёт быть 'waiting' (WB реально принял
-// поставку физически). Пороги те же, что в документации WB/конкурентов:
+// СОЗДАНИЯ ЗАКАЗА ДО ТОГО, КАК WB ФИЗИЧЕСКИ ПРИНЯЛ ПОСТАВКУ У СЕБЯ НА СКЛАДЕ
+// (не до доставки покупателю!) - по словам Джеки, это момент, когда WB
+// сканирует QR-код поставки на приёмке. Пороги те же, что в документации
+// WB/конкурентов:
 //   0–13ч   — максимальная скидка на комиссию (-5 п.п.)
 //   13–42ч  — скидка (-3.5 п.п.)
 //   42–48ч  — базовая ставка ("вовремя")
@@ -195,10 +196,23 @@ async function getFbsSummary({ tenantId, clientId = null, mpAccountId = null, da
 //   >60ч    — штраф +0.45 п.п./ч
 // "Доставлено вовремя" = доля заказов, уложившихся в 48ч.
 //
-// Точность ограничена частотой опроса статуса (по умолчанию раз в 30 минут,
-// wbFbsStatusSync.js) - наблюдаемый момент "заказ покинул waiting" может
-// отставать от реального на несколько десятков минут. Для решения "уложились
-// мы в 48ч или нет" такой точности достаточно с большим запасом.
+// ВАЖНО (правка 28.08.2026, вторая версия этой метрики): изначально момент
+// "заказ покинул 'waiting'" пытались ловить ПО ОТДЕЛЬНОМУ ЗАКАЗУ через
+// wbStatus (см. историю в git - сначала "любой статус != waiting", потом
+// сужали до конкретно 'sorted'). Оба варианта оказались ненадёжны: реальные
+// значения wbStatus, которые правда приходят от WB (например
+// 'ready_for_pickup'), не совпадали с тем, что было задокументировано по
+// стороннему блог-посту, из-за чего метрика либо путала срок с временем до
+// выкупа, либо вообще не считалась ни по одному заказу. Правильный источник
+// для "когда WB принял ПОСТАВКУ" уже был в системе: wms.shipments.wb_accepted_at
+// - его выставляет syncDeliveryStatusForTenant (wb.service.js, фоновый крон
+// раз в 15 минут, WB_AUTO_SYNC_INTERVAL_MINUTES) в момент, когда ВСЕ заказы
+// поставки перестают быть 'waiting' - то есть именно тот момент "поставку
+// приняли", который нужен, и не зависит от того, как называется конкретный
+// статус отдельного заказа. Берём created_at заказа и wb_accepted_at
+// поставки, в которую он попал (join по wb_orders.wb_supply_id =
+// shipments.external_id) - заказы, ещё не попавшие в принятую поставку,
+// просто не участвуют в расчёте (см. processed).
 // -----------------------------------------------------------------------------
 
 const SPEED_BUCKETS = [
@@ -222,33 +236,17 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   if (clientId) { conds.push(`ma.client_id=$${idx++}`); params.push(clientId); }
   if (mpAccountId) { conds.push(`wo.mp_account_id=$${idx++}`); params.push(mpAccountId); }
 
-  // Первый момент, когда заказ покинул 'waiting' (LEFT JOIN LATERAL -
-  // берём самое раннее событие СО СТАТУСОМ ИМЕННО 'sorted' - это тот
-  // конкретный статус, который WB проставляет при обработке/сортировке
-  // отправления (см. classify(): 'sorted' -> 'в пути к клиенту'). ВАЖНО:
-  // раньше здесь стояло "любой статус != 'waiting'" - из-за того, что
-  // история переходов (wms.wb_order_status_events, миграция 052) завелась
-  // ПОЗЖЕ, чем уже шёл опрос wb_status (миграция 051), у многих старых
-  // заказов реальный переход waiting->sorted никогда не попал в историю
-  // (статус на момент запуска 052 уже был sorted, менять было нечего -
-  // событие не пишется). Первым записанным событием у такого заказа
-  // оказывался следующий по времени переход - например waiting->...->'sold'
-  // (при полном выкупе) - и такой заказ ошибочно засчитывался как "ехал до
-  // WB" все те дни, что на самом деле ушли на доставку и выкуп. Отсюда
-  // ложно раздутая доля ">60ч" (см. жалобу 28.08.2026 - метрика выглядела
-  // подозрительно близкой к avg_hours_to_sold). Фильтр на конкретно
-  // 'sorted' исключает такие заказы из расчёта (пока по ним нет честного
-  // события) вместо того чтобы посчитать неправильно - выборка будет расти
-  // по мере накопления истории.
+  // wb_accepted_at ставится, когда WB подтвердил приём ВСЕЙ поставки (см.
+  // комментарий выше) - джойним заказ к его поставке через wb_supply_id.
+  // sold_at по-прежнему берём из истории статусов заказа (там 'sold' -
+  // надёжный, честно проверенный на реальных данных статус, см. диагностику
+  // 28.08.2026 - в отличие от "какой статус означает именно приёмку", тут
+  // сомнений не было).
   const r = await query(
-    `SELECT wo.created_at, ev.observed_at AS left_waiting_at, sold.observed_at AS sold_at
+    `SELECT wo.created_at, s.wb_accepted_at AS accepted_at, sold.observed_at AS sold_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
-     LEFT JOIN LATERAL (
-       SELECT observed_at FROM wms.wb_order_status_events e
-       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status = 'sorted'
-       ORDER BY observed_at ASC LIMIT 1
-     ) ev ON TRUE
+     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
      LEFT JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e2
        WHERE e2.mp_account_id = wo.mp_account_id AND e2.wb_order_id = wo.wb_order_id AND e2.wb_status = 'sold'
@@ -266,15 +264,15 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   let sumToSold = 0, cntToSold = 0;
 
   for (const row of r.rows) {
-    if (row.left_waiting_at) {
-      const hoursToWb = (new Date(row.left_waiting_at) - new Date(row.created_at)) / 3600000;
+    if (row.accepted_at) {
+      const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
       buckets[bucketForHours(hoursToWb)]++;
       processed++;
       if (hoursToWb <= 48) onTime++;
       sumToWb += hoursToWb; cntToWb++;
 
       if (row.sold_at) {
-        const hoursWbToSold = (new Date(row.sold_at) - new Date(row.left_waiting_at)) / 3600000;
+        const hoursWbToSold = (new Date(row.sold_at) - new Date(row.accepted_at)) / 3600000;
         if (hoursWbToSold >= 0) { sumWbToSold += hoursWbToSold; cntWbToSold++; }
         const hoursToSold = (new Date(row.sold_at) - new Date(row.created_at)) / 3600000;
         sumToSold += hoursToSold; cntToSold++;
@@ -283,7 +281,7 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   }
 
   return {
-    processed, // сколько заказов из периода уже успели покинуть 'waiting' (по ним считаем сроки)
+    processed, // сколько заказов из периода уже в принятой WB поставке (по ним считаем сроки)
     on_time_rate: processed > 0 ? (onTime / processed) * 100 : null,
     avg_hours_to_wb:      cntToWb > 0     ? sumToWb / cntToWb          : null,
     avg_hours_wb_to_sold: cntWbToSold > 0 ? sumWbToSold / cntWbToSold  : null,
@@ -301,27 +299,22 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
  *  клиент видит только себя, разрез не нужен). Корзины те же (SPEED_BUCKETS),
  *  что и в общем виджете - только каждая строка теперь на одного клиента. */
 async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
+  // wb_accepted_at поставки - см. подробное объяснение в getProcessingSpeed()
+  // выше про то, почему считаем именно так (а не по wbStatus заказа).
   const r = await query(
-    // e.wb_status = 'sorted' (не "!= waiting") - см. подробное объяснение
-    // в getProcessingSpeed() выше про баг с "ложно засчитанным" временем
-    // до sold у заказов без честной истории до 052.
-    `SELECT ma.client_id, c.client_name, wo.created_at, ev.observed_at AS left_waiting_at
+    `SELECT ma.client_id, c.client_name, wo.created_at, s.wb_accepted_at AS accepted_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
-     LEFT JOIN LATERAL (
-       SELECT observed_at FROM wms.wb_order_status_events e
-       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status = 'sorted'
-       ORDER BY observed_at ASC LIMIT 1
-     ) ev ON TRUE
+     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
      WHERE wo.tenant_id=$1 AND wo.created_at >= $2 AND wo.created_at < $3`,
     [tenantId, dateFrom, dateTo]
   );
 
   const byClient = new Map();
   for (const row of r.rows) {
-    if (!row.left_waiting_at) continue; // ещё не покинул 'waiting' - в сроки пока не считаем
-    const hoursToWb = (new Date(row.left_waiting_at) - new Date(row.created_at)) / 3600000;
+    if (!row.accepted_at) continue; // поставка ещё не принята WB - в сроки пока не считаем
+    const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
     if (!byClient.has(row.client_id)) {
       const buckets = {};
       for (const b of SPEED_BUCKETS) buckets[b.key] = 0;
