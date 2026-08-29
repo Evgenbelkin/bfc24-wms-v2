@@ -542,11 +542,32 @@ async function distributeStockForAccount({ tenantId, mpAccountId, barcodes = nul
   // syncDeliveryStatusForTenant теперь переводит заказ в 'shipped', как
   // только WB подтвердил приёмку поставки - так что 'confirm' здесь больше
   // не рискует остаться недоучтённым навечно, и его можно спокойно вычитать.
+  //
+  // ПРАВКА 29.08.2026 (двойное вычитание, найдено на живой "Сверке остатков" -
+  // клиент ИП Житкова, расхождение росло на глазах +1 -> +7 за 5 минут в
+  // процессе сборки волны): 'confirm'-заказ, по которому УЖЕ прошла физическая
+  // сборка (picking_tasks.status='done' - выставляется РОВНО В ОДНОМ месте
+  // кода, picking.service.js, сразу вслед за списанием остатка с ячейки
+  // отбора, см. ledger.consumeStock), к этому моменту уже вычтен ИЗ
+  // физического row.qty (stockRes выше - SUM(qty_available) WHERE
+  // is_pick_location=TRUE, а собранный товар с ячейки отбора уже списан).
+  // Вычитать его ЕЩЁ РАЗ здесь, по одному только статусу заказа - двойной учёт:
+  // по мере сборки волны expected проваливается всё ниже, хотя по факту ничего
+  // не изменилось для покупателей - эти единицы как были обещаны своим
+  // заказам, так и остаются. Теперь вычитаем только ещё НЕ собранные заказы
+  // (picking_task для этого wb_order_id либо не создан, либо не 'done') -
+  // ровно один раз на единицу товара, физически или по статусу заказа,
+  // никогда оба раза сразу. Под оверселл это не открывает: собранный заказ и
+  // так уже вычтен физически, просто перестаём вычитать его повторно.
   const newOrdersRes = await query(
-    `SELECT barcode, COUNT(*)::int AS n
-     FROM wms.wb_orders
-     WHERE tenant_id=$1 AND mp_account_id=$2 AND status IN ('new','confirm') AND barcode IS NOT NULL${barcodesFilter ? ' AND barcode = ANY($3::text[])' : ''}
-     GROUP BY barcode`,
+    `SELECT wo.barcode, COUNT(*)::int AS n
+     FROM wms.wb_orders wo
+     WHERE wo.tenant_id=$1 AND wo.mp_account_id=$2 AND wo.status IN ('new','confirm') AND wo.barcode IS NOT NULL${barcodesFilter ? ' AND wo.barcode = ANY($3::text[])' : ''}
+       AND NOT EXISTS (
+         SELECT 1 FROM wms.picking_tasks pt
+         WHERE pt.tenant_id = wo.tenant_id AND pt.wb_order_id = wo.wb_order_id AND pt.status = 'done'
+       )
+     GROUP BY wo.barcode`,
     barcodesFilter ? [tenantId, mpAccountId, barcodes] : [tenantId, mpAccountId]
   );
   const newOrdersByBarcode = new Map(newOrdersRes.rows.map(r => [r.barcode, r.n]));
@@ -1040,11 +1061,19 @@ async function reconcileStockForTenant(tenantId) {
     );
     const physicalMap = new Map(physicalRes.rows.map(r => [r.barcode, { qty: Number(r.qty), name: r.item_name }]));
 
+    // ПРАВКА 29.08.2026: та же формула, что и в distributeStockForAccount (см.
+    // комментарий там) - не вычитаем повторно заказы, которые уже физически
+    // собраны (picking_tasks.status='done'), их единицы уже вычтены из
+    // physicalRes выше через уменьшение остатка на ячейке отбора.
     const openOrdersRes = await query(
-      `SELECT barcode, COUNT(*)::int AS n
-       FROM wms.wb_orders
-       WHERE tenant_id=$1 AND mp_account_id=$2 AND status IN ('new','confirm') AND barcode IS NOT NULL
-       GROUP BY barcode`,
+      `SELECT wo.barcode, COUNT(*)::int AS n
+       FROM wms.wb_orders wo
+       WHERE wo.tenant_id=$1 AND wo.mp_account_id=$2 AND wo.status IN ('new','confirm') AND wo.barcode IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM wms.picking_tasks pt
+           WHERE pt.tenant_id = wo.tenant_id AND pt.wb_order_id = wo.wb_order_id AND pt.status = 'done'
+         )
+       GROUP BY wo.barcode`,
       [tenantId, acc.id]
     );
     const openOrdersMap = new Map(openOrdersRes.rows.map(r => [r.barcode, r.n]));
