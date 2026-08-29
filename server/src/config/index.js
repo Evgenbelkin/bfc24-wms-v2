@@ -126,6 +126,12 @@ const config = {
     // Опрос реального статуса заказа у WB (wbStatus) для модуля "Аналитика
     // FBS" (server/src/jobs/wbFbsStatusSync.js) - по умолчанию раз в 30 минут.
     fbsStatusSyncIntervalMinutes: intEnv('WB_FBS_STATUS_SYNC_INTERVAL_MINUTES', 30),
+    // Автосверка "WB реально отдаёт" vs "должно быть отправлено" по всем
+    // тенантам разом + Telegram-алерт владельцу платформы, если найдены
+    // расхождения (server/src/jobs/wbStockReconcileAlert.js). Читает те же
+    // данные, что и кнопка "Сверка остатков" в кабинете (reconcileStockForTenant),
+    // просто без участия человека и по всем тенантам сразу. 0 = выключено.
+    reconcileAlertIntervalMinutes: intEnv('WB_RECONCILE_ALERT_INTERVAL_MINUTES', 240),
   },
 
   urls: {
