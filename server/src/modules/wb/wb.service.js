@@ -219,12 +219,20 @@ const STATS_SYNC_LOOKBACK_DAYS = 90; // Statistics API хранит истори
  *  комментарий про лимит 1 запрос/минуту у Statistics API в
  *  wb.client.js::fetchStatisticsOrders). */
 async function listAllWbAccountsForStatsSync() {
+  // api_token_stats - опциональный отдельный read-only токен (категория
+  // "Статистика"), см. 054_wb_mp_accounts_stats_token.sql. Многие клиенты
+  // дают основной токен с правами на запись только для Контент+Маркетплейс -
+  // WB не позволяет докинуть туда ещё и read-only категорию, не сделав всё
+  // токен целиком read-only. Поэтому в syncStatsRegionForAccount передаём
+  // api_token_stats, если он задан, иначе - обычный api_token (для
+  // аккаунтов, где один токен уже покрывает всё).
   const r = await query(
-    `SELECT ma.id, ma.tenant_id, ma.api_token, ma.account_name, ma.settings
+    `SELECT ma.id, ma.tenant_id, ma.api_token, ma.api_token_stats, ma.account_name, ma.settings
      FROM wms.mp_accounts ma
      JOIN platform.tenants t ON t.id = ma.tenant_id AND t.status IN ('trial','active')
      JOIN platform.tenant_modules tm ON tm.tenant_id = t.id AND tm.module_code = 'wb_integration'
-     WHERE ma.marketplace='wb' AND ma.is_active=TRUE AND ma.api_token IS NOT NULL
+     WHERE ma.marketplace='wb' AND ma.is_active=TRUE
+       AND COALESCE(ma.api_token_stats, ma.api_token) IS NOT NULL
      ORDER BY ma.id`
   );
   return r.rows;

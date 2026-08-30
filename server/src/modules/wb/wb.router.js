@@ -34,6 +34,7 @@ router.get('/accounts', requireRole('tenant_admin','supervisor'), async (req,res
          ma.supplier_id, ma.is_active,
          COALESCE((ma.settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled,
          (ma.api_token IS NOT NULL AND length(trim(ma.api_token))>0) AS has_token,
+         (ma.api_token_stats IS NOT NULL AND length(trim(ma.api_token_stats))>0) AS has_token_stats,
          c.client_name
        FROM wms.mp_accounts ma JOIN wms.clients c ON c.id=ma.client_id
        WHERE ${conds.join(' AND ')} ORDER BY c.client_name, ma.account_name`,
@@ -45,7 +46,7 @@ router.get('/accounts', requireRole('tenant_admin','supervisor'), async (req,res
 
 router.post('/accounts', requireRole('tenant_admin'), async (req,res,next)=>{
   try {
-    const { client_id, marketplace='wb', account_name, account_code, supplier_id, api_token } = req.body;
+    const { client_id, marketplace='wb', account_name, account_code, supplier_id, api_token, api_token_stats } = req.body;
     const clientId = resolveClientScope(req, client_id);
     // Рубильник отправки остатков (settings.stock_sync_disabled, см.
     // distributeStockForAccount) по умолчанию должен быть ВЫКЛЮЧЕН для новых
@@ -56,11 +57,11 @@ router.post('/accounts', requireRole('tenant_admin'), async (req,res,next)=>{
     // не трогать уже существующие аккаунты (у них осознанно выбранное
     // состояние переключателя, менять его задним числом нельзя).
     const r = await query(
-      `INSERT INTO wms.mp_accounts(tenant_id,client_id,marketplace,account_name,account_code,supplier_id,api_token,created_by,settings)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,'{"stock_sync_disabled":true}'::jsonb)
+      `INSERT INTO wms.mp_accounts(tenant_id,client_id,marketplace,account_name,account_code,supplier_id,api_token,api_token_stats,created_by,settings)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'{"stock_sync_disabled":true}'::jsonb)
        RETURNING id,client_id,marketplace,account_name,is_active,
          COALESCE((settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled`,
-      [req.user.tenantId, clientId, marketplace, account_name, account_code||null, supplier_id||null, api_token||null, req.user.id]
+      [req.user.tenantId, clientId, marketplace, account_name, account_code||null, supplier_id||null, api_token||null, api_token_stats||null, req.user.id]
     );
     res.status(201).json({ ok: true, account: r.rows[0] });
   } catch(e){ next(e); }
@@ -69,7 +70,7 @@ router.post('/accounts', requireRole('tenant_admin'), async (req,res,next)=>{
 router.patch('/accounts/:id', requireRole('tenant_admin'), async (req,res,next)=>{
   try {
     const id = Number(req.params.id);
-    const { account_name, account_code, supplier_id, api_token, is_active, stock_sync_disabled } = req.body;
+    const { account_name, account_code, supplier_id, api_token, api_token_stats, is_active, stock_sync_disabled } = req.body;
     const fields=[]; const params=[]; let idx=1;
     if (account_name !== undefined) { fields.push(`account_name=$${idx++}`); params.push(account_name); }
     if (account_code !== undefined) { fields.push(`account_code=$${idx++}`); params.push(account_code||null); }
@@ -77,6 +78,10 @@ router.patch('/accounts/:id', requireRole('tenant_admin'), async (req,res,next)=
     if (api_token    !== undefined) {
       fields.push(`api_token=CASE WHEN $${idx}::text='' THEN NULL ELSE $${idx}::text END`);
       params.push(api_token||''); idx++;
+    }
+    if (api_token_stats !== undefined) {
+      fields.push(`api_token_stats=CASE WHEN $${idx}::text='' THEN NULL ELSE $${idx}::text END`);
+      params.push(api_token_stats||''); idx++;
     }
     if (is_active !== undefined) { fields.push(`is_active=$${idx++}`); params.push(!!is_active); }
     // Рубильник отправки остатков в WB — хранится внутри settings JSONB
@@ -91,7 +96,8 @@ router.patch('/accounts/:id', requireRole('tenant_admin'), async (req,res,next)=
       `UPDATE wms.mp_accounts SET ${fields.join(',')} WHERE id=$${idx++} AND tenant_id=$${idx}
        RETURNING id,account_name,is_active,
          COALESCE((settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled,
-         (api_token IS NOT NULL) AS has_token`,
+         (api_token IS NOT NULL) AS has_token,
+         (api_token_stats IS NOT NULL) AS has_token_stats`,
       params
     );
     if (r.rowCount===0) throw new NotFoundError('MP Account', id);

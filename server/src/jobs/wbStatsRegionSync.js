@@ -43,7 +43,9 @@ async function runOnce() {
       const r = await wbService.syncStatsRegionForAccount({
         tenantId: acc.tenant_id,
         accountId: acc.id,
-        apiToken: acc.api_token,
+        // отдельный read-only токен категории "Статистика", если клиент его
+        // завёл (см. 054_wb_mp_accounts_stats_token.sql), иначе - основной
+        apiToken: acc.api_token_stats || acc.api_token,
         settings: acc.settings,
       });
       logger.info(

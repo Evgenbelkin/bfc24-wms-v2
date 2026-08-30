@@ -228,12 +228,24 @@
             <div class="field"><label>Код (опционально)</label><input id="m-code" value="${a && a.account_code ? UI.escHtml(a.account_code):''}"/></div>
             <div class="field"><label>Supplier ID (опционально)</label><input id="m-supplier" value="${a && a.supplier_id ? UI.escHtml(a.supplier_id):''}"/></div>
             <div class="field">
-              <label>API-токен ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
+              <label>API-токен (чтение и запись) ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
               <input id="m-token" type="password" placeholder="${a && a.has_token ? 'Токен уже сохранён' : 'Вставьте токен из ЛК WB'}"/>
               <div style="font-size:12px;color:var(--muted);margin-top:4px;">
                 Токен создаётся в ЛК WB: Профиль → Настройки → Доступ к API → «Создать новый токен».
                 Категории — отметьте <b>«Контент»</b> и <b>«Маркетплейс»</b>. Галочку «Только чтение» <b>не ставить</b> —
                 нужен полный доступ (чтение и запись), иначе не сработает синхронизация заказов, печать стикеров и распределение остатков по складам.
+              </div>
+            </div>
+            <div class="field">
+              <label>API-токен для статистики (только чтение, опционально) ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
+              <input id="m-token-stats" type="password" placeholder="${a && a.has_token_stats ? 'Токен уже сохранён' : 'Не обязательно — заполните, если нужно «Время доставки»'}"/>
+              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+                WB не даёт смешивать в одном токене права на запись (Контент/Маркетплейс) и категорию
+                «Статистика» без того, чтобы весь токен стал read-only. Поэтому если нужен отчёт
+                «Время доставки», попросите клиента создать <b>второй</b> токен отдельно, отметив только
+                категорию <b>«Статистика»</b>, и поставить галочку <b>«Только чтение»</b>. Если это поле
+                пустое — используется основной токен выше (сработает, только если в нём тоже отмечена
+                категория «Статистика»).
               </div>
             </div>
             ${a ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${a.is_active ? 'checked':''}/></div>` : ''}
@@ -304,6 +316,8 @@
       const data = { account_name: UI.val('#m-name'), account_code: UI.val('#m-code'), supplier_id: UI.val('#m-supplier') };
       const token = UI.val('#m-token');
       if (token) data.api_token = token;
+      const tokenStats = UI.val('#m-token-stats');
+      if (tokenStats) data.api_token_stats = tokenStats;
       try {
         if (a) {
           data.is_active = document.getElementById('m-active').checked;
