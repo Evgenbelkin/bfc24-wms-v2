@@ -136,7 +136,10 @@
       const wbScName = document.getElementById('f-warehouse').value;
       if (!from || !to) return;
       try {
-        const res = await window.API.fbsAnalytics.regionDelivery({ from, to, wb_sc_name: wbScName || undefined });
+        const params = { from, to };
+        if (wbScName) params.wb_sc_name = wbScName; // не передаём ключ вовсе, если склад не выбран -
+                                                      // URLSearchParams превращает undefined в строку "undefined"
+        const res = await window.API.fbsAnalytics.regionDelivery(params);
         document.getElementById('meta').textContent = `Период: ${from} — ${to}. "От заказа" — от оформления покупателем, "от отгрузки" — от приёмки поставки на СЦ WB. Учитываются только заказы, уже доехавшие до ПВЗ.`;
         lastRows = res.rows || [];
         render();
