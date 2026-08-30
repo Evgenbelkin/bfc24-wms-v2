@@ -496,6 +496,38 @@ router.get('/fbs-analytics/speed', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** GET /seller/fbs-analytics/region-delivery/filters — списки значений для
+ *  фильтров (склад/регион/округ), только те, что встречаются у ЭТОГО
+ *  клиента (см. fbsAnalytics.service.js::listRegionDeliveryFilterOptions). */
+router.get('/fbs-analytics/region-delivery/filters', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const options = await fbsAnalyticsSvc.listRegionDeliveryFilterOptions(req.user.tenantId, clientId);
+    res.json({ ok: true, ...options });
+  } catch(e){ next(e); }
+});
+
+/** GET /seller/fbs-analytics/region-delivery — время доставки склад -> регион
+ *  покупателя ЭТОГО клиента (см. fbsAnalytics.service.js::getRegionDeliveryTime).
+ *  clientId ЖЁСТКО из JWT - селлер не может подсмотреть чужие данные. */
+router.get('/fbs-analytics/region-delivery', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const to = req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : new Date();
+    const from = req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : new Date(to.getTime() - 6*86400000);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new ValidationError('Некорректный диапазон дат (from/to)');
+    }
+    const wbScName = req.query.wb_sc_name || null;
+    const regionName = req.query.region_name || null;
+    const oblastOkrugName = req.query.oblast_okrug_name || null;
+    const result = await fbsAnalyticsSvc.getRegionDeliveryTime({
+      tenantId: req.user.tenantId, clientId, wbScName, regionName, oblastOkrugName, dateFrom: from, dateTo: to,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── История операций ───────────────
 
 /** GET /seller/history */

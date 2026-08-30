@@ -107,7 +107,10 @@
       { href:'items.html',            icon:'tag',       label:'Справочник товаров', roles:['tenant_admin','supervisor','receiver','picker','packer'] },
       { href:'clients.html',          icon:'briefcase', label:'Клиенты',         roles:['tenant_admin','supervisor'] },
       { href:'fbs-analytics.html',    icon:'chart',     label:'Аналитика FBS',   roles:null },
-      { href:'region-delivery.html',  icon:'chart',     label:'Время доставки по регионам', roles:['tenant_admin','supervisor'] },
+      // region-delivery.html (30.08.2026): перенесено вкладкой "Время доставки"
+      // внутрь fbs-analytics.html - отдельная плитка меню больше не нужна.
+      // Страница region-delivery.html оставлена в коде (не удалена), но больше
+      // никуда не заведена.
       { href:'wb.html',               icon:'wb',        label:'Wildberries',     roles:['tenant_admin','supervisor'] },
       // ВЫКЛЮЧЕНО 30.08.2026: метод WB acceptance/coefficients временно отключён Wildberries
       // { href:'wb-acceptance.html', icon:'inbox',     label:'Приёмка ФБС',     roles:['tenant_admin','supervisor'] },

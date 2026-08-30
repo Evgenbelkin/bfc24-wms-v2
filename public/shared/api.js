@@ -517,6 +517,8 @@
     analytics:(p)     => get('/seller/analytics/sales', p),
     fbsAnalyticsSummary: (p) => get('/seller/fbs-analytics/summary', p),
     fbsAnalyticsSpeed:   (p) => get('/seller/fbs-analytics/speed', p),
+    fbsAnalyticsRegionDelivery:        (p) => get('/seller/fbs-analytics/region-delivery', p),
+    fbsAnalyticsRegionDeliveryFilters: ()  => get('/seller/fbs-analytics/region-delivery/filters'),
     history:  (p)     => get('/seller/history', p),
     receivingHistory: (p) => get('/seller/receiving-history', p),
     acts: {

@@ -464,15 +464,24 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
 }
 
 /** Списки значений для выпадающих фильтров UI отчёта (склад/регион/округ) -
- *  все встречающиеся у тенанта, без привязки к выбранному периоду (иначе
- *  список "прыгал" бы при каждой смене периода). */
-async function listRegionDeliveryFilterOptions(tenantId) {
+ *  все встречающиеся у тенанта (или у одного клиента, если передан clientId -
+ *  используется в кабинете селлера, чтобы не светить чужие склады/регионы),
+ *  без привязки к выбранному периоду (иначе список "прыгал" бы при каждой
+ *  смене периода). */
+async function listRegionDeliveryFilterOptions(tenantId, clientId = null) {
+  const params = [tenantId];
+  let cond = '';
+  if (clientId) {
+    cond = ' AND ma.client_id=$2';
+    params.push(clientId);
+  }
   const r = await query(
     `SELECT DISTINCT COALESCE(sw.warehouse_name, wo.wb_sc_name) AS wb_sc_name, wo.region_name, wo.oblast_okrug_name
      FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
-     WHERE wo.tenant_id=$1 AND wo.region_name IS NOT NULL`,
-    [tenantId]
+     WHERE wo.tenant_id=$1 AND wo.region_name IS NOT NULL${cond}`,
+    params
   );
   const warehouses = new Set(), regions = new Set(), okrugs = new Set();
   for (const row of r.rows) {

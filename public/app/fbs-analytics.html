@@ -37,6 +37,11 @@
     .bc.base{background:rgba(59,130,246,.15);color:var(--accent);}
     .bc.penalty{background:rgba(192,57,43,.15);color:var(--red,#c0392b);}
     .bc.zero{background:transparent;color:var(--muted);font-weight:400;}
+    .toolbar select{padding:9px 10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    th.sortable{cursor:pointer;user-select:none;}
+    th.sortable:hover{color:var(--accent);}
+    .col-hint{display:block;font-size:10px;font-weight:400;color:var(--muted);text-transform:none;}
+    .total-card .hint{font-size:11px;color:var(--muted);margin-top:6px;}
   </style>
 </head>
 <body>
@@ -46,64 +51,139 @@
     <button class="btn-sm btn-back" onclick="refreshNow()" id="btn-refresh">↻ Обновить</button>
   </div>
 
-  <div class="toolbar" id="presets">
-    <button class="preset" data-days="0" onclick="setPreset(0)">Сегодня</button>
-    <button class="preset active" data-days="7" onclick="setPreset(7)">7 дней</button>
-    <button class="preset" data-days="30" onclick="setPreset(30)">30 дней</button>
-    <input type="date" id="f-from"/>
-    <span style="color:var(--muted);">—</span>
-    <input type="date" id="f-to"/>
-    <button class="btn-sm btn-back" onclick="loadCustomRange()">Показать</button>
+  <div class="tabs">
+    <button class="tab active" data-tab="overview" onclick="switchTab('overview')">Обзор</button>
+    <button class="tab" data-tab="delivery" onclick="switchTab('delivery')">Время доставки</button>
   </div>
 
-  <div class="refresh-note" id="meta" style="margin-bottom:10px;">—</div>
+  <div id="tab-overview">
+    <div class="toolbar" id="presets">
+      <button class="preset" data-days="0" onclick="setPreset(0)">Сегодня</button>
+      <button class="preset active" data-days="7" onclick="setPreset(7)">7 дней</button>
+      <button class="preset" data-days="30" onclick="setPreset(30)">30 дней</button>
+      <input type="date" id="f-from"/>
+      <span style="color:var(--muted);">—</span>
+      <input type="date" id="f-to"/>
+      <button class="btn-sm btn-back" onclick="loadCustomRange()">Показать</button>
+    </div>
 
-  <div class="total-row">
-    <div class="total-card">
-      <div class="num" id="total-qty">—</div>
-      <div class="label">Заказов, шт</div>
+    <div class="refresh-note" id="meta" style="margin-bottom:10px;">—</div>
+
+    <div class="total-row">
+      <div class="total-card">
+        <div class="num" id="total-qty">—</div>
+        <div class="label">Заказов, шт</div>
+      </div>
+      <div class="total-card">
+        <div class="num" id="total-amount">—</div>
+        <div class="label">Сумма заказов, ₽</div>
+      </div>
+      <div class="total-card">
+        <div class="num" id="purchase-rate">—</div>
+        <div class="label">% выкупа</div>
+      </div>
     </div>
-    <div class="total-card">
-      <div class="num" id="total-amount">—</div>
-      <div class="label">Сумма заказов, ₽</div>
+
+    <div class="kpi-grid" id="buckets"></div>
+
+    <div class="card">
+      <div class="card-title">Скорость обработки (влияет на комиссию WB)</div>
+      <div class="total-row" style="margin-bottom:12px;">
+        <div class="total-card"><div class="num" id="speed-ontime">—</div><div class="label">Вовремя (≤48ч), %</div></div>
+        <div class="total-card"><div class="num" id="speed-avg-towb">—</div><div class="label">Ср. время заказ→WB</div></div>
+        <div class="total-card"><div class="num" id="speed-avg-tosold">—</div><div class="label">Ср. время заказ→выкуп</div></div>
+      </div>
+      <div id="speed-buckets"></div>
+      <div class="refresh-note" id="speed-meta" style="margin-top:8px;"></div>
     </div>
-    <div class="total-card">
-      <div class="num" id="purchase-rate">—</div>
-      <div class="label">% выкупа</div>
+
+    <div class="card">
+      <div class="card-title">Скорость обработки по клиентам</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th>
+            <th>0–13ч</th><th>13–42ч</th><th>42–48ч</th><th>48–54ч</th><th>54–60ч</th><th>&gt;60ч</th>
+          </tr>
+        </thead>
+        <tbody id="speed-by-client"></tbody>
+      </table>
+      <div class="refresh-note" id="speed-by-client-empty" style="margin-top:8px;display:none;">Нет данных за период (заказы ещё не покинули статус "ожидание").</div>
     </div>
   </div>
 
-  <div class="kpi-grid" id="buckets"></div>
-
-  <div class="card">
-    <div class="card-title">Скорость обработки (влияет на комиссию WB)</div>
-    <div class="total-row" style="margin-bottom:12px;">
-      <div class="total-card"><div class="num" id="speed-ontime">—</div><div class="label">Вовремя (≤48ч), %</div></div>
-      <div class="total-card"><div class="num" id="speed-avg-towb">—</div><div class="label">Ср. время заказ→WB</div></div>
-      <div class="total-card"><div class="num" id="speed-avg-tosold">—</div><div class="label">Ср. время заказ→выкуп</div></div>
+  <div id="tab-delivery" style="display:none">
+    <div class="toolbar">
+      <select id="d-client"><option value="">Все клиенты</option></select>
+      <select id="d-warehouse"><option value="">Все склады (СЦ WB)</option></select>
+      <select id="d-region"><option value="">Все регионы</option></select>
+      <select id="d-okrug"><option value="">Все федеральные округа</option></select>
     </div>
-    <div id="speed-buckets"></div>
-    <div class="refresh-note" id="speed-meta" style="margin-top:8px;"></div>
-  </div>
+    <div class="toolbar">
+      <button class="preset" data-days="7" onclick="setDeliveryPreset(7)">7 дней</button>
+      <button class="preset active" data-days="30" onclick="setDeliveryPreset(30)">30 дней</button>
+      <button class="preset" data-days="90" onclick="setDeliveryPreset(90)">90 дней</button>
+      <input type="date" id="d-from"/>
+      <span style="color:var(--muted);">—</span>
+      <input type="date" id="d-to"/>
+      <button class="btn-sm btn-back" onclick="loadDeliveryCustomRange()">Показать</button>
+    </div>
 
-  <div class="card">
-    <div class="card-title">Скорость обработки по клиентам</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th>
-          <th>0–13ч</th><th>13–42ч</th><th>42–48ч</th><th>48–54ч</th><th>54–60ч</th><th>&gt;60ч</th>
-        </tr>
-      </thead>
-      <tbody id="speed-by-client"></tbody>
-    </table>
-    <div class="refresh-note" id="speed-by-client-empty" style="margin-top:8px;display:none;">Нет данных за период (заказы ещё не покинули статус "ожидание").</div>
+    <div class="refresh-note" id="d-meta" style="margin-bottom:10px;">—</div>
+
+    <div class="total-row">
+      <div class="total-card">
+        <div class="num" id="d-sum-orders">—</div>
+        <div class="label">Заказов доехало до ПВЗ</div>
+      </div>
+      <div class="total-card">
+        <div class="num" id="d-sum-from-order">—</div>
+        <div class="label">Среднее время доставки</div>
+        <div class="hint">от оформления заказа покупателем до ПВЗ</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Разбивка по клиентам / складам / регионам</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Клиент</th>
+            <th>Склад (СЦ WB)</th>
+            <th>Регион</th>
+            <th>Федеральный округ</th>
+            <th class="sortable" onclick="sortDeliveryBy('orders')">Заказов ↕</th>
+            <th class="sortable" onclick="sortDeliveryBy('avg_hours_from_order')">
+              Среднее время доставки ↕
+              <span class="col-hint">от оформления заказа покупателем</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody id="d-rows"></tbody>
+      </table>
+      <div class="refresh-note" id="d-empty" style="margin-top:8px;display:none;">
+        Нет данных за период — либо заказов ещё не было, либо синхронизация региона с WB (Statistics API) ещё не догнала свежие заказы, либо ни один заказ ещё не доехал до ПВЗ (учитываются только доехавшие).
+      </div>
+    </div>
   </div>
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script>
     if (!UI.requireAuth()) throw new Error('Not logged in');
+
+    let deliveryLoaded = false;
+    function switchTab(name) {
+      ['overview','delivery'].forEach(t => {
+        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
+        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
+      });
+      if (name === 'delivery' && !deliveryLoaded) {
+        deliveryLoaded = true;
+        loadDeliveryFilters();
+        setDeliveryPreset(30);
+      }
+    }
 
     function fmtMoney(n) {
       const num = Number(n) || 0;
@@ -113,7 +193,7 @@
     function isoDate(d) { return d.toISOString().slice(0, 10); }
 
     function setPreset(days) {
-      document.querySelectorAll('.preset').forEach(b => b.classList.toggle('active', Number(b.dataset.days) === days));
+      document.querySelectorAll('#tab-overview .preset').forEach(b => b.classList.toggle('active', Number(b.dataset.days) === days));
       const to = new Date();
       const from = new Date(to.getTime() - days * 86400000);
       document.getElementById('f-from').value = isoDate(from);
@@ -122,7 +202,7 @@
     }
 
     function loadCustomRange() {
-      document.querySelectorAll('.preset').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#tab-overview .preset').forEach(b => b.classList.remove('active'));
       load();
     }
 
@@ -250,6 +330,119 @@
         btn.disabled = false;
       }
     }
+
+    // ─────────────── Вкладка "Время доставки" ───────────────
+
+    function fmtHoursDelivery(h) {
+      if (h === null || h === undefined) return '—';
+      if (h < 24) return h.toFixed(1) + ' ч';
+      return (h / 24).toFixed(1) + ' дн (' + h.toFixed(0) + ' ч)';
+    }
+
+    let deliveryRows = [];
+    let deliverySortKey = 'orders';
+    let deliverySortDir = -1;
+
+    function setDeliveryPreset(days) {
+      document.querySelectorAll('#tab-delivery .preset').forEach(b => b.classList.toggle('active', Number(b.dataset.days) === days));
+      const to = new Date();
+      const from = new Date(to.getTime() - days * 86400000);
+      document.getElementById('d-from').value = isoDate(from);
+      document.getElementById('d-to').value = isoDate(to);
+      loadDelivery();
+    }
+
+    function loadDeliveryCustomRange() {
+      document.querySelectorAll('#tab-delivery .preset').forEach(b => b.classList.remove('active'));
+      loadDelivery();
+    }
+
+    function sortDeliveryBy(key) {
+      if (deliverySortKey === key) { deliverySortDir *= -1; } else { deliverySortKey = key; deliverySortDir = -1; }
+      renderDelivery();
+    }
+
+    function renderDelivery() {
+      const tbody = document.getElementById('d-rows');
+      const empty = document.getElementById('d-empty');
+      if (!deliveryRows.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      const sorted = [...deliveryRows].sort((a, b) => {
+        const av = a[deliverySortKey] ?? -Infinity, bv = b[deliverySortKey] ?? -Infinity;
+        return (av - bv) * deliverySortDir;
+      });
+      tbody.innerHTML = sorted.map(r => `
+        <tr>
+          <td>${UI.escHtml(r.client_name || '—')}</td>
+          <td>${UI.escHtml(r.wb_sc_name || '—')}</td>
+          <td>${UI.escHtml(r.region_name || '—')}</td>
+          <td>${UI.escHtml(r.oblast_okrug_name || '—')}</td>
+          <td>${fmtNum(r.orders)}</td>
+          <td>${fmtHoursDelivery(r.avg_hours_from_order)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function fillDeliverySelect(sel, values, allLabel) {
+      sel.innerHTML = `<option value="">${allLabel}</option>` +
+        values.map(v => `<option value="${UI.escHtml(v)}">${UI.escHtml(v)}</option>`).join('');
+    }
+
+    async function loadDeliveryFilters() {
+      try {
+        const [clientsRes, filtersRes] = await Promise.all([
+          window.API.clients.short(),
+          window.API.fbsAnalytics.regionDeliveryFilters(),
+        ]);
+        const clientSel = document.getElementById('d-client');
+        clientSel.innerHTML = '<option value="">Все клиенты</option>' +
+          (clientsRes.clients || []).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+
+        fillDeliverySelect(document.getElementById('d-warehouse'), filtersRes.warehouses || [], 'Все склады (СЦ WB)');
+        fillDeliverySelect(document.getElementById('d-region'), filtersRes.regions || [], 'Все регионы');
+        fillDeliverySelect(document.getElementById('d-okrug'), filtersRes.oblast_okrugs || [], 'Все федеральные округа');
+      } catch (e) {
+        // не критично для основной таблицы - просто не будет фильтров
+      }
+    }
+
+    async function loadDelivery() {
+      const from = document.getElementById('d-from').value;
+      const to = document.getElementById('d-to').value;
+      if (!from || !to) return;
+
+      const params = { from, to };
+      const clientId = document.getElementById('d-client').value;
+      const wbScName = document.getElementById('d-warehouse').value;
+      const regionName = document.getElementById('d-region').value;
+      const okrugName = document.getElementById('d-okrug').value;
+      if (clientId) params.client_id = clientId;
+      if (wbScName) params.wb_sc_name = wbScName;
+      if (regionName) params.region_name = regionName;
+      if (okrugName) params.oblast_okrug_name = okrugName;
+
+      try {
+        const res = await window.API.fbsAnalytics.regionDelivery(params);
+        document.getElementById('d-meta').textContent = `Период: ${from} — ${to}. Учитываются только заказы, уже доехавшие до пункта выдачи.`;
+        deliveryRows = res.rows || [];
+        renderDelivery();
+
+        const s = res.summary || {};
+        document.getElementById('d-sum-orders').textContent = fmtNum(s.orders);
+        document.getElementById('d-sum-from-order').textContent = fmtHoursDelivery(s.avg_hours_from_order);
+      } catch (e) {
+        UI.toast(e.message || 'Ошибка загрузки отчёта', 'error');
+      }
+    }
+
+    document.getElementById('d-client').addEventListener('change', loadDelivery);
+    document.getElementById('d-warehouse').addEventListener('change', loadDelivery);
+    document.getElementById('d-region').addEventListener('change', loadDelivery);
+    document.getElementById('d-okrug').addEventListener('change', loadDelivery);
 
     setPreset(7);
   </script>
