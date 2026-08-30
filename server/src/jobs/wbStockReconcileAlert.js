@@ -83,7 +83,13 @@ async function runOnce() {
   running = true;
   const startedAt = Date.now();
   try {
-    const tenantIds = await wbService.listTenantsWithWbIntegration();
+    let tenantIds = await wbService.listTenantsWithWbIntegration();
+    // Ограничение по своим тенантам (WB_RECONCILE_ALERT_TENANT_IDS) - см.
+    // комментарий у config.wb.reconcileAlertTenantIds. Пусто = без ограничения.
+    const allowedTenantIds = config.wb.reconcileAlertTenantIds;
+    if (allowedTenantIds.length > 0) {
+      tenantIds = tenantIds.filter(id => allowedTenantIds.includes(id));
+    }
     if (tenantIds.length === 0) return;
 
     const namesRes = await query(
