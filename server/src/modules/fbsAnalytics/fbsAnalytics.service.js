@@ -350,7 +350,19 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
 // Регион/область покупателя недоступны в /api/v3/orders/* (address всегда
 // null у FBS-заказов, проверено на живых данных 30.08.2026) - берём их из
 // Statistics API (wb.service.js::syncStatsRegionForAccount, заполняет
-// wo.region_name/oblast_okrug_name/wb_sc_name - см. 053_wb_orders_region_stats.sql).
+// wo.region_name/oblast_okrug_name - см. 053_wb_orders_region_stats.sql).
+//
+// ВАЖНО про склад (30.08.2026): раньше брали wo.wb_sc_name (warehouseName из
+// того же Statistics API) - но с 15.08.2026 WB для значительной части заказов
+// РФ схлопывает это поле в общее "Склад WB РФ" (см. журнал изменений WB API,
+// временные ограничения по складам). Проверено на живых данных: 479 из 921
+// заказов за 30 дней - именно этот обобщённый ярлык, без какого-либо доп.
+// поля, чтобы его расшифровать. Вместо этого используем wo.warehouse_id
+// (приходит из /api/v3/orders/new - НЕ пострадавшего от ограничения) и джойним
+// на wms.wb_seller_warehouses (собственные склады продавца, синкаются из
+// /api/v3/warehouses) - это даёт 100% точных названий на живых данных
+// (7340 из 7340 заказов тенанта). wo.wb_sc_name оставлен как fallback на
+// случай если склад успели удалить/переименовать в WB и его нет в справочнике.
 // "Доехал до ПВЗ" - тот же надёжный сигнал ready_for_pickup, что и в
 // getProcessingSpeed() выше (первое наблюдение в wb_order_status_events).
 // Считаем ДВА варианта отсчёта, как просил владелец:
@@ -365,18 +377,19 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
   const params = [tenantId, dateFrom, dateTo];
   const conds = ['wo.tenant_id=$1', 'wo.created_at >= $2', 'wo.created_at < $3', 'wo.region_name IS NOT NULL'];
   let idx = 4;
-  if (wbScName) { conds.push(`wo.wb_sc_name=$${idx++}`); params.push(wbScName); }
+  if (wbScName) { conds.push(`COALESCE(sw.warehouse_name, wo.wb_sc_name)=$${idx++}`); params.push(wbScName); }
   if (clientId) { conds.push(`ma.client_id=$${idx++}`); params.push(clientId); }
   if (regionName) { conds.push(`wo.region_name=$${idx++}`); params.push(regionName); }
   if (oblastOkrugName) { conds.push(`wo.oblast_okrug_name=$${idx++}`); params.push(oblastOkrugName); }
 
   const r = await query(
-    `SELECT wo.wb_sc_name, wo.region_name, wo.oblast_okrug_name,
+    `SELECT COALESCE(sw.warehouse_name, wo.wb_sc_name) AS wb_sc_name, wo.region_name, wo.oblast_okrug_name,
             ma.client_id, c.client_name,
             wo.created_at, s.wb_accepted_at AS accepted_at, rfp.observed_at AS ready_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
+     LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
      LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
      LEFT JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e2
@@ -455,9 +468,10 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
  *  список "прыгал" бы при каждой смене периода). */
 async function listRegionDeliveryFilterOptions(tenantId) {
   const r = await query(
-    `SELECT DISTINCT wb_sc_name, region_name, oblast_okrug_name
-     FROM wms.wb_orders
-     WHERE tenant_id=$1 AND region_name IS NOT NULL`,
+    `SELECT DISTINCT COALESCE(sw.warehouse_name, wo.wb_sc_name) AS wb_sc_name, wo.region_name, wo.oblast_okrug_name
+     FROM wms.wb_orders wo
+     LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
+     WHERE wo.tenant_id=$1 AND wo.region_name IS NOT NULL`,
     [tenantId]
   );
   const warehouses = new Set(), regions = new Set(), okrugs = new Set();
