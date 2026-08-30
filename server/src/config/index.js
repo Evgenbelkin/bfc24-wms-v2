@@ -137,6 +137,13 @@ const config = {
     // данные, что и кнопка "Сверка остатков" в кабинете (reconcileStockForTenant),
     // просто без участия человека и по всем тенантам сразу. 0 = выключено.
     reconcileAlertIntervalMinutes: intEnv('WB_RECONCILE_ALERT_INTERVAL_MINUTES', 240),
+    // Синк региона/округа/СЦ покупателя на заказах через Statistics API
+    // (wb.service.js::syncStatsRegionForAccount, server/src/jobs/wbStatsRegionSync.js) -
+    // для отчёта "время доставки склад -> регион". У этого метода WB жёсткий
+    // лимит 1 запрос/минуту, поэтому джоба обрабатывает ОДИН аккаунт за тик
+    // (не все сразу) - интервал ниже это тик, а не полный круг по всем
+    // аккаунтам. 0 = выключено.
+    statsRegionSyncIntervalMinutes: intEnv('WB_STATS_REGION_SYNC_INTERVAL_MINUTES', 2),
     // Ограничить алерт конкретными тенантами (свои клиенты владельца
     // платформы), а не вообще всеми - иначе в алерт попадают и клиенты
     // ДРУГИХ фулфилментов, купивших WMS по подписке (например ещё не

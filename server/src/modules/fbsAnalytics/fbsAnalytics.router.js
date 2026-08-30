@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, requireModule, resolveClientScope } = require('../../middleware/tenant');
+const { requireRole } = require('../../middleware/requireRole');
 const { ValidationError } = require('../../utils/errors');
 const fbsAnalyticsService = require('./fbsAnalytics.service');
 
@@ -74,6 +75,30 @@ router.get('/speed-by-client', async (req, res, next) => {
 router.post('/refresh-now', async (req, res, next) => {
   try {
     const result = await fbsAnalyticsService.refreshWbStatusesForTenant(req.user.tenantId);
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+/** GET /fbs-analytics/region-delivery/warehouses — список СЦ WB (складов
+ *  отгрузки), встречающихся в заказах тенанта - для выпадающего списка на
+ *  странице отчёта. */
+router.get('/region-delivery/warehouses', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const warehouses = await fbsAnalyticsService.listWbScNamesForTenant(req.user.tenantId);
+    res.json({ ok: true, warehouses });
+  } catch (e) { next(e); }
+});
+
+/** GET /fbs-analytics/region-delivery — время доставки склад (СЦ WB) -> регион
+ *  покупателя. Только для персонала (staff-only на данный момент - доступ
+ *  селлерам планируется отдельно, пока не открываем). */
+router.get('/region-delivery', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req.query);
+    const wbScName = req.query.wb_sc_name || null;
+    const result = await fbsAnalyticsService.getRegionDeliveryTime({
+      tenantId: req.user.tenantId, wbScName, dateFrom, dateTo,
+    });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });

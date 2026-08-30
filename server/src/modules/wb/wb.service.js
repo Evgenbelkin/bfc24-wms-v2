@@ -90,10 +90,11 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
       o.regionName||null, o.price||null, o.convertedPrice||null, o.currencyCode||null,
       'new', o.createdAt||null,
       JSON.stringify(o),
+      o.rid||null, // связующий ключ с Statistics API (см. 053_wb_orders_region_stats.sql)
     ]);
   }
 
-  const COLS = 16;
+  const COLS = 17;
   for (let i = 0; i < rows.length; i += ORDERS_INSERT_BATCH) {
     const chunk = rows.slice(i, i + ORDERS_INSERT_BATCH);
     const params = [];
@@ -122,10 +123,11 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
       `INSERT INTO wms.wb_orders
          (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
           warehouse_id,warehouse_name,region_name,price,converted_price,currency_code,
-          status,created_at,raw)
+          status,created_at,raw,rid)
        VALUES ${valuesSql}
        ON CONFLICT(mp_account_id,wb_order_id) DO UPDATE SET
-         fetched_at=NOW(), raw=EXCLUDED.raw`,
+         fetched_at=NOW(), raw=EXCLUDED.raw,
+         rid=COALESCE(wms.wb_orders.rid, EXCLUDED.rid)`,
       params
     );
     saved += chunk.length;
@@ -207,6 +209,86 @@ async function syncAllAccountsForTenant(tenantId) {
     }
   }
   return results;
+}
+
+const STATS_SYNC_LOOKBACK_DAYS = 90; // Statistics API хранит историю не больше 90 дней
+
+/** Все активные WB-аккаунты по ВСЕМ тенантам с включённым модулем
+ *  wb_integration - в отличие от listActiveAccounts (один тенант), нужен
+ *  плоский список сразу для фоновой очереди wbStatsRegionSync.js (см.
+ *  комментарий про лимит 1 запрос/минуту у Statistics API в
+ *  wb.client.js::fetchStatisticsOrders). */
+async function listAllWbAccountsForStatsSync() {
+  const r = await query(
+    `SELECT ma.id, ma.tenant_id, ma.api_token, ma.account_name, ma.settings
+     FROM wms.mp_accounts ma
+     JOIN platform.tenants t ON t.id = ma.tenant_id AND t.status IN ('trial','active')
+     JOIN platform.tenant_modules tm ON tm.tenant_id = t.id AND tm.module_code = 'wb_integration'
+     WHERE ma.marketplace='wb' AND ma.is_active=TRUE AND ma.api_token IS NOT NULL
+     ORDER BY ma.id`
+  );
+  return r.rows;
+}
+
+/** Синхронизация региона/округа/СЦ WB на заказах ОДНОГО аккаунта через
+ *  Statistics API (см. wbClient.fetchStatisticsOrders - лимит 1 запрос/минуту
+ *  у WB, поэтому вызывается по одному аккаунту за тик из wbStatsRegionSync.js,
+ *  не для всех сразу). Матчинг заказов - по srid=rid (подтверждено на живых
+ *  данных 30.08.2026, см. комментарий в 053_wb_orders_region_stats.sql).
+ *  Курсор (lastChangeDate последней полученной строки) хранится в
+ *  mp_accounts.settings->stats_sync, чтобы каждый следующий тик забирал
+ *  только новое, а не всю историю заново - как и предписывает документация
+ *  WB для пагинации этого метода. */
+async function syncStatsRegionForAccount({ tenantId, accountId, apiToken, settings }) {
+  const cursorRaw = settings?.stats_sync?.last_change_date;
+  const dateFrom = cursorRaw
+    || new Date(Date.now() - STATS_SYNC_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
+
+  const orders = await wbClient.fetchStatisticsOrders(apiToken, dateFrom);
+  if (!orders.length) {
+    return { fetched: 0, matched: 0 };
+  }
+
+  const srids = [], regions = [], oblasts = [], countries = [], scNames = [], orderDates = [];
+  for (const o of orders) {
+    if (!o.srid) continue;
+    srids.push(o.srid);
+    regions.push(o.regionName || null);
+    oblasts.push(o.oblastOkrugName || null);
+    countries.push(o.countryName || null);
+    scNames.push(o.warehouseName || null);
+    // WB отдаёт наивное время без таймзоны - по документации это московское
+    // время (UTC+3, без перехода на летнее/зимнее с 2014 года).
+    orderDates.push(o.date ? `${o.date}+03:00` : null);
+  }
+
+  const upd = await query(
+    `UPDATE wms.wb_orders wo
+     SET region_name = v.region_name,
+         oblast_okrug_name = v.oblast_okrug_name,
+         country_name = v.country_name,
+         wb_sc_name = v.wb_sc_name,
+         stats_order_date = v.stats_order_date,
+         stats_synced_at = NOW()
+     FROM (
+       SELECT * FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
+         AS t(srid, region_name, oblast_okrug_name, country_name, wb_sc_name, stats_order_date)
+     ) v
+     WHERE wo.mp_account_id = $7 AND wo.rid = v.srid`,
+    [srids, regions, oblasts, countries, scNames, orderDates, accountId]
+  );
+
+  const lastRow = orders[orders.length - 1];
+  const nextCursor = lastRow?.lastChangeDate || dateFrom;
+  await query(
+    `UPDATE wms.mp_accounts
+     SET settings = jsonb_set(COALESCE(settings,'{}'::jsonb), '{stats_sync}',
+       jsonb_build_object('last_change_date', $2::text, 'updated_at', NOW()::text), true)
+     WHERE id = $1`,
+    [accountId, nextCursor]
+  );
+
+  return { fetched: orders.length, matched: upd.rowCount, nextCursor };
 }
 
 /** Проверяет через WB API, принял ли WB физически заказы отгрузок, которые у
@@ -1135,4 +1217,6 @@ module.exports = {
   listReturnClaimsForClient,
   getStockDistributionReport,
   reconcileStockForTenant,
+  listAllWbAccountsForStatsSync,
+  syncStatsRegionForAccount,
 };

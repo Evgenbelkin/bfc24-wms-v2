@@ -14,6 +14,7 @@ const wbTariffsSync = require('./src/jobs/wbTariffsSync');
 const wbAcceptanceSync = require('./src/jobs/wbAcceptanceSync');
 const wbFbsStatusSync = require('./src/jobs/wbFbsStatusSync');
 const wbStockReconcileAlert = require('./src/jobs/wbStockReconcileAlert');
+const wbStatsRegionSync = require('./src/jobs/wbStatsRegionSync');
 
 // =============================================================================
 // Server entry point с graceful shutdown
@@ -59,6 +60,7 @@ async function start() {
   wbAcceptanceSync.start();
   wbFbsStatusSync.start();
   wbStockReconcileAlert.start();
+  wbStatsRegionSync.start();
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +76,7 @@ async function shutdown(signal) {
   wbAcceptanceSync.stop();
   wbFbsStatusSync.stop();
   wbStockReconcileAlert.stop();
+  wbStatsRegionSync.stop();
 
   if (server) {
     server.close(async () => {

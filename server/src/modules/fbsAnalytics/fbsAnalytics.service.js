@@ -344,9 +344,97 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
   return { clients };
 }
 
+// =============================================================================
+// Отчёт "время доставки: склад отгрузки (СЦ WB) -> регион покупателя".
+//
+// Регион/область покупателя недоступны в /api/v3/orders/* (address всегда
+// null у FBS-заказов, проверено на живых данных 30.08.2026) - берём их из
+// Statistics API (wb.service.js::syncStatsRegionForAccount, заполняет
+// wo.region_name/oblast_okrug_name/wb_sc_name - см. 053_wb_orders_region_stats.sql).
+// "Доехал до ПВЗ" - тот же надёжный сигнал ready_for_pickup, что и в
+// getProcessingSpeed() выше (первое наблюдение в wb_order_status_events).
+// Считаем ДВА варианта отсчёта, как просил владелец:
+//  - от created_at заказа (когда покупатель оформил заказ)
+//  - от wb_accepted_at поставки (когда WB физически принял груз на СЦ)
+// Staff-only на данный момент (клиентского разреза здесь сознательно нет).
+// =============================================================================
+
+async function getRegionDeliveryTime({ tenantId, wbScName = null, dateFrom, dateTo }) {
+  const params = [tenantId, dateFrom, dateTo];
+  const conds = ['wo.tenant_id=$1', 'wo.created_at >= $2', 'wo.created_at < $3', 'wo.region_name IS NOT NULL'];
+  let idx = 4;
+  if (wbScName) { conds.push(`wo.wb_sc_name=$${idx++}`); params.push(wbScName); }
+
+  const r = await query(
+    `SELECT wo.wb_sc_name, wo.region_name, wo.oblast_okrug_name,
+            wo.created_at, s.wb_accepted_at AS accepted_at, rfp.observed_at AS ready_at
+     FROM wms.wb_orders wo
+     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e2
+       WHERE e2.mp_account_id = wo.mp_account_id AND e2.wb_order_id = wo.wb_order_id AND e2.wb_status = 'ready_for_pickup'
+       ORDER BY observed_at ASC LIMIT 1
+     ) rfp ON TRUE
+     WHERE ${conds.join(' AND ')}`,
+    params
+  );
+
+  const byGroup = new Map();
+  for (const row of r.rows) {
+    if (!row.ready_at) continue; // ещё не доехал до ПВЗ - в расчёт срока пока не берём
+    const key = `${row.wb_sc_name || '—'} ${row.region_name}`;
+    if (!byGroup.has(key)) {
+      byGroup.set(key, {
+        wb_sc_name: row.wb_sc_name || null,
+        region_name: row.region_name,
+        oblast_okrug_name: row.oblast_okrug_name,
+        orders: 0,
+        sumHoursFromOrder: 0, cntFromOrder: 0,
+        sumHoursFromShipment: 0, cntFromShipment: 0,
+      });
+    }
+    const g = byGroup.get(key);
+    g.orders++;
+
+    const hoursFromOrder = (new Date(row.ready_at) - new Date(row.created_at)) / 3600000;
+    if (hoursFromOrder >= 0) { g.sumHoursFromOrder += hoursFromOrder; g.cntFromOrder++; }
+
+    if (row.accepted_at) {
+      const hoursFromShipment = (new Date(row.ready_at) - new Date(row.accepted_at)) / 3600000;
+      if (hoursFromShipment >= 0) { g.sumHoursFromShipment += hoursFromShipment; g.cntFromShipment++; }
+    }
+  }
+
+  const rows = [...byGroup.values()].map(g => ({
+    wb_sc_name: g.wb_sc_name,
+    region_name: g.region_name,
+    oblast_okrug_name: g.oblast_okrug_name,
+    orders: g.orders,
+    avg_hours_from_order:    g.cntFromOrder    > 0 ? g.sumHoursFromOrder    / g.cntFromOrder    : null,
+    avg_hours_from_shipment: g.cntFromShipment > 0 ? g.sumHoursFromShipment / g.cntFromShipment : null,
+  }));
+  rows.sort((a, b) => b.orders - a.orders);
+
+  return { rows };
+}
+
+/** Список СЦ WB (wb_sc_name), встречающихся у тенанта - для выпадающего списка
+ *  "выбрать склад" в UI отчёта. */
+async function listWbScNamesForTenant(tenantId) {
+  const r = await query(
+    `SELECT DISTINCT wb_sc_name FROM wms.wb_orders
+     WHERE tenant_id=$1 AND wb_sc_name IS NOT NULL
+     ORDER BY wb_sc_name`,
+    [tenantId]
+  );
+  return r.rows.map(row => row.wb_sc_name);
+}
+
 module.exports = {
   refreshWbStatusesForAccount,
   refreshWbStatusesForTenant,
+  getRegionDeliveryTime,
+  listWbScNamesForTenant,
   getFbsSummary,
   getProcessingSpeed,
   getProcessingSpeedByClient,

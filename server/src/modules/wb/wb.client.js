@@ -200,6 +200,28 @@ async function fetchNewOrders(token) {
   return Array.isArray(data?.orders) ? data.orders : (Array.isArray(data) ? data : []);
 }
 
+/** Statistics API: заказы с регионом/округом покупателя и СЦ WB, обрабатывающим
+ *  заказ (поля regionName/oblastOkrugName/countryName/warehouseName) - этого
+ *  нет в /api/v3/orders/* (address там всегда null для FBS, проверено на живых
+ *  данных). Идентификатор заказа здесь - srid, а не id/rid, НО подтверждено на
+ *  живых данных (30.08.2026): srid буквально совпадает со значением rid,
+ *  которое WB отдаёт в /api/v3/orders/new - им и матчим.
+ *  ВАЖНО: лимит этого метода у WB — 1 запрос в минуту. Вызывающий код должен
+ *  сам следить за частотой (см. wbStatsRegionSync.js) — здесь retry только на
+ *  429/5xx/таймаут, не защита от собственного превышения лимита.
+ *  dateFrom — ISO-дата/время "дата последнего изменения" (курсор пагинации:
+ *  для следующего вызова взять lastChangeDate последней строки предыдущего
+ *  ответа). Пустой ответ [] значит, что все заказы уже получены. */
+async function fetchStatisticsOrders(token, dateFrom) {
+  const data = await wbRequest({
+    token,
+    baseUrl: WB_STATISTICS_BASE,
+    path: '/api/v1/supplier/orders',
+    params: { dateFrom },
+  });
+  return Array.isArray(data) ? data : [];
+}
+
 /** Получить склады продавца */
 async function fetchSellerWarehouses(token) {
   const data = await wbRequest({ token, path: '/api/v3/warehouses' });
@@ -447,6 +469,7 @@ module.exports = {
   wbRequest,
   fetchItems, extractCardBarcodes,
   fetchOrders, fetchNewOrders,
+  fetchStatisticsOrders,
   fetchSellerWarehouses,
   createSupply, addOrdersToSupply,
   fetchOrderStickers, fetchSupplyBarcode,
