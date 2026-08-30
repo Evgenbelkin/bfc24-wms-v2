@@ -385,8 +385,8 @@
     speed:         (p) => get('/fbs-analytics/speed', p),
     speedByClient: (p) => get('/fbs-analytics/speed-by-client', p),
     refreshNow:    ()  => post('/fbs-analytics/refresh-now', {}),
-    regionDelivery:           (p) => get('/fbs-analytics/region-delivery', p),
-    regionDeliveryWarehouses: ()  => get('/fbs-analytics/region-delivery/warehouses'),
+    regionDelivery:        (p) => get('/fbs-analytics/region-delivery', p),
+    regionDeliveryFilters: ()  => get('/fbs-analytics/region-delivery/filters'),
   };
 
   // ─────────────── Printing ───────────────

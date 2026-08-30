@@ -356,19 +356,27 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
 // Считаем ДВА варианта отсчёта, как просил владелец:
 //  - от created_at заказа (когда покупатель оформил заказ)
 //  - от wb_accepted_at поставки (когда WB физически принял груз на СЦ)
-// Staff-only на данный момент (клиентского разреза здесь сознательно нет).
+// Staff-only на данный момент. clientId=null - разрез по ВСЕМ клиентам тенанта
+// сразу (с колонкой "Клиент" в каждой строке), конкретный clientId - фильтр
+// на одного клиента.
 // =============================================================================
 
-async function getRegionDeliveryTime({ tenantId, wbScName = null, dateFrom, dateTo }) {
+async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = null, regionName = null, oblastOkrugName = null, dateFrom, dateTo }) {
   const params = [tenantId, dateFrom, dateTo];
   const conds = ['wo.tenant_id=$1', 'wo.created_at >= $2', 'wo.created_at < $3', 'wo.region_name IS NOT NULL'];
   let idx = 4;
   if (wbScName) { conds.push(`wo.wb_sc_name=$${idx++}`); params.push(wbScName); }
+  if (clientId) { conds.push(`ma.client_id=$${idx++}`); params.push(clientId); }
+  if (regionName) { conds.push(`wo.region_name=$${idx++}`); params.push(regionName); }
+  if (oblastOkrugName) { conds.push(`wo.oblast_okrug_name=$${idx++}`); params.push(oblastOkrugName); }
 
   const r = await query(
     `SELECT wo.wb_sc_name, wo.region_name, wo.oblast_okrug_name,
+            ma.client_id, c.client_name,
             wo.created_at, s.wb_accepted_at AS accepted_at, rfp.observed_at AS ready_at
      FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     JOIN wms.clients c ON c.id = ma.client_id
      LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
      LEFT JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e2
@@ -380,11 +388,20 @@ async function getRegionDeliveryTime({ tenantId, wbScName = null, dateFrom, date
   );
 
   const byGroup = new Map();
+  // Общий (взвешенный по кол-ву заказов) итог по ВСЕЙ текущей выборке -
+  // отдельно от построчной разбивки, чтобы сразу видеть "среднее время
+  // доставки" одним числом, а не складывать в уме по строкам таблицы.
+  let totalOrders = 0;
+  let totalSumFromOrder = 0, totalCntFromOrder = 0;
+  let totalSumFromShipment = 0, totalCntFromShipment = 0;
+
   for (const row of r.rows) {
     if (!row.ready_at) continue; // ещё не доехал до ПВЗ - в расчёт срока пока не берём
-    const key = `${row.wb_sc_name || '—'} ${row.region_name}`;
+    const key = `${row.client_id}|${row.wb_sc_name || '—'}|${row.region_name}`;
     if (!byGroup.has(key)) {
       byGroup.set(key, {
+        client_id: row.client_id,
+        client_name: row.client_name,
         wb_sc_name: row.wb_sc_name || null,
         region_name: row.region_name,
         oblast_okrug_name: row.oblast_okrug_name,
@@ -395,17 +412,26 @@ async function getRegionDeliveryTime({ tenantId, wbScName = null, dateFrom, date
     }
     const g = byGroup.get(key);
     g.orders++;
+    totalOrders++;
 
     const hoursFromOrder = (new Date(row.ready_at) - new Date(row.created_at)) / 3600000;
-    if (hoursFromOrder >= 0) { g.sumHoursFromOrder += hoursFromOrder; g.cntFromOrder++; }
+    if (hoursFromOrder >= 0) {
+      g.sumHoursFromOrder += hoursFromOrder; g.cntFromOrder++;
+      totalSumFromOrder += hoursFromOrder; totalCntFromOrder++;
+    }
 
     if (row.accepted_at) {
       const hoursFromShipment = (new Date(row.ready_at) - new Date(row.accepted_at)) / 3600000;
-      if (hoursFromShipment >= 0) { g.sumHoursFromShipment += hoursFromShipment; g.cntFromShipment++; }
+      if (hoursFromShipment >= 0) {
+        g.sumHoursFromShipment += hoursFromShipment; g.cntFromShipment++;
+        totalSumFromShipment += hoursFromShipment; totalCntFromShipment++;
+      }
     }
   }
 
   const rows = [...byGroup.values()].map(g => ({
+    client_id: g.client_id,
+    client_name: g.client_name,
     wb_sc_name: g.wb_sc_name,
     region_name: g.region_name,
     oblast_okrug_name: g.oblast_okrug_name,
@@ -415,26 +441,43 @@ async function getRegionDeliveryTime({ tenantId, wbScName = null, dateFrom, date
   }));
   rows.sort((a, b) => b.orders - a.orders);
 
-  return { rows };
+  const summary = {
+    orders: totalOrders,
+    avg_hours_from_order:    totalCntFromOrder    > 0 ? totalSumFromOrder    / totalCntFromOrder    : null,
+    avg_hours_from_shipment: totalCntFromShipment > 0 ? totalSumFromShipment / totalCntFromShipment : null,
+  };
+
+  return { rows, summary };
 }
 
-/** Список СЦ WB (wb_sc_name), встречающихся у тенанта - для выпадающего списка
- *  "выбрать склад" в UI отчёта. */
-async function listWbScNamesForTenant(tenantId) {
+/** Списки значений для выпадающих фильтров UI отчёта (склад/регион/округ) -
+ *  все встречающиеся у тенанта, без привязки к выбранному периоду (иначе
+ *  список "прыгал" бы при каждой смене периода). */
+async function listRegionDeliveryFilterOptions(tenantId) {
   const r = await query(
-    `SELECT DISTINCT wb_sc_name FROM wms.wb_orders
-     WHERE tenant_id=$1 AND wb_sc_name IS NOT NULL
-     ORDER BY wb_sc_name`,
+    `SELECT DISTINCT wb_sc_name, region_name, oblast_okrug_name
+     FROM wms.wb_orders
+     WHERE tenant_id=$1 AND region_name IS NOT NULL`,
     [tenantId]
   );
-  return r.rows.map(row => row.wb_sc_name);
+  const warehouses = new Set(), regions = new Set(), okrugs = new Set();
+  for (const row of r.rows) {
+    if (row.wb_sc_name) warehouses.add(row.wb_sc_name);
+    if (row.region_name) regions.add(row.region_name);
+    if (row.oblast_okrug_name) okrugs.add(row.oblast_okrug_name);
+  }
+  return {
+    warehouses: [...warehouses].sort((a, b) => a.localeCompare(b, 'ru')),
+    regions: [...regions].sort((a, b) => a.localeCompare(b, 'ru')),
+    oblast_okrugs: [...okrugs].sort((a, b) => a.localeCompare(b, 'ru')),
+  };
 }
 
 module.exports = {
   refreshWbStatusesForAccount,
   refreshWbStatusesForTenant,
   getRegionDeliveryTime,
-  listWbScNamesForTenant,
+  listRegionDeliveryFilterOptions,
   getFbsSummary,
   getProcessingSpeed,
   getProcessingSpeedByClient,

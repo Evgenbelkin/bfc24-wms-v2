@@ -79,25 +79,30 @@ router.post('/refresh-now', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-/** GET /fbs-analytics/region-delivery/warehouses — список СЦ WB (складов
- *  отгрузки), встречающихся в заказах тенанта - для выпадающего списка на
- *  странице отчёта. */
-router.get('/region-delivery/warehouses', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+/** GET /fbs-analytics/region-delivery/filters — списки значений для
+ *  выпадающих фильтров (склад/регион/федеральный округ), встречающихся в
+ *  заказах тенанта - без привязки к периоду. */
+router.get('/region-delivery/filters', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {
-    const warehouses = await fbsAnalyticsService.listWbScNamesForTenant(req.user.tenantId);
-    res.json({ ok: true, warehouses });
+    const options = await fbsAnalyticsService.listRegionDeliveryFilterOptions(req.user.tenantId);
+    res.json({ ok: true, ...options });
   } catch (e) { next(e); }
 });
 
 /** GET /fbs-analytics/region-delivery — время доставки склад (СЦ WB) -> регион
- *  покупателя. Только для персонала (staff-only на данный момент - доступ
- *  селлерам планируется отдельно, пока не открываем). */
+ *  покупателя, с фильтрами по клиенту/складу/региону/округу. Только для
+ *  персонала (staff-only на данный момент - доступ селлерам планируется
+ *  отдельно, пока не открываем). Без client_id - разрез сразу по всем
+ *  клиентам тенанта (колонка "Клиент" в каждой строке). */
 router.get('/region-delivery', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
   try {
     const { dateFrom, dateTo } = parseDateRange(req.query);
+    const clientId = resolveClientScope(req, req.query.client_id);
     const wbScName = req.query.wb_sc_name || null;
+    const regionName = req.query.region_name || null;
+    const oblastOkrugName = req.query.oblast_okrug_name || null;
     const result = await fbsAnalyticsService.getRegionDeliveryTime({
-      tenantId: req.user.tenantId, wbScName, dateFrom, dateTo,
+      tenantId: req.user.tenantId, clientId, wbScName, regionName, oblastOkrugName, dateFrom, dateTo,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }

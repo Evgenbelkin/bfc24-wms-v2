@@ -13,6 +13,12 @@
     .preset.active{background:var(--accent);color:#fff;border-color:var(--accent);}
     th.sortable{cursor:pointer;user-select:none;}
     th.sortable:hover{color:var(--accent);}
+    .col-hint{display:block;font-size:10px;font-weight:400;color:var(--muted);text-transform:none;}
+    .total-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .total-card{flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+    .total-card .num{font-size:26px;font-weight:800;}
+    .total-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    .total-card .hint{font-size:11px;color:var(--muted);margin-top:6px;}
   </style>
 </head>
 <body>
@@ -21,8 +27,13 @@
     <h1><svg class="i" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg> Время доставки по регионам</h1>
   </div>
 
-  <div class="toolbar" id="presets">
+  <div class="toolbar">
+    <select id="f-client"><option value="">Все клиенты</option></select>
     <select id="f-warehouse"><option value="">Все склады (СЦ WB)</option></select>
+    <select id="f-region"><option value="">Все регионы</option></select>
+    <select id="f-okrug"><option value="">Все федеральные округа</option></select>
+  </div>
+  <div class="toolbar">
     <button class="preset" data-days="7" onclick="setPreset(7)">7 дней</button>
     <button class="preset active" data-days="30" onclick="setPreset(30)">30 дней</button>
     <button class="preset" data-days="90" onclick="setPreset(90)">90 дней</button>
@@ -34,23 +45,47 @@
 
   <div class="refresh-note" id="meta" style="margin-bottom:10px;">—</div>
 
+  <div class="total-row">
+    <div class="total-card">
+      <div class="num" id="sum-orders">—</div>
+      <div class="label">Заказов доехало до ПВЗ</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="sum-from-order">—</div>
+      <div class="label">Среднее время: заказ → ПВЗ</div>
+      <div class="hint">от оформления заказа покупателем</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="sum-from-shipment">—</div>
+      <div class="label">Среднее время: отгрузка → ПВЗ</div>
+      <div class="hint">от приёмки поставки на СЦ WB</div>
+    </div>
+  </div>
+
   <div class="card">
-    <div class="card-title">Склад отгрузки (СЦ WB) → регион покупателя</div>
+    <div class="card-title">Разбивка по клиентам / складам / регионам</div>
     <table>
       <thead>
         <tr>
+          <th>Клиент</th>
           <th>Склад (СЦ WB)</th>
           <th>Регион</th>
           <th>Федеральный округ</th>
           <th class="sortable" onclick="sortBy('orders')">Заказов ↕</th>
-          <th class="sortable" onclick="sortBy('avg_hours_from_order')">Ср. время от заказа ↕</th>
-          <th class="sortable" onclick="sortBy('avg_hours_from_shipment')">Ср. время от отгрузки ↕</th>
+          <th class="sortable" onclick="sortBy('avg_hours_from_order')">
+            Заказ → ПВЗ ↕
+            <span class="col-hint">от оформления покупателем</span>
+          </th>
+          <th class="sortable" onclick="sortBy('avg_hours_from_shipment')">
+            Отгрузка → ПВЗ ↕
+            <span class="col-hint">от приёмки на СЦ WB</span>
+          </th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
     </table>
     <div class="refresh-note" id="empty" style="margin-top:8px;display:none;">
-      Нет данных за период — либо заказов ещё не было, либо синхронизация региона с WB (Statistics API) ещё не догнала свежие заказы. Синк идёт постепенно (лимит WB — 1 запрос в минуту на аккаунт), при первом запуске после деплоя это может занять некоторое время.
+      Нет данных за период — либо заказов ещё не было, либо синхронизация региона с WB (Statistics API) ещё не догнала свежие заказы, либо ни один заказ ещё не доехал до ПВЗ (учитываются только доехавшие).
     </div>
   </div>
 
@@ -105,6 +140,7 @@
       });
       tbody.innerHTML = sorted.map(r => `
         <tr>
+          <td>${UI.escHtml(r.client_name || '—')}</td>
           <td>${UI.escHtml(r.wb_sc_name || '—')}</td>
           <td>${UI.escHtml(r.region_name || '—')}</td>
           <td>${UI.escHtml(r.oblast_okrug_name || '—')}</td>
@@ -115,42 +151,67 @@
       `).join('');
     }
 
-    async function loadWarehouses() {
+    function fillSelect(sel, values, allLabel) {
+      sel.innerHTML = `<option value="">${allLabel}</option>` +
+        values.map(v => `<option value="${UI.escHtml(v)}">${UI.escHtml(v)}</option>`).join('');
+    }
+
+    async function loadFilters() {
       try {
-        const res = await window.API.fbsAnalytics.regionDeliveryWarehouses();
-        const sel = document.getElementById('f-warehouse');
-        for (const w of res.warehouses) {
-          const opt = document.createElement('option');
-          opt.value = w;
-          opt.textContent = w;
-          sel.appendChild(opt);
-        }
+        const [clientsRes, filtersRes] = await Promise.all([
+          window.API.clients.short(),
+          window.API.fbsAnalytics.regionDeliveryFilters(),
+        ]);
+        // клиента фильтруем по id, а не по имени (в отличие от остальных
+        // селектов ниже, где значение - само название) - строим вручную
+        const clientSel = document.getElementById('f-client');
+        clientSel.innerHTML = '<option value="">Все клиенты</option>' +
+          (clientsRes.clients || []).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
+
+        fillSelect(document.getElementById('f-warehouse'), filtersRes.warehouses || [], 'Все склады (СЦ WB)');
+        fillSelect(document.getElementById('f-region'), filtersRes.regions || [], 'Все регионы');
+        fillSelect(document.getElementById('f-okrug'), filtersRes.oblast_okrugs || [], 'Все федеральные округа');
       } catch (e) {
-        // не критично для основной таблицы - просто не будет фильтра по складу
+        // не критично для основной таблицы - просто не будет фильтров
       }
     }
 
     async function load() {
       const from = document.getElementById('f-from').value;
       const to = document.getElementById('f-to').value;
-      const wbScName = document.getElementById('f-warehouse').value;
       if (!from || !to) return;
+
+      const params = { from, to };
+      const clientId = document.getElementById('f-client').value;
+      const wbScName = document.getElementById('f-warehouse').value;
+      const regionName = document.getElementById('f-region').value;
+      const okrugName = document.getElementById('f-okrug').value;
+      if (clientId) params.client_id = clientId;
+      if (wbScName) params.wb_sc_name = wbScName;
+      if (regionName) params.region_name = regionName;
+      if (okrugName) params.oblast_okrug_name = okrugName;
+
       try {
-        const params = { from, to };
-        if (wbScName) params.wb_sc_name = wbScName; // не передаём ключ вовсе, если склад не выбран -
-                                                      // URLSearchParams превращает undefined в строку "undefined"
         const res = await window.API.fbsAnalytics.regionDelivery(params);
-        document.getElementById('meta').textContent = `Период: ${from} — ${to}. "От заказа" — от оформления покупателем, "от отгрузки" — от приёмки поставки на СЦ WB. Учитываются только заказы, уже доехавшие до ПВЗ.`;
+        document.getElementById('meta').textContent = `Период: ${from} — ${to}. Учитываются только заказы, уже доехавшие до пункта выдачи.`;
         lastRows = res.rows || [];
         render();
+
+        const s = res.summary || {};
+        document.getElementById('sum-orders').textContent = fmtNum(s.orders);
+        document.getElementById('sum-from-order').textContent = fmtHours(s.avg_hours_from_order);
+        document.getElementById('sum-from-shipment').textContent = fmtHours(s.avg_hours_from_shipment);
       } catch (e) {
         UI.toast(e.message || 'Ошибка загрузки отчёта', 'error');
       }
     }
 
+    document.getElementById('f-client').addEventListener('change', load);
     document.getElementById('f-warehouse').addEventListener('change', load);
+    document.getElementById('f-region').addEventListener('change', load);
+    document.getElementById('f-okrug').addEventListener('change', load);
 
-    loadWarehouses();
+    loadFilters();
     setPreset(30);
   </script>
 </body>
