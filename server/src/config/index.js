@@ -88,6 +88,11 @@ const config = {
   telegram: {
     botToken:    optionalEnv('TELEGRAM_BOT_TOKEN', ''),
     adminChatId: optionalEnv('TELEGRAM_ADMIN_CHAT_ID', ''),
+    // Прямой доступ к api.telegram.org с этого VPS заблокирован (ETIMEDOUT на
+    // TCP-соединении, проверено 29.08.2026 - см. диагностику). Если задан -
+    // шлём через Cloudflare Worker-прокси вместо прямого запроса (тот же
+    // приём, что уже работает в OKCIFRA - см. telegram.notify.service.js там).
+    proxyUrl: optionalEnv('TELEGRAM_PROXY_URL', ''),
   },
 
   logging: {
