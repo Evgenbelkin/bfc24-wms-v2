@@ -571,6 +571,21 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     [...baseParams, granularity]
   );
 
+  // Динамика по дням/неделям/месяцам В РАЗРЕЗЕ ТИПА ОПЕРАЦИИ (возврат, приёмка,
+  // хранение, обработка и т.д.) - в отличие от seriesRes (разрез по клиенту)
+  // и byTypeRes ниже (сумма по типу за ВЕСЬ период одним числом, без разбивки
+  // по дням). Нужно, чтобы видеть не только "сколько заработали сегодня", но
+  // и с каких именно операций.
+  const seriesByTypeRes = await query(
+    `SELECT date_trunc($${baseParams.length + 1}, sc.period_date::timestamp)::date AS period,
+            sc.service_type, SUM(sc.total_amount)::numeric AS total
+     FROM billing.service_charges sc
+     WHERE sc.tenant_id=$1 AND sc.period_date>=$2::date AND sc.period_date<=$3::date${clientCond}
+     GROUP BY period, sc.service_type
+     ORDER BY period`,
+    [...baseParams, granularity]
+  );
+
   const byTypeRes = await query(
     `SELECT sc.service_type, SUM(sc.total_amount)::numeric AS total
      FROM billing.service_charges sc
@@ -639,6 +654,9 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     period_grid: gridRes.rows.map(r => r.period),
     series: seriesRes.rows.map(r => ({
       period: r.period, client_id: r.client_id, client_name: r.client_name, total: Number(r.total),
+    })),
+    series_by_type: seriesByTypeRes.rows.map(r => ({
+      period: r.period, service_type: r.service_type, total: Number(r.total),
     })),
     by_service_type: byTypeRes.rows.map(r => ({ service_type: r.service_type, total: Number(r.total) })),
     by_client: byClientRes.rows.map(r => ({ client_id: r.client_id, client_name: r.client_name, total: Number(r.total) })),

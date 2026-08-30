@@ -68,7 +68,13 @@
   </div>
 
   <div class="card">
-    <div class="card-title">Выручка по операциям</div>
+    <div class="card-title">Динамика выручки по операциям</div>
+    <div class="refresh-note" style="margin-bottom:8px;">По какому виду услуг сколько заработали за каждый день периода — приёмка, сборка/упаковка, отгрузка, хранение, возвраты и т.д.</div>
+    <div class="chart-wrap"><canvas id="chart-revenue-type-series"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Выручка по операциям (итого за период)</div>
     <div class="chart-wrap" style="height:220px;"><canvas id="chart-revenue-type"></canvas></div>
   </div>
 
@@ -153,7 +159,7 @@
       UI.setVal('#f-to', iso(to));
     }
 
-    let chartRevenueSeries = null, chartRevenueType = null, chartPayrollSeries = null, chartPayrollType = null, chartStorageSeries = null;
+    let chartRevenueSeries = null, chartRevenueType = null, chartPayrollSeries = null, chartPayrollType = null, chartStorageSeries = null, chartRevenueTypeSeries = null;
     function destroyChart(c) { if (c) c.destroy(); return null; }
 
     async function loadRevenue(params) {
@@ -273,6 +279,36 @@
           },
           options: { responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } } },
+        });
+
+        // Динамика выручки по типу операции (возврат/приёмка/хранение/обработка/…) -
+        // одна линия на каждый service_type, встречающийся в выборке за период.
+        // В отличие от разбивки по клиентам линий обычно немного (в системе всего
+        // 9 типов услуг), поэтому топ-N здесь не нужен - показываем все как есть.
+        const typesPresent = [...new Set((res.series_by_type || []).map(r => r.service_type))]
+          .sort((a, b) => {
+            const totalA = res.by_service_type.find(t => t.service_type === a)?.total || 0;
+            const totalB = res.by_service_type.find(t => t.service_type === b)?.total || 0;
+            return totalB - totalA;
+          });
+        chartRevenueTypeSeries = destroyChart(chartRevenueTypeSeries);
+        chartRevenueTypeSeries = new Chart(document.getElementById('chart-revenue-type-series'), {
+          type: 'line',
+          data: {
+            labels: periods,
+            datasets: typesPresent.map((t, i) => ({
+              label: SERVICE_LABELS[t] || t,
+              data: periods.map(p => {
+                const row = (res.series_by_type || []).find(r => r.period === p && r.service_type === t);
+                return row ? row.total : 0;
+              }),
+              borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length],
+              tension: 0.25, fill: false,
+            })),
+          },
+          options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
             scales: { y: { beginAtZero: true } } },
         });
 
