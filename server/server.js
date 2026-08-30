@@ -11,7 +11,7 @@ const wbStockSync = require('./src/jobs/wbStockSync');
 const wbItemsSync = require('./src/jobs/wbItemsSync');
 const storageBilling = require('./src/jobs/storageBilling');
 const wbTariffsSync = require('./src/jobs/wbTariffsSync');
-const wbAcceptanceSync = require('./src/jobs/wbAcceptanceSync');
+const wbAcceptanceSync = require('./src/jobs/wbAcceptanceSync'); // ВЫКЛЮЧЕНО 30.08.2026: метод WB acceptance/coefficients временно отключён Wildberries с 15.08.2026
 const wbFbsStatusSync = require('./src/jobs/wbFbsStatusSync');
 const wbStockReconcileAlert = require('./src/jobs/wbStockReconcileAlert');
 const wbStatsRegionSync = require('./src/jobs/wbStatsRegionSync');
@@ -57,7 +57,7 @@ async function start() {
   wbItemsSync.start();
   storageBilling.start();
   wbTariffsSync.start();
-  wbAcceptanceSync.start();
+  // wbAcceptanceSync.start(); // ВЫКЛЮЧЕНО: метод WB acceptance/coefficients временно отключён Wildberries (см. dev.wildberries.ru, запись от 15.08.2026)
   wbFbsStatusSync.start();
   wbStockReconcileAlert.start();
   wbStatsRegionSync.start();
@@ -73,7 +73,7 @@ async function shutdown(signal) {
   wbItemsSync.stop();
   storageBilling.stop();
   wbTariffsSync.stop();
-  wbAcceptanceSync.stop();
+  // wbAcceptanceSync.stop(); // ВЫКЛЮЧЕНО вместе со start()
   wbFbsStatusSync.stop();
   wbStockReconcileAlert.stop();
   wbStatsRegionSync.stop();
