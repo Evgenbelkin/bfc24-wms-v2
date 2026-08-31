@@ -371,6 +371,11 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
 // Staff-only на данный момент. clientId=null - разрез по ВСЕМ клиентам тенанта
 // сразу (с колонкой "Клиент" в каждой строке), конкретный clientId - фильтр
 // на одного клиента.
+//
+// Добавка 31.08.2026: % выкупа рядом со временем доставки в том же разрезе
+// склад/регион - гипотеза владельца, что дольше едет -> чаще не выкупают.
+// Источник тот же wo.wb_status, что и в сводке "Обзор" выше (formula как в
+// classify()/computeSummary() - sold/(sold+cancelled), 'defect' не участвует).
 // =============================================================================
 
 async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = null, regionName = null, oblastOkrugName = null, dateFrom, dateTo }) {
@@ -384,7 +389,7 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
 
   const r = await query(
     `SELECT COALESCE(sw.warehouse_name, wo.wb_sc_name) AS wb_sc_name, wo.region_name, wo.oblast_okrug_name,
-            ma.client_id, c.client_name,
+            ma.client_id, c.client_name, wo.status, wo.wb_status,
             wo.created_at, s.wb_accepted_at AS accepted_at, rfp.observed_at AS ready_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
@@ -400,6 +405,19 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
     params
   );
 
+  // % выкупа считаем ТОЛЬКО среди заказов, уже доехавших до ПВЗ (та же
+  // выборка, что и для времени доставки - до ПВЗ ещё нечего "выкупать"), и
+  // только среди тех, что дошли до терминального статуса WB. Формула та же,
+  // что уже используется в сводке "Обзор" (computeSummary/classify выше):
+  // sold / (sold + canceled + canceled_by_client + declined_by_client).
+  // 'defect' сознательно не участвует ни в числителе, ни в знаменателе - как
+  // и там. Заказы без терминального статуса (ещё "в пути к покупателю")
+  // просто не попадают в знаменатель - не занижают % для свежих периодов.
+  const CANCELLED_STATUSES = ['canceled', 'canceled_by_client', 'declined_by_client'];
+  function isCancelled(row) {
+    return row.status === 'cancel' || CANCELLED_STATUSES.includes(row.wb_status);
+  }
+
   const byGroup = new Map();
   // Общий (взвешенный по кол-ву заказов) итог по ВСЕЙ текущей выборке -
   // отдельно от построчной разбивки, чтобы сразу видеть "среднее время
@@ -407,6 +425,7 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
   let totalOrders = 0;
   let totalSumFromOrder = 0, totalCntFromOrder = 0;
   let totalSumFromShipment = 0, totalCntFromShipment = 0;
+  let totalSold = 0, totalCancelled = 0;
 
   for (const row of r.rows) {
     if (!row.ready_at) continue; // ещё не доехал до ПВЗ - в расчёт срока пока не берём
@@ -421,6 +440,7 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
         orders: 0,
         sumHoursFromOrder: 0, cntFromOrder: 0,
         sumHoursFromShipment: 0, cntFromShipment: 0,
+        sold: 0, cancelled: 0,
       });
     }
     const g = byGroup.get(key);
@@ -440,24 +460,34 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
         totalSumFromShipment += hoursFromShipment; totalCntFromShipment++;
       }
     }
+
+    if (row.wb_status === 'sold') { g.sold++; totalSold++; }
+    else if (isCancelled(row)) { g.cancelled++; totalCancelled++; }
   }
 
-  const rows = [...byGroup.values()].map(g => ({
-    client_id: g.client_id,
-    client_name: g.client_name,
-    wb_sc_name: g.wb_sc_name,
-    region_name: g.region_name,
-    oblast_okrug_name: g.oblast_okrug_name,
-    orders: g.orders,
-    avg_hours_from_order:    g.cntFromOrder    > 0 ? g.sumHoursFromOrder    / g.cntFromOrder    : null,
-    avg_hours_from_shipment: g.cntFromShipment > 0 ? g.sumHoursFromShipment / g.cntFromShipment : null,
-  }));
+  const rows = [...byGroup.values()].map(g => {
+    const purchaseBase = g.sold + g.cancelled;
+    return {
+      client_id: g.client_id,
+      client_name: g.client_name,
+      wb_sc_name: g.wb_sc_name,
+      region_name: g.region_name,
+      oblast_okrug_name: g.oblast_okrug_name,
+      orders: g.orders,
+      avg_hours_from_order:    g.cntFromOrder    > 0 ? g.sumHoursFromOrder    / g.cntFromOrder    : null,
+      avg_hours_from_shipment: g.cntFromShipment > 0 ? g.sumHoursFromShipment / g.cntFromShipment : null,
+      purchase_rate: purchaseBase > 0 ? (g.sold / purchaseBase) * 100 : null,
+      purchase_base: purchaseBase,
+    };
+  });
   rows.sort((a, b) => b.orders - a.orders);
 
+  const totalPurchaseBase = totalSold + totalCancelled;
   const summary = {
     orders: totalOrders,
     avg_hours_from_order:    totalCntFromOrder    > 0 ? totalSumFromOrder    / totalCntFromOrder    : null,
     avg_hours_from_shipment: totalCntFromShipment > 0 ? totalSumFromShipment / totalCntFromShipment : null,
+    purchase_rate: totalPurchaseBase > 0 ? (totalSold / totalPurchaseBase) * 100 : null,
   };
 
   return { rows, summary };

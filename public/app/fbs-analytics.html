@@ -141,6 +141,11 @@
         <div class="label">Среднее время доставки</div>
         <div class="hint">от оформления заказа покупателем до ПВЗ</div>
       </div>
+      <div class="total-card">
+        <div class="num" id="d-sum-purchase-rate">—</div>
+        <div class="label">% выкупа</div>
+        <div class="hint">среди заказов с решённой судьбой (выкуплен/отменён)</div>
+      </div>
     </div>
 
     <div class="card">
@@ -156,6 +161,10 @@
             <th class="sortable" onclick="sortDeliveryBy('avg_hours_from_order')">
               Среднее время доставки ↕
               <span class="col-hint">от оформления заказа покупателем</span>
+            </th>
+            <th class="sortable" onclick="sortDeliveryBy('purchase_rate')">
+              % выкупа ↕
+              <span class="col-hint">sold / (sold+cancelled)</span>
             </th>
           </tr>
         </thead>
@@ -383,8 +392,19 @@
           <td>${UI.escHtml(r.oblast_okrug_name || '—')}</td>
           <td>${fmtNum(r.orders)}</td>
           <td>${fmtHoursDelivery(r.avg_hours_from_order)}</td>
+          <td style="color:${purchaseRateColor(r.purchase_rate)};font-weight:600;">${fmtPct(r.purchase_rate)}</td>
         </tr>
       `).join('');
+    }
+
+    function fmtPct(p) {
+      return (p === null || p === undefined) ? '—' : p.toFixed(1) + '%';
+    }
+    function purchaseRateColor(p) {
+      if (p === null || p === undefined) return 'inherit';
+      if (p >= 90) return 'var(--green2,#2e9e5b)';
+      if (p >= 70) return 'inherit';
+      return 'var(--red,#c0392b)';
     }
 
     function fillDeliverySelect(sel, values, allLabel) {
@@ -434,6 +454,7 @@
         const s = res.summary || {};
         document.getElementById('d-sum-orders').textContent = fmtNum(s.orders);
         document.getElementById('d-sum-from-order').textContent = fmtHoursDelivery(s.avg_hours_from_order);
+        document.getElementById('d-sum-purchase-rate').textContent = fmtPct(s.purchase_rate);
       } catch (e) {
         UI.toast(e.message || 'Ошибка загрузки отчёта', 'error');
       }
