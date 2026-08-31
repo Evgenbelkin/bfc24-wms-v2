@@ -782,10 +782,17 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
           `SELECT COALESCE(MAX(priority),0)+1 AS next_priority FROM wms.picking_tasks WHERE wave_id=$1`,
           [task.wave_id]
         );
+        // scan_step - NOT NULL (см. 006_warehouse_flows.sql), а не NULL - когда
+        // задачу возьмут заново, takeTask() всё равно принудительно ставит
+        // 'await_location' (см. выше), так что значение здесь чисто "на всякий
+        // случай, пока задача висит 'new'". Раньше тут стоял NULL - валил ВСЮ
+        // транзакцию (карантин, инвентаризацию, снятие резерва) constraint'ом
+        // NOT NULL и сборщик не мог пропустить товар вообще (500 на каждую
+        // попытку, если для товара нашлась другая ячейка для авто-повтора).
         await client.query(
           `UPDATE wms.picking_tasks
            SET status='new', location_code=NULL, picker_id=NULL, started_at=NULL,
-               finished_at=NULL, scan_step=NULL, qty_picked=0, priority=$1, updated_at=NOW()
+               finished_at=NULL, scan_step='await_location', qty_picked=0, priority=$1, updated_at=NOW()
            WHERE id=$2`,
           [prioRes.rows[0].next_priority, taskId]
         );
