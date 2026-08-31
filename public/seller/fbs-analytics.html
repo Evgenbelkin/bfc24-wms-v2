@@ -110,7 +110,7 @@
       <div class="total-card">
         <div class="num" id="d-sum-purchase-rate">—</div>
         <div class="label">% выкупа</div>
-        <div class="hint">среди заказов с решённой судьбой (выкуплен/отменён)</div>
+        <div class="hint" id="d-sum-purchase-detail">среди заказов с решённой судьбой (выкуплен/отменён)</div>
       </div>
     </div>
 
@@ -129,6 +129,7 @@
             </th>
             <th class="sortable" onclick="sortDeliveryBy('purchase_rate')">
               % выкупа ↕
+              <span class="col-hint">выкуплено / отказ / ещё ждёт на ПВЗ</span>
             </th>
           </tr>
         </thead>
@@ -271,7 +272,10 @@
           <td>${UI.escHtml(r.oblast_okrug_name || '—')}</td>
           <td>${fmtNum(r.orders)}</td>
           <td>${fmtHours(r.avg_hours_from_order)}</td>
-          <td style="color:${purchaseRateColor(r.purchase_rate)};font-weight:600;">${fmtPct(r.purchase_rate)}</td>
+          <td>
+            <div style="color:${purchaseRateColor(r.purchase_rate)};font-weight:600;">${fmtPct(r.purchase_rate)}</div>
+            <div style="font-size:11px;color:var(--muted);">${fmtNum(r.sold)} выкуп · ${fmtNum(r.cancelled)} отказ${r.pending ? ' · ' + fmtNum(r.pending) + ' ждёт' : ''}</div>
+          </td>
         </tr>
       `).join('');
     }
@@ -325,6 +329,8 @@
         document.getElementById('d-sum-orders').textContent = fmtNum(s.orders);
         document.getElementById('d-sum-from-order').textContent = fmtHours(s.avg_hours_from_order);
         document.getElementById('d-sum-purchase-rate').textContent = fmtPct(s.purchase_rate);
+        document.getElementById('d-sum-purchase-detail').textContent =
+          `${fmtNum(s.sold)} выкуплено · ${fmtNum(s.cancelled)} отказ · ${fmtNum(s.pending)} ещё ждёт на ПВЗ`;
       } catch (e) {
         UI.toast(e.message || 'Ошибка загрузки отчёта', 'error');
       }

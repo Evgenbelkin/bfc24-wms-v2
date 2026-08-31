@@ -478,6 +478,11 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
       avg_hours_from_shipment: g.cntFromShipment > 0 ? g.sumHoursFromShipment / g.cntFromShipment : null,
       purchase_rate: purchaseBase > 0 ? (g.sold / purchaseBase) * 100 : null,
       purchase_base: purchaseBase,
+      sold: g.sold,
+      cancelled: g.cancelled,
+      // "ждёт" - доехал до ПВЗ, но статус ещё не финализирован (не sold и не
+      // отмена) - обычно значит покупатель ещё не забрал/не отказался.
+      pending: g.orders - g.sold - g.cancelled,
     };
   });
   rows.sort((a, b) => b.orders - a.orders);
@@ -488,6 +493,9 @@ async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = nul
     avg_hours_from_order:    totalCntFromOrder    > 0 ? totalSumFromOrder    / totalCntFromOrder    : null,
     avg_hours_from_shipment: totalCntFromShipment > 0 ? totalSumFromShipment / totalCntFromShipment : null,
     purchase_rate: totalPurchaseBase > 0 ? (totalSold / totalPurchaseBase) * 100 : null,
+    sold: totalSold,
+    cancelled: totalCancelled,
+    pending: totalOrders - totalSold - totalCancelled,
   };
 
   return { rows, summary };
