@@ -789,12 +789,21 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
         // транзакцию (карантин, инвентаризацию, снятие резерва) constraint'ом
         // NOT NULL и сборщик не мог пропустить товар вообще (500 на каждую
         // попытку, если для товара нашлась другая ячейка для авто-повтора).
+        //
+        // picker_id - ОСТАЁТСЯ тем же сборщиком (pickerId), а не NULL. Все
+        // 'new'-задачи волны пиннятся на picker_id при takeWave() (см. выше) -
+        // именно по этому полю getNextTask() фильтрует "мои" задачи волны
+        // (t.picker_id=$2, БЕЗ варианта "или ничья"). Если тут обнулить -
+        // задача формально снова 'new', но выпадает из выборки getNextTask
+        // для этого сборщика насовсем (баг: "не выпадает новая ячейка после
+        // пропуска", 31.08.2026 - пришлось бы супервайзеру вручную возвращать
+        // через requeueSkippedTask).
         await client.query(
           `UPDATE wms.picking_tasks
-           SET status='new', location_code=NULL, picker_id=NULL, started_at=NULL,
-               finished_at=NULL, scan_step='await_location', qty_picked=0, priority=$1, updated_at=NOW()
-           WHERE id=$2`,
-          [prioRes.rows[0].next_priority, taskId]
+           SET status='new', location_code=NULL, picker_id=$1, started_at=NULL,
+               finished_at=NULL, scan_step='await_location', qty_picked=0, priority=$2, updated_at=NOW()
+           WHERE id=$3`,
+          [pickerId, prioRes.rows[0].next_priority, taskId]
         );
         requeued = true;
       }
