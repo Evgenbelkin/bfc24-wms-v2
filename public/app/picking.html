@@ -301,6 +301,7 @@
           if (res.result === 'ok') {
             currentTask.scan_step = res.next_step || 'await_item';
             currentTask.batch_allowed_qty = (res.batch_allowed_qty === undefined) ? null : res.batch_allowed_qty;
+            currentTask.batch_group_need = (res.batch_group_need === undefined) ? null : res.batch_group_need;
             updateStepIndicator(currentTask.scan_step);
             statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Ячейка подтверждена';
           } else {
@@ -366,7 +367,14 @@
       document.getElementById('scan-section-main').style.display = 'none';
       document.getElementById('qty-section').style.display = 'block';
 
-      const remaining = (currentTask.qty || 0) - (currentTask.qty_picked || 0);
+      // "Нужно ещё" — это НЕ qty только текущего задания, а группа (это
+      // задание + другие ещё не взятые заказы этой же волны на тот же товар
+      // — см. batch_group_need из ответа scanLocation). Частый случай: этому
+      // заданию самому нужна 1 шт, но рядом ещё 4 таких же заказа из этой же
+      // ячейки — тогда "нужно ещё" должно показать 5, а не 1.
+      const ownRemaining = (currentTask.qty || 0) - (currentTask.qty_picked || 0);
+      const remaining = (currentTask.batch_group_need === null || currentTask.batch_group_need === undefined)
+        ? ownRemaining : currentTask.batch_group_need;
       const allowed = (currentTask.batch_allowed_qty === null || currentTask.batch_allowed_qty === undefined)
         ? remaining : Math.min(currentTask.batch_allowed_qty, remaining);
 
@@ -375,7 +383,7 @@
       qtyInput.max = remaining;
 
       document.getElementById('qty-hint').textContent = allowed > 0
-        ? `Нужно ещё: ${remaining} шт. В этой ячейке по системе есть ${allowed} шт. Если по факту меньше — исправьте число.`
+        ? `Нужно ещё: ${remaining} шт (с учётом других заказов на этот же товар из этой волны). В этой ячейке по системе есть ${allowed} шт. Если по факту меньше — исправьте число.`
         : `Нужно ещё: ${remaining} шт. Если в ячейке пусто — всё равно нажмите «Взять», система сама предложит другую ячейку.`;
 
       setTimeout(() => { qtyInput.focus(); qtyInput.select(); }, 100);
@@ -409,17 +417,18 @@
 
         if (res.result === 'ok' && res.done) {
           UI.beep('ok');
-          UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})`);
+          const extraMsg = res.extra_completed > 0 ? ` ${res.message || ''}` : '';
+          UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})${extraMsg}`);
           await loadWaveStatus();
           await loadNextTask();
         } else if (res.result === 'partial') {
           UI.beep('ok');
-          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', qty_picked: res.qty_picked, batch_allowed_qty: null });
+          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', qty_picked: res.qty_picked, batch_allowed_qty: null, batch_group_need: null });
           UI.notify.warn(res.message);
           statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
         } else if (res.result === 'relocated') {
           UI.beep('ok');
-          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', batch_allowed_qty: null });
+          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', batch_allowed_qty: null, batch_group_need: null });
           UI.notify.warn(res.message || `Товар перенесён в ячейку ${res.new_location_code}`);
           statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
         } else if (res.result === 'shortage') {
