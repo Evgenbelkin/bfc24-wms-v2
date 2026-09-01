@@ -57,6 +57,74 @@ function compareWalkKeys(a, b) {
   return a.raw < b.raw ? -1 : (a.raw > b.raw ? 1 : 0);
 }
 
+// =============================================================================
+// Доработка #6 (01.09.2026): "сборка пачкой по количеству" — вместо скана
+// каждой единицы товара по отдельности (qty раз), для однородных партий можно
+// один раз отсканировать ячейку, один раз штрихкод и ввести количество.
+//
+// Рубильник тенанта — platform.tenants.settings->>'picking_batch_mode_enabled'
+// (тот же паттерн, что settings.stock_sync_disabled у wms.mp_accounts, см.
+// wb.router.js). Специально сделан через JSONB-флаг, а не через код/деплой —
+// по явной просьбе (доработку делаем осторожно, должна быть возможность
+// оперативно откатиться): включить/выключить — один UPDATE, без рестарта
+// сервера, подхватывается на следующем же скане ячейки.
+//
+// Порог qty=1 — жёстко в коде (не настройка), закреплено явным решением
+// пользователя при обсуждении. Товары с поштучной маркировкой (Честный знак,
+// marking_mode='scan') из батч-режима исключены всегда — там каждая единица
+// имеет свой уникальный код, вводом одного числа это не заменить.
+// =============================================================================
+
+async function isBatchModeEnabled(tenantId) {
+  const r = await query(
+    `SELECT COALESCE((settings->>'picking_batch_mode_enabled')::boolean, false) AS enabled
+     FROM platform.tenants WHERE id=$1`,
+    [tenantId]
+  );
+  return r.rowCount > 0 && r.rows[0].enabled === true;
+}
+
+function isBatchEligibleTask(task) {
+  return Number(task.qty) > 1 && !(task.requires_marking && task.marking_mode === 'scan');
+}
+
+/**
+ * Закрыть батч-задачу как недостачу: собрано меньше, чем нужно, и по системе
+ * живьём подтверждено, что остатка больше нигде нет. В отличие от skipTask()
+ * (карантин + инвентаризация "не найден") — здесь никакой мистики нет, система
+ * сама только что пересчитала остаток, поэтому просто закрываем как 'skipped'
+ * с reason='insufficient_stock' — попадает в тот же экран супервайзера
+ * "Пропущенные задания" (listSkippedTasks/requeueSkippedTask), без изменений
+ * там. qty_picked сохраняет то, что реально собрано (не 0) — чтобы наклейка
+ * поставки (сумма qty_picked по волне) и биллинг считали честно.
+ */
+async function closeShortageTask(client, { taskId, task, comment, currentQtyPicked }) {
+  await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'cancelled', dbClient: client });
+  const msg = comment || `Собрано ${currentQtyPicked} из ${task.qty}, остатка на складе больше нет`;
+  await client.query(
+    `UPDATE wms.picking_tasks
+     SET status='skipped', scan_step='done', reason='insufficient_stock', comment=$1,
+         qty_picked=$2, finished_at=NOW(), updated_at=NOW()
+     WHERE id=$3`,
+    [msg, currentQtyPicked, taskId]
+  );
+  if (task.wave_id) {
+    const progress = await client.query(
+      `SELECT COUNT(*) FILTER(WHERE status NOT IN ('done','skipped','cancelled'))::int AS remaining
+       FROM wms.picking_tasks WHERE wave_id=$1`,
+      [task.wave_id]
+    );
+    if (progress.rows[0].remaining === 0) {
+      await client.query(`UPDATE wms.pick_waves SET status='ready', ready_at=NOW(), updated_at=NOW() WHERE id=$1`, [task.wave_id]);
+    }
+  }
+  return {
+    ok: true, result: 'shortage', done: false, skipped: true,
+    qty_picked: currentQtyPicked, qty_total: task.qty,
+    message: `Собрано ${currentQtyPicked} из ${task.qty} — остатка на складе больше нет, недостача зафиксирована для супервайзера`,
+  };
+}
+
 // ===== WAVES =====
 
 async function listWaves({ tenantId, warehouseId = null, status = null, pickerId = null, limit = 50 }) {
@@ -337,7 +405,10 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
 async function scanLocation({ tenantId, pickerId, taskId, scannedLocationCode }) {
   return transaction(async (client) => {
     const tRes = await client.query(
-      `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, [taskId, tenantId]
+      `SELECT t.*, i.requires_marking, i.marking_mode
+       FROM wms.picking_tasks t
+       LEFT JOIN wms.items i ON i.id = t.item_id
+       WHERE t.id=$1 AND t.tenant_id=$2 FOR UPDATE OF t`, [taskId, tenantId]
     );
     if (tRes.rowCount === 0) throw new NotFoundError('PickingTask', taskId);
     const task = tRes.rows[0];
@@ -358,18 +429,52 @@ async function scanLocation({ tenantId, pickerId, taskId, scannedLocationCode })
       return { ok: false, result: 'mismatch', expected: task.location_code, scanned: scannedLocationCode };
     }
 
+    // Доработка #6: решаем, каким шагом идти дальше — обычным поштучным
+    // сканом ('await_item', как было всегда) или новым шагом с вводом
+    // количества ('await_item_qty'). Флаг тенанта проверяется здесь заново
+    // при КАЖДОМ скане ячейки (не кэшируется) — это и есть мгновенный откат:
+    // выключили в settings — на следующем же скане сборщик автоматически
+    // вернётся на старый поштучный флоу, без рестарта сервера.
+    const finalLocCode = scanned || expected || task.location_code;
+    let nextStep = 'await_item';
+    let batchAllowedQty = null;
+    if (isBatchEligibleTask(task) && await isBatchModeEnabled(tenantId)) {
+      nextStep = 'await_item_qty';
+      const remaining = Number(task.qty) - Number(task.qty_picked || 0);
+      const locRes = await client.query(
+        `SELECT id FROM wms.locations WHERE tenant_id=$1 AND UPPER(location_code)=UPPER($2) AND is_active=TRUE LIMIT 1`,
+        [tenantId, finalLocCode]
+      );
+      let availAtLoc = 0;
+      if (locRes.rowCount > 0) {
+        const balRes = await client.query(
+          `SELECT qty_on_hand FROM wms.stock_balances
+           WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5`,
+          [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
+        );
+        // Берём qty_on_hand (физический остаток по этой ячейке+товару), а не
+        // qty_available — под эту же задачу здесь уже стоит собственный
+        // резерв (см. getNextTask/reserveStock), из-за которого qty_available
+        // заведомо занижен ровно на него и показал бы сборщику меньше, чем
+        // реально можно взять. Это только подсказка для UI — окончательная
+        // проверка остатка всё равно происходит заново в scanItemQty().
+        availAtLoc = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_on_hand) : 0;
+      }
+      batchAllowedQty = Math.max(0, Math.min(availAtLoc, remaining));
+    }
+
     // Если ячейка не была задана — фиксируем канонический (uppercase) код,
     // а не сырой ввод — иначе следующий SELECT по location_code (например,
     // при списании остатка в scanItem) не найдёт ячейку из-за регистра.
     await client.query(
-      `UPDATE wms.picking_tasks SET scan_step='await_item', location_code=COALESCE($1,location_code), updated_at=NOW() WHERE id=$2`,
-      [scanned || null, taskId]
+      `UPDATE wms.picking_tasks SET scan_step=$1, location_code=COALESCE($2,location_code), updated_at=NOW() WHERE id=$3`,
+      [nextStep, scanned || null, taskId]
     );
     await client.query(
       `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result) VALUES($1,$2,'location',$3,$4,'ok')`,
       [taskId, pickerId, task.location_code||scannedLocationCode, scannedLocationCode]
     );
-    return { ok: true, result: 'ok', next_step: 'await_item' };
+    return { ok: true, result: 'ok', next_step: nextStep, batch_allowed_qty: batchAllowedQty };
   });
 }
 
@@ -577,6 +682,220 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     }
 
     return { ok: true, result: 'ok', done: true, qty_picked: qtyToPick, qty_total: qtyToPick, matched_via: matchedVia };
+  });
+
+  if (chargeClientId) {
+    chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'picking', quantity: chargeQty, refType: 'picking_task', refId: taskId });
+  }
+
+  return result;
+}
+
+/**
+ * Скан товара с вводом количества — доработка #6 ("сборка пачкой"). Работает
+ * ТОЛЬКО когда scan_step='await_item_qty' (этот шаг ставит только scanLocation()
+ * и только для батч-приемлемых задач при включённом рубильнике тенанта —
+ * см. isBatchModeEnabled/isBatchEligibleTask выше). scanItem() (обычный
+ * поштучный скан, шаг 'await_item') этой функцией никак не затронут и
+ * продолжает работать как раньше для qty=1, маркированных товаров и
+ * тенантов с выключенным рубильником.
+ *
+ * В отличие от scanItem() (где задача обязана целиком закрыться на одной
+ * ячейке или целиком переехать на другую) — здесь "пачка" может быть МЕНЬШЕ
+ * остатка, который нужен всего: списываем сколько реально ввели, и если не
+ * хватило на весь qty — ведём сборщика на следующую ячейку с этим же товаром
+ * (та же задача, id не меняется, qty_picked копится), а если остатков больше
+ * нигде нет — закрываем задачу как 'skipped'/insufficient_stock (см.
+ * closeShortageTask) — попадает в тот же экран супервайзера "Пропущенные".
+ */
+async function scanItemQty({ tenantId, pickerId, taskId, scannedBarcode, qty, comment }) {
+  let chargeClientId = null, chargeQty = 0;
+
+  const result = await transaction(async (client) => {
+    const tRes = await client.query(
+      `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, [taskId, tenantId]
+    );
+    if (tRes.rowCount === 0) throw new NotFoundError('PickingTask', taskId);
+    const task = tRes.rows[0];
+
+    if (task.status !== 'in_progress') throw new ValidationError(`Task status is '${task.status}'`);
+    if (Number(task.picker_id) !== pickerId) throw new ForbiddenError('Not your task');
+    if (task.scan_step !== 'await_item_qty') throw new ValidationError(`Expected scan_step='await_item_qty', got '${task.scan_step}'`);
+
+    const expected = String(task.barcode || '').trim();
+    const scanned  = String(scannedBarcode || '').trim();
+
+    let matched = scanned === expected;
+    let matchedVia = 'barcode';
+    // КИЗ-скан в батч-режиме теоретически не должен встречаться (см.
+    // isBatchEligibleTask — маркированные scan-товары туда не попадают), но
+    // проверку оставляем той же, что в scanItem — на случай если requires_marking
+    // у товара поменяли уже ПОСЛЕ того, как задача перешла на этот шаг.
+    if (!matched && task.item_id && isValidKizCode(scanned)) {
+      const kizRes = await client.query(
+        `SELECT id FROM wms.marking_codes WHERE tenant_id=$1 AND item_id=$2 AND code=$3 AND status='available' LIMIT 1`,
+        [tenantId, task.item_id, scanned]
+      );
+      if (kizRes.rowCount > 0) { matched = true; matchedVia = 'kiz'; }
+    }
+
+    if (!matched) {
+      await client.query(
+        `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message) VALUES($1,$2,'item',$3,$4,'mismatch','Wrong barcode')`,
+        [taskId, pickerId, expected, scanned]
+      );
+      return { ok: false, result: 'mismatch', expected, scanned };
+    }
+
+    const remaining = Number(task.qty) - Number(task.qty_picked || 0);
+    const enteredQty = validatePositiveInt(qty, 'qty');
+    if (enteredQty > remaining) {
+      throw new ValidationError(`Нельзя ввести больше, чем нужно (осталось ${remaining} шт.)`);
+    }
+
+    const locCode = task.location_code;
+    if (!locCode) throw new ValidationError('Location code is not set for this task');
+
+    // Снимаем резерв ПЕРЕД проверкой остатка — та же причина, что в scanItem
+    // (пока резерв активен, qty_available уже уменьшен на него самого, и
+    // задача видит нехватку из-за собственного же резерва).
+    await ledger.releaseReservationByRef({ refType: 'picking_task', refId: taskId, status: 'cancelled', dbClient: client });
+
+    const locRes = await client.query(
+      `SELECT id FROM wms.locations WHERE tenant_id=$1 AND location_code=$2 AND is_active=TRUE LIMIT 1`,
+      [tenantId, locCode]
+    );
+    if (locRes.rowCount === 0) throw new ValidationError(`Location '${locCode}' not found or inactive`);
+
+    const availRes = await client.query(
+      `SELECT qty_available FROM wms.stock_balances
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
+       FOR UPDATE`,
+      [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
+    );
+    const availAtLoc = availRes.rowCount > 0 ? Number(availRes.rows[0].qty_available) : 0;
+
+    // Сколько реально можно списать с ЭТОЙ ячейки прямо сейчас — не больше,
+    // чем показывает система, и не больше, чем ввёл сборщик (если физически
+    // оказалось меньше — сборщик мог сам исправить число вниз при вводе).
+    const takeQty = Math.min(enteredQty, availAtLoc);
+
+    if (takeQty <= 0) {
+      // На ячейке по факту пусто (например, увели параллельно под другую
+      // задачу этой же волны на тот же товар) — пробуем перенаправить на
+      // другую ячейку с этим товаром, как и в scanItem.
+      const alt = task.item_id
+        ? await findBestPickLocation({ tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id })
+        : null;
+      if (alt && alt.location_code !== locCode) {
+        await ledger.reserveStock({
+          tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+          itemId: task.item_id, locationId: alt.location_id, barcode: expected,
+          qty: remaining, refType: 'picking_task', refId: taskId, dbClient: client,
+        });
+        await client.query(
+          `UPDATE wms.picking_tasks SET location_code=$1, scan_step='await_location', updated_at=NOW() WHERE id=$2`,
+          [alt.location_code, taskId]
+        );
+        await client.query(
+          `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message)
+           VALUES($1,$2,'item',$3,$4,'relocated',$5)`,
+          [taskId, pickerId, expected, scanned, `Ячейка '${locCode}' пуста, перенаправлено на '${alt.location_code}'`]
+        );
+        return {
+          ok: false, result: 'relocated', new_location_code: alt.location_code,
+          message: `Ячейка ${locCode} пуста — товар нашёлся в ${alt.location_code}, идите туда`,
+        };
+      }
+
+      // Больше нигде нет — фиксируем то, что уже собрано (может быть и 0,
+      // если это вообще первая ячейка задачи), остальное — в "Пропущенные".
+      const closeRes = await closeShortageTask(client, {
+        taskId, task, comment, currentQtyPicked: Number(task.qty_picked || 0),
+      });
+      if (Number(task.qty_picked || 0) > 0) {
+        chargeClientId = task.client_id;
+        chargeQty = Number(task.qty_picked || 0);
+      }
+      return closeRes;
+    }
+
+    await ledger.consumeStock({
+      tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+      barcode: expected, itemId: task.item_id,
+      locationId: locRes.rows[0].id, locationCode: locCode,
+      qty: takeQty, movementType: 'picking',
+      refType: 'picking_task', refId: taskId,
+      userId: pickerId, comment: comment||null, dbClient: client,
+    });
+
+    const newPicked = Number(task.qty_picked || 0) + takeQty;
+
+    await client.query(
+      `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result) VALUES($1,$2,'item',$3,$4,'ok')`,
+      [taskId, pickerId, expected, scanned]
+    );
+
+    if (newPicked >= Number(task.qty)) {
+      // Полностью собрано (возможно, за несколько ячеек).
+      await client.query(
+        `UPDATE wms.picking_tasks
+         SET status='done', scan_step='done', qty_picked=$1, finished_at=NOW(), updated_at=NOW(), updated_by=$2
+         WHERE id=$3`,
+        [newPicked, pickerId, taskId]
+      );
+      if (task.wave_id) {
+        await client.query(`UPDATE wms.pick_waves SET done_tasks=done_tasks+1, updated_at=NOW() WHERE id=$1`, [task.wave_id]);
+        const progress = await client.query(
+          `SELECT COUNT(*) FILTER(WHERE status!='done')::int AS remaining FROM wms.picking_tasks WHERE wave_id=$1`,
+          [task.wave_id]
+        );
+        if (progress.rows[0].remaining === 0) {
+          await client.query(`UPDATE wms.pick_waves SET status='ready', ready_at=NOW(), updated_at=NOW() WHERE id=$1`, [task.wave_id]);
+        }
+      }
+      chargeClientId = task.client_id;
+      chargeQty = newPicked;
+      return { ok: true, result: 'ok', done: true, qty_picked: newPicked, qty_total: task.qty, matched_via: matchedVia };
+    }
+
+    // Пачка взята, но этого не хватило на весь qty — ищем следующую ячейку с
+    // этим же товаром для остатка. Задача остаётся той же (id, in_progress),
+    // qty_picked копится, ячейка/scan_step переставляются на новый круг.
+    await client.query(
+      `UPDATE wms.picking_tasks SET qty_picked=$1, updated_at=NOW() WHERE id=$2`,
+      [newPicked, taskId]
+    );
+
+    const stillNeeded = Number(task.qty) - newPicked;
+    const alt2 = task.item_id
+      ? await findBestPickLocation({ tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id })
+      : null;
+
+    if (alt2) {
+      await ledger.reserveStock({
+        tenantId, warehouseId: task.warehouse_id, clientId: task.client_id,
+        itemId: task.item_id, locationId: alt2.location_id, barcode: expected,
+        qty: stillNeeded, refType: 'picking_task', refId: taskId, dbClient: client,
+      });
+      await client.query(
+        `UPDATE wms.picking_tasks SET location_code=$1, scan_step='await_location', updated_at=NOW() WHERE id=$2`,
+        [alt2.location_code, taskId]
+      );
+      return {
+        ok: true, result: 'partial', done: false, qty_picked: newPicked, qty_total: task.qty,
+        remaining: stillNeeded, new_location_code: alt2.location_code,
+        message: `Собрано ${newPicked} из ${task.qty}. Ещё ${stillNeeded} шт — в ячейке ${alt2.location_code}`,
+      };
+    }
+
+    // Остатков больше нигде нет вообще — закрываем задачу как недостачу.
+    const closeRes2 = await closeShortageTask(client, {
+      taskId, task, comment, currentQtyPicked: newPicked,
+    });
+    chargeClientId = task.client_id;
+    chargeQty = newPicked;
+    return closeRes2;
   });
 
   if (chargeClientId) {
@@ -1149,7 +1468,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
 
 module.exports = {
   listWaves, getWaveByShipmentCode, takeWave,
-  getNextTask, scanLocation, scanItem, skipTask,
+  getNextTask, scanLocation, scanItem, scanItemQty, skipTask,
   listSkippedTasks, requeueSkippedTask,
   closeWave, getWaveStatus,
   createManualWave,

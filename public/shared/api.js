@@ -321,6 +321,7 @@
     next:         (p) => get('/picking/next', p),
     scanLocation: (d) => post('/picking/scan/location', d),
     scanItem:     (d) => post('/picking/scan/item', d),
+    scanItemQty:  (d) => post('/picking/scan/item-qty', d),
     skip:         (d) => post('/picking/skip', d),
     manualWave:   (d) => post('/picking/manual-wave', d),
     skipped:      (p) => get('/picking/tasks/skipped', p),

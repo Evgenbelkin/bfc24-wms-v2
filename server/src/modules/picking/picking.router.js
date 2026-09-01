@@ -96,6 +96,22 @@ router.post('/scan/item', requireRole('tenant_admin','supervisor','picker'), asy
   } catch(e){ next(e); }
 });
 
+/** POST /picking/scan/item-qty — скан товара с вводом количества ("сборка пачкой", доработка #6) */
+router.post('/scan/item-qty', requireRole('tenant_admin','supervisor','picker'), async (req,res,next)=>{
+  try {
+    const { picking_task_id, scanned_barcode, qty, comment } = req.body;
+    const result = await svc.scanItemQty({
+      tenantId:       req.user.tenantId,
+      pickerId:       req.user.id,
+      taskId:         validatePositiveInt(picking_task_id, 'picking_task_id'),
+      scannedBarcode: scanned_barcode,
+      qty,
+      comment,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /picking/skip — пропустить задачу */
 router.post('/skip', requireRole('tenant_admin','supervisor','picker'), async (req,res,next)=>{
   try {

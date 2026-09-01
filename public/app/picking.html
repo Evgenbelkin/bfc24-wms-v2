@@ -121,12 +121,27 @@
 
       <div class="task-qty" id="task-qty">0</div>
 
-      <div class="scan-section">
+      <div class="scan-section" id="scan-section-main">
         <div class="scan-label" id="scan-label">Отсканируйте ячейку</div>
         <div class="scan-row">
           <input type="text" id="scan-input" class="scan-input awaiting-location"
                  placeholder="Сканировать..." inputmode="none" autocomplete="off"/>
           <button type="button" class="scan-camera-btn" onclick="openCameraScan()"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+        </div>
+      </div>
+
+      <!-- Ввод количества "пачкой" (доработка #6) — появляется вместо scan-section-main
+           после скана штрихкода, только если задача переведена сервером в шаг
+           await_item_qty (qty>1, товар не маркирован поштучно, включено у тенанта). -->
+      <div class="scan-section" id="qty-section" style="display:none">
+        <div class="scan-label"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Сколько взяли из этой ячейки?</div>
+        <div class="scan-row">
+          <input type="number" id="qty-input" class="scan-input awaiting-item" inputmode="numeric" min="1" step="1"/>
+        </div>
+        <div class="hint" id="qty-hint"></div>
+        <div class="btn-row">
+          <button class="btn-big btn-green" onclick="confirmBatchQty()">Взять</button>
+          <button class="btn-sm btn-back" style="padding:0 20px;" onclick="cancelBatchQty()">Назад</button>
         </div>
       </div>
 
@@ -152,6 +167,7 @@
 
     let currentTask = null;
     let waveStatus = null;
+    let pendingBatchBarcode = null; // доработка #6: штрихкод, отсканированный перед вводом количества
 
     async function logout() {
       await window.API.auth.logout();
@@ -192,6 +208,13 @@
       document.getElementById('wave-complete-card').style.display='none';
       document.getElementById('no-wave-card').style.display='none';
       document.getElementById('wave-card').style.display='block';
+
+      // Сброс на случай, если предыдущая задача осталась в состоянии "ввод
+      // количества" (доработка #6) — новая/обновлённая задача всегда
+      // стартует с обычного скан-поля.
+      pendingBatchBarcode = null;
+      document.getElementById('qty-section').style.display = 'none';
+      document.getElementById('scan-section-main').style.display = 'block';
 
       currentTask = task;
       document.getElementById('task-barcode').textContent = task.barcode || '—';
@@ -276,14 +299,20 @@
             scanned_location_code: scanned,
           });
           if (res.result === 'ok') {
-            currentTask.scan_step = 'await_item';
-            updateStepIndicator('await_item');
+            currentTask.scan_step = res.next_step || 'await_item';
+            currentTask.batch_allowed_qty = (res.batch_allowed_qty === undefined) ? null : res.batch_allowed_qty;
+            updateStepIndicator(currentTask.scan_step);
             statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Ячейка подтверждена';
           } else {
             UI.beep('err');
             UI.notify.err(`Неверная ячейка! Ожидалась: ${res.expected}`);
             statusEl.textContent = `Ожидается: ${res.expected}`;
           }
+        } else if (step === 'await_item_qty') {
+          // Доработка #6: барк-скан здесь НЕ уходит на сервер сразу — сначала
+          // просим ввести количество, а штрихкод + qty отправляются одним
+          // вызовом при подтверждении (см. confirmBatchQty).
+          showBatchQtyEntry(scanned);
         } else {
           const res = await window.API.picking.scanItem({
             picking_task_id: currentTask.id,
@@ -321,6 +350,92 @@
             UI.beep('err');
             UI.notify.err(`Неверный товар! Ожидается: ${res.expected}`);
           }
+        }
+      } catch(e) {
+        UI.beep('err');
+        UI.notify.err(e.message);
+      } finally {
+        window.__scanBusy = false;
+      }
+    }
+
+    // ===== Доработка #6: сборка "пачкой" по количеству =====
+
+    function showBatchQtyEntry(scannedBarcode) {
+      pendingBatchBarcode = scannedBarcode;
+      document.getElementById('scan-section-main').style.display = 'none';
+      document.getElementById('qty-section').style.display = 'block';
+
+      const remaining = (currentTask.qty || 0) - (currentTask.qty_picked || 0);
+      const allowed = (currentTask.batch_allowed_qty === null || currentTask.batch_allowed_qty === undefined)
+        ? remaining : Math.min(currentTask.batch_allowed_qty, remaining);
+
+      const qtyInput = document.getElementById('qty-input');
+      qtyInput.value = allowed > 0 ? allowed : '';
+      qtyInput.max = remaining;
+
+      document.getElementById('qty-hint').textContent = allowed > 0
+        ? `Нужно ещё: ${remaining} шт. В этой ячейке по системе есть ${allowed} шт. Если по факту меньше — исправьте число.`
+        : `Нужно ещё: ${remaining} шт. Если в ячейке пусто — всё равно нажмите «Взять», система сама предложит другую ячейку.`;
+
+      setTimeout(() => { qtyInput.focus(); qtyInput.select(); }, 100);
+
+      qtyInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmBatchQty(); } };
+    }
+
+    function cancelBatchQty() {
+      pendingBatchBarcode = null;
+      document.getElementById('qty-section').style.display = 'none';
+      document.getElementById('scan-section-main').style.display = 'block';
+      setTimeout(() => document.getElementById('scan-input').focus(), 100);
+    }
+
+    async function confirmBatchQty() {
+      if (!currentTask || !pendingBatchBarcode) return;
+      const qtyVal = parseInt(document.getElementById('qty-input').value, 10);
+      if (!qtyVal || qtyVal < 1) { UI.notify.err('Укажите количество больше нуля'); return; }
+      if (window.__scanBusy) return;
+      window.__scanBusy = true;
+      const statusEl = document.getElementById('status-msg');
+      const barcode = pendingBatchBarcode;
+
+      try {
+        const res = await window.API.picking.scanItemQty({
+          picking_task_id: currentTask.id,
+          scanned_barcode: barcode,
+          qty: qtyVal,
+        });
+        pendingBatchBarcode = null;
+
+        if (res.result === 'ok' && res.done) {
+          UI.beep('ok');
+          UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})`);
+          await loadWaveStatus();
+          await loadNextTask();
+        } else if (res.result === 'partial') {
+          UI.beep('ok');
+          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', qty_picked: res.qty_picked, batch_allowed_qty: null });
+          UI.notify.warn(res.message);
+          statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
+        } else if (res.result === 'relocated') {
+          UI.beep('ok');
+          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', batch_allowed_qty: null });
+          UI.notify.warn(res.message || `Товар перенесён в ячейку ${res.new_location_code}`);
+          statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
+        } else if (res.result === 'shortage') {
+          UI.beep('err');
+          UI.notify.warn(res.message);
+          await loadWaveStatus();
+          await loadNextTask();
+        } else if (res.result === 'mismatch') {
+          UI.beep('err');
+          UI.notify.err(`Неверный товар! Ожидается: ${res.expected}`);
+          document.getElementById('qty-section').style.display = 'none';
+          document.getElementById('scan-section-main').style.display = 'block';
+          setTimeout(() => document.getElementById('scan-input').focus(), 100);
+        } else {
+          UI.beep('err');
+          UI.notify.err('Не удалось обработать. Попробуйте ещё раз.');
         }
       } catch(e) {
         UI.beep('err');
