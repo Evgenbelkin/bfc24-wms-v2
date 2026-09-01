@@ -1031,7 +1031,14 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
           tenantId, docType: 'pick_list_label', employeeId: pickerId,
         });
         if (resolved) {
-          const svg = await generateShipmentLabelSvg(shipmentCode);
+          // Кол-во ШК на наклейке — суммарно собрано по волне (qty_picked по
+          // всем задачам, включая довезённые после реквеue) - то, что реально
+          // физически лежит в коробе, а не сколько было задач/позиций.
+          const qtyRes = await client.query(
+            `SELECT COALESCE(SUM(qty_picked),0)::int AS qty FROM wms.picking_tasks WHERE wave_id=$1`,
+            [wave.id]
+          );
+          const svg = await generateShipmentLabelSvg(shipmentCode, qtyRes.rows[0].qty);
           const jobCode = `PICKLIST-${shipment.id}-${Date.now()}`;
           await client.query(
             `INSERT INTO wms.print_jobs

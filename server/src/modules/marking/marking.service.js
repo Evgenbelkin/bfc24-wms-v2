@@ -632,11 +632,26 @@ async function listCodesForShipment({ tenantId, shipmentExternalId }) {
   if (shipRes.rowCount === 0) throw new ValidationError(`Поставка '${shipmentExternalId}' не найдена`);
   const shipment = shipRes.rows[0];
 
+  // wb_sticker_code (какой стикер WB продан по этому коду) — тот же приём,
+  // что и в getShippedReport/getCodesJournal ниже: LATERAL join на wb_orders
+  // по (tenant_id, wb_order_id). shipment_code здесь константа для всей
+  // выборки (это выгрузка по ОДНОЙ конкретной поставке) - берём его прямо из
+  // уже прочитанного shipment.external_id, отдельный join не нужен. Добавлено
+  // 01.09.2026 по запросу владельца - раньше в этой выгрузке не было ни
+  // поставки, ни стикера, хотя они уже выведены в других отчётах маркировки -
+  // без них нельзя было понять, какой стикер продан и какой киз выводить из
+  // оборота при возврате/пересорте.
   const r = await query(
     `SELECT mc.code, mc.wb_submit_status, mc.used_at,
-            i.barcode, i.item_name, i.vendor_code, i.size
+            i.barcode, i.item_name, i.vendor_code, i.size,
+            wo.wb_sticker_code
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
+     LEFT JOIN LATERAL (
+       SELECT wo2.wb_sticker_code FROM wms.wb_orders wo2
+       WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       LIMIT 1
+     ) wo ON mc.wb_order_id IS NOT NULL
      WHERE mc.tenant_id=$1 AND mc.used_ref_type='packing' AND mc.used_ref_id=$2
      ORDER BY i.item_name, mc.used_at`,
     [tenantId, shipment.id]

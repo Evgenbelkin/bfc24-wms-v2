@@ -447,7 +447,7 @@
         const rows = res.rows || [];
         if (!rows.length) { UI.notify.warn('По этой поставке нет кодов "Честный знак"'); return; }
         const statusLabel = { sent: 'отправлен в WB', export_only: 'ожидает передачи', manual_override: 'проведён без отправки' };
-        const headers = ['Штрихкод','Код маркировки','Товар','Артикул','Размер','Статус','Когда упаковано'];
+        const headers = ['Штрихкод','Код маркировки','Товар','Артикул','Размер','Статус','Когда упаковано','Поставка','Стикер ВБ'];
         const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
         const lines = [headers.map(escCsv).join(';')];
         for (const r of rows) {
@@ -459,6 +459,8 @@
             (String(r.size ?? '').trim() === '0') ? '' : (r.size || ''),
             statusLabel[r.wb_submit_status] || r.wb_submit_status || '',
             r.used_at ? UI.fmtDateTime(r.used_at) : '',
+            currentShipment.external_id || '',
+            r.wb_sticker_code || '',
           ].map(escCsv).join(';'));
         }
         // ВАЖНО: код маркировки может содержать служебный байт-разделитель GS1

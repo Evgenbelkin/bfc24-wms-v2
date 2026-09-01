@@ -20,29 +20,54 @@ function escapeXml(s) {
 }
 
 /**
- * QR-код + подпись человекочитаемым текстом под ним (код отгрузки) — для
- * внутренней наклейки "pick_list_label", которая раньше состояла ТОЛЬКО из
- * QR-кода без единой видимой цифры/буквы: сотрудник не мог на глаз понять,
- * какой отгрузке принадлежит наклейка, приходилось сканировать каждую.
- * Печатается через тот же printer-agent пайплайн (SVG → PDF), что и обычный
- * generateQrSvg — просто это не голый QR, а составной SVG: вложенный <svg> с
- * QR-кодом сверху + <text> с кодом отгрузки снизу. Кириллица в <text>
- * рендерится агентом через зарегистрированный шрифт DejaVuSans (см.
- * printer-agent/agent.js ensureCyrillicFont) — тот же механизм, что и для
- * текста в стикерах WB, так что здесь ничего дополнительно настраивать не
- * нужно, если код отгрузки латиница/цифры (WB-GI-...) — тем более.
- * Размер подобран под общий формат этикетки 58×40мм, с которым уже печатают
- * все типы документов (см. dims в printer-agent/agent.js processJob) —
- * preserveAspectRatio:'xMidYMid meet' на стороне агента впишет по высоте.
+ * Линейный штрихкод (Code128) с номером поставки + количеством ШК в ней —
+ * для внутренней наклейки "pick_list_label". Раньше здесь был QR-код (см.
+ * историю коммитов) — заменили 01.09.2026 по просьбе владельца: часть ТСД
+ * на складе (обычные лазерные 1D-сканеры) физически не умеют считывать QR,
+ * а линейный штрихкод — гарантированно. Заодно добавили количество ШК в
+ * поставке текстом (раньше на наклейке было только "какой это отгрузке" без
+ * "сколько внутри").
+ * Тот же приём вписывания без обрезки, что и в generateItemLabelSvg ниже —
+ * transform="translate() scale()" на <g> с содержимым штрихкода, а НЕ вложенный
+ * <svg width height>: движок печати агента (svg-to-pdfkit) не умеет
+ * авто-масштабировать вложенные <svg> по их viewBox, как это делает браузер —
+ * без этого приёма штрихкод рисовался в "сыром" размере bwip-js без
+ * масштаба и уезжал за край этикетки. Кириллица в <text> (сам текст
+ * "Кол-во ШК: N" пишется латиницей/цифрами специально, чтобы не зависеть от
+ * шрифта) рендерится агентом через зарегистрированный DejaVuSans (см.
+ * printer-agent/agent.js ensureCyrillicFont).
+ * qty — необязательный (для обратной совместимости с местами, где количество
+ * ещё не подсчитано) — если не передан, вторая строка просто не рисуется.
  */
-async function generateShipmentLabelSvg(shipmentCode, { qrSize = 260, width = 320, height = 360, fontSize = 34 } = {}) {
-  const qrSvg = await QRCode.toString(String(shipmentCode), { type: 'svg', margin: 1, width: qrSize });
-  const qrX = Math.round((width - qrSize) / 2);
-  const textY = qrSize + 40;
+function generateShipmentLabelSvg(shipmentCode, qty = null, { width = 400, height = 280 } = {}) {
+  const barcodeSvg = bwipjs.toSVG({
+    bcid: 'code128',
+    text: String(shipmentCode),
+    scale: 2,
+    height: 10,
+    includetext: true,
+    textxalign: 'center',
+  });
+  const vbMatch = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(barcodeSvg);
+  const bw = vbMatch ? Number(vbMatch[1]) : 300;
+  const bh = vbMatch ? Number(vbMatch[2]) : 100;
+  const marginX = 24;
+  const barcodeW = width - marginX * 2;
+  const scale = barcodeW / bw;
+  const barcodeH = Math.round(bh * scale);
+  const barcodeX = marginX;
+  const barcodeY = height - barcodeH - 16;
+  const innerMatch = /<svg[^>]*>([\s\S]*)<\/svg>/.exec(barcodeSvg);
+  const barcodeInner = innerMatch ? innerMatch[1] : barcodeSvg;
+
+  const qtyLine = (qty === null || qty === undefined)
+    ? ''
+    : `<text x="${width / 2}" y="80" text-anchor="middle" font-family="sans-serif" font-size="24">Кол-во ШК: ${escapeXml(qty)}</text>`;
+
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">` +
-    `<svg x="${qrX}" y="10" width="${qrSize}" height="${qrSize}">${qrSvg}</svg>` +
-    `<text x="${width / 2}" y="${textY}" text-anchor="middle" font-family="sans-serif" ` +
-    `font-weight="bold" font-size="${fontSize}">${escapeXml(shipmentCode)}</text>` +
+    `<text x="${width / 2}" y="46" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="34">${escapeXml(shipmentCode)}</text>` +
+    qtyLine +
+    `<g transform="translate(${barcodeX}, ${barcodeY}) scale(${scale})">${barcodeInner}</g>` +
     `</svg>`;
 }
 
