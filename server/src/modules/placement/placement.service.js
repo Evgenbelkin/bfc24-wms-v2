@@ -9,6 +9,7 @@ const {
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const { chargeForOperation } = require('../billing/billing.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { locationWalkKey } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -310,20 +311,93 @@ async function listPlacementHistory({ tenantId, clientId = null, warehouseId = n
   return r.rows;
 }
 
-async function suggestTargetLocation({ tenantId, warehouseId, itemId, clientId }) {
-  // Предпочтительно — консолидация с существующим остатком
+/**
+ * Подсказка целевой ячейки при размещении — доработка от 01.09.2026 (нашли
+ * причину "зигзага" при сборке: один и тот же товар оказывался раскидан по
+ * дальним друг от друга ячейкам, потому что старая версия этой функции (а)
+ * не проверяла, есть ли в "своей" ячейке вообще место под добавляемое
+ * количество — могла посоветовать уже забитую до отказа, и (б) если своих
+ * ячеек с местом не было, предлагала первую по алфавиту ПУСТУЮ ячейку во
+ * всём складе, а не рядом с уже занятыми — то есть сама раскидывала товар).
+ *
+ * Теперь: 1) ищем "родную" ячейку товара, где реально есть место по объёму;
+ * 2) если все родные заняты (или товара тут ещё никогда не было) — ищем
+ * ближайшую ПУСТУЮ ячейку в том же ряду/зоне (тот же порядок обхода, что и
+ * при сборке — см. server/src/utils/warehouseLayout.js), чтобы товар не
+ * разъезжался по складу; 3) и только если рядом совсем ничего нет — берём
+ * любую свободную ячейку (как раньше, финальный фолбэк).
+ *
+ * Объём ячеек (max_volume_l) может со временем меняться (переставляют
+ * стеллажи и т.п.) — поэтому ничего не кэшируем, считаем заново на каждый
+ * вызов. Ячейка без указанного max_volume_l считается "безлимитной" для
+ * этой проверки (не блокируем подсказку из-за незаполненного справочника).
+ */
+async function suggestTargetLocation({ tenantId, warehouseId, itemId, clientId, qty = 1 }) {
+  const q = Math.max(1, Number(qty) || 1);
+
+  const itemRes = await query(
+    `SELECT COALESCE(volume_liters, 1) AS vol FROM wms.items WHERE id=$1 AND tenant_id=$2`,
+    [itemId, tenantId]
+  );
+  const unitVol = itemRes.rowCount > 0 ? Number(itemRes.rows[0].vol) : 1;
+  const neededVol = unitVol * q;
+
+  // 1) Родные ячейки товара, с текущей занятостью каждой (может включать и
+  // другие товары, если ячейка общая) — как в getLocationFillReport.
   const existing = await query(
-    `SELECT l.location_code, l.location_type, sb.qty_on_hand
+    `SELECT l.location_code, l.location_type, l.max_volume_l, sb.qty_on_hand,
+       COALESCE(occ.occupied_liters, 0)::numeric AS occupied_liters
      FROM wms.stock_balances sb
-     JOIN wms.locations l ON l.id=sb.location_id
+     JOIN wms.locations l ON l.id = sb.location_id
+     LEFT JOIN LATERAL (
+       SELECT SUM(sb2.qty_on_hand * COALESCE(i2.volume_liters, 1))::numeric AS occupied_liters
+       FROM wms.stock_balances sb2
+       JOIN wms.items i2 ON i2.id = sb2.item_id
+       WHERE sb2.location_id = l.id AND sb2.qty_on_hand > 0
+     ) occ ON TRUE
      WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.item_id=$3 AND sb.client_id=$4
        AND l.location_type IN ('rack','floor') AND sb.qty_on_hand>0 AND l.is_active=TRUE
-     ORDER BY sb.qty_on_hand DESC LIMIT 1`,
+     ORDER BY sb.qty_on_hand DESC`,
     [tenantId, warehouseId, itemId, clientId]
   );
-  if (existing.rowCount > 0) return { ...existing.rows[0], reason: 'consolidation' };
 
-  // Свободная ячейка
+  for (const row of existing.rows) {
+    const cap = row.max_volume_l != null ? Number(row.max_volume_l) : null;
+    const free = cap === null ? Infinity : (cap - Number(row.occupied_liters));
+    if (free >= neededVol) {
+      return { location_code: row.location_code, location_type: row.location_type, qty_on_hand: row.qty_on_hand, reason: 'consolidation' };
+    }
+  }
+
+  // 2) Все родные заняты (или их пока нет вообще) — пробуем найти пустую
+  // ячейку рядом с самой "устоявшейся" родной (если она есть) — тот же ряд/
+  // зона, ближайшая по позиции. Без родной ячейки (товар размещается первый
+  // раз) точки отсчёта нет — сразу переходим к общему фолбэку (3).
+  if (existing.rows.length > 0) {
+    const anchorKey = locationWalkKey(existing.rows[0].location_code);
+    if (anchorKey.pattern) {
+      const zonePrefix = anchorKey.zoneLetter + (anchorKey.zoneNum ?? '');
+      const nearby = await query(
+        `SELECT l.location_code
+         FROM wms.locations l
+         WHERE l.tenant_id=$1 AND l.warehouse_id=$2 AND l.location_type='rack' AND l.is_active=TRUE
+           AND UPPER(l.location_code) LIKE UPPER($3) || '-%'
+           AND NOT EXISTS (SELECT 1 FROM wms.stock_balances sb2 WHERE sb2.location_id=l.id AND sb2.qty_on_hand>0)`,
+        [tenantId, warehouseId, zonePrefix]
+      );
+      let best = null, bestDist = Infinity;
+      for (const r of nearby.rows) {
+        const k = locationWalkKey(r.location_code);
+        if (!k.pattern) continue;
+        const dist = Math.abs(k.position - anchorKey.position);
+        if (dist < bestDist) { best = r.location_code; bestDist = dist; }
+      }
+      if (best) return { location_code: best, location_type: 'rack', qty_on_hand: 0, reason: 'nearby' };
+    }
+  }
+
+  // 3) Финальный фолбэк — как раньше: первая свободная ячейка по алфавиту
+  // во всём складе (лучше предложить хоть что-то, чем ничего).
   const free = await query(
     `SELECT l.location_code, l.location_type, 0 AS qty_on_hand
      FROM wms.locations l

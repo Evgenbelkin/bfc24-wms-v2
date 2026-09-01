@@ -425,18 +425,46 @@
     // чего товар/ячейка потом "не находятся" при в общем-то верном штрихкоде.
     function stripWs(v) { return String(v || '').replace(/\s+/g, ''); }
 
+    // Подсказка ячейки (доработка от 01.09.2026, та же логика что и в
+    // "Размещении" — см. placement.html/placement.service.js): раньше товар
+    // при приёмке клали куда придётся, из-за чего один и тот же товар со
+    // временем оказывался раскидан по дальним друг от друга ячейкам, а потом
+    // это же аукалось "зигзагом" при сборке. Если товар отсканировали ДО того
+    // как зафиксировали ячейку — подсказываем (не принуждаем) актуальную
+    // ячейку под этот товар и подставляем её в поле; сотрудник может
+    // подтвердить сканом этого же кода или отсканировать любой другой.
+    async function suggestFreeLocation(itemId, qty) {
+      const clientId = Number(UI.val('#client-select')) || null;
+      if (!itemId || !clientId) return;
+      try {
+        const res = await window.API.placement.suggest({ item_id: itemId, client_id: clientId, qty });
+        if (!res.suggestion) return;
+        UI.setVal('#free-location', res.suggestion.location_code);
+        document.getElementById('free-location-note').textContent =
+          `Подсказка: обычно этот товар кладут в ${res.suggestion.location_code} (можно отсканировать эту ячейку либо любую другую).`;
+      } catch (e) { /* подсказка необязательна - не блокируем приёмку из-за её ошибки */ }
+    }
+
     UI.onScan('#free-barcode', async (v) => {
       const code = stripWs(v);
       UI.setVal('#free-barcode', code);
       const location = UI.val('#free-location');
-      if (!location) {
-        UI.notify.err('Сначала отсканируйте ячейку');
-        document.getElementById('free-location').focus();
-        return;
-      }
       // Ждём метаданные маркировки ПЕРЕД тем как решать куда вести фокус дальше -
       // иначе freeNeedsDataMatrix() мог бы сработать по ещё не загруженным данным.
       await lookupFreeMarkingItem();
+      if (!location) {
+        if (freeMarkingItem?.id) await suggestFreeLocation(freeMarkingItem.id, freeQty);
+        if (!UI.val('#free-location')) {
+          UI.notify.err('Сначала отсканируйте ячейку');
+          document.getElementById('free-location').focus();
+          return;
+        }
+        // Подсказка подставила ячейку, но НЕ зафиксировала её (readOnly не
+        // включён) - оставляем фокус на ячейке, чтобы сотрудник явно
+        // подтвердил (или сменил) её сканом, прежде чем товар уйдёт в submitFree.
+        document.getElementById('free-location').focus();
+        return;
+      }
       if (freeNeedsDataMatrix()) {
         document.getElementById('free-dm-input')?.focus();
       } else {
@@ -446,7 +474,16 @@
     UI.onScan('#free-location', (v) => {
       UI.setVal('#free-location', stripWs(v));
       lockFreeLocation();
-      document.getElementById('free-barcode').focus();
+      // Если товар уже был отсканирован ДО ячейки (см. suggestFreeLocation
+      // выше — подсказка подставила ячейку, но ждала явного подтверждения) —
+      // штрихкод уже стоит в поле и ждёт отправки, продолжаем сразу, а не
+      // заставляем сканировать товар второй раз.
+      if (UI.val('#free-barcode')) {
+        if (freeNeedsDataMatrix()) document.getElementById('free-dm-input')?.focus();
+        else submitFree();
+      } else {
+        document.getElementById('free-barcode').focus();
+      }
     });
 
     // ---------- Акт приёмки товара (без заявки) ----------
@@ -878,12 +915,24 @@
       const code = stripWs(v);
       UI.setVal('#inb-barcode', code);
       const location = UI.val('#inb-location');
+      await lookupInbMarkingItem();
       if (!location) {
-        UI.notify.err('Сначала отсканируйте ячейку');
+        // Та же подсказка, что и в свободной приёмке (см. suggestFreeLocation) —
+        // client_id тут берём из заявки, а не из верхнего селектора.
+        if (inbMarkingItem?.id && currentOrder?.client_id) {
+          try {
+            const res = await window.API.placement.suggest({ item_id: inbMarkingItem.id, client_id: currentOrder.client_id, qty: inbQty });
+            if (res.suggestion) UI.setVal('#inb-location', res.suggestion.location_code);
+          } catch (e) { /* подсказка необязательна */ }
+        }
+        if (!UI.val('#inb-location')) {
+          UI.notify.err('Сначала отсканируйте ячейку');
+          document.getElementById('inb-location').focus();
+          return;
+        }
         document.getElementById('inb-location').focus();
         return;
       }
-      await lookupInbMarkingItem();
       if (inbNeedsDataMatrix()) {
         document.getElementById('inb-dm-input')?.focus();
       } else {
@@ -893,7 +942,15 @@
     UI.onScan('#inb-location', (v) => {
       UI.setVal('#inb-location', stripWs(v));
       lockInbLocation();
-      document.getElementById('inb-barcode').focus();
+      // См. аналогичный комментарий в свободной приёмке — если товар уже был
+      // отсканирован до ячейки (подсказка ждала подтверждения), продолжаем
+      // сразу, не заставляя сканировать товар второй раз.
+      if (UI.val('#inb-barcode')) {
+        if (inbNeedsDataMatrix()) document.getElementById('inb-dm-input')?.focus();
+        else submitInbound();
+      } else {
+        document.getElementById('inb-barcode').focus();
+      }
     });
 
     // ---------- История ----------

@@ -164,6 +164,7 @@ router.get('/suggest', requireRole('tenant_admin','supervisor','receiver'), asyn
       warehouseId: wh.id,
       itemId,
       clientId,
+      qty:         req.query.qty ? Number(req.query.qty) : 1,
     });
     res.json({ ok: true, suggestion });
   } catch (e) { next(e); }

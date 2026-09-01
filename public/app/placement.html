@@ -206,6 +206,12 @@
       if (sel.preview_url) { preview.src = sel.preview_url; preview.style.display='block'; } else preview.style.display='none';
       UI.setVal('#to-location','');
       document.getElementById('suggest-note').textContent = '';
+      // Предлагаем ячейку сразу, не дожидаясь ручного нажатия кнопки — раньше
+      // подсказка была чисто опциональной и её легко было проигнорировать,
+      // из-за чего товар годами раскидывало по случайным свободным ячейкам.
+      // Кнопка "Предложить ячейку" остаётся — пересчитать подсказку заново
+      // после того как поменяли количество (объём/остаток мог не влезть).
+      suggestLocation();
       setTimeout(() => document.getElementById('to-location').focus(), 150);
     }
 
@@ -225,15 +231,22 @@
       document.getElementById('qty-val').value = qty;
     }
 
+    const SUGGEST_ICON = '<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.5.4.8 1.1.8 1.8v.5h6.4v-.5c0-.7.3-1.4.8-1.8A7 7 0 0 0 12 2z"/></svg>';
+    const SUGGEST_REASON_TEXT = {
+      consolidation: 'Здесь уже есть остаток этого товара и хватает места',
+      nearby: 'Своя ячейка занята — предложена пустая по соседству (тот же ряд)',
+      free_slot: 'Рядом ничего не нашлось — первая свободная ячейка на складе',
+    };
+
     async function suggestLocation() {
       if (!selected) return;
-      if (!selected.item_id) { UI.notify.warn('Нет данных для подсказки — введите ячейку вручную'); return; }
+      if (!selected.item_id) { document.getElementById('suggest-note').textContent = 'Нет данных для подсказки — введите ячейку вручную'; return; }
       try {
-        const res = await window.API.placement.suggest({ item_id: selected.item_id, client_id: selected.client_id });
+        const res = await window.API.placement.suggest({ item_id: selected.item_id, client_id: selected.client_id, qty });
         if (!res.suggestion) { document.getElementById('suggest-note').textContent = 'Нет предложений — введите ячейку вручную'; return; }
         UI.setVal('#to-location', res.suggestion.location_code);
-        document.getElementById('suggest-note').textContent =
-          res.suggestion.reason === 'consolidation' ? '<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.5.4.8 1.1.8 1.8v.5h6.4v-.5c0-.7.3-1.4.8-1.8A7 7 0 0 0 12 2z"/></svg> Есть остаток этого товара в этой ячейке' : '<svg class="i" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.5.4.8 1.1.8 1.8v.5h6.4v-.5c0-.7.3-1.4.8-1.8A7 7 0 0 0 12 2z"/></svg> Свободная ячейка';
+        document.getElementById('suggest-note').innerHTML =
+          `${SUGGEST_ICON} ${SUGGEST_REASON_TEXT[res.suggestion.reason] || 'Предложенная ячейка'}`;
       } catch (e) { UI.notify.err(e.message); }
     }
 

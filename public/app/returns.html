@@ -179,6 +179,36 @@
     function onDispositionChange() {
       const isResale = UI.val('#r-disposition') === 'resale';
       document.getElementById('r-location-wrap').style.display = isResale ? 'block' : 'none';
+      if (isResale) maybeSuggestReturnLocation();
+    }
+
+    // Подсказка ячейки для возврата "в продажу" — тот же принцип, что и в
+    // приёмке/размещении (см. placement.service.js suggestTargetLocation):
+    // предпочитаем ячейку, где товар уже лежит и есть место, чтобы не
+    // раскидывать один товар по складу. Только подсказка, не принуждение —
+    // поле остаётся редактируемым.
+    let returnItemId = null;
+    async function lookupReturnItem() {
+      returnItemId = null;
+      const barcode = UI.val('#r-barcode');
+      const clientId = UI.val('#r-client');
+      if (!barcode || !clientId) return;
+      try {
+        const res = await window.API.items.byBarcode(barcode, clientId);
+        returnItemId = res.item?.id || null;
+      } catch (e) { /* товар не найден в каталоге - подсказки не будет, обычная регистрация возврата это не блокирует */ }
+      maybeSuggestReturnLocation();
+    }
+    async function maybeSuggestReturnLocation() {
+      if (UI.val('#r-disposition') !== 'resale') return;
+      if (!returnItemId) return;
+      if (UI.val('#r-location')) return; // уже что-то введено вручную - не перетираем
+      const clientId = UI.val('#r-client');
+      const qty = Number(UI.val('#r-qty')) || 1;
+      try {
+        const res = await window.API.placement.suggest({ item_id: returnItemId, client_id: clientId, qty });
+        if (res.suggestion) UI.setVal('#r-location', res.suggestion.location_code);
+      } catch (e) { /* необязательная подсказка */ }
     }
 
     async function loadClientSelects() {
@@ -193,7 +223,7 @@
       }
     }
 
-    UI.onScan('#r-barcode', (v) => { UI.setVal('#r-barcode', v); });
+    UI.onScan('#r-barcode', (v) => { UI.setVal('#r-barcode', v); UI.setVal('#r-location', ''); lookupReturnItem(); });
 
     async function registerReturn() {
       const clientId = UI.val('#r-client');
@@ -214,8 +244,9 @@
         });
         UI.beep('ok');
         UI.notify.ok(`Возврат зарегистрирован${res.return.charge_id ? ' (начислено клиенту)' : ''}`);
-        UI.setVal('#r-barcode', ''); UI.setVal('#r-order-no', ''); UI.setVal('#r-comment', '');
+        UI.setVal('#r-barcode', ''); UI.setVal('#r-order-no', ''); UI.setVal('#r-comment', ''); UI.setVal('#r-location', '');
         document.getElementById('r-qty').value = 1;
+        returnItemId = null;
         document.getElementById('r-barcode').focus();
       } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
     }

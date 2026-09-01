@@ -10,52 +10,18 @@ const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { locationWalkKey, compareWalkKeys } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
 
 const QUARANTINE_LOCATION_CODE = 'КАРАНТИН';
 
 // =============================================================================
 // Picking Service — Waves + Tasks + Scan flows
+//
+// Порядок обхода склада по коду ячейки (locationWalkKey/compareWalkKeys) —
+// см. server/src/utils/warehouseLayout.js (вынесено оттуда 01.09.2026, та же
+// логика понадобилась и в placement.service.js для подсказки ячейки).
 // =============================================================================
-
-/**
- * Порядок обхода склада по коду ячейки вида "A-<ряд>-<позиция>" (например
- * A-01-01 .. A-01-20) — где буква это стеллаж/зона, второе число это ряд
- * (уровень полки по высоте, набор для одной точки прохода), третье число —
- * позиция ВДОЛЬ стеллажа. Идти нужно по позиции (это и есть ходьба вдоль
- * стеллажа), а ряд (высоту полки) можно взять "по пути" не отходя в сторону —
- * поэтому позиция первична, ряд вторичен. Простая сортировка по строке кода
- * дала бы обратный эффект (сначала весь ряд 01 по всем позициям, потом
- * заново от начала ряд 02) — то самое хождение туда-обратно, от которого
- * уходим. Коды, не подходящие под этот шаблон (буферные/технические ячейки
- * вроде SBORKA-01, PRM-01) сортируются как есть, отдельным блоком после
- * "настоящих" стеллажных ячеек.
- */
-function locationWalkKey(code) {
-  const raw = String(code || '').trim().toUpperCase();
-  // Первый сегмент — буква(ы) зоны + необязательное число ряда, слитно (A, A1, A12...)
-  const m = /^([A-ZА-Я]+)(\d*)-(\d+)-(\d+)$/.exec(raw);
-  if (!m) return { pattern: false, raw };
-  return {
-    pattern: true,
-    zoneLetter: m[1],
-    zoneNum: m[2] ? parseInt(m[2], 10) : null,
-    row: parseInt(m[3], 10),
-    position: parseInt(m[4], 10),
-  };
-}
-function compareWalkKeys(a, b) {
-  if (a.pattern && b.pattern) {
-    if (a.zoneLetter !== b.zoneLetter) return a.zoneLetter < b.zoneLetter ? -1 : 1;
-    const an = a.zoneNum === null ? -1 : a.zoneNum;
-    const bn = b.zoneNum === null ? -1 : b.zoneNum;
-    if (an !== bn) return an - bn;
-    if (a.position !== b.position) return a.position - b.position;
-    return a.row - b.row;
-  }
-  if (a.pattern !== b.pattern) return a.pattern ? -1 : 1;
-  return a.raw < b.raw ? -1 : (a.raw > b.raw ? 1 : 0);
-}
 
 // =============================================================================
 // Доработка #6 (01.09.2026): "сборка пачкой по количеству" — вместо скана
