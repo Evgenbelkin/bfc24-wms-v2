@@ -99,6 +99,13 @@
           <input id="e-max-users" type="number" min="1" placeholder="как в тарифе"/>
         </div>
       </div>
+      <div class="field-row">
+        <div class="field" style="display:flex;align-items:center;gap:8px;">
+          <input id="e-picking-batch" type="checkbox" style="width:18px;height:18px;"/>
+          <label for="e-picking-batch" style="margin:0;">Сборка пачкой по количеству (picking batch mode)</label>
+        </div>
+      </div>
+      <div class="hint" style="margin:-8px 0 12px;font-size:12px;color:#64748b;">Для заданий с qty&gt;1 (кроме поштучно маркированных Честным знаком) вместо скана каждой единицы — скан ячейки, скан штрихкода и ввод количества. Включается/выключается мгновенно, без перезапуска сервера.</div>
       <div class="field"><label>Заметки</label><textarea id="e-notes" rows="2"></textarea></div>
       <button class="btn-big btn-blue btn-full" onclick="saveTenantEdit()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
     </div>
@@ -362,6 +369,7 @@
         document.getElementById('e-plan-id').innerHTML = planOptions(t.plan_id, true);
         document.getElementById('e-plan-id').value = t.plan_id || '';
         UI.setVal('#e-max-users', t.max_users_override || '');
+        document.getElementById('e-picking-batch').checked = !!(t.settings && t.settings.picking_batch_mode_enabled);
         UI.setVal('#e-notes', t.notes || '');
 
         UI.setVal('#x-days', '30');
@@ -408,6 +416,7 @@
           status: document.getElementById('e-status').value,
           plan_id: document.getElementById('e-plan-id').value || null,
           max_users_override: UI.val('#e-max-users') || null,
+          picking_batch_mode_enabled: document.getElementById('e-picking-batch').checked,
           notes: UI.val('#e-notes'),
         };
         await window.API.platform.tenants.update(currentTenantId, data);

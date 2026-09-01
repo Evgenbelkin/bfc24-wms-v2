@@ -294,7 +294,7 @@ router.post('/tenants', async (req, res, next) => {
 router.patch('/tenants/:id', async (req, res, next) => {
   try {
     const id = validatePositiveInt(req.params.id, 'id');
-    const { status, company_name, contact_email, plan_id, notes, max_users_override } = req.body;
+    const { status, company_name, contact_email, plan_id, notes, max_users_override, picking_batch_mode_enabled } = req.body;
     const fields = []; const params = []; let idx = 1;
     if (company_name) { fields.push(`company_name=$${idx++}`); params.push(company_name); }
     if (contact_email) { fields.push(`contact_email=$${idx++}`); params.push(validateEmail(contact_email)); }
@@ -309,6 +309,14 @@ router.patch('/tenants/:id', async (req, res, next) => {
     if (max_users_override !== undefined) {
       fields.push(`max_users_override=$${idx++}`);
       params.push(max_users_override === null || max_users_override === '' ? null : Number(max_users_override));
+    }
+    // Рубильник "сборка пачкой" (доработка #6, picking.service.js) — хранится
+    // в settings JSONB, тот же паттерн, что settings.stock_sync_disabled у
+    // wms.mp_accounts (см. wb.router.js). Раньше включался только прямым SQL
+    // с VPS — вынесли в панель тенантов, чтобы не лазить в базу руками.
+    if (picking_batch_mode_enabled !== undefined) {
+      fields.push(`settings=COALESCE(settings,'{}'::jsonb) || jsonb_build_object('picking_batch_mode_enabled',$${idx++}::boolean)`);
+      params.push(!!picking_batch_mode_enabled);
     }
     if (!fields.length) throw new ValidationError('No fields to update');
     fields.push(`updated_at=NOW()`); params.push(id);
