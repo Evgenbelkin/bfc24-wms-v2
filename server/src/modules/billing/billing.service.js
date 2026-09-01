@@ -389,28 +389,46 @@ async function updateInvoiceStatus({ tenantId, invoiceId, status, notes }) {
     throw new ValidationError(`Invalid status. Allowed: ${VALID_STATUSES.join(', ')}`);
   }
 
-  const inv = await query(
-    `SELECT id, status FROM billing.invoices WHERE id=$1 AND tenant_id=$2`,
-    [invoiceId, tenantId]
-  );
-  if (inv.rowCount === 0) throw new NotFoundError('Invoice', invoiceId);
+  return transaction(async (client) => {
+    const inv = await client.query(
+      `SELECT id, status FROM billing.invoices WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [invoiceId, tenantId]
+    );
+    if (inv.rowCount === 0) throw new NotFoundError('Invoice', invoiceId);
 
-  const current = inv.rows[0].status;
-  // Нельзя отменить оплаченный инвойс
-  if (current === 'paid' && status !== 'paid') {
-    throw new ValidationError('Cannot change status of a paid invoice');
-  }
+    const current = inv.rows[0].status;
+    // Нельзя отменить оплаченный инвойс
+    if (current === 'paid' && status !== 'paid') {
+      throw new ValidationError('Cannot change status of a paid invoice');
+    }
 
-  const r = await query(
-    `UPDATE billing.invoices
-     SET status=$1, notes=COALESCE($2,notes), updated_at=NOW(),
-         sent_at = CASE WHEN $1 IN ('sent','paid') THEN COALESCE(sent_at, NOW()) ELSE sent_at END,
-         paid_at = CASE WHEN $1 = 'paid' THEN COALESCE(paid_at, NOW()) ELSE paid_at END
-     WHERE id=$3 AND tenant_id=$4
-     RETURNING id, invoice_number, status, updated_at, sent_at, paid_at`,
-    [status, notes || null, invoiceId, tenantId]
-  );
-  return r.rows[0];
+    const r = await client.query(
+      `UPDATE billing.invoices
+       SET status=$1, notes=COALESCE($2,notes), updated_at=NOW(),
+           sent_at = CASE WHEN $1 IN ('sent','paid') THEN COALESCE(sent_at, NOW()) ELSE sent_at END,
+           paid_at = CASE WHEN $1 = 'paid' THEN COALESCE(paid_at, NOW()) ELSE paid_at END
+       WHERE id=$3 AND tenant_id=$4
+       RETURNING id, invoice_number, status, updated_at, sent_at, paid_at`,
+      [status, notes || null, invoiceId, tenantId]
+    );
+
+    // ВАЖНО (баг найден 01.09.2026 на живых данных Yellow Fish): при отмене
+    // счёта начисления РАНЬШЕ оставались привязаны к нему (invoice_id,
+    // is_invoiced=TRUE) навсегда - не попадали ни в "не выставлено" (нельзя
+    // перевыставить), ни в "выставлено, не оплачено" (getClientBalance считает
+    // эту корзину только по inv.status='sent') - деньги фактически терялись из
+    // виду, хотя реально всё ещё физически хранились/обрабатывались. Отмена
+    // счёта должна возвращать его начисления обратно в пул невыставленных -
+    // ровно как если бы счёт по ним никогда не создавался.
+    if (status === 'cancelled') {
+      await client.query(
+        `UPDATE billing.service_charges SET invoice_id=NULL, is_invoiced=FALSE WHERE invoice_id=$1`,
+        [invoiceId]
+      );
+    }
+
+    return r.rows[0];
+  });
 }
 
 // ─────────────── Storage (ежедневное начисление за хранение) ───────────────
