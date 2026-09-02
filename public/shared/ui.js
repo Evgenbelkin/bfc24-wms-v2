@@ -139,18 +139,21 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
   }
 
   // Костыль под конкретный сканер Mertech CL-2310 P2D (Bluetooth) на приёмке:
-  // единственная настройка GS-разделителя, которая реально сработала на этом
-  // экземпляре (после часа перебора Alt-кодов, замены на "*", [GS] в
-  // скобках — ни одно из этого не сработало через Bluetooth), печатает вместо
-  // настоящего байта 0x1D букву D — а на русской раскладке ОС физическая
-  // клавиша D печатается как кириллическая В/в. Отличаем настоящий разделитель
-  // от случайного совпадения буквы в самих данных крипто-хвоста по позиции:
-  // он обязан стоять РОВНО там, где после него до конца строки укладывается
-  // фиксированный хвост AI91(4 симв)+AI92(44 симв) — случайное совпадение по
-  // такой точной длине в случайных данных подписи практически невозможно.
+  // за время подбора настроек этот экземпляр в разные моменты печатал вместо
+  // настоящего байта-разделителя 0x1D то букву D (на русской раскладке ОС —
+  // кириллическую В/в), то текст "[GS]", то печатный символ "*" — единого
+  // стабильного варианта добиться не вышло, поэтому распознаём все три сразу.
+  // Отличаем настоящий разделитель от случайного совпадения в самих данных
+  // крипто-хвоста по позиции: он обязан стоять РОВНО там, где после него до
+  // конца строки укладывается фиксированный хвост AI91(4 симв)+AI92(44 симв) —
+  // случайное совпадение по такой точной длине в случайных данных подписи
+  // практически невозможно.
+  var MERTECH_GS_MARKER = /\*|\[GS\]|[DdВв]/;
   function fixMertechGsWorkaround(str) {
     var s = String(str || '');
-    var m = s.match(/^([\s\S]*?)[DdВв](91[\s\S]{4})[DdВв]?(92[\s\S]{44})$/);
+    var markerSrc = MERTECH_GS_MARKER.source;
+    var re = new RegExp('^([\\s\\S]*?)(?:' + markerSrc + ')(91[\\s\\S]{4})(?:' + markerSrc + ')?(92[\\s\\S]{44})$');
+    var m = s.match(re);
     if (!m) return s;
     return m[1] + '\x1d' + m[2] + '\x1d' + m[3];
   }
@@ -383,61 +386,72 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
   function onScan(inputSelector, callback) {
     var input = el(inputSelector);
     if (!input) return;
-    input.addEventListener('keydown', /*#__PURE__*/function () {
-      var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(e) {
-        var value, _t;
-        return _regenerator().w(function (_context) {
-          while (1) switch (_context.p = _context.n) {
-            case 0:
-              if (!(e.key === 'Enter')) {
-                _context.n = 6;
-                break;
-              }
-              value = input.value.trim();
-              if (value) {
-                _context.n = 1;
-                break;
-              }
-              return _context.a(2);
-            case 1:
-              beep('ok');
-              input.value = '';
-              input.blur();
-              _context.p = 2;
-              _context.n = 3;
-              return callback(value);
-            case 3:
-              _context.n = 5;
-              break;
-            case 4:
-              _context.p = 4;
-              _t = _context.v;
-              beep('err');
-              notify.err(_t.message);
-            case 5:
-              // Раньше это поле ВСЕГДА забирало фокус обратно себе через 300мс — удобно
-              // для "сканируем в одно и то же поле подряд" (сборка/упаковка), но ломает
-              // страницы, где колбэк намеренно переводит фокус на СЛЕДУЮЩЕЕ поле в цепочке
-              // (например, приёмка: штрихкод → ячейка → DataMatrix) — через 300мс фокус
-              // выдёргивался обратно на это поле, и оператору приходилось тыкать пальцем
-              // в нужное поле вручную. Теперь: если колбэк уже переставил фокус на что-то
-              // другое (а не оставил его на body/на этом же инпуте после blur()) — уважаем
-              // это и ничего не трогаем.
-              setTimeout(function () {
-                var active = document.activeElement;
-                if (!active || active === document.body || active === input) {
-                  focusNoKeyboard(input);
-                }
-              }, 300);
-            case 6:
-              return _context.a(2);
-          }
-        }, _callee, null, [[2, 4]]);
-      }));
-      return function (_x) {
-        return _ref.apply(this, arguments);
-      };
-    }());
+
+    // Раньше это поле ВСЕГДА забирало фокус обратно себе через 300мс — удобно
+    // для "сканируем в одно и то же поле подряд" (сборка/упаковка), но ломает
+    // страницы, где колбэк намеренно переводит фокус на СЛЕДУЮЩЕЕ поле в цепочке
+    // (например, приёмка: штрихкод → ячейка → DataMatrix) — через 300мс фокус
+    // выдёргивался обратно на это поле, и оператору приходилось тыкать пальцем
+    // в нужное поле вручную. Теперь: если колбэк уже переставил фокус на что-то
+    // другое (а не оставил его на body/на этом же инпуте после blur()) — уважаем
+    // это и ничего не трогаем.
+    function scheduleRefocus() {
+      setTimeout(function () {
+        var active = document.activeElement;
+        if (!active || active === document.body || active === input) {
+          focusNoKeyboard(input);
+        }
+      }, 300);
+    }
+
+    function submit(rawValue) {
+      var value = String(rawValue || '').trim();
+      if (!value) return;
+      beep('ok');
+      input.value = '';
+      input.blur();
+      var result;
+      try {
+        result = callback(value);
+      } catch (e) {
+        beep('err');
+        notify.err(e.message);
+        scheduleRefocus();
+        return;
+      }
+      if (result && typeof result.then === 'function') {
+        result.then(scheduleRefocus, function (e) {
+          beep('err');
+          notify.err(e.message);
+          scheduleRefocus();
+        });
+      } else {
+        scheduleRefocus();
+      }
+    }
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      submit(input.value);
+    });
+
+    // Костыль под конкретный сканер Mertech CL-2310 P2D (Bluetooth) на
+    // приёмке/упаковке: после настройки GS-разделителя в квадратных скобках
+    // этот экземпляр заодно стал слать завершающий Enter не настоящей
+    // клавишей, а буквальным текстом "[CR]"/"[CR][LF]" — обычный keydown с
+    // Enter в этом случае вообще не происходит, и скан никогда не завершается
+    // сам (обычный физический Enter другими сканерами/ТСД это не затрагивает,
+    // такой хвост у них просто никогда не появляется). Подхватываем это через
+    // событие input: если значение поля оканчивается на этот маркер — считаем
+    // скан завершённым, как если бы нажали Enter, и отрезаем маркер из данных.
+    input.addEventListener('input', function () {
+      var v = input.value;
+      var stripped = v;
+      if (stripped.slice(-8) === '[CR][LF]') stripped = stripped.slice(0, -8);
+      else if (stripped.slice(-4) === '[CR]') stripped = stripped.slice(0, -4);
+      if (stripped !== v) submit(stripped);
+    });
+
     // Автофокус
     setTimeout(function () {
       focusNoKeyboard(input);
