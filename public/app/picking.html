@@ -454,7 +454,7 @@ function _handleScan() {
             _context7.n = 10;
             break;
           }
-          UI.notify.ok("<svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u0413\u043E\u0442\u043E\u0432\u043E! (".concat(_res.qty_picked, "/").concat(_res.qty_total, ")"));
+          UI.notify.ok("\u0413\u043E\u0442\u043E\u0432\u043E! (".concat(_res.qty_picked, "/").concat(_res.qty_total, ")"));
           _context7.n = 8;
           return loadWaveStatus();
         case 8:
@@ -589,7 +589,7 @@ function _confirmBatchQty() {
           }
           UI.beep('ok');
           extraMsg = res.extra_completed > 0 ? " ".concat(res.message || '') : '';
-          UI.notify.ok("<svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u0413\u043E\u0442\u043E\u0432\u043E! (".concat(res.qty_picked, "/").concat(res.qty_total, ")").concat(extraMsg));
+          UI.notify.ok("\u0413\u043E\u0442\u043E\u0432\u043E! (".concat(res.qty_picked, "/").concat(res.qty_total, ")").concat(extraMsg));
           _context8.n = 6;
           return loadWaveStatus();
         case 6:
