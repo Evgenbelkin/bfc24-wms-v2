@@ -165,9 +165,19 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
                 'Content-Type': 'application/json'
               };
               if (token) headers['Authorization'] = "Bearer ".concat(token);
+              // На части ТСД со старым WebView (например Атол Smart.Lite) сетевой
+              // стек агрессивно кэширует GET-запросы по URL даже без явных
+              // Cache-Control заголовков от бэкенда — из-за этого, например,
+              // список отгрузок мог показывать давно устаревший ответ (уже
+              // отгруженные заказы всё ещё "готовы к отгрузке"). cache:'no-store'
+              // + заголовок явно запрещают браузеру подставлять кэш вместо
+              // свежего запроса. Ставим на все запросы (не только GET) - лишним
+              // не будет, а для мутаций надёжнее не оставлять места двусмысленности.
+              headers['Cache-Control'] = 'no-cache';
               var config = _objectSpread({
                 method: method,
-                headers: headers
+                headers: headers,
+                cache: 'no-store'
               }, opts);
               if (data !== null && method !== 'GET') config.body = isFormData ? data : JSON.stringify(data);
               var url = path.startsWith('http') ? path : "".concat(API_BASE).concat(path);
@@ -1311,13 +1321,15 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
             data = _args9.length > 2 && _args9[2] !== undefined ? _args9[2] : null;
             token = getPlatformToken();
             headers = {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Cache-Control': 'no-cache'
             };
             if (token) headers['Authorization'] = "Bearer ".concat(token);
             _context9.n = 1;
             return fetch("".concat(API_BASE).concat(path), {
               method: method,
               headers: headers,
+              cache: 'no-store',
               body: data ? JSON.stringify(data) : undefined
             });
           case 1:
