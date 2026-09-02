@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Проверка браузера</title>
+  <style>
+    body{font-family:sans-serif;font-size:22px;padding:20px;line-height:1.6;}
+    .ok{color:green;font-weight:bold;}
+    .fail{color:red;font-weight:bold;}
+  </style>
+</head>
+<body>
+  <h2>Проверка браузера ТСД</h2>
+  <div id="line1">1. Базовый JS: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="line2">2. Современный JS (?.): <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+
+  <script>
+    document.getElementById('line1').innerHTML = '1. Базовый JS: <span class="ok">РАБОТАЕТ</span>';
+  </script>
+
+  <script>
+    var obj = {a:1};
+    var x = obj?.a;
+    document.getElementById('line2').innerHTML = '2. Современный JS (?.): <span class="ok">РАБОТАЕТ (' + x + ')</span>';
+  </script>
+</body>
+</html>
