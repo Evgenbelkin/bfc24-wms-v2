@@ -404,34 +404,59 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
       }, 300);
     }
 
+    // Жёсткая защита от двойной обработки ОДНОГО скана. Раньше keydown(Enter)
+    // и таймер-подстраховка ниже могли в редкой гонке сработать почти
+    // одновременно на один и тот же скан (например реальный Enter от обычного
+    // сканера пришёл на границе 200мс) - оба звали submit(), и один физический
+    // скан приходовался дважды (жалоба: "сканируем один ШК, а приходуется 2
+    // единицы"). Теперь пока идёт обработка ОДНОГО submit() - новый вызов
+    // игнорируется целиком, независимо от того, что его вызвало.
+    var submitBusy = false;
     function submit(rawValue) {
       var value = String(rawValue || '').trim();
-      if (!value) return;
+      if (!value || submitBusy) return;
+      submitBusy = true;
       beep('ok');
       input.value = '';
       input.blur();
+      function release() {
+        submitBusy = false;
+      }
       var result;
       try {
         result = callback(value);
       } catch (e) {
+        release();
         beep('err');
         notify.err(e.message);
         scheduleRefocus();
         return;
       }
       if (result && typeof result.then === 'function') {
-        result.then(scheduleRefocus, function (e) {
+        result.then(function () {
+          release();
+          scheduleRefocus();
+        }, function (e) {
+          release();
           beep('err');
           notify.err(e.message);
           scheduleRefocus();
         });
       } else {
+        release();
         scheduleRefocus();
       }
     }
 
+    // Как только реальный Enter хоть раз нормально пришёл на этом поле в этой
+    // сессии - значит сканер тут исправен и терминатор шлёт сам. Дальше
+    // подстраховочный таймер ниже для этого поля больше не взводим вовсе -
+    // это убирает саму возможность гонки таймера с реальным Enter при повторных
+    // сканах (см. комментарий у submitBusy выше - откуда взялась эта гонка).
+    var realEnterSeen = false;
     input.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter') return;
+      realEnterSeen = true;
       clearTimeout(idleSubmitTimer);
       submit(input.value);
     });
@@ -464,6 +489,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
       // сам по себе, без терминатора. Реальный Enter (keydown-хендлер выше)
       // всегда отменяет этот таймер и всё равно имеет приоритет.
       clearTimeout(idleSubmitTimer);
+      if (realEnterSeen) return; // сканер тут уже доказал, что шлёт нормальный Enter сам
       idleSubmitTimer = setTimeout(function () {
         if (input.value) submit(input.value);
       }, 200);
