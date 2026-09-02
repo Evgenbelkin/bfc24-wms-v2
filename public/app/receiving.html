@@ -538,6 +538,7 @@ function setQty(val) {
 UI.onScan('#free-dm-input', function (v) {
   var code = String(v || '').trim();
   if (!code) return;
+  code = UI.fixMertechGsWorkaround(code);
   if (!UI.isValidKizCode(code)) {
     UI.beep('err');
     UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки');
@@ -1348,6 +1349,7 @@ function changeInbLocation() {
 UI.onScan('#inb-dm-input', function (v) {
   var code = String(v || '').trim();
   if (!code) return;
+  code = UI.fixMertechGsWorkaround(code);
   if (!UI.isValidKizCode(code)) {
     UI.beep('err');
     UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки');

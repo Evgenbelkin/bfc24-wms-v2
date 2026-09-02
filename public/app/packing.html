@@ -640,7 +640,7 @@ function _handleScan() {
           }
           return _context7.a(2);
         case 1:
-          scanned = String(barcode || '').trim(); // Промаркированные товары: можно сразу сканировать киз в это же поле,
+          scanned = UI.fixMertechGsWorkaround(String(barcode || '').trim()); // Промаркированные товары: можно сразу сканировать киз в это же поле,
           // без отдельного скана обычного штрихкода — система сама достаёт GTIN
           // из кода и по нему находит товар (см. items.service.js:findItemByKizCode).
           // Если код не распознался или товар с таким GTIN не нашёлся у этого
@@ -823,7 +823,7 @@ UI.onScan('#pack-dm-input', /*#__PURE__*/function () {
           return _context.a(2);
         case 1:
           _context.n = 2;
-          return submitScan(pendingDmBarcode, String(v || '').trim(), null);
+          return submitScan(pendingDmBarcode, UI.fixMertechGsWorkaround(String(v || '').trim()), null);
         case 2:
           return _context.a(2);
       }
@@ -880,7 +880,7 @@ function _submitMarkingOverride() {
           UI.notify.err('Укажите причину');
           return _context9.a(2);
         case 2:
-          dmCode = UI.val('#pack-dm-input') || '';
+          dmCode = UI.fixMertechGsWorkaround(UI.val('#pack-dm-input') || '');
           if (dmCode) {
             _context9.n = 3;
             break;

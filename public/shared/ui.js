@@ -138,6 +138,23 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     return /^91.{4}92.{44}$/.test(tail);
   }
 
+  // Костыль под конкретный сканер Mertech CL-2310 P2D (Bluetooth) на приёмке:
+  // единственная настройка GS-разделителя, которая реально сработала на этом
+  // экземпляре (после часа перебора Alt-кодов, замены на "*", [GS] в
+  // скобках — ни одно из этого не сработало через Bluetooth), печатает вместо
+  // настоящего байта 0x1D букву D — а на русской раскладке ОС физическая
+  // клавиша D печатается как кириллическая В/в. Отличаем настоящий разделитель
+  // от случайного совпадения буквы в самих данных крипто-хвоста по позиции:
+  // он обязан стоять РОВНО там, где после него до конца строки укладывается
+  // фиксированный хвост AI91(4 симв)+AI92(44 симв) — случайное совпадение по
+  // такой точной длине в случайных данных подписи практически невозможно.
+  function fixMertechGsWorkaround(str) {
+    var s = String(str || '');
+    var m = s.match(/^([\s\S]*?)[DdВв](91[\s\S]{4})[DdВв]?(92[\s\S]{44})$/);
+    if (!m) return s;
+    return m[1] + '\x1d' + m[2] + '\x1d' + m[3];
+  }
+
   // ─────────────── Loading state ───────────────
 
   function setLoading(selector, isLoading, originalText) {
@@ -783,6 +800,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     escHtml: escHtml,
     isValidKizCode: isValidKizCode,
     hasValidKizStructure: hasValidKizStructure,
+    fixMertechGsWorkaround: fixMertechGsWorkaround,
     setLoading: setLoading,
     renderTable: renderTable,
     requireAuth: requireAuth,
