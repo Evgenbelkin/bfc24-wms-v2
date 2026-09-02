@@ -93,7 +93,7 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Когда</th><th>Клиент</th><th>Товар</th><th>Кол-во</th><th>Решение</th><th>Ячейка</th><th>Заказ МП</th><th>Кто принял</th></tr></thead>
+            <thead><tr><th>Когда</th><th>Клиент</th><th>Товар</th><th>Штрихкод</th><th>Кол-во</th><th>Решение</th><th>Ячейка</th><th>Заказ МП</th><th>Кто принял</th></tr></thead>
             <tbody id="h-body"></tbody>
           </table>
         </div>
@@ -456,8 +456,8 @@ function _loadHistory() {
             return r.disposition === 'writeoff';
           }).length;
           document.getElementById('h-body').innerHTML = rows.length ? rows.map(function (r) {
-            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.created_at), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || r.barcode), "</td>\n            <td>").concat(UI.fmtQty(r.qty), "</td>\n            <td><span class=\"disp-pill disp-").concat(r.disposition, "\">").concat(DISP_LABELS[r.disposition] || r.disposition, "</span></td>\n            <td>").concat(UI.escHtml(r.location_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.marketplace_order_no || '—'), "</td>\n            <td>").concat(UI.escHtml(r.received_by_name || '—'), "</td>\n          </tr>\n        ");
-          }).join('') : "<tr><td colspan=\"8\">\u0412\u043E\u0437\u0432\u0440\u0430\u0442\u043E\u0432 \u043D\u0435\u0442</td></tr>";
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.created_at), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td>").concat(UI.fmtQty(r.qty), "</td>\n            <td><span class=\"disp-pill disp-").concat(r.disposition, "\">").concat(DISP_LABELS[r.disposition] || r.disposition, "</span></td>\n            <td>").concat(UI.escHtml(r.location_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.marketplace_order_no || '—'), "</td>\n            <td>").concat(UI.escHtml(r.received_by_name || '—'), "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"9\">\u0412\u043E\u0437\u0432\u0440\u0430\u0442\u043E\u0432 \u043D\u0435\u0442</td></tr>";
           _context6.n = 4;
           break;
         case 2:
