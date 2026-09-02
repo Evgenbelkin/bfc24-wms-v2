@@ -311,7 +311,7 @@ function addLine() {
   addQty = 1;
   document.getElementById('add-qty-val').value = 1;
   renderLines();
-  document.getElementById('add-barcode').focus();
+  UI.focusNoKeyboard(document.getElementById('add-barcode'));
 }
 function removeLine(idx) {
   orderLines.splice(idx, 1);

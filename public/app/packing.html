@@ -276,12 +276,11 @@ function renderPickupGate() {
   document.getElementById('item-ui-wrap').style.display = showItemUi ? 'block' : 'none';
   if (showItemUi) {
     setTimeout(function () {
-      return document.getElementById('scan-barcode').focus();
+      return UI.focusNoKeyboard(document.getElementById('scan-barcode'));
     }, 150);
   } else {
     setTimeout(function () {
-      var _el = document.getElementById('pickup-scan');
-      if (_el) _el.focus();
+      UI.focusNoKeyboard(document.getElementById('pickup-scan'));
     }, 150);
   }
 }
@@ -698,7 +697,7 @@ function _handleScan() {
           UI.setVal('#pack-dm-input', '');
           UI.speak('Отсканируйте киз');
           setTimeout(function () {
-            return document.getElementById('pack-dm-input').focus();
+            return UI.focusNoKeyboard(document.getElementById('pack-dm-input'));
           }, 100);
           return _context7.a(2);
         case 9:
@@ -785,7 +784,7 @@ function _submitScan() {
           // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
           // отгрузки (туда сканируют физически следующим шагом), а не оставаться
           // в уже неактуальном поле товара.
-          document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode').focus();
+          UI.focusNoKeyboard(document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode'));
           return _context8.a(2, true);
         case 3:
           _context8.p = 3;

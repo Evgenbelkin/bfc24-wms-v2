@@ -409,7 +409,7 @@ function _registerReturn() {
           UI.setVal('#r-location', '');
           document.getElementById('r-qty').value = 1;
           returnItemId = null;
-          document.getElementById('r-barcode').focus();
+          UI.focusNoKeyboard(document.getElementById('r-barcode'));
           _context5.n = 7;
           break;
         case 6:

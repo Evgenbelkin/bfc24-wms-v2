@@ -321,8 +321,7 @@ function _openShipmentByCode() {
           document.getElementById('confirm-card').style.display = alreadyShipped && !needsWbRetry ? 'none' : 'block';
           document.getElementById('confirm-hint').textContent = needsWbRetry ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.' : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
           setTimeout(function () {
-            var _el = document.getElementById('scan-code');
-            if (_el) _el.focus();
+            UI.focusNoKeyboard(document.getElementById('scan-code'));
           }, 150);
 
           // Кнопка "Отметить доставленной" — только supervisor/tenant_admin, только

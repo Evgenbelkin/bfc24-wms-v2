@@ -594,7 +594,7 @@ function _submitFree() {
             break;
           }
           UI.notify.err('Сначала отсканируйте ячейку');
-          document.getElementById('free-location').focus();
+          UI.focusNoKeyboard(document.getElementById('free-location'));
           return _context1.a(2);
         case 2:
           clientId = getClientId();
@@ -618,7 +618,7 @@ function _submitFree() {
             block: 'center'
           });
           _e2 = document.getElementById('free-dm-input');
-          if (_e2) _e2.focus();
+          UI.focusNoKeyboard(_e2);
           return _context1.a(2);
         case 5:
           _context1.p = 5;
@@ -644,7 +644,7 @@ function _submitFree() {
           freeMarkingItem = null;
           freeDmCodes = [];
           renderFreeDmCard();
-          document.getElementById('free-barcode').focus();
+          UI.focusNoKeyboard(document.getElementById('free-barcode'));
           _context1.n = 8;
           break;
         case 7:
@@ -670,7 +670,7 @@ function changeFreeLocation() {
   UI.setVal('#free-location', '');
   document.getElementById('free-change-location-btn').style.display = 'none';
   document.getElementById('free-location-note').textContent = 'Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.';
-  input.focus();
+  UI.focusNoKeyboard(input);
 }
 
 // UI.onScan() чистит поле сразу после Enter (рассчитано на "скан -> тут же обработали",
@@ -765,19 +765,19 @@ UI.onScan('#free-barcode', /*#__PURE__*/function () {
             break;
           }
           UI.notify.err('Сначала отсканируйте ячейку');
-          document.getElementById('free-location').focus();
+          UI.focusNoKeyboard(document.getElementById('free-location'));
           return _context.a(2);
         case 3:
           // Подсказка подставила ячейку, но НЕ зафиксировала её (readOnly не
           // включён) - оставляем фокус на ячейке, чтобы сотрудник явно
           // подтвердил (или сменил) её сканом, прежде чем товар уйдёт в submitFree.
-          document.getElementById('free-location').focus();
+          UI.focusNoKeyboard(document.getElementById('free-location'));
           return _context.a(2);
         case 4:
           if (freeNeedsDataMatrix()) {
             {
               _e3 = document.getElementById('free-dm-input');
-              if (_e3) _e3.focus();
+              UI.focusNoKeyboard(_e3);
             }
           } else {
             submitFree();
@@ -801,10 +801,10 @@ UI.onScan('#free-location', function (v) {
   if (UI.val('#free-barcode')) {
     if (freeNeedsDataMatrix()) {
       var _e4 = document.getElementById('free-dm-input');
-      if (_e4) _e4.focus();
+      UI.focusNoKeyboard(_e4);
     } else submitFree();
   } else {
-    document.getElementById('free-barcode').focus();
+    UI.focusNoKeyboard(document.getElementById('free-barcode'));
   }
 });
 
@@ -1343,7 +1343,7 @@ function changeInbLocation() {
   input.readOnly = false;
   UI.setVal('#inb-location', '');
   document.getElementById('inb-change-location-btn').style.display = 'none';
-  input.focus();
+  UI.focusNoKeyboard(input);
 }
 UI.onScan('#inb-dm-input', function (v) {
   var code = String(v || '').trim();
@@ -1406,7 +1406,7 @@ function _submitInbound() {
             break;
           }
           UI.notify.err('Сначала отсканируйте ячейку');
-          document.getElementById('inb-location').focus();
+          UI.focusNoKeyboard(document.getElementById('inb-location'));
           return _context19.a(2);
         case 3:
           _context19.n = 4;
@@ -1423,7 +1423,7 @@ function _submitInbound() {
             block: 'center'
           });
           _e6 = document.getElementById('inb-dm-input');
-          if (_e6) _e6.focus();
+          UI.focusNoKeyboard(_e6);
           return _context19.a(2);
         case 5:
           _context19.p = 5;
@@ -1452,7 +1452,7 @@ function _submitInbound() {
           _context19.n = 7;
           return loadOrderByBarcode(currentOrder.barcode);
         case 7:
-          document.getElementById('inb-barcode').focus();
+          UI.focusNoKeyboard(document.getElementById('inb-barcode'));
           _context19.n = 9;
           break;
         case 8:
@@ -1507,16 +1507,16 @@ UI.onScan('#inb-barcode', /*#__PURE__*/function () {
             break;
           }
           UI.notify.err('Сначала отсканируйте ячейку');
-          document.getElementById('inb-location').focus();
+          UI.focusNoKeyboard(document.getElementById('inb-location'));
           return _context2.a(2);
         case 6:
-          document.getElementById('inb-location').focus();
+          UI.focusNoKeyboard(document.getElementById('inb-location'));
           return _context2.a(2);
         case 7:
           if (inbNeedsDataMatrix()) {
             {
               _e7 = document.getElementById('inb-dm-input');
-              if (_e7) _e7.focus();
+              UI.focusNoKeyboard(_e7);
             }
           } else {
             submitInbound();
@@ -1539,10 +1539,10 @@ UI.onScan('#inb-location', function (v) {
   if (UI.val('#inb-barcode')) {
     if (inbNeedsDataMatrix()) {
       var _e8 = document.getElementById('inb-dm-input');
-      if (_e8) _e8.focus();
+      UI.focusNoKeyboard(_e8);
     } else submitInbound();
   } else {
-    document.getElementById('inb-barcode').focus();
+    UI.focusNoKeyboard(document.getElementById('inb-barcode'));
   }
 });
 
@@ -1580,6 +1580,6 @@ function _loadHistory() {
   }));
   return _loadHistory.apply(this, arguments);
 }
-document.getElementById('free-location').focus();</script>
+UI.focusNoKeyboard(document.getElementById('free-location'));</script>
 </body>
 </html>

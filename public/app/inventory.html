@@ -485,7 +485,7 @@ function _createCheck() {
 }
 UI.onScan('#new-location', function (v) {
   UI.setVal('#new-location', v);
-  document.getElementById('new-barcode').focus();
+  UI.focusNoKeyboard(document.getElementById('new-barcode'));
 });
 UI.onScan('#new-barcode', function (v) {
   return UI.setVal('#new-barcode', v);

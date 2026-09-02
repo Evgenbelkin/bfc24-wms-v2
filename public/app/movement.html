@@ -247,7 +247,7 @@ UI.onScan('#from-location', function (v) {
 function pickBarcode(barcode) {
   UI.setVal('#move-barcode', barcode);
   checkBarcodeAvailability(barcode);
-  document.getElementById('to-location').focus();
+  UI.focusNoKeyboard(document.getElementById('to-location'));
 }
 function checkBarcodeAvailability(barcode) {
   var row = fromContentRows.find(function (r) {
@@ -267,7 +267,7 @@ function checkBarcodeAvailability(barcode) {
 UI.onScan('#move-barcode', function (v) {
   UI.setVal('#move-barcode', v);
   checkBarcodeAvailability(v);
-  document.getElementById('to-location').focus();
+  UI.focusNoKeyboard(document.getElementById('to-location'));
 });
 UI.onScan('#to-location', function (v) {
   return UI.setVal('#to-location', v);
@@ -331,7 +331,7 @@ function _submitMove() {
           return loadFromContent(fromLoc);
         case 6:
           // обновить остаток ячейки-источника
-          document.getElementById('move-barcode').focus();
+          UI.focusNoKeyboard(document.getElementById('move-barcode'));
           _context4.n = 8;
           break;
         case 7:

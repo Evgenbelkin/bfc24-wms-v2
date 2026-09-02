@@ -250,7 +250,7 @@ function renderTask(task) {
   updateStepIndicator(task.scan_step || 'await_location');
   document.getElementById('status-msg').textContent = '';
   setTimeout(function () {
-    return document.getElementById('scan-input').focus();
+    return UI.focusNoKeyboard(document.getElementById('scan-input'));
   }, 100);
 }
 function loadWaveStatus() {
@@ -536,7 +536,7 @@ function cancelBatchQty() {
   document.getElementById('qty-section').style.display = 'none';
   document.getElementById('scan-section-main').style.display = 'block';
   setTimeout(function () {
-    return document.getElementById('scan-input').focus();
+    return UI.focusNoKeyboard(document.getElementById('scan-input'));
   }, 100);
 }
 function confirmBatchQty() {
@@ -651,7 +651,7 @@ function _confirmBatchQty() {
             document.getElementById('qty-section').style.display = 'none';
             document.getElementById('scan-section-main').style.display = 'block';
             setTimeout(function () {
-              return document.getElementById('scan-input').focus();
+              return UI.focusNoKeyboard(document.getElementById('scan-input'));
             }, 100);
           } else {
             UI.beep('err');
@@ -729,8 +729,7 @@ function closeWave() {
   if (!(waveStatus && waveStatus.has_wave)) return;
   document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeWaveModalClose()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C \u0432\u043E\u043B\u043D\u0443 ".concat(UI.escHtml(waveStatus.shipment_code || ''), "</div>\n            <div class=\"field-label\">\u042F\u0447\u0435\u0439\u043A\u0430 (\u041C\u0425), \u043A\u0443\u0434\u0430 \u043F\u043E\u0441\u0442\u0430\u0432\u0438\u043B\u0438 \u043A\u043E\u0440\u043E\u0431</div>\n            <div class=\"scan-row\">\n              <input id=\"close-wave-loc\" class=\"scan-input\" placeholder=\"\u041A\u043E\u0434 \u044F\u0447\u0435\u0439\u043A\u0438\" inputmode=\"none\" autocomplete=\"off\"/>\n              <button type=\"button\" class=\"scan-camera-btn\" onclick=\"UI.scanInto('#close-wave-loc','\u0421\u043A\u0430\u043D \u044F\u0447\u0435\u0439\u043A\u0438 \u041C\u0425')\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z\"/><circle cx=\"12\" cy=\"13\" r=\"4\"/></svg></button>\n            </div>\n            <div class=\"hint\">\u042F\u0447\u0435\u0439\u043A\u0430 \u0434\u043E\u043B\u0436\u043D\u0430 \u0431\u044B\u0442\u044C \u043E\u0442\u043C\u0435\u0447\u0435\u043D\u0430 \u043A\u0430\u043A \u0431\u0443\u0444\u0435\u0440\u043D\u0430\u044F \u0437\u043E\u043D\u0430 (\u041C\u0425) \u0432 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0435 \u043C\u0435\u0441\u0442 \u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u2014 \u043B\u044E\u0431\u0443\u044E \u0434\u0440\u0443\u0433\u0443\u044E \u044F\u0447\u0435\u0439\u043A\u0443 \u0441\u0438\u0441\u0442\u0435\u043C\u0430 \u043D\u0435 \u043F\u0440\u0438\u043C\u0435\u0442. \u041F\u043E\u0441\u043B\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F \u043D\u0430 \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 \u0443\u0439\u0434\u0451\u0442 \u0432\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u044F\u044F \u043D\u0430\u043A\u043B\u0435\u0439\u043A\u0430 \u0441 \u043A\u043E\u0434\u043E\u043C \u044D\u0442\u043E\u0439 \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0438 \u2014 \u0443\u043F\u0430\u043A\u043E\u0432\u0449\u0438\u043A \u043D\u0430\u0439\u0434\u0451\u0442 \u043A\u043E\u0440\u043E\u0431 \u043F\u043E \u044D\u0442\u043E\u0439 \u044F\u0447\u0435\u0439\u043A\u0435 \u0438 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442 \u043D\u0430\u043A\u043B\u0435\u0439\u043A\u0443, \u0447\u0442\u043E\u0431\u044B \u0432\u0437\u044F\u0442\u044C \u0437\u0430\u0434\u0430\u043D\u0438\u0435 \u0432 \u0440\u0430\u0431\u043E\u0442\u0443.</div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"confirmCloseWave()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeWaveModalClose()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
   setTimeout(function () {
-    var _el = document.getElementById('close-wave-loc');
-    if (_el) _el.focus();
+    UI.focusNoKeyboard(document.getElementById('close-wave-loc'));
   }, 100);
   var input = document.getElementById('close-wave-loc');
   input && input.addEventListener('keydown', function (e) {
@@ -820,7 +819,7 @@ document.getElementById('scan-input').addEventListener('keydown', /*#__PURE__*/f
           return handleScan(v);
         case 1:
           setTimeout(function () {
-            return e.target.focus();
+            return UI.focusNoKeyboard(e.target);
           }, 100);
         case 2:
           return _context.a(2);

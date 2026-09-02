@@ -333,7 +333,7 @@ function applySelection(sel) {
   // после того как поменяли количество (объём/остаток мог не влезть).
   suggestLocation();
   setTimeout(function () {
-    return document.getElementById('to-location').focus();
+    return UI.focusNoKeyboard(document.getElementById('to-location'));
   }, 150);
 }
 function clearSelection() {
