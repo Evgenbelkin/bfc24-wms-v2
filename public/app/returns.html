@@ -67,11 +67,11 @@
             <input id="r-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
             <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#r-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
           </div>
-          <p id="r-location-hint" style="font-size:12px;color:var(--muted);margin:6px 0 0;display:none;"></p>
+          <p id="r-location-hint" style="font-size:16px;font-weight:700;color:var(--amber);background:rgba(217,119,6,.12);border:2px solid var(--yellow);border-radius:10px;padding:10px 12px;margin:8px 0 0;display:none;"></p>
         </div>
         <div class="field"><label>Номер заказа маркетплейса (необязательно)</label><input id="r-order-no"/></div>
         <div class="field"><label>Комментарий (необязательно)</label><input id="r-comment"/></div>
-        <button class="btn-big btn-green btn-full" onclick="registerReturn()"><svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Зарегистрировать возврат</button>
+        <button id="r-register-btn" class="btn-big btn-green btn-full" onclick="registerReturn()"><svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Зарегистрировать возврат</button>
       </div>
     </div>
 
@@ -363,12 +363,23 @@ UI.onScan('#r-barcode', function (v) {
   UI.setVal('#r-location', '');
   returnLocationScanned = false;
   document.getElementById('r-location-hint').style.display = 'none';
-  lookupReturnItem();
+  var p = lookupReturnItem();
+  // Товар отсканирован — сразу переводим курсор на ячейку, чтобы можно было
+  // тут же сканировать её, не тыкая пальцем в поле вручную. Подсказка ячейки
+  // (текст-хинт) появится чуть позже, когда придёт ответ API — фокус на неё
+  // ждать не нужно.
+  if (UI.val('#r-disposition') === 'resale') {
+    UI.focusNoKeyboard(document.getElementById('r-location'));
+  }
+  return p;
 });
 UI.onScan('#r-location', function (v) {
   UI.setVal('#r-location', String(v || '').trim());
   returnLocationScanned = true;
   document.getElementById('r-location-hint').style.display = 'none';
+  // Ячейка подтверждена сканом — переводим курсор/фокус на кнопку
+  // регистрации, чтобы оператору не нужно было тянуться до неё вручную.
+  document.getElementById('r-register-btn').focus();
 });
 function registerReturn() {
   return _registerReturn.apply(this, arguments);
