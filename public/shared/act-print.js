@@ -85,9 +85,9 @@
   <div class="sect">2. Сведения о партии Товара</div>
   <table>
     <tr><th>Поставщик/отправитель</th><td>${esc(act.act_supplier || '—')}</td>
-        <th>Кол-во грузовых мест</th><td>${act.act_boxes_count ?? '—'}</td></tr>
-    <tr><th>Кол-во паллет</th><td>${act.act_pallets_count ?? '—'}</td>
-        <th>Вес, кг</th><td>${act.act_weight_kg ?? '—'}</td></tr>
+        <th>Кол-во грузовых мест</th><td>${act.act_boxes_count != null ? act.act_boxes_count : '—'}</td></tr>
+    <tr><th>Кол-во паллет</th><td>${act.act_pallets_count != null ? act.act_pallets_count : '—'}</td>
+        <th>Вес, кг</th><td>${act.act_weight_kg != null ? act.act_weight_kg : '—'}</td></tr>
     <tr><th>Перевозчик</th><td>${esc(act.act_carrier || act.vehicle_make || '—')}</td>
         <th>Водитель</th><td>${esc(act.driver_name || '—')}</td></tr>
   </table>

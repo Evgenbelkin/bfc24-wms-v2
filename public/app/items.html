@@ -83,7 +83,7 @@
     }
 
     const user = window.API.getUser();
-    const canEdit = user?.role === 'tenant_admin' || user?.role === 'supervisor';
+    const canEdit = (user && user.role === 'tenant_admin') || (user && user.role === 'supervisor');
     if (canEdit) document.getElementById('add-btn').style.display = 'block';
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
@@ -553,7 +553,7 @@
     async function importMarkingCodesFile(idx) {
       const it = itemCache[idx];
       const input = document.getElementById('m-marking-file');
-      const file = input?.files?.[0];
+      const file = input && input.files && input.files[0];
       const status = document.getElementById('marking-file-status');
       if (!file) return;
       if (status) status.textContent = `Загружаем ${file.name}…`;

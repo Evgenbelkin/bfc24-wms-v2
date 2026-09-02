@@ -351,7 +351,7 @@
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
       if (!UI.hasValidKizStructure(code)) {
         UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
-        window.API.marking.logRejectedCode({ item_id: freeMarkingItem?.id || null, code, reason: 'broken_structure', source: 'receiving_free' }).catch(() => {});
+        window.API.marking.logRejectedCode({ item_id: (freeMarkingItem && freeMarkingItem.id) || null, code, reason: 'broken_structure', source: 'receiving_free' }).catch(() => {});
         return;
       }
       if (freeDmCodes.length >= freeQty) { UI.notify.err(`Уже отсканировано ${freeQty} код(ов) — этого достаточно`); return; }
@@ -379,8 +379,8 @@
       await refreshFreeMarkingItemMeta();
       if (freeNeedsDataMatrix() && freeDmCodes.length !== freeQty) {
         UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${freeQty}, отсканировано ${freeDmCodes.length})`);
-        document.getElementById('free-dm-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        document.getElementById('free-dm-input')?.focus();
+        { const _e1 = document.getElementById('free-dm-card'); if (_e1) _e1.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        { const _e2 = document.getElementById('free-dm-input'); if (_e2) _e2.focus(); }
         return;
       }
       try {
@@ -390,7 +390,7 @@
           data_matrix_codes: freeNeedsDataMatrix() ? freeDmCodes : undefined,
         });
         UI.notify.ok(`Принято: ${barcode} × ${freeQty} → ${location}`);
-        statusEl.textContent = `Остаток в ячейке: ${res.balance?.qty_on_hand ?? '—'}`;
+        statusEl.textContent = `Остаток в ячейке: ${(res.balance && res.balance.qty_on_hand != null) ? res.balance.qty_on_hand : '—'}`;
         // Ячейку НЕ сбрасываем — по задаче склада принимают весь товар в одну
         // ячейку подряд, меняют её только явно кнопкой "Сменить ячейку".
         UI.setVal('#free-barcode',''); UI.setVal('#free-comment','');
@@ -453,7 +453,7 @@
       // иначе freeNeedsDataMatrix() мог бы сработать по ещё не загруженным данным.
       await lookupFreeMarkingItem();
       if (!location) {
-        if (freeMarkingItem?.id) await suggestFreeLocation(freeMarkingItem.id, freeQty);
+        if (freeMarkingItem && freeMarkingItem.id) await suggestFreeLocation(freeMarkingItem.id, freeQty);
         if (!UI.val('#free-location')) {
           UI.notify.err('Сначала отсканируйте ячейку');
           document.getElementById('free-location').focus();
@@ -466,7 +466,7 @@
         return;
       }
       if (freeNeedsDataMatrix()) {
-        document.getElementById('free-dm-input')?.focus();
+        { const _e3 = document.getElementById('free-dm-input'); if (_e3) _e3.focus(); }
       } else {
         submitFree();
       }
@@ -479,7 +479,7 @@
       // штрихкод уже стоит в поле и ждёт отправки, продолжаем сразу, а не
       // заставляем сканировать товар второй раз.
       if (UI.val('#free-barcode')) {
-        if (freeNeedsDataMatrix()) document.getElementById('free-dm-input')?.focus();
+        if (freeNeedsDataMatrix()) { const _e4 = document.getElementById('free-dm-input'); if (_e4) _e4.focus(); }
         else submitFree();
       } else {
         document.getElementById('free-barcode').focus();
@@ -862,7 +862,7 @@
       if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
       if (!UI.hasValidKizStructure(code)) {
         UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
-        window.API.marking.logRejectedCode({ item_id: inbMarkingItem?.id || null, code, reason: 'broken_structure', source: 'receiving_inbound' }).catch(() => {});
+        window.API.marking.logRejectedCode({ item_id: (inbMarkingItem && inbMarkingItem.id) || null, code, reason: 'broken_structure', source: 'receiving_inbound' }).catch(() => {});
         return;
       }
       if (inbDmCodes.length >= inbQty) { UI.notify.err(`Уже отсканировано ${inbQty} код(ов) — этого достаточно`); return; }
@@ -881,8 +881,8 @@
       await refreshInbMarkingItemMeta();
       if (inbNeedsDataMatrix() && inbDmCodes.length !== inbQty) {
         UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${inbQty}, отсканировано ${inbDmCodes.length})`);
-        document.getElementById('inb-dm-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        document.getElementById('inb-dm-input')?.focus();
+        { const _e5 = document.getElementById('inb-dm-card'); if (_e5) _e5.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+        { const _e6 = document.getElementById('inb-dm-input'); if (_e6) _e6.focus(); }
         return;
       }
       try {
@@ -919,7 +919,7 @@
       if (!location) {
         // Та же подсказка, что и в свободной приёмке (см. suggestFreeLocation) —
         // client_id тут берём из заявки, а не из верхнего селектора.
-        if (inbMarkingItem?.id && currentOrder?.client_id) {
+        if (inbMarkingItem && inbMarkingItem.id && currentOrder && currentOrder.client_id) {
           try {
             const res = await window.API.placement.suggest({ item_id: inbMarkingItem.id, client_id: currentOrder.client_id, qty: inbQty });
             if (res.suggestion) UI.setVal('#inb-location', res.suggestion.location_code);
@@ -934,7 +934,7 @@
         return;
       }
       if (inbNeedsDataMatrix()) {
-        document.getElementById('inb-dm-input')?.focus();
+        { const _e7 = document.getElementById('inb-dm-input'); if (_e7) _e7.focus(); }
       } else {
         submitInbound();
       }
@@ -946,7 +946,7 @@
       // отсканирован до ячейки (подсказка ждала подтверждения), продолжаем
       // сразу, не заставляя сканировать товар второй раз.
       if (UI.val('#inb-barcode')) {
-        if (inbNeedsDataMatrix()) document.getElementById('inb-dm-input')?.focus();
+        if (inbNeedsDataMatrix()) { const _e8 = document.getElementById('inb-dm-input'); if (_e8) _e8.focus(); }
         else submitInbound();
       } else {
         document.getElementById('inb-barcode').focus();

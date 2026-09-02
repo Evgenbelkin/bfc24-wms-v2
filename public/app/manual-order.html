@@ -114,7 +114,7 @@
       if (!clientId || !barcode) { nameBox.textContent = ''; return; }
       try {
         const res = await window.API.items.byBarcode(barcode, clientId);
-        pendingItemName = res.item?.item_name || null;
+        pendingItemName = (res.item && res.item.item_name) || null;
         nameBox.innerHTML = pendingItemName ? `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${UI.escHtml(pendingItemName)}` : '';
       } catch (e) {
         nameBox.textContent = 'Новый товар — будет создан автоматически при подтверждении заказа';

@@ -126,7 +126,7 @@
       }
       empty.style.display = 'none';
       const sorted = [...lastRows].sort((a, b) => {
-        const av = a[sortKey] ?? -Infinity, bv = b[sortKey] ?? -Infinity;
+        const av = (a[sortKey] != null ? a[sortKey] : -Infinity), bv = (b[sortKey] != null ? b[sortKey] : -Infinity);
         return (av - bv) * sortDir;
       });
       tbody.innerHTML = sorted.map(r => `

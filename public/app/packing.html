@@ -213,8 +213,8 @@
       document.getElementById('no-task-card').style.display = 'none';
       document.getElementById('task-section').style.display = 'block';
 
-      document.getElementById('ship-code').textContent = currentShipment?.external_id || currentTask.shipment_code || '—';
-      document.getElementById('ship-client').textContent = currentShipment?.client_name || '—';
+      document.getElementById('ship-code').textContent = (currentShipment && currentShipment.external_id) || currentTask.shipment_code || '—';
+      document.getElementById('ship-client').textContent = (currentShipment && currentShipment.client_name) || '—';
 
       renderPickupGate();
       renderLines();
@@ -261,8 +261,8 @@
     }
 
     function renderPickupGate() {
-      const shipmentCode = currentShipment?.external_id || currentTask?.shipment_code || '';
-      document.getElementById('pickup-location').textContent = currentShipment?.buffer_location_code || '— не указана сборщиком —';
+      const shipmentCode = (currentShipment && currentShipment.external_id) || (currentTask && currentTask.shipment_code) || '';
+      document.getElementById('pickup-location').textContent = (currentShipment && currentShipment.buffer_location_code) || '— не указана сборщиком —';
 
       const showItemUi = pickupConfirmed;
       document.getElementById('pickup-card').style.display   = showItemUi ? 'none' : 'block';
@@ -271,12 +271,12 @@
       if (showItemUi) {
         setTimeout(() => document.getElementById('scan-barcode').focus(), 150);
       } else {
-        setTimeout(() => document.getElementById('pickup-scan')?.focus(), 150);
+        setTimeout(() => { const _el = document.getElementById('pickup-scan'); if (_el) _el.focus(); }, 150);
       }
     }
 
     function confirmPickup(scanned) {
-      const shipmentCode = currentShipment?.external_id || currentTask?.shipment_code || '';
+      const shipmentCode = (currentShipment && currentShipment.external_id) || (currentTask && currentTask.shipment_code) || '';
       if (String(scanned).trim().toUpperCase() !== String(shipmentCode).trim().toUpperCase()) {
         UI.beep('err');
         UI.speak('Ошибка. Не тот короб');
@@ -461,8 +461,8 @@
     // клик по тому же чипу не дёргал сервер заново.
     async function openStickerChip(lineIdx, stickerIdx) {
       const l = currentLines[lineIdx];
-      const s = l?.stickers?.[stickerIdx];
-      if (!s?.order_id) { UI.notify.warn('Для этого стикера нет изображения'); return; }
+      const s = l && l.stickers && l.stickers[stickerIdx];
+      if (!(s && s.order_id)) { UI.notify.warn('Для этого стикера нет изображения'); return; }
       // Открываем окно СРАЗУ, синхронно по клику - иначе мобильный/desktop
       // браузер может заблокировать всплывающее окно, открытое после await.
       const w = window.open('', '_blank');
@@ -546,7 +546,7 @@
       if (UI.isValidKizCode(scanned)) {
         const statusEl = document.getElementById('scan-status');
         try {
-          const res = await window.API.items.byKiz(scanned, currentShipment?.client_id);
+          const res = await window.API.items.byKiz(scanned, currentShipment && currentShipment.client_id);
           if (res.item && res.item.barcode) {
             // Подстраховка на случай ошибки именно на шаге кода маркировки —
             // чтобы кнопка "обойти супервайзером" (см. submitMarkingOverride)
@@ -584,7 +584,7 @@
     }
 
     async function submitScan(barcode, dataMatrixCode, markingOverride) {
-      const shipmentCode = currentShipment?.external_id || currentTask.shipment_code;
+      const shipmentCode = (currentShipment && currentShipment.external_id) || currentTask.shipment_code;
       const statusEl = document.getElementById('scan-status');
       const errEl = document.getElementById('pack-dm-error');
       const overrideBtn = document.getElementById('pack-dm-override-btn');
@@ -700,7 +700,7 @@
           </div>
         </div>`;
       document.body.appendChild(overlay);
-      setTimeout(() => document.getElementById('mo-username')?.focus(), 100);
+      setTimeout(() => { const _el = document.getElementById('mo-username'); if (_el) _el.focus(); }, 100);
     }
 
     async function submitMarkingOverride() {
@@ -714,7 +714,7 @@
       const ok = await submitScan(pendingDmBarcode, dmCode, {
         reason: reason.trim(), supervisor_username: username, supervisor_password: password,
       });
-      if (ok) document.getElementById('mo-overlay')?.remove();
+      if (ok) { const _mo = document.getElementById('mo-overlay'); if (_mo) _mo.remove(); }
     }
 
     // Счётчик оставшихся кодов "Честный знак" для товара из последнего скана.

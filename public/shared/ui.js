@@ -122,7 +122,7 @@
   }
 
   function requireRole(allowedRoles) {
-    const user = window.API?.getUser();
+    const user = window.API && window.API.getUser();
     if (!user) return false;
     if (typeof allowedRoles === 'string') allowedRoles = [allowedRoles];
     // Мульти-роли: у пользователя может быть несколько ролей одновременно

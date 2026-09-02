@@ -48,7 +48,7 @@
     }
 
     const user = window.API.getUser();
-    const canEdit = user?.role === 'tenant_admin'; // create/patch — только tenant_admin на бэкенде
+    const canEdit = user && user.role === 'tenant_admin'; // create/patch — только tenant_admin на бэкенде
     if (canEdit) document.getElementById('add-btn').style.display = 'block';
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }

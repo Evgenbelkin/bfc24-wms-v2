@@ -49,7 +49,7 @@
     }
 
     const me = window.API.getUser();
-    const canManage = me?.role === 'tenant_admin'; // create/patch/delete — только tenant_admin на бэкенде
+    const canManage = me && me.role === 'tenant_admin'; // create/patch/delete — только tenant_admin на бэкенде
     if (canManage) document.getElementById('add-btn').style.display = 'block';
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }

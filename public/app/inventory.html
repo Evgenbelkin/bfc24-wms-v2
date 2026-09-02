@@ -190,7 +190,7 @@
         document.getElementById('count-barcode').textContent = t.barcode || '(вся ячейка)';
         document.getElementById('count-item-name').textContent = t.item_name || t.barcode || 'Проверка ячейки';
         document.getElementById('count-location').textContent = t.location_code;
-        document.getElementById('count-system').textContent = t.qty_system ?? '—';
+        document.getElementById('count-system').textContent = t.qty_system != null ? t.qty_system : '—';
         document.getElementById('actual-val').value = actualQty;
         UI.setVal('#count-comment','');
         document.getElementById('tasks-list-card').style.display = 'none';
@@ -214,8 +214,8 @@
         const res = await window.API.inventory.count(currentTask.id, {
           qty_actual: actualQty, comment: UI.val('#count-comment') || undefined,
         });
-        const delta = res.task?.qty_delta ?? (actualQty - Number(currentTask.qty_system||0));
-        if (!res.task?.item_id) {
+        const delta = (res.task && res.task.qty_delta != null) ? res.task.qty_delta : (actualQty - Number(currentTask.qty_system||0));
+        if (!(res.task && res.task.item_id)) {
           // item_id=NULL - товар этой задачи не привязан к каталогу (обычно
           // значит, что штрихкод не найден у выбранного клиента - см. фикс в
           // inventory.service.js createTask). В таком случае остаток НЕ

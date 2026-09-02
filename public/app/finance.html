@@ -212,7 +212,8 @@
           }
         } else {
           noteEl.textContent = '';
-          const clientName = clientIds.length ? res.series.find(r=>r.client_id===clientIds[0])?.client_name : 'Выручка';
+          const _cnf = clientIds.length ? res.series.find(r=>r.client_id===clientIds[0]) : null;
+          const clientName = clientIds.length ? (_cnf && _cnf.client_name) : 'Выручка';
           datasets = [{
             label: clientName || 'Выручка',
             data: periods.map(p => {
@@ -288,8 +289,10 @@
         // 9 типов услуг), поэтому топ-N здесь не нужен - показываем все как есть.
         const typesPresent = [...new Set((res.series_by_type || []).map(r => r.service_type))]
           .sort((a, b) => {
-            const totalA = res.by_service_type.find(t => t.service_type === a)?.total || 0;
-            const totalB = res.by_service_type.find(t => t.service_type === b)?.total || 0;
+            const _fA = res.by_service_type.find(t => t.service_type === a);
+            const _fB = res.by_service_type.find(t => t.service_type === b);
+            const totalA = (_fA && _fA.total) || 0;
+            const totalB = (_fB && _fB.total) || 0;
             return totalB - totalA;
           });
         chartRevenueTypeSeries = destroyChart(chartRevenueTypeSeries);

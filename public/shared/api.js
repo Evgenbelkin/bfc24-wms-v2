@@ -101,18 +101,18 @@
 
     // 403 NOT_CHECKED_IN → сотрудник не отметился на складе (см. requireCheckedIn.js) —
     // ведём на экран скана вместо того, чтобы просто показать ошибку в тосте.
-    if (res.status === 403 && json?.error?.code === 'NOT_CHECKED_IN' && !opts.noRedirect
+    if (res.status === 403 && json && json.error && json.error.code === 'NOT_CHECKED_IN' && !opts.noRedirect
         && window.location.pathname !== '/app/checkin.html') {
       window.location.href = '/app/checkin.html';
       return null;
     }
 
-    if (!res.ok || json?.ok === false) {
-      const msg = json?.error?.message || json?.message || `HTTP ${res.status}`;
+    if (!res.ok || (json && json.ok) === false) {
+      const msg = (json && json.error && json.error.message) || (json && json.message) || `HTTP ${res.status}`;
       const err = new Error(msg);
-      err.code    = json?.error?.code || 'API_ERROR';
+      err.code    = (json && json.error && json.error.code) || 'API_ERROR';
       err.status  = res.status;
-      err.details = json?.error?.details;
+      err.details = json && json.error && json.error.details;
       throw err;
     }
 
@@ -558,14 +558,14 @@
       body: data ? JSON.stringify(data) : undefined,
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json?.error?.message || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error((json && json.error && json.error.message) || `HTTP ${res.status}`);
     return json;
   }
 
   const platform = {
     async login(username, password) {
       const res = await platformRequest('POST', '/auth/platform/login', { username, password });
-      if (res?.token) savePlatformAuth(res.token);
+      if (res && res.token) savePlatformAuth(res.token);
       return res;
     },
     logout() { clearPlatformAuth(); },

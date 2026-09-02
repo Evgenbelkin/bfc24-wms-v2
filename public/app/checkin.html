@@ -71,7 +71,7 @@
       // сигналит успешным считыванием (свой бип), но нажатия клавиш
       // никуда не попадают. Перефокусируем явно теперь, когда карточка
       // реально видна.
-      document.getElementById('checkin-input')?.focus();
+      document.getElementById('checkin-input') && document.getElementById('checkin-input').focus();
     }
 
     async function loadStatus() {

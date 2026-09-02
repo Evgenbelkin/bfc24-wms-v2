@@ -153,7 +153,7 @@
     // supervisor/tenant_admin (см. POST /picking/tasks/:id/requeue), но прячем
     // кнопку и на фронте, чтобы сборщик/упаковщик/отгрузчик её даже не видели.
     const _cu = window.API.getUser();
-    const _cuRoles = (_cu && _cu.roles && _cu.roles.length) ? _cu.roles : [_cu?.role];
+    const _cuRoles = (_cu && _cu.roles && _cu.roles.length) ? _cu.roles : [_cu && _cu.role];
     const canRequeue = _cuRoles.includes('tenant_admin') || _cuRoles.includes('supervisor');
 
     let currentStatus = 'ready_to_ship';
@@ -267,7 +267,7 @@
         document.getElementById('confirm-hint').textContent = needsWbRetry
           ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.'
           : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
-        setTimeout(() => document.getElementById('scan-code')?.focus(), 150);
+        setTimeout(() => { const _el = document.getElementById('scan-code'); if (_el) _el.focus(); }, 150);
 
         // Кнопка "Отметить доставленной" — только supervisor/tenant_admin, только
         // пока отгрузка в 'in_transit'. Для WB-отгрузок это обычно происходит само
@@ -347,7 +347,7 @@
       const it = items[idx];
       if (!it || !currentShipment) return;
       const locInput = document.getElementById(`rp-loc-${idx}`);
-      const locationCode = (locInput?.value || '').trim();
+      const locationCode = ((locInput && locInput.value) || '').trim();
       if (!locationCode) { UI.notify.err('Укажите ячейку, куда кладёте товар'); return; }
       try {
         await window.API.shipping.returnPicked(currentShipment.external_id, it.barcode, it.qty, locationCode);
@@ -358,13 +358,13 @@
 
     function openLinePhoto(idx) {
       const l = currentLines[idx];
-      if (!l?.preview_url) return;
+      if (!(l && l.preview_url)) return;
       window.open(l.preview_url, '_blank');
     }
 
     async function requeueLine(idx) {
       const l = currentLines[idx];
-      if (!l?.task_id) { UI.notify.err('Не найден id задания сборки для этой строки'); return; }
+      if (!(l && l.task_id)) { UI.notify.err('Не найден id задания сборки для этой строки'); return; }
       try {
         await window.API.picking.requeue(l.task_id);
         UI.notify.ok(`Возвращено в сборку: ${l.item_name || l.barcode}`);
@@ -396,7 +396,7 @@
 
     function openLineSticker(idx) {
       const l = currentLines[idx];
-      if (!l?.wb_sticker) return;
+      if (!(l && l.wb_sticker)) return;
       const w = window.open('', '_blank');
       w.document.write(`<title>Стикер ${UI.escHtml(l.barcode)}</title>
         <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
@@ -409,7 +409,7 @@
     function renderWbQrCard() {
       const card = document.getElementById('wb-qr-card');
       const box  = document.getElementById('wb-qr-box');
-      const b64  = currentShipment?.wb_supply_qr_base64;
+      const b64  = currentShipment && currentShipment.wb_supply_qr_base64;
       if (!b64) { card.style.display = 'none'; box.innerHTML = ''; return; }
       card.style.display = 'block';
       box.innerHTML = `
@@ -419,7 +419,7 @@
     }
 
     function openWbQr() {
-      const b64 = currentShipment?.wb_supply_qr_base64;
+      const b64 = currentShipment && currentShipment.wb_supply_qr_base64;
       if (!b64) return;
       const w = window.open('', '_blank');
       w.document.write(`<title>QR ${currentShipment.external_id}</title>
@@ -430,7 +430,7 @@
     }
 
     function printWbQr() {
-      const b64 = currentShipment?.wb_supply_qr_base64;
+      const b64 = currentShipment && currentShipment.wb_supply_qr_base64;
       if (!b64) return;
       const w = window.open('', '_blank');
       w.document.write(`<title>Печать QR ${currentShipment.external_id}</title>
@@ -456,7 +456,7 @@
             r.code || '',
             r.item_name || '',
             r.vendor_code || '',
-            (String(r.size ?? '').trim() === '0') ? '' : (r.size || ''),
+            (String(r.size != null ? r.size : '').trim() === '0') ? '' : (r.size || ''),
             statusLabel[r.wb_submit_status] || r.wb_submit_status || '',
             r.used_at ? UI.fmtDateTime(r.used_at) : '',
             currentShipment.external_id || '',
@@ -502,7 +502,7 @@
           shipment_code: currentShipment.external_id,
           scanned_code: scannedCode,
         });
-        UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped ?? '—'} шт.`);
+        UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped != null ? res.totalShipped : '—'} шт.`);
         statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтверждено';
         if (res.wbDelivered) {
           statusEl.textContent += ' · ВБ уведомлён';

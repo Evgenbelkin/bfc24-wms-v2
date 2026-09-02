@@ -45,12 +45,12 @@
   <script>
     if (!UI.requireAuth()) throw new Error('Not logged in');
     const user = window.API.getUser();
-    const userRoles = (user?.roles && user.roles.length) ? user.roles : [user?.role];
+    const userRoles = (user && user.roles && user.roles.length) ? user.roles : [user && user.role];
     if (userRoles.includes('seller')) window.location.href = '/seller/menu.html';
 
-    document.getElementById('user-name').textContent = user?.username || '—';
+    document.getElementById('user-name').textContent = (user && user.username) || '—';
     document.getElementById('user-role').textContent = userRoles.join(' + ') || '—';
-    document.getElementById('tenant-name').textContent = user?.companyName || '—';
+    document.getElementById('tenant-name').textContent = (user && user.companyName) || '—';
 
     async function logout() {
       await window.API.auth.logout();

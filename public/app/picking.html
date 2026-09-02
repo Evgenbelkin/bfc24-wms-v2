@@ -468,7 +468,7 @@
     }
 
     function closeWave() {
-      if (!waveStatus?.has_wave) return;
+      if (!(waveStatus && waveStatus.has_wave)) return;
       document.getElementById('modal-root').innerHTML = `
         <div class="modal-overlay" onclick="if(event.target===this) closeWaveModalClose()">
           <div class="modal-card">
@@ -486,15 +486,16 @@
           </div>
         </div>
       `;
-      setTimeout(() => document.getElementById('close-wave-loc')?.focus(), 100);
+      setTimeout(() => { const _el = document.getElementById('close-wave-loc'); if (_el) _el.focus(); }, 100);
       const input = document.getElementById('close-wave-loc');
-      input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmCloseWave(); } });
+      input && input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmCloseWave(); } });
     }
 
     function closeWaveModalClose() { document.getElementById('modal-root').innerHTML = ''; }
 
     async function confirmCloseWave() {
-      const bufLoc = document.getElementById('close-wave-loc')?.value.trim().toUpperCase();
+      const _cwl = document.getElementById('close-wave-loc');
+      const bufLoc = _cwl ? _cwl.value.trim().toUpperCase() : undefined;
       if (!bufLoc) { UI.notify.err('Отсканируйте или введите ячейку'); return; }
       try {
         const res = await window.API.picking.closeWave({
@@ -530,7 +531,7 @@
     // Инициализация
     (async () => {
       await loadWaveStatus();
-      if (waveStatus?.has_wave) await loadNextTask();
+      if (waveStatus && waveStatus.has_wave) await loadNextTask();
     })();
   </script>
 </body>

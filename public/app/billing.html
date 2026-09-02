@@ -189,7 +189,7 @@
       window.location.href = '/app/menu.html';
     }
     const user = window.API.getUser();
-    const canEdit = user?.role === 'tenant_admin';
+    const canEdit = user && user.role === 'tenant_admin';
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
 

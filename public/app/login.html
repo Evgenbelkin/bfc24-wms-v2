@@ -73,7 +73,7 @@
         const res = await window.API.auth.login(username, password);
         if (res) {
           // Seller → свой кабинет
-          if (res.user?.role === 'seller') {
+          if (res.user && res.user.role === 'seller') {
             window.location.href = '/seller/menu.html';
           } else {
             window.location.href = '/app/menu.html';

@@ -241,7 +241,8 @@
     }
 
     async function issueAgentKey(printerId) {
-      const isReissue = printersList.find(p => p.id === printerId)?.has_agent_key;
+      const _pf = printersList.find(p => p.id === printerId);
+      const isReissue = _pf && _pf.has_agent_key;
       if (isReissue && !UI.confirm('Перевыпустить ключ? Старый ключ сразу перестанет работать — агенту, который уже настроен, придётся вписать новый.')) return;
       try {
         const res = await window.API.printing.printers.issueAgentKey(printerId);
@@ -332,7 +333,7 @@
           // режиме редактирования уже сохранённого принтера — именно там
           // появляется ссылка на установщик и кнопка выпуска ключа (их не
           // видно на форме создания, что раньше сбивало с толку).
-          if ((data.connection_type === 'agent' || data.connection_type === 'network') && res?.printer?.id) {
+          if ((data.connection_type === 'agent' || data.connection_type === 'network') && res && res.printer && res.printer.id) {
             const newIdx = printersList.findIndex(x => x.id === res.printer.id);
             if (newIdx !== -1) { openPrinterModal(newIdx); return; }
           }

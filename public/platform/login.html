@@ -69,7 +69,7 @@
 
       try {
         const res = await window.API.platform.login(username, password);
-        if (res?.token) window.location.href = '/platform/dashboard.html';
+        if (res && res.token) window.location.href = '/platform/dashboard.html';
       } catch (err) {
         errEl.textContent = err.message || 'Ошибка входа';
         errEl.style.display = 'block';

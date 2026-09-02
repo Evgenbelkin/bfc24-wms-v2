@@ -72,7 +72,7 @@
     // не задан и в базе лежит технический "0" — показывать его как настоящий
     // размер вводит в заблуждение, прячем так же, как прячем пустой размер.
     function fmtSize(size) {
-      const s = String(size ?? '').trim();
+      const s = String(size != null ? size : '').trim();
       return (!s || s === '0') ? '—' : UI.escHtml(s);
     }
 
@@ -127,7 +127,7 @@
           r.completed_at ? UI.fmtDateTime(r.completed_at) : '',
           r.item_name || '',
           r.vendor_code || '',
-          (String(r.size ?? '').trim() === '0') ? '' : (r.size || ''),
+          (String(r.size != null ? r.size : '').trim() === '0') ? '' : (r.size || ''),
           r.barcode || '',
           r.qty_received || 0,
           r.qty_damaged || 0,

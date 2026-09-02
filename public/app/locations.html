@@ -73,7 +73,7 @@
     }
 
     const user = window.API.getUser();
-    const canEdit = user?.role === 'tenant_admin' || user?.role === 'supervisor';
+    const canEdit = (user && user.role === 'tenant_admin') || (user && user.role === 'supervisor');
     if (canEdit) document.getElementById('add-btn').style.display = 'block';
 
     async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }

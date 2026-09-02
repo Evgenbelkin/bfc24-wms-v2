@@ -131,7 +131,7 @@
     (async () => {
       try {
         const res = await window.API.seller.profile();
-        document.getElementById('client-name').textContent = res.client?.client_name || '—';
+        document.getElementById('client-name').textContent = (res.client && res.client.client_name) || '—';
       } catch (e) { /* не критично для меню */ }
     })();
   </script>

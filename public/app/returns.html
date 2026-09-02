@@ -195,7 +195,7 @@
       if (!barcode || !clientId) return;
       try {
         const res = await window.API.items.byBarcode(barcode, clientId);
-        returnItemId = res.item?.id || null;
+        returnItemId = (res.item && res.item.id) || null;
       } catch (e) { /* товар не найден в каталоге - подсказки не будет, обычная регистрация возврата это не блокирует */ }
       maybeSuggestReturnLocation();
     }

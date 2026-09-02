@@ -121,7 +121,7 @@
     // Технический размер "0" у товаров без реального размера (не одежда) —
     // прячем так же, как на экране приёмки (см. receiving-history.html).
     function fmtSize(size) {
-      const s = String(size ?? '').trim();
+      const s = String(size != null ? size : '').trim();
       return (!s || s === '0') ? '—' : UI.escHtml(s);
     }
 
