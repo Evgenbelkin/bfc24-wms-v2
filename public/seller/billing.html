@@ -81,123 +81,242 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['seller'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('content').style.display = 'none';
-    }
-
-    function switchTab(name) {
-      ['balance','charges','invoices'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name==='balance') loadBalance();
-      if (name==='charges') loadCharges();
-      if (name==='invoices') loadInvoices();
-    }
-
-    const SERVICE_TYPES = {
-      receiving:'Приёмка', storage:'Хранение', placement:'Размещение',
-      picking:'Сборка', packing:'Упаковка', shipping:'Отгрузка',
-      processing:'Обработка', returns:'Возврат', materials:'Расходники', subscription:'Подписка',
-    };
-    const serviceLabel = t => SERVICE_TYPES[t] || t;
-    // period_date/period_from/period_to приходят с бэка как 'YYYY-MM-DD' (см.
-    // types.setTypeParser в server/src/config/database.js) — просто меняем
-    // порядок для показа, без создания Date() (чтобы не словить сдвиг по TZ).
-    function fmtDate(d) { if (!d) return '—'; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}.${m[2]}.${m[1]}` : d; }
-    function fmtQty(q) { const n = Number(q); return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(4))); }
-
-    let invoiceCache = [];
-
-    async function loadBalance() {
-      try {
-        const res = await window.API.seller.billingBalance();
-        const b = res.balance || {};
-        document.getElementById('balance-box').innerHTML = `
-          <div class="balance-cell"><div class="num">${Number(b.uninvoiced_total||0).toFixed(2)} ₽</div><div class="lbl">Не выставлено</div></div>
-          <div class="balance-cell"><div class="num" style="color:var(--yellow)">${Number(b.invoiced_unpaid||0).toFixed(2)} ₽</div><div class="lbl">Выставлено, к оплате</div></div>
-          <div class="balance-cell"><div class="num" style="color:var(--green)">${Number(b.total_paid||0).toFixed(2)} ₽</div><div class="lbl">Оплачено</div></div>
-        `;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['seller'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
-
-    async function loadCharges() {
-      try {
-        const params = {};
-        const from = UI.val('#ch-from'); if (from) params.period_from = from;
-        const to = UI.val('#ch-to'); if (to) params.period_to = to;
-        const res = await window.API.seller.billing(params);
-        const rows = res.charges || [];
-        document.getElementById('charge-total').textContent = Number(res.total_amount||0).toFixed(2);
-        document.getElementById('charge-body').innerHTML = rows.length ? rows.map(c => `
-          <tr>
-            <td>${fmtDate(c.period_date)}</td>
-            <td>${serviceLabel(c.service_type)}${c.description?' · '+UI.escHtml(c.description):''}</td>
-            <td>${fmtQty(c.quantity)}</td>
-            <td>${Number(c.total_amount).toFixed(2)}</td>
-          </tr>
-        `).join('') : `<tr><td colspan="4">Начислений нет</td></tr>`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+}
+function switchTab(name) {
+  ['balance', 'charges', 'invoices'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'balance') loadBalance();
+  if (name === 'charges') loadCharges();
+  if (name === 'invoices') loadInvoices();
+}
+var SERVICE_TYPES = {
+  receiving: 'Приёмка',
+  storage: 'Хранение',
+  placement: 'Размещение',
+  picking: 'Сборка',
+  packing: 'Упаковка',
+  shipping: 'Отгрузка',
+  processing: 'Обработка',
+  returns: 'Возврат',
+  materials: 'Расходники',
+  subscription: 'Подписка'
+};
+var serviceLabel = function serviceLabel(t) {
+  return SERVICE_TYPES[t] || t;
+};
+// period_date/period_from/period_to приходят с бэка как 'YYYY-MM-DD' (см.
+// types.setTypeParser в server/src/config/database.js) — просто меняем
+// порядок для показа, без создания Date() (чтобы не словить сдвиг по TZ).
+function fmtDate(d) {
+  if (!d) return '—';
+  var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? "".concat(m[3], ".").concat(m[2], ".").concat(m[1]) : d;
+}
+function fmtQty(q) {
+  var n = Number(q);
+  return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(4)));
+}
+var invoiceCache = [];
+function loadBalance() {
+  return _loadBalance.apply(this, arguments);
+}
+function _loadBalance() {
+  _loadBalance = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var res, b, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          _context2.n = 1;
+          return window.API.seller.billingBalance();
+        case 1:
+          res = _context2.v;
+          b = res.balance || {};
+          document.getElementById('balance-box').innerHTML = "\n          <div class=\"balance-cell\"><div class=\"num\">".concat(Number(b.uninvoiced_total || 0).toFixed(2), " \u20BD</div><div class=\"lbl\">\u041D\u0435 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043E</div></div>\n          <div class=\"balance-cell\"><div class=\"num\" style=\"color:var(--yellow)\">").concat(Number(b.invoiced_unpaid || 0).toFixed(2), " \u20BD</div><div class=\"lbl\">\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043E, \u043A \u043E\u043F\u043B\u0430\u0442\u0435</div></div>\n          <div class=\"balance-cell\"><div class=\"num\" style=\"color:var(--green)\">").concat(Number(b.total_paid || 0).toFixed(2), " \u20BD</div><div class=\"lbl\">\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E</div></div>\n        ");
+          _context2.n = 4;
+          break;
+        case 2:
+          _context2.p = 2;
+          _t = _context2.v;
+          if (!isModuleDisabled(_t)) {
+            _context2.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context2.a(2);
+        case 3:
+          UI.notify.err(_t.message);
+        case 4:
+          return _context2.a(2);
       }
-    }
-
-    async function loadInvoices() {
-      try {
-        const res = await window.API.seller.billingInvoices({ limit: 100 });
-        invoiceCache = res.invoices || [];
-        const list = document.getElementById('inv-list');
-        if (!invoiceCache.length) { list.innerHTML = `<div class="empty-state">Счетов пока нет</div>`; return; }
-        list.innerHTML = invoiceCache.map((inv, idx) => `
-          <div class="list-row inv-row" onclick="openInvoiceModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(inv.invoice_number)}</div>
-              <div class="sub">${fmtDate(inv.period_from)} — ${fmtDate(inv.period_to)} · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
-            </div>
-            <div class="badge"><span>Сумма</span><div>${Number(inv.total_amount).toFixed(2)} ₽</div></div>
-          </div>
-        `).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee2, null, [[0, 2]]);
+  }));
+  return _loadBalance.apply(this, arguments);
+}
+function loadCharges() {
+  return _loadCharges.apply(this, arguments);
+}
+function _loadCharges() {
+  _loadCharges = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var params, from, to, res, rows, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          params = {};
+          from = UI.val('#ch-from');
+          if (from) params.period_from = from;
+          to = UI.val('#ch-to');
+          if (to) params.period_to = to;
+          _context3.n = 1;
+          return window.API.seller.billing(params);
+        case 1:
+          res = _context3.v;
+          rows = res.charges || [];
+          document.getElementById('charge-total').textContent = Number(res.total_amount || 0).toFixed(2);
+          document.getElementById('charge-body').innerHTML = rows.length ? rows.map(function (c) {
+            return "\n          <tr>\n            <td>".concat(fmtDate(c.period_date), "</td>\n            <td>").concat(serviceLabel(c.service_type)).concat(c.description ? ' · ' + UI.escHtml(c.description) : '', "</td>\n            <td>").concat(fmtQty(c.quantity), "</td>\n            <td>").concat(Number(c.total_amount).toFixed(2), "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"4\">\u041D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0438\u0439 \u043D\u0435\u0442</td></tr>";
+          _context3.n = 4;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t2 = _context3.v;
+          if (!isModuleDisabled(_t2)) {
+            _context3.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context3.a(2);
+        case 3:
+          UI.notify.err(_t2.message);
+        case 4:
+          return _context3.a(2);
       }
-    }
-
-    async function openInvoiceModal(idx) {
-      const inv = invoiceCache[idx];
-      let detail;
-      try { detail = await window.API.seller.billingInvoice(inv.id); } catch (e) { UI.notify.err(e.message); return; }
-      const rows = detail.charges.map(c => `<tr><td>${fmtDate(c.period_date)}</td><td>${serviceLabel(c.service_type)}</td><td>${fmtQty(c.quantity)}</td><td>${Number(c.total_amount).toFixed(2)}</td></tr>`).join('');
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${UI.escHtml(inv.invoice_number)} — ${Number(inv.total_amount).toFixed(2)} ₽ · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
-            <div class="table-wrap">
-              <table><thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Сумма</th></tr></thead><tbody>${rows}</tbody></table>
-            </div>
-            <button class="btn-big btn-yellow btn-full" onclick="closeModal()">Закрыть</button>
-          </div>
-        </div>
-      `;
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    loadBalance();
-  </script>
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _loadCharges.apply(this, arguments);
+}
+function loadInvoices() {
+  return _loadInvoices.apply(this, arguments);
+}
+function _loadInvoices() {
+  _loadInvoices = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, list, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.seller.billingInvoices({
+            limit: 100
+          });
+        case 1:
+          res = _context4.v;
+          invoiceCache = res.invoices || [];
+          list = document.getElementById('inv-list');
+          if (invoiceCache.length) {
+            _context4.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\">\u0421\u0447\u0435\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</div>";
+          return _context4.a(2);
+        case 2:
+          list.innerHTML = invoiceCache.map(function (inv, idx) {
+            return "\n          <div class=\"list-row inv-row\" onclick=\"openInvoiceModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(inv.invoice_number), "</div>\n              <div class=\"sub\">").concat(fmtDate(inv.period_from), " \u2014 ").concat(fmtDate(inv.period_to), " \xB7 <span class=\"status-pill status-").concat(inv.status, "\">").concat(inv.status, "</span></div>\n            </div>\n            <div class=\"badge\"><span>\u0421\u0443\u043C\u043C\u0430</span><div>").concat(Number(inv.total_amount).toFixed(2), " \u20BD</div></div>\n          </div>\n        ");
+          }).join('');
+          _context4.n = 5;
+          break;
+        case 3:
+          _context4.p = 3;
+          _t3 = _context4.v;
+          if (!isModuleDisabled(_t3)) {
+            _context4.n = 4;
+            break;
+          }
+          showModuleDisabled();
+          return _context4.a(2);
+        case 4:
+          UI.notify.err(_t3.message);
+        case 5:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 3]]);
+  }));
+  return _loadInvoices.apply(this, arguments);
+}
+function openInvoiceModal(_x) {
+  return _openInvoiceModal.apply(this, arguments);
+}
+function _openInvoiceModal() {
+  _openInvoiceModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(idx) {
+    var inv, detail, rows, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          inv = invoiceCache[idx];
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.seller.billingInvoice(inv.id);
+        case 2:
+          detail = _context5.v;
+          _context5.n = 4;
+          break;
+        case 3:
+          _context5.p = 3;
+          _t4 = _context5.v;
+          UI.notify.err(_t4.message);
+          return _context5.a(2);
+        case 4:
+          rows = detail.charges.map(function (c) {
+            return "<tr><td>".concat(fmtDate(c.period_date), "</td><td>").concat(serviceLabel(c.service_type), "</td><td>").concat(fmtQty(c.quantity), "</td><td>").concat(Number(c.total_amount).toFixed(2), "</td></tr>");
+          }).join('');
+          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(UI.escHtml(inv.invoice_number), " \u2014 ").concat(Number(inv.total_amount).toFixed(2), " \u20BD \xB7 <span class=\"status-pill status-").concat(inv.status, "\">").concat(inv.status, "</span></div>\n            <div class=\"table-wrap\">\n              <table><thead><tr><th>\u0414\u0430\u0442\u0430</th><th>\u0423\u0441\u043B\u0443\u0433\u0430</th><th>\u041A\u043E\u043B-\u0432\u043E</th><th>\u0421\u0443\u043C\u043C\u0430</th></tr></thead><tbody>").concat(rows, "</tbody></table>\n            </div>\n            <button class=\"btn-big btn-yellow btn-full\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n          </div>\n        </div>\n      ");
+        case 5:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[1, 3]]);
+  }));
+  return _openInvoiceModal.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+loadBalance();</script>
 </body>
 </html>

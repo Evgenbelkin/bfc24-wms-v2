@@ -42,104 +42,248 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    const user = window.API.getUser();
-    const userRoles = (user && user.roles && user.roles.length) ? user.roles : [user && user.role];
-    if (userRoles.includes('seller')) window.location.href = '/seller/menu.html';
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+var user = window.API.getUser();
+var userRoles = user && user.roles && user.roles.length ? user.roles : [user && user.role];
+if (userRoles.includes('seller')) window.location.href = '/seller/menu.html';
+document.getElementById('user-name').textContent = user && user.username || '—';
+document.getElementById('user-role').textContent = userRoles.join(' + ') || '—';
+document.getElementById('tenant-name').textContent = user && user.companyName || '—';
+function logout() {
+  return _logout.apply(this, arguments);
+} // Монохромные line-иконки (без заливки, единый стиль, цвет — var(--accent) через CSS)
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
+      }
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+var ICONS = {
+  inbox: "<rect x=\"3\" y=\"8\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M3 12h4l1.5 3h7L17 12h4\"/><path d=\"M12 3v6M9 6l3 3 3-3\"/>",
+  pin: "<path d=\"M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z\"/><circle cx=\"12\" cy=\"9\" r=\"2.3\"/>",
+  cart: "<circle cx=\"9\" cy=\"20\" r=\"1.3\"/><circle cx=\"18\" cy=\"20\" r=\"1.3\"/><path d=\"M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L21 8H6\"/>",
+  box: "<path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/>",
+  truck: "<rect x=\"2\" y=\"7\" width=\"13\" height=\"10\" rx=\"1\"/><path d=\"M15 10h4l3 3.3V17h-7z\"/><circle cx=\"7\" cy=\"19\" r=\"1.6\"/><circle cx=\"17.5\" cy=\"19\" r=\"1.6\"/>",
+  shuffle: "<path d=\"M17 3h4v4\"/><path d=\"M21 3l-6.6 6.6\"/><path d=\"M3 21l6-6\"/><path d=\"M3 7h3.5L15 20.5h6\"/><path d=\"M3 3h3.5L11 9\"/><path d=\"M17 21h4v-4\"/>",
+  search: "<circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"M20 20l-4.6-4.6\"/>",
+  activity: "<path d=\"M3 12h4l2.5-7 4 14 2.5-7H21\"/>",
+  monitor: "<rect x=\"3\" y=\"4\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M8 20h8M12 16v4\"/>",
+  chart: "<path d=\"M4 20V10M10 20V4M16 20v-7M22 20H2\"/>",
+  archive: "<rect x=\"3\" y=\"4\" width=\"18\" height=\"5\" rx=\"1\"/><path d=\"M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9\"/><path d=\"M10 13h4\"/>",
+  tag: "<path d=\"M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z\"/><circle cx=\"15.5\" cy=\"7.5\" r=\"1.4\"/>",
+  briefcase: "<rect x=\"2.5\" y=\"7\" width=\"19\" height=\"13\" rx=\"2\"/><path d=\"M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"/><path d=\"M2.5 13h19\"/>",
+  wb: "<path d=\"M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z\"/><path d=\"M9 8V6a3 3 0 0 1 6 0v2\"/>",
+  edit: "<path d=\"M12 20h9\"/><path d=\"M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z\"/>",
+  printer: "<path d=\"M6 9V3h12v6\"/><rect x=\"4\" y=\"9\" width=\"16\" height=\"8\" rx=\"1.5\"/><path d=\"M6 14h12v7H6z\"/>",
+  users: "<circle cx=\"9\" cy=\"8\" r=\"3.3\"/><path d=\"M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6\"/><circle cx=\"17.5\" cy=\"8.5\" r=\"2.6\"/><path d=\"M16 14.3c2.6.5 4.5 2.5 4.5 5.7\"/>",
+  shrug: "<circle cx=\"12\" cy=\"8\" r=\"3.3\"/><path d=\"M4 20c0-4 3.6-7 8-7s8 3 8 7\"/>",
+  help: "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4\"/><path d=\"M12 17h.01\"/>",
+  qr: "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/><path d=\"M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z\"/>",
+  billing: "<rect x=\"2\" y=\"5\" width=\"20\" height=\"14\" rx=\"2\"/><path d=\"M2 10h20\"/>",
+  wallet: "<path d=\"M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2\"/><path d=\"M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4\"/><path d=\"M16 13h4v4h-4a2 2 0 0 1 0-4z\"/>",
+  undo: "<path d=\"M3 12a9 9 0 1 0 9-9\"/><path d=\"M3 4v8h8\"/>",
+  clipboard: "<rect x=\"6\" y=\"4\" width=\"12\" height=\"17\" rx=\"2\"/><path d=\"M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1\"/><path d=\"M9 11h6M9 15h6\"/>",
+  trending: "<path d=\"M3 17l6-6 4 4 8-8\"/><path d=\"M17 7h4v4\"/>",
+  building: "<rect x=\"4\" y=\"2\" width=\"16\" height=\"20\" rx=\"1\"/><path d=\"M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1\"/>",
+  grid4: "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/>"
+};
+function icon(name) {
+  return "<svg viewBox=\"0 0 24 24\">".concat(ICONS[name] || '', "</svg>");
+}
 
-    document.getElementById('user-name').textContent = (user && user.username) || '—';
-    document.getElementById('user-role').textContent = userRoles.join(' + ') || '—';
-    document.getElementById('tenant-name').textContent = (user && user.companyName) || '—';
+// Все возможные разделы. roles=null означает "доступно всем ролям склада" (кроме seller).
+var ALL_TILES = [{
+  href: 'receiving.html',
+  icon: 'inbox',
+  label: 'Приёмка',
+  roles: ['tenant_admin', 'supervisor', 'receiver']
+}, {
+  href: 'inbound-orders.html',
+  icon: 'clipboard',
+  label: 'Заявки на поставку',
+  roles: ['tenant_admin', 'supervisor', 'receiver']
+}, {
+  href: 'placement.html',
+  icon: 'pin',
+  label: 'Размещение',
+  roles: ['tenant_admin', 'supervisor', 'receiver']
+}, {
+  href: 'picking.html',
+  icon: 'cart',
+  label: 'Сборка',
+  roles: ['tenant_admin', 'supervisor', 'picker']
+}, {
+  href: 'packing.html',
+  icon: 'box',
+  label: 'Упаковка',
+  roles: ['tenant_admin', 'supervisor', 'packer']
+}, {
+  href: 'shipping.html',
+  icon: 'truck',
+  label: 'Отгрузка',
+  roles: ['tenant_admin', 'supervisor', 'shipper', 'packer']
+}, {
+  href: 'movement.html',
+  icon: 'shuffle',
+  label: 'Перемещение',
+  roles: ['tenant_admin', 'supervisor', 'inventory_manager']
+}, {
+  href: 'inventory.html',
+  icon: 'search',
+  label: 'Инвентаризация',
+  roles: ['tenant_admin', 'supervisor', 'inventory_manager']
+}, {
+  href: 'admin-dashboard.html',
+  icon: 'activity',
+  label: 'Диспетчерская',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'overview-board.html',
+  icon: 'monitor',
+  label: 'Табло',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'stock-overview.html',
+  icon: 'chart',
+  label: 'Обзор склада',
+  roles: ['tenant_admin', 'supervisor', 'inventory_manager']
+}, {
+  href: 'locations.html',
+  icon: 'archive',
+  label: 'Места хранения',
+  roles: ['tenant_admin', 'supervisor', 'receiver', 'picker', 'inventory_manager']
+}, {
+  href: 'location-fill.html',
+  icon: 'grid4',
+  label: 'Заполняемость ячеек',
+  roles: ['tenant_admin', 'supervisor', 'inventory_manager']
+}, {
+  href: 'items.html',
+  icon: 'tag',
+  label: 'Справочник товаров',
+  roles: ['tenant_admin', 'supervisor', 'receiver', 'picker', 'packer']
+}, {
+  href: 'clients.html',
+  icon: 'briefcase',
+  label: 'Клиенты',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'fbs-analytics.html',
+  icon: 'chart',
+  label: 'Аналитика FBS',
+  roles: null
+},
+// region-delivery.html (30.08.2026): перенесено вкладкой "Время доставки"
+// внутрь fbs-analytics.html - отдельная плитка меню больше не нужна.
+// Страница region-delivery.html оставлена в коде (не удалена), но больше
+// никуда не заведена.
+{
+  href: 'wb.html',
+  icon: 'wb',
+  label: 'Wildberries',
+  roles: ['tenant_admin', 'supervisor']
+},
+// ВЫКЛЮЧЕНО 30.08.2026: метод WB acceptance/coefficients временно отключён Wildberries
+// { href:'wb-acceptance.html', icon:'inbox',     label:'Приёмка ФБС',     roles:['tenant_admin','supervisor'] },
+{
+  href: 'wb-tariffs.html',
+  icon: 'trending',
+  label: 'Тарифы: логистика и хранение',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'marking.html',
+  icon: 'qr',
+  label: 'Честный знак',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'manual-order.html',
+  icon: 'edit',
+  label: 'Ручной заказ',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'printer-panel.html',
+  icon: 'printer',
+  label: 'Панель принтеров',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'users.html',
+  icon: 'users',
+  label: 'Пользователи',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'billing.html',
+  icon: 'billing',
+  label: 'Биллинг',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'company-profile.html',
+  icon: 'building',
+  label: 'Реквизиты компании',
+  roles: ['tenant_admin']
+}, {
+  href: 'acts.html',
+  icon: 'clipboard',
+  label: 'Акты приёмки',
+  roles: ['tenant_admin', 'supervisor', 'receiver']
+}, {
+  href: 'finance.html',
+  icon: 'trending',
+  label: 'Финансы',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'consumables.html',
+  icon: 'box',
+  label: 'Расходники',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'payroll.html',
+  icon: 'wallet',
+  label: 'Сдельная ЗП',
+  roles: ['tenant_admin', 'supervisor']
+}, {
+  href: 'returns.html',
+  icon: 'undo',
+  label: 'Возвраты',
+  roles: ['tenant_admin', 'supervisor', 'receiver']
+}, {
+  href: 'help.html',
+  icon: 'help',
+  label: 'Инструкция и поддержка',
+  roles: ['tenant_admin', 'supervisor', 'receiver', 'picker', 'packer', 'shipper', 'inventory_manager']
+}, {
+  href: 'checkin.html',
+  icon: 'qr',
+  label: 'Отметка на складе',
+  roles: ['receiver', 'picker', 'packer', 'shipper', 'inventory_manager']
+}, {
+  href: 'checkin-kiosk.html',
+  icon: 'qr',
+  label: 'QR для отметки (экран на входе)',
+  roles: ['tenant_admin', 'supervisor']
+}];
 
-    async function logout() {
-      await window.API.auth.logout();
-      window.location.href = '/app/login.html';
-    }
-
-    // Монохромные line-иконки (без заливки, единый стиль, цвет — var(--accent) через CSS)
-    const ICONS = {
-      inbox:        `<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/>`,
-      pin:          `<path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/>`,
-      cart:         `<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L21 8H6"/>`,
-      box:          `<path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/>`,
-      truck:        `<rect x="2" y="7" width="13" height="10" rx="1"/><path d="M15 10h4l3 3.3V17h-7z"/><circle cx="7" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/>`,
-      shuffle:      `<path d="M17 3h4v4"/><path d="M21 3l-6.6 6.6"/><path d="M3 21l6-6"/><path d="M3 7h3.5L15 20.5h6"/><path d="M3 3h3.5L11 9"/><path d="M17 21h4v-4"/>`,
-      search:       `<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/>`,
-      activity:     `<path d="M3 12h4l2.5-7 4 14 2.5-7H21"/>`,
-      monitor:      `<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>`,
-      chart:        `<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>`,
-      archive:      `<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/>`,
-      tag:          `<path d="M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z"/><circle cx="15.5" cy="7.5" r="1.4"/>`,
-      briefcase:    `<rect x="2.5" y="7" width="19" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M2.5 13h19"/>`,
-      wb:           `<path d="M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>`,
-      edit:         `<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>`,
-      printer:      `<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/>`,
-      users:        `<circle cx="9" cy="8" r="3.3"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 14.3c2.6.5 4.5 2.5 4.5 5.7"/>`,
-      shrug:        `<circle cx="12" cy="8" r="3.3"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>`,
-      help:         `<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/>`,
-      qr:           `<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM19 14h2v2h-2zM14 19h2v2h-2zM19 19h2v2h-2z"/>`,
-      billing:      `<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>`,
-      wallet:       `<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/><path d="M16 13h4v4h-4a2 2 0 0 1 0-4z"/>`,
-      undo:         `<path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 4v8h8"/>`,
-      clipboard:    `<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6"/>`,
-      trending:     `<path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/>`,
-      building:     `<rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/>`,
-      grid4:        `<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>`,
-    };
-    function icon(name){ return `<svg viewBox="0 0 24 24">${ICONS[name]||''}</svg>`; }
-
-    // Все возможные разделы. roles=null означает "доступно всем ролям склада" (кроме seller).
-    const ALL_TILES = [
-      { href:'receiving.html',        icon:'inbox',     label:'Приёмка',        roles:['tenant_admin','supervisor','receiver'] },
-      { href:'inbound-orders.html',   icon:'clipboard', label:'Заявки на поставку', roles:['tenant_admin','supervisor','receiver'] },
-      { href:'placement.html',        icon:'pin',       label:'Размещение',      roles:['tenant_admin','supervisor','receiver'] },
-      { href:'picking.html',          icon:'cart',      label:'Сборка',          roles:['tenant_admin','supervisor','picker'] },
-      { href:'packing.html',          icon:'box',       label:'Упаковка',        roles:['tenant_admin','supervisor','packer'] },
-      { href:'shipping.html',         icon:'truck',     label:'Отгрузка',        roles:['tenant_admin','supervisor','shipper','packer'] },
-      { href:'movement.html',         icon:'shuffle',   label:'Перемещение',     roles:['tenant_admin','supervisor','inventory_manager'] },
-      { href:'inventory.html',        icon:'search',    label:'Инвентаризация',  roles:['tenant_admin','supervisor','inventory_manager'] },
-      { href:'admin-dashboard.html',  icon:'activity',  label:'Диспетчерская',   roles:['tenant_admin','supervisor'] },
-      { href:'overview-board.html',   icon:'monitor',   label:'Табло',           roles:['tenant_admin','supervisor'] },
-      { href:'stock-overview.html',   icon:'chart',     label:'Обзор склада',    roles:['tenant_admin','supervisor','inventory_manager'] },
-      { href:'locations.html',        icon:'archive',   label:'Места хранения',  roles:['tenant_admin','supervisor','receiver','picker','inventory_manager'] },
-      { href:'location-fill.html',    icon:'grid4',     label:'Заполняемость ячеек', roles:['tenant_admin','supervisor','inventory_manager'] },
-      { href:'items.html',            icon:'tag',       label:'Справочник товаров', roles:['tenant_admin','supervisor','receiver','picker','packer'] },
-      { href:'clients.html',          icon:'briefcase', label:'Клиенты',         roles:['tenant_admin','supervisor'] },
-      { href:'fbs-analytics.html',    icon:'chart',     label:'Аналитика FBS',   roles:null },
-      // region-delivery.html (30.08.2026): перенесено вкладкой "Время доставки"
-      // внутрь fbs-analytics.html - отдельная плитка меню больше не нужна.
-      // Страница region-delivery.html оставлена в коде (не удалена), но больше
-      // никуда не заведена.
-      { href:'wb.html',               icon:'wb',        label:'Wildberries',     roles:['tenant_admin','supervisor'] },
-      // ВЫКЛЮЧЕНО 30.08.2026: метод WB acceptance/coefficients временно отключён Wildberries
-      // { href:'wb-acceptance.html', icon:'inbox',     label:'Приёмка ФБС',     roles:['tenant_admin','supervisor'] },
-      { href:'wb-tariffs.html',       icon:'trending',  label:'Тарифы: логистика и хранение', roles:['tenant_admin','supervisor'] },
-      { href:'marking.html',          icon:'qr',        label:'Честный знак',    roles:['tenant_admin','supervisor'] },
-      { href:'manual-order.html',     icon:'edit',      label:'Ручной заказ',    roles:['tenant_admin','supervisor'] },
-      { href:'printer-panel.html',    icon:'printer',   label:'Панель принтеров',roles:['tenant_admin','supervisor'] },
-      { href:'users.html',            icon:'users',     label:'Пользователи',    roles:['tenant_admin','supervisor'] },
-      { href:'billing.html',          icon:'billing',   label:'Биллинг',         roles:['tenant_admin','supervisor'] },
-      { href:'company-profile.html',  icon:'building',  label:'Реквизиты компании', roles:['tenant_admin'] },
-      { href:'acts.html',             icon:'clipboard', label:'Акты приёмки',    roles:['tenant_admin','supervisor','receiver'] },
-      { href:'finance.html',          icon:'trending',  label:'Финансы',         roles:['tenant_admin','supervisor'] },
-      { href:'consumables.html',      icon:'box',       label:'Расходники',      roles:['tenant_admin','supervisor'] },
-      { href:'payroll.html',          icon:'wallet',    label:'Сдельная ЗП',     roles:['tenant_admin','supervisor'] },
-      { href:'returns.html',          icon:'undo',      label:'Возвраты',        roles:['tenant_admin','supervisor','receiver'] },
-      { href:'help.html',             icon:'help',      label:'Инструкция и поддержка', roles:['tenant_admin','supervisor','receiver','picker','packer','shipper','inventory_manager'] },
-      { href:'checkin.html',          icon:'qr',        label:'Отметка на складе', roles:['receiver','picker','packer','shipper','inventory_manager'] },
-      { href:'checkin-kiosk.html',    icon:'qr',        label:'QR для отметки (экран на входе)', roles:['tenant_admin','supervisor'] },
-    ];
-
-    // Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя
-    const tiles = ALL_TILES.filter(t => !t.roles || userRoles.includes('tenant_admin') || t.roles.some(r => userRoles.includes(r)));
-
-    document.getElementById('tiles').innerHTML = tiles.map(t => `
-      <a class="tile" href="/app/${t.href}">
-        <div class="icon">${icon(t.icon)}</div>
-        <div class="label">${UI.escHtml(t.label)}</div>
-      </a>
-    `).join('') || `<div class="empty-state" style="grid-column:1/-1"><div class="icon" style="width:32px;height:32px;margin:0 auto 8px;">${icon('shrug')}</div>Для вашей роли пока нет доступных разделов</div>`;
-  </script>
+// Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя
+var tiles = ALL_TILES.filter(function (t) {
+  return !t.roles || userRoles.includes('tenant_admin') || t.roles.some(function (r) {
+    return userRoles.includes(r);
+  });
+});
+document.getElementById('tiles').innerHTML = tiles.map(function (t) {
+  return "\n      <a class=\"tile\" href=\"/app/".concat(t.href, "\">\n        <div class=\"icon\">").concat(icon(t.icon), "</div>\n        <div class=\"label\">").concat(UI.escHtml(t.label), "</div>\n      </a>\n    ");
+}).join('') || "<div class=\"empty-state\" style=\"grid-column:1/-1\"><div class=\"icon\" style=\"width:32px;height:32px;margin:0 auto 8px;\">".concat(icon('shrug'), "</div>\u0414\u043B\u044F \u0432\u0430\u0448\u0435\u0439 \u0440\u043E\u043B\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u0440\u0430\u0437\u0434\u0435\u043B\u043E\u0432</div>");</script>
 </body>
 </html>

@@ -94,250 +94,529 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin','packer','shipper'])) {
-      window.location.href = '/app/menu.html';
-    }
-    const user = window.API.getUser();
-    const canManage = (user && user.role === 'tenant_admin') || (user && user.role === 'supervisor');
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('content').style.display = 'none';
-    }
-
-    // qty_on_hand приходит из БД как NUMERIC(14,3) (строка вида "-5.000") -
-    // без этого в остатках/списках выбора висели лишние ".000" на каждом
-    // целом количестве.
-    function fmtQty(n) {
-      const num = Number(n);
-      return num % 1 ? num.toFixed(3).replace(/0+$/,'').replace(/\.$/,'') : String(num);
-    }
-
-    function switchTab(name) {
-      ['stock','receiving','usage'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name==='stock') loadConsumables();
-      if (name==='receiving') { loadReceivingConsumableSelect(); loadReceivingHistory(); }
-      if (name==='usage') { loadConsumableSelect(); loadClientSelect(); loadUsageHistory(); }
-    }
-
-    let consumableCache = [];
-
-    async function loadConsumables() {
-      try {
-        const res = await window.API.consumables.list();
-        consumableCache = res.rows || [];
-        document.getElementById('c-count').textContent = consumableCache.length;
-        const list = document.getElementById('c-list');
-        if (!consumableCache.length) { list.innerHTML = `<div class="empty-state">Расходников нет</div>`; return; }
-        list.innerHTML = consumableCache.map((c, idx) => {
-          const low = c.low_stock_threshold != null && Number(c.qty_on_hand) <= Number(c.low_stock_threshold);
-          return `
-          <div class="list-row c-row" onclick="openConsumableModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(c.name)}</div>
-              <div class="sub">${c.client_unit_price != null ? `клиенту: ${Number(c.client_unit_price).toFixed(2)} ₽/${c.unit}` : 'только учёт остатка'}</div>
-            </div>
-            <div class="badge"><span>Остаток</span><div class="${low?'low-stock':''}">${Number(c.qty_on_hand).toFixed(c.qty_on_hand % 1 ? 2 : 0)} ${UI.escHtml(c.unit)}</div></div>
-          </div>
-        `; }).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin', 'packer', 'shipper'])) {
+  window.location.href = '/app/menu.html';
+}
+var user = window.API.getUser();
+var canManage = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+}
 
-    function openConsumableModal(idx) {
-      const c = idx !== null ? consumableCache[idx] : null;
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${c ? UI.escHtml(c.name) : 'Новый расходник'}</div>
-            <div class="field"><label>Название</label><input id="m-name" value="${c?UI.escHtml(c.name):''}"/></div>
-            <div class="field"><label>Единица</label><input id="m-unit" value="${c?UI.escHtml(c.unit):'шт'}"/></div>
-            <div class="field"><label>Порог низкого остатка (необязательно)</label><input id="m-threshold" type="number" step="0.01" value="${c&&c.low_stock_threshold!=null?c.low_stock_threshold:''}"/></div>
-            <div class="field"><label>Себестоимость, ₽ (необязательно)</label><input id="m-cost" type="number" step="0.01" value="${c&&c.cost_price!=null?c.cost_price:''}"/></div>
-            <div class="field"><label>Цена клиенту за единицу, ₽ (пусто = не выставляем клиенту)</label><input id="m-client-price" type="number" step="0.01" value="${c&&c.client_unit_price!=null?c.client_unit_price:''}"/></div>
-            ${c ? `<div class="field"><label>Корректировка остатка (+/-)</label><div style="display:flex;gap:8px;"><input id="m-delta" type="number" step="0.01" value="0" style="flex:1;"/><button class="btn-sm btn-blue" onclick="adjustStock(${c.id})">Применить</button></div></div>` : ''}
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveConsumable(${idx})">Сохранить</button>
-              ${c ? `<button class="btn-big btn-red" onclick="deleteConsumable(${c.id})">Деактивировать</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function saveConsumable(idx) {
-      const c = idx !== null ? consumableCache[idx] : null;
-      try {
-        await window.API.consumables.upsert({
-          id: c ? c.id : undefined,
-          name: UI.val('#m-name'),
-          unit: UI.val('#m-unit') || 'шт',
-          low_stock_threshold: UI.val('#m-threshold') ? Number(UI.val('#m-threshold')) : null,
-          cost_price: UI.val('#m-cost') ? Number(UI.val('#m-cost')) : null,
-          client_unit_price: UI.val('#m-client-price') ? Number(UI.val('#m-client-price')) : null,
-        });
-        UI.notify.ok('Сохранено');
-        closeModal();
-        await loadConsumables();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deleteConsumable(id) {
-      try {
-        await window.API.consumables.delete(id);
-        UI.notify.ok('Деактивирован');
-        closeModal();
-        await loadConsumables();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function adjustStock(id) {
-      const delta = Number(UI.val('#m-delta'));
-      if (!delta) { UI.notify.err('Укажите изменение остатка'); return; }
-      try {
-        await window.API.consumables.adjust(id, delta);
-        UI.notify.ok('Остаток скорректирован');
-        closeModal();
-        await loadConsumables();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadConsumableSelect() {
-      try {
-        const res = await window.API.consumables.list();
-        consumableCache = res.rows || [];
-        const sel = document.getElementById('u-consumable');
-        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${fmtQty(c.qty_on_hand)} ${UI.escHtml(c.unit)})</option>`).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); }
+// qty_on_hand приходит из БД как NUMERIC(14,3) (строка вида "-5.000") -
+// без этого в остатках/списках выбора висели лишние ".000" на каждом
+// целом количестве.
+function fmtQty(n) {
+  var num = Number(n);
+  return num % 1 ? num.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') : String(num);
+}
+function switchTab(name) {
+  ['stock', 'receiving', 'usage'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'stock') loadConsumables();
+  if (name === 'receiving') {
+    loadReceivingConsumableSelect();
+    loadReceivingHistory();
+  }
+  if (name === 'usage') {
+    loadConsumableSelect();
+    loadClientSelect();
+    loadUsageHistory();
+  }
+}
+var consumableCache = [];
+function loadConsumables() {
+  return _loadConsumables.apply(this, arguments);
+}
+function _loadConsumables() {
+  _loadConsumables = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var res, list, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          _context2.n = 1;
+          return window.API.consumables.list();
+        case 1:
+          res = _context2.v;
+          consumableCache = res.rows || [];
+          document.getElementById('c-count').textContent = consumableCache.length;
+          list = document.getElementById('c-list');
+          if (consumableCache.length) {
+            _context2.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\">\u0420\u0430\u0441\u0445\u043E\u0434\u043D\u0438\u043A\u043E\u0432 \u043D\u0435\u0442</div>";
+          return _context2.a(2);
+        case 2:
+          list.innerHTML = consumableCache.map(function (c, idx) {
+            var low = c.low_stock_threshold != null && Number(c.qty_on_hand) <= Number(c.low_stock_threshold);
+            return "\n          <div class=\"list-row c-row\" onclick=\"openConsumableModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(c.name), "</div>\n              <div class=\"sub\">").concat(c.client_unit_price != null ? "\u043A\u043B\u0438\u0435\u043D\u0442\u0443: ".concat(Number(c.client_unit_price).toFixed(2), " \u20BD/").concat(c.unit) : 'только учёт остатка', "</div>\n            </div>\n            <div class=\"badge\"><span>\u041E\u0441\u0442\u0430\u0442\u043E\u043A</span><div class=\"").concat(low ? 'low-stock' : '', "\">").concat(Number(c.qty_on_hand).toFixed(c.qty_on_hand % 1 ? 2 : 0), " ").concat(UI.escHtml(c.unit), "</div></div>\n          </div>\n        ");
+          }).join('');
+          _context2.n = 5;
+          break;
+        case 3:
+          _context2.p = 3;
+          _t = _context2.v;
+          if (!isModuleDisabled(_t)) {
+            _context2.n = 4;
+            break;
+          }
+          showModuleDisabled();
+          return _context2.a(2);
+        case 4:
+          UI.notify.err(_t.message);
+        case 5:
+          return _context2.a(2);
       }
-    }
-
-    async function loadReceivingConsumableSelect() {
-      try {
-        const res = await window.API.consumables.list();
-        consumableCache = res.rows || [];
-        const sel = document.getElementById('r-consumable');
-        sel.innerHTML = consumableCache.map(c => `<option value="${c.id}">${UI.escHtml(c.name)} (остаток: ${fmtQty(c.qty_on_hand)} ${UI.escHtml(c.unit)})</option>`).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); }
+    }, _callee2, null, [[0, 3]]);
+  }));
+  return _loadConsumables.apply(this, arguments);
+}
+function openConsumableModal(idx) {
+  var c = idx !== null ? consumableCache[idx] : null;
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(c ? UI.escHtml(c.name) : 'Новый расходник', "</div>\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435</label><input id=\"m-name\" value=\"").concat(c ? UI.escHtml(c.name) : '', "\"/></div>\n            <div class=\"field\"><label>\u0415\u0434\u0438\u043D\u0438\u0446\u0430</label><input id=\"m-unit\" value=\"").concat(c ? UI.escHtml(c.unit) : 'шт', "\"/></div>\n            <div class=\"field\"><label>\u041F\u043E\u0440\u043E\u0433 \u043D\u0438\u0437\u043A\u043E\u0433\u043E \u043E\u0441\u0442\u0430\u0442\u043A\u0430 (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)</label><input id=\"m-threshold\" type=\"number\" step=\"0.01\" value=\"").concat(c && c.low_stock_threshold != null ? c.low_stock_threshold : '', "\"/></div>\n            <div class=\"field\"><label>\u0421\u0435\u0431\u0435\u0441\u0442\u043E\u0438\u043C\u043E\u0441\u0442\u044C, \u20BD (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)</label><input id=\"m-cost\" type=\"number\" step=\"0.01\" value=\"").concat(c && c.cost_price != null ? c.cost_price : '', "\"/></div>\n            <div class=\"field\"><label>\u0426\u0435\u043D\u0430 \u043A\u043B\u0438\u0435\u043D\u0442\u0443 \u0437\u0430 \u0435\u0434\u0438\u043D\u0438\u0446\u0443, \u20BD (\u043F\u0443\u0441\u0442\u043E = \u043D\u0435 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u044F\u0435\u043C \u043A\u043B\u0438\u0435\u043D\u0442\u0443)</label><input id=\"m-client-price\" type=\"number\" step=\"0.01\" value=\"").concat(c && c.client_unit_price != null ? c.client_unit_price : '', "\"/></div>\n            ").concat(c ? "<div class=\"field\"><label>\u041A\u043E\u0440\u0440\u0435\u043A\u0442\u0438\u0440\u043E\u0432\u043A\u0430 \u043E\u0441\u0442\u0430\u0442\u043A\u0430 (+/-)</label><div style=\"display:flex;gap:8px;\"><input id=\"m-delta\" type=\"number\" step=\"0.01\" value=\"0\" style=\"flex:1;\"/><button class=\"btn-sm btn-blue\" onclick=\"adjustStock(".concat(c.id, ")\">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C</button></div></div>") : '', "\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"saveConsumable(").concat(idx, ")\">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              ").concat(c ? "<button class=\"btn-big btn-red\" onclick=\"deleteConsumable(".concat(c.id, ")\">\u0414\u0435\u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function saveConsumable(_x) {
+  return _saveConsumable.apply(this, arguments);
+}
+function _saveConsumable() {
+  _saveConsumable = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(idx) {
+    var c, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          c = idx !== null ? consumableCache[idx] : null;
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.consumables.upsert({
+            id: c ? c.id : undefined,
+            name: UI.val('#m-name'),
+            unit: UI.val('#m-unit') || 'шт',
+            low_stock_threshold: UI.val('#m-threshold') ? Number(UI.val('#m-threshold')) : null,
+            cost_price: UI.val('#m-cost') ? Number(UI.val('#m-cost')) : null,
+            client_unit_price: UI.val('#m-client-price') ? Number(UI.val('#m-client-price')) : null
+          });
+        case 2:
+          UI.notify.ok('Сохранено');
+          closeModal();
+          _context3.n = 3;
+          return loadConsumables();
+        case 3:
+          _context3.n = 5;
+          break;
+        case 4:
+          _context3.p = 4;
+          _t2 = _context3.v;
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context3.a(2);
       }
-    }
-
-    async function recordReceiving() {
-      const consumableId = Number(UI.val('#r-consumable'));
-      if (!consumableId) { UI.notify.err('Выберите расходник'); return; }
-      const qty = Number(UI.val('#r-qty'));
-      if (!qty || qty <= 0) { UI.notify.err('Укажите количество'); return; }
-      try {
-        await window.API.consumables.adjust(consumableId, qty, UI.val('#r-comment') || null, 'receiving');
-        UI.notify.ok('Принято на склад');
-        document.getElementById('r-qty').value = 1;
-        document.getElementById('r-comment').value = '';
-        await loadReceivingConsumableSelect();
-        await loadReceivingHistory();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadReceivingHistory() {
-      try {
-        const res = await window.API.consumables.usageHistory({ ref_type: 'receiving', limit: 200 });
-        const rows = res.rows || [];
-        document.getElementById('r-body').innerHTML = rows.length ? rows.map(r => `
-          <tr>
-            <td>${new Date(r.created_at).toLocaleString('ru-RU')}</td>
-            <td>${UI.escHtml(r.consumable_name)}</td>
-            <td>+${Math.abs(Number(r.qty))} ${UI.escHtml(r.unit)}</td>
-            <td>${r.comment ? UI.escHtml(r.comment) : '—'}</td>
-            <td>${r.user_name ? UI.escHtml(r.user_name) : '—'}</td>
-          </tr>
-        `).join('') : `<tr><td colspan="5">Приёмок пока нет</td></tr>`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); }
+    }, _callee3, null, [[1, 4]]);
+  }));
+  return _saveConsumable.apply(this, arguments);
+}
+function deleteConsumable(_x2) {
+  return _deleteConsumable.apply(this, arguments);
+}
+function _deleteConsumable() {
+  _deleteConsumable = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(id) {
+    var _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.consumables.delete(id);
+        case 1:
+          UI.notify.ok('Деактивирован');
+          closeModal();
+          _context4.n = 2;
+          return loadConsumables();
+        case 2:
+          _context4.n = 4;
+          break;
+        case 3:
+          _context4.p = 3;
+          _t3 = _context4.v;
+          UI.notify.err(_t3.message);
+        case 4:
+          return _context4.a(2);
       }
-    }
-
-    async function loadClientSelect() {
-      try {
-        const res = await window.API.clients.short();
-        const sel = document.getElementById('u-client');
-        sel.innerHTML = '<option value="">— внутреннее списание —</option>' +
-          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-      } catch (e) { /* ignore */ }
-    }
-
-    async function recordUsage() {
-      const consumableId = Number(UI.val('#u-consumable'));
-      if (!consumableId) { UI.notify.err('Выберите расходник'); return; }
-      const clientId = UI.val('#u-client') ? Number(UI.val('#u-client')) : null;
-      const qty = Number(UI.val('#u-qty'));
-      if (!qty || qty <= 0) { UI.notify.err('Укажите количество'); return; }
-      try {
-        const res = await window.API.consumables.recordUsage(consumableId, {
-          client_id: clientId, qty, ref_type: 'manual', comment: UI.val('#u-comment'),
-        });
-        UI.notify.ok(res.chargeId ? 'Списано, клиенту начислено' : 'Списано');
-        document.getElementById('u-qty').value = 1;
-        document.getElementById('u-comment').value = '';
-        await loadConsumableSelect();
-        await loadUsageHistory();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadUsageHistory() {
-      try {
-        const res = await window.API.consumables.usageHistory({ limit: 200 });
-        const rows = res.rows || [];
-        // qty в БД: положительное = списание, отрицательное = приход/корректировка
-        // (см. комментарий в consumable_usage). Эта таблица показывает ОБА вида
-        // (приёмки через вкладку "Приёмка" тоже сюда попадают, т.к. это общая
-        // история движений) - раньше отрицательное число выводилось как есть
-        // ("-1000.000 шт"), выглядело как ошибка. Теперь явно подписываем
-        // направление и убираем лишние .000.
-        document.getElementById('u-body').innerHTML = rows.length ? rows.map(r => {
-          const q = Number(r.qty);
-          const isIncoming = q < 0;
-          const qtyHtml = isIncoming
-            ? `<span style="color:var(--green);">+${fmtQty(Math.abs(q))} ${UI.escHtml(r.unit)} (приход)</span>`
-            : `${fmtQty(q)} ${UI.escHtml(r.unit)}`;
-          return `
-          <tr>
-            <td>${new Date(r.created_at).toLocaleString('ru-RU')}</td>
-            <td>${UI.escHtml(r.consumable_name)}</td>
-            <td>${qtyHtml}</td>
-            <td>${r.client_name ? UI.escHtml(r.client_name) : '—'}</td>
-            <td>${r.user_name ? UI.escHtml(r.user_name) : '—'}</td>
-          </tr>
-        `; }).join('') : `<tr><td colspan="5">Списаний нет</td></tr>`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); }
+    }, _callee4, null, [[0, 3]]);
+  }));
+  return _deleteConsumable.apply(this, arguments);
+}
+function adjustStock(_x3) {
+  return _adjustStock.apply(this, arguments);
+}
+function _adjustStock() {
+  _adjustStock = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(id) {
+    var delta, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          delta = Number(UI.val('#m-delta'));
+          if (delta) {
+            _context5.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите изменение остатка');
+          return _context5.a(2);
+        case 1:
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.consumables.adjust(id, delta);
+        case 2:
+          UI.notify.ok('Остаток скорректирован');
+          closeModal();
+          _context5.n = 3;
+          return loadConsumables();
+        case 3:
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t4 = _context5.v;
+          UI.notify.err(_t4.message);
+        case 5:
+          return _context5.a(2);
       }
-    }
+    }, _callee5, null, [[1, 4]]);
+  }));
+  return _adjustStock.apply(this, arguments);
+}
+function loadConsumableSelect() {
+  return _loadConsumableSelect.apply(this, arguments);
+}
+function _loadConsumableSelect() {
+  _loadConsumableSelect = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, sel, _t5;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.consumables.list();
+        case 1:
+          res = _context6.v;
+          consumableCache = res.rows || [];
+          sel = document.getElementById('u-consumable');
+          sel.innerHTML = consumableCache.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.name), " (\u043E\u0441\u0442\u0430\u0442\u043E\u043A: ").concat(fmtQty(c.qty_on_hand), " ").concat(UI.escHtml(c.unit), ")</option>");
+          }).join('');
+          _context6.n = 3;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t5 = _context6.v;
+          if (isModuleDisabled(_t5)) {
+            showModuleDisabled();
+          }
+        case 3:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _loadConsumableSelect.apply(this, arguments);
+}
+function loadReceivingConsumableSelect() {
+  return _loadReceivingConsumableSelect.apply(this, arguments);
+}
+function _loadReceivingConsumableSelect() {
+  _loadReceivingConsumableSelect = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var res, sel, _t6;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          _context7.p = 0;
+          _context7.n = 1;
+          return window.API.consumables.list();
+        case 1:
+          res = _context7.v;
+          consumableCache = res.rows || [];
+          sel = document.getElementById('r-consumable');
+          sel.innerHTML = consumableCache.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.name), " (\u043E\u0441\u0442\u0430\u0442\u043E\u043A: ").concat(fmtQty(c.qty_on_hand), " ").concat(UI.escHtml(c.unit), ")</option>");
+          }).join('');
+          _context7.n = 3;
+          break;
+        case 2:
+          _context7.p = 2;
+          _t6 = _context7.v;
+          if (isModuleDisabled(_t6)) {
+            showModuleDisabled();
+          }
+        case 3:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[0, 2]]);
+  }));
+  return _loadReceivingConsumableSelect.apply(this, arguments);
+}
+function recordReceiving() {
+  return _recordReceiving.apply(this, arguments);
+}
+function _recordReceiving() {
+  _recordReceiving = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var consumableId, qty, _t7;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          consumableId = Number(UI.val('#r-consumable'));
+          if (consumableId) {
+            _context8.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите расходник');
+          return _context8.a(2);
+        case 1:
+          qty = Number(UI.val('#r-qty'));
+          if (!(!qty || qty <= 0)) {
+            _context8.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите количество');
+          return _context8.a(2);
+        case 2:
+          _context8.p = 2;
+          _context8.n = 3;
+          return window.API.consumables.adjust(consumableId, qty, UI.val('#r-comment') || null, 'receiving');
+        case 3:
+          UI.notify.ok('Принято на склад');
+          document.getElementById('r-qty').value = 1;
+          document.getElementById('r-comment').value = '';
+          _context8.n = 4;
+          return loadReceivingConsumableSelect();
+        case 4:
+          _context8.n = 5;
+          return loadReceivingHistory();
+        case 5:
+          _context8.n = 7;
+          break;
+        case 6:
+          _context8.p = 6;
+          _t7 = _context8.v;
+          UI.notify.err(_t7.message);
+        case 7:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[2, 6]]);
+  }));
+  return _recordReceiving.apply(this, arguments);
+}
+function loadReceivingHistory() {
+  return _loadReceivingHistory.apply(this, arguments);
+}
+function _loadReceivingHistory() {
+  _loadReceivingHistory = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var res, rows, _t8;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          _context9.p = 0;
+          _context9.n = 1;
+          return window.API.consumables.usageHistory({
+            ref_type: 'receiving',
+            limit: 200
+          });
+        case 1:
+          res = _context9.v;
+          rows = res.rows || [];
+          document.getElementById('r-body').innerHTML = rows.length ? rows.map(function (r) {
+            return "\n          <tr>\n            <td>".concat(new Date(r.created_at).toLocaleString('ru-RU'), "</td>\n            <td>").concat(UI.escHtml(r.consumable_name), "</td>\n            <td>+").concat(Math.abs(Number(r.qty)), " ").concat(UI.escHtml(r.unit), "</td>\n            <td>").concat(r.comment ? UI.escHtml(r.comment) : '—', "</td>\n            <td>").concat(r.user_name ? UI.escHtml(r.user_name) : '—', "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"5\">\u041F\u0440\u0438\u0451\u043C\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</td></tr>";
+          _context9.n = 3;
+          break;
+        case 2:
+          _context9.p = 2;
+          _t8 = _context9.v;
+          if (isModuleDisabled(_t8)) {
+            showModuleDisabled();
+          }
+        case 3:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[0, 2]]);
+  }));
+  return _loadReceivingHistory.apply(this, arguments);
+}
+function loadClientSelect() {
+  return _loadClientSelect.apply(this, arguments);
+}
+function _loadClientSelect() {
+  _loadClientSelect = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var res, sel, _t9;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          _context0.p = 0;
+          _context0.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context0.v;
+          sel = document.getElementById('u-client');
+          sel.innerHTML = '<option value="">— внутреннее списание —</option>' + (res.clients || []).map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          _context0.n = 3;
+          break;
+        case 2:
+          _context0.p = 2;
+          _t9 = _context0.v;
+        case 3:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[0, 2]]);
+  }));
+  return _loadClientSelect.apply(this, arguments);
+}
+function recordUsage() {
+  return _recordUsage.apply(this, arguments);
+}
+function _recordUsage() {
+  _recordUsage = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
+    var consumableId, clientId, qty, res, _t0;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          consumableId = Number(UI.val('#u-consumable'));
+          if (consumableId) {
+            _context1.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите расходник');
+          return _context1.a(2);
+        case 1:
+          clientId = UI.val('#u-client') ? Number(UI.val('#u-client')) : null;
+          qty = Number(UI.val('#u-qty'));
+          if (!(!qty || qty <= 0)) {
+            _context1.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите количество');
+          return _context1.a(2);
+        case 2:
+          _context1.p = 2;
+          _context1.n = 3;
+          return window.API.consumables.recordUsage(consumableId, {
+            client_id: clientId,
+            qty: qty,
+            ref_type: 'manual',
+            comment: UI.val('#u-comment')
+          });
+        case 3:
+          res = _context1.v;
+          UI.notify.ok(res.chargeId ? 'Списано, клиенту начислено' : 'Списано');
+          document.getElementById('u-qty').value = 1;
+          document.getElementById('u-comment').value = '';
+          _context1.n = 4;
+          return loadConsumableSelect();
+        case 4:
+          _context1.n = 5;
+          return loadUsageHistory();
+        case 5:
+          _context1.n = 7;
+          break;
+        case 6:
+          _context1.p = 6;
+          _t0 = _context1.v;
+          UI.notify.err(_t0.message);
+        case 7:
+          return _context1.a(2);
+      }
+    }, _callee1, null, [[2, 6]]);
+  }));
+  return _recordUsage.apply(this, arguments);
+}
+function loadUsageHistory() {
+  return _loadUsageHistory.apply(this, arguments);
+}
+function _loadUsageHistory() {
+  _loadUsageHistory = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10() {
+    var res, rows, _t1;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          _context10.p = 0;
+          _context10.n = 1;
+          return window.API.consumables.usageHistory({
+            limit: 200
+          });
+        case 1:
+          res = _context10.v;
+          rows = res.rows || []; // qty в БД: положительное = списание, отрицательное = приход/корректировка
+          // (см. комментарий в consumable_usage). Эта таблица показывает ОБА вида
+          // (приёмки через вкладку "Приёмка" тоже сюда попадают, т.к. это общая
+          // история движений) - раньше отрицательное число выводилось как есть
+          // ("-1000.000 шт"), выглядело как ошибка. Теперь явно подписываем
+          // направление и убираем лишние .000.
+          document.getElementById('u-body').innerHTML = rows.length ? rows.map(function (r) {
+            var q = Number(r.qty);
+            var isIncoming = q < 0;
+            var qtyHtml = isIncoming ? "<span style=\"color:var(--green);\">+".concat(fmtQty(Math.abs(q)), " ").concat(UI.escHtml(r.unit), " (\u043F\u0440\u0438\u0445\u043E\u0434)</span>") : "".concat(fmtQty(q), " ").concat(UI.escHtml(r.unit));
+            return "\n          <tr>\n            <td>".concat(new Date(r.created_at).toLocaleString('ru-RU'), "</td>\n            <td>").concat(UI.escHtml(r.consumable_name), "</td>\n            <td>").concat(qtyHtml, "</td>\n            <td>").concat(r.client_name ? UI.escHtml(r.client_name) : '—', "</td>\n            <td>").concat(r.user_name ? UI.escHtml(r.user_name) : '—', "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"5\">\u0421\u043F\u0438\u0441\u0430\u043D\u0438\u0439 \u043D\u0435\u0442</td></tr>";
+          _context10.n = 3;
+          break;
+        case 2:
+          _context10.p = 2;
+          _t1 = _context10.v;
+          if (isModuleDisabled(_t1)) {
+            showModuleDisabled();
+          }
+        case 3:
+          return _context10.a(2);
+      }
+    }, _callee10, null, [[0, 2]]);
+  }));
+  return _loadUsageHistory.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
 
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    // Не-админам (packer/shipper) сразу открываем вкладку списаний — им не нужен
-    // раздел управления остатками/ценами. "Приёмка" тоже скрыта для них: сервер
-    // всё равно отклонит POST /consumables/:id/adjust не от tenant_admin/supervisor
-    // (см. requireRole в consumables.router.js) - показывать форму, которая
-    // гарантированно упадёт 403, хуже, чем просто её не показывать.
-    if (canManage) { loadConsumables(); }
-    else {
-      switchTab('usage');
-      document.querySelector('.tab[data-tab="stock"]').style.display = 'none';
-      document.querySelector('.tab[data-tab="receiving"]').style.display = 'none';
-    }
-  </script>
+// Не-админам (packer/shipper) сразу открываем вкладку списаний — им не нужен
+// раздел управления остатками/ценами. "Приёмка" тоже скрыта для них: сервер
+// всё равно отклонит POST /consumables/:id/adjust не от tenant_admin/supervisor
+// (см. requireRole в consumables.router.js) - показывать форму, которая
+// гарантированно упадёт 403, хуже, чем просто её не показывать.
+if (canManage) {
+  loadConsumables();
+} else {
+  switchTab('usage');
+  document.querySelector('.tab[data-tab="stock"]').style.display = 'none';
+  document.querySelector('.tab[data-tab="receiving"]').style.display = 'none';
+}</script>
 </body>
 </html>

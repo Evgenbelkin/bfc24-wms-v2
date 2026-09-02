@@ -60,291 +60,440 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['seller'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('content').style.display = 'none';
-    }
-
-    let items = [];
-    const selectedIds = new Set();
-
-    function onItemCheck(id, checked) {
-      if (checked) selectedIds.add(id); else selectedIds.delete(id);
-      updateSelectBar();
-    }
-    function toggleSelectAll(checked) {
-      document.querySelectorAll('.item-cb').forEach(cb => {
-        const id = Number(cb.dataset.id);
-        cb.checked = checked;
-        if (checked) selectedIds.add(id); else selectedIds.delete(id);
-      });
-      updateSelectBar();
-    }
-    function updateSelectBar(filteredIds) {
-      document.getElementById('selected-count').textContent = selectedIds.size;
-      document.getElementById('select-bar').style.display = items.length ? 'block' : 'none';
-      const allCb = document.getElementById('select-all-cb');
-      if (allCb && filteredIds) allCb.checked = filteredIds.length > 0 && filteredIds.every(id => selectedIds.has(id));
-    }
-
-    function openBulkMarkingModal() {
-      if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы один товар'); return; }
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Маркировка "Честный знак" для ${selectedIds.size} товар(ов)</div>
-            <label style="display:inline;font-size:14px;">Требует маркировки</label>
-            <input type="checkbox" id="bm-required" checked onchange="document.getElementById('bm-mode-wrap').style.display=this.checked?'block':'none'"/>
-            <div id="bm-mode-wrap" style="margin-top:10px;">
-              <label style="display:block;font-size:13px;color:var(--muted2);">Кто клеит код на товар</label>
-              <select id="bm-mode" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;">
-                <option value="print">Фулфилмент печатает код из своего пула</option>
-                <option value="scan">Мы сами клеим DataMatrix на производстве</option>
-              </select>
-            </div>
-            <p style="font-size:12px;color:var(--muted);margin-top:10px;">
-              Применится сразу ко всем выбранным товарам. Склад увидит и при необходимости поправит,
-              если что-то выбрано не так.
-            </p>
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="submitBulkMarking()">Применить к ${selectedIds.size}</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function submitBulkMarking() {
-      const required = document.getElementById('bm-required').checked;
-      const data = { requires_marking: required };
-      if (required) data.marking_mode = UI.val('#bm-mode') || 'print';
-      try {
-        const res = await window.API.seller.bulkUpdateMarkingSettings(Array.from(selectedIds), data);
-        UI.notify.ok(`Обновлено товаров: ${res.updated}`);
-        closeModal();
-        selectedIds.clear();
-        await loadItems();
-      } catch (e) {
-        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['seller'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
-
-    async function loadItems() {
-      try {
-        const res = await window.API.seller.items({ limit: 500 });
-        items = res.items || [];
-        renderItems();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function renderItems() {
-      const term = UI.val('#f-search').toLowerCase();
-      const markingFilter = UI.val('#f-marking');
-      let filtered = term
-        ? items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.barcode||'').includes(term))
-        : items;
-      if (markingFilter === 'on')  filtered = filtered.filter(it => it.requires_marking);
-      if (markingFilter === 'off') filtered = filtered.filter(it => !it.requires_marking);
-      document.getElementById('item-count').textContent = filtered.length;
-
-      const list = document.getElementById('item-list');
-      if (!filtered.length) {
-        list.innerHTML = `<div class="empty-state">Ничего не найдено</div>`;
-        updateSelectBar([]);
-        return;
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+}
+var items = [];
+var selectedIds = new Set();
+function onItemCheck(id, checked) {
+  if (checked) selectedIds.add(id);else selectedIds.delete(id);
+  updateSelectBar();
+}
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.item-cb').forEach(function (cb) {
+    var id = Number(cb.dataset.id);
+    cb.checked = checked;
+    if (checked) selectedIds.add(id);else selectedIds.delete(id);
+  });
+  updateSelectBar();
+}
+function updateSelectBar(filteredIds) {
+  document.getElementById('selected-count').textContent = selectedIds.size;
+  document.getElementById('select-bar').style.display = items.length ? 'block' : 'none';
+  var allCb = document.getElementById('select-all-cb');
+  if (allCb && filteredIds) allCb.checked = filteredIds.length > 0 && filteredIds.every(function (id) {
+    return selectedIds.has(id);
+  });
+}
+function openBulkMarkingModal() {
+  if (!selectedIds.size) {
+    UI.notify.err('Отметьте хотя бы один товар');
+    return;
+  }
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u041C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0430 \"\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A\" \u0434\u043B\u044F ".concat(selectedIds.size, " \u0442\u043E\u0432\u0430\u0440(\u043E\u0432)</div>\n            <label style=\"display:inline;font-size:14px;\">\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438</label>\n            <input type=\"checkbox\" id=\"bm-required\" checked onchange=\"document.getElementById('bm-mode-wrap').style.display=this.checked?'block':'none'\"/>\n            <div id=\"bm-mode-wrap\" style=\"margin-top:10px;\">\n              <label style=\"display:block;font-size:13px;color:var(--muted2);\">\u041A\u0442\u043E \u043A\u043B\u0435\u0438\u0442 \u043A\u043E\u0434 \u043D\u0430 \u0442\u043E\u0432\u0430\u0440</label>\n              <select id=\"bm-mode\" style=\"width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;\">\n                <option value=\"print\">\u0424\u0443\u043B\u0444\u0438\u043B\u043C\u0435\u043D\u0442 \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442 \u043A\u043E\u0434 \u0438\u0437 \u0441\u0432\u043E\u0435\u0433\u043E \u043F\u0443\u043B\u0430</option>\n                <option value=\"scan\">\u041C\u044B \u0441\u0430\u043C\u0438 \u043A\u043B\u0435\u0438\u043C DataMatrix \u043D\u0430 \u043F\u0440\u043E\u0438\u0437\u0432\u043E\u0434\u0441\u0442\u0432\u0435</option>\n              </select>\n            </div>\n            <p style=\"font-size:12px;color:var(--muted);margin-top:10px;\">\n              \u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u0441\u044F \u0441\u0440\u0430\u0437\u0443 \u043A\u043E \u0432\u0441\u0435\u043C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u043C \u0442\u043E\u0432\u0430\u0440\u0430\u043C. \u0421\u043A\u043B\u0430\u0434 \u0443\u0432\u0438\u0434\u0438\u0442 \u0438 \u043F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 \u043F\u043E\u043F\u0440\u0430\u0432\u0438\u0442,\n              \u0435\u0441\u043B\u0438 \u0447\u0442\u043E-\u0442\u043E \u0432\u044B\u0431\u0440\u0430\u043D\u043E \u043D\u0435 \u0442\u0430\u043A.\n            </p>\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"submitBulkMarking()\">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u043A ").concat(selectedIds.size, "</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function submitBulkMarking() {
+  return _submitBulkMarking.apply(this, arguments);
+}
+function _submitBulkMarking() {
+  _submitBulkMarking = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var required, data, res, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          required = document.getElementById('bm-required').checked;
+          data = {
+            requires_marking: required
+          };
+          if (required) data.marking_mode = UI.val('#bm-mode') || 'print';
+          _context2.p = 1;
+          _context2.n = 2;
+          return window.API.seller.bulkUpdateMarkingSettings(Array.from(selectedIds), data);
+        case 2:
+          res = _context2.v;
+          UI.notify.ok("\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u0442\u043E\u0432\u0430\u0440\u043E\u0432: ".concat(res.updated));
+          closeModal();
+          selectedIds.clear();
+          _context2.n = 3;
+          return loadItems();
+        case 3:
+          _context2.n = 6;
+          break;
+        case 4:
+          _context2.p = 4;
+          _t = _context2.v;
+          if (!isModuleDisabled(_t)) {
+            _context2.n = 5;
+            break;
+          }
+          closeModal();
+          showModuleDisabled();
+          return _context2.a(2);
+        case 5:
+          UI.notify.err(_t.message);
+        case 6:
+          return _context2.a(2);
       }
-      list.innerHTML = filtered.map((it) => `
-        <div class="list-row item-row" style="display:flex;align-items:center;gap:10px;" onclick="openMarkingModal(${it.id})">
-          <input type="checkbox" class="item-cb" data-id="${it.id}" onclick="event.stopPropagation(); onItemCheck(${it.id}, this.checked);" ${selectedIds.has(it.id) ? 'checked' : ''}/>
-          <div class="main" style="flex:1;">
-            <div class="title">${UI.escHtml(it.item_name)}</div>
-            <div class="sub">${UI.escHtml(it.barcode)}</div>
-          </div>
-          <div class="badge">
-            <span class="mark-pill ${it.requires_marking ? 'on':''}">${it.requires_marking ? 'Честный знак' : 'без маркировки'}</span>
-          </div>
-        </div>
-      `).join('');
-      updateSelectBar(filtered.map(it => it.id));
-    }
-
-    async function openMarkingModal(itemId) {
-      const it = items.find(x => x.id === itemId);
-      if (!it) return;
-      const on = !!it.requires_marking;
-      const trigger = it.marking_trigger || 'packing';
-      const mode = it.marking_mode || 'print';
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${UI.escHtml(it.item_name)}</div>
-            <div class="sub" style="color:var(--muted);font-size:13px;margin-bottom:10px;">${UI.escHtml(it.barcode)}</div>
-
-            <label style="display:inline;font-size:14px;">Требует маркировки "Честный знак"</label>
-            <input type="checkbox" id="m-req-marking" ${on ? 'checked':''} onchange="onMarkingToggle(${itemId})"/>
-
-            <div id="marking-fields" style="display:${on ? 'block':'none'};margin-top:10px;">
-              <label style="display:block;font-size:13px;color:var(--muted2);">Кто клеит код на товар</label>
-              <select id="m-mode" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;" onchange="onMarkingModeChange()">
-                <option value="print" ${mode==='print' ? 'selected':''}>Фулфилмент печатает код из своего пула</option>
-                <option value="scan"  ${mode==='scan'  ? 'selected':''}>Мы сами клеим DataMatrix на производстве</option>
-              </select>
-
-              <div id="m-trigger-wrap" style="display:${mode==='scan' ? 'none':'block'};">
-                <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Когда фиксировать код</label>
-                <select id="m-trigger" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;">
-                  <option value="packing"   ${trigger==='packing'   ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
-                  <option value="receiving" ${trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
-                </select>
-              </div>
-
-              <p id="m-scan-hint" style="display:${mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:8px;">
-                Для этого режима код сканируется на обоих этапах всегда: фулфилмент отсканирует ваш код
-                и при приёмке, и при упаковке заказа, и сам отправит его в WB — вам ничего вручную в кабинете WB
-                вводить не нужно.
-              </p>
-
-              <div id="marking-summary" style="font-size:14px;margin-top:12px;">Загрузка...</div>
-              <div style="margin-top:4px;">
-                <a href="javascript:void(0)" style="font-size:12px;color:var(--accent);" onclick="toggleMarkingCodesList(${itemId})">Показать коды пула ▾</a>
-              </div>
-              <div id="marking-codes-list" style="display:none;margin-top:6px;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
-              <div id="marking-codes-wrap" style="display:${mode==='print' ? 'block':'none'};">
-                <label style="display:block;margin-top:10px;font-size:13px;color:var(--muted2);">Коды маркировки (по одному на строку)</label>
-                <textarea id="m-codes-text" class="m-textarea" rows="6" placeholder="0104650123456789215..."></textarea>
-                <button class="btn-big btn-blue btn-full" style="margin-top:8px;" onclick="uploadCodes(${itemId})">Загрузить коды</button>
-              </div>
-            </div>
-
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="saveMarkingSettings(${itemId})">Сохранить</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-      markingCodesListOpen = false;
-      if (on) loadMarkingSummary(itemId);
-    }
-
-    function onMarkingToggle(itemId) {
-      const on = document.getElementById('m-req-marking').checked;
-      document.getElementById('marking-fields').style.display = on ? 'block' : 'none';
-      if (on) loadMarkingSummary(itemId);
-    }
-
-    function onMarkingModeChange() {
-      const isPrint = UI.val('#m-mode') === 'print';
-      document.getElementById('marking-codes-wrap').style.display = isPrint ? 'block' : 'none';
-      document.getElementById('m-trigger-wrap').style.display = isPrint ? 'block' : 'none';
-      document.getElementById('m-scan-hint').style.display = isPrint ? 'none' : 'block';
-    }
-
-    async function saveMarkingSettings(itemId) {
-      const requiresMarking = document.getElementById('m-req-marking').checked;
-      const data = { requires_marking: requiresMarking };
-      if (requiresMarking) {
-        data.marking_trigger = UI.val('#m-trigger') || 'packing';
-        data.marking_mode = UI.val('#m-mode') || 'print';
+    }, _callee2, null, [[1, 4]]);
+  }));
+  return _submitBulkMarking.apply(this, arguments);
+}
+function loadItems() {
+  return _loadItems.apply(this, arguments);
+}
+function _loadItems() {
+  _loadItems = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.seller.items({
+            limit: 500
+          });
+        case 1:
+          res = _context3.v;
+          items = res.items || [];
+          renderItems();
+          _context3.n = 3;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t2 = _context3.v;
+          UI.notify.err(_t2.message);
+        case 3:
+          return _context3.a(2);
       }
-      try {
-        const res = await window.API.seller.updateMarkingSettings(itemId, data);
-        const it = items.find(x => x.id === itemId);
-        if (it) {
-          it.requires_marking = res.item.requires_marking;
-          it.marking_trigger = res.item.marking_trigger;
-          it.marking_mode = res.item.marking_mode;
-        }
-        UI.notify.ok('Сохранено');
-        renderItems();
-      } catch (e) {
-        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _loadItems.apply(this, arguments);
+}
+function renderItems() {
+  var term = UI.val('#f-search').toLowerCase();
+  var markingFilter = UI.val('#f-marking');
+  var filtered = term ? items.filter(function (it) {
+    return (it.item_name || '').toLowerCase().includes(term) || (it.barcode || '').includes(term);
+  }) : items;
+  if (markingFilter === 'on') filtered = filtered.filter(function (it) {
+    return it.requires_marking;
+  });
+  if (markingFilter === 'off') filtered = filtered.filter(function (it) {
+    return !it.requires_marking;
+  });
+  document.getElementById('item-count').textContent = filtered.length;
+  var list = document.getElementById('item-list');
+  if (!filtered.length) {
+    list.innerHTML = "<div class=\"empty-state\">\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</div>";
+    updateSelectBar([]);
+    return;
+  }
+  list.innerHTML = filtered.map(function (it) {
+    return "\n        <div class=\"list-row item-row\" style=\"display:flex;align-items:center;gap:10px;\" onclick=\"openMarkingModal(".concat(it.id, ")\">\n          <input type=\"checkbox\" class=\"item-cb\" data-id=\"").concat(it.id, "\" onclick=\"event.stopPropagation(); onItemCheck(").concat(it.id, ", this.checked);\" ").concat(selectedIds.has(it.id) ? 'checked' : '', "/>\n          <div class=\"main\" style=\"flex:1;\">\n            <div class=\"title\">").concat(UI.escHtml(it.item_name), "</div>\n            <div class=\"sub\">").concat(UI.escHtml(it.barcode), "</div>\n          </div>\n          <div class=\"badge\">\n            <span class=\"mark-pill ").concat(it.requires_marking ? 'on' : '', "\">").concat(it.requires_marking ? 'Честный знак' : 'без маркировки', "</span>\n          </div>\n        </div>\n      ");
+  }).join('');
+  updateSelectBar(filtered.map(function (it) {
+    return it.id;
+  }));
+}
+function openMarkingModal(_x) {
+  return _openMarkingModal.apply(this, arguments);
+}
+function _openMarkingModal() {
+  _openMarkingModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(itemId) {
+    var it, on, trigger, mode;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.n) {
+        case 0:
+          it = items.find(function (x) {
+            return x.id === itemId;
+          });
+          if (it) {
+            _context4.n = 1;
+            break;
+          }
+          return _context4.a(2);
+        case 1:
+          on = !!it.requires_marking;
+          trigger = it.marking_trigger || 'packing';
+          mode = it.marking_mode || 'print';
+          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(UI.escHtml(it.item_name), "</div>\n            <div class=\"sub\" style=\"color:var(--muted);font-size:13px;margin-bottom:10px;\">").concat(UI.escHtml(it.barcode), "</div>\n\n            <label style=\"display:inline;font-size:14px;\">\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438 \"\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A\"</label>\n            <input type=\"checkbox\" id=\"m-req-marking\" ").concat(on ? 'checked' : '', " onchange=\"onMarkingToggle(").concat(itemId, ")\"/>\n\n            <div id=\"marking-fields\" style=\"display:").concat(on ? 'block' : 'none', ";margin-top:10px;\">\n              <label style=\"display:block;font-size:13px;color:var(--muted2);\">\u041A\u0442\u043E \u043A\u043B\u0435\u0438\u0442 \u043A\u043E\u0434 \u043D\u0430 \u0442\u043E\u0432\u0430\u0440</label>\n              <select id=\"m-mode\" style=\"width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;\" onchange=\"onMarkingModeChange()\">\n                <option value=\"print\" ").concat(mode === 'print' ? 'selected' : '', ">\u0424\u0443\u043B\u0444\u0438\u043B\u043C\u0435\u043D\u0442 \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u0442 \u043A\u043E\u0434 \u0438\u0437 \u0441\u0432\u043E\u0435\u0433\u043E \u043F\u0443\u043B\u0430</option>\n                <option value=\"scan\"  ").concat(mode === 'scan' ? 'selected' : '', ">\u041C\u044B \u0441\u0430\u043C\u0438 \u043A\u043B\u0435\u0438\u043C DataMatrix \u043D\u0430 \u043F\u0440\u043E\u0438\u0437\u0432\u043E\u0434\u0441\u0442\u0432\u0435</option>\n              </select>\n\n              <div id=\"m-trigger-wrap\" style=\"display:").concat(mode === 'scan' ? 'none' : 'block', ";\">\n                <label style=\"display:block;margin-top:10px;font-size:13px;color:var(--muted2);\">\u041A\u043E\u0433\u0434\u0430 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u0434</label>\n                <select id=\"m-trigger\" style=\"width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;\">\n                  <option value=\"packing\"   ").concat(trigger === 'packing' ? 'selected' : '', ">\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430 (\u0432\u043C\u0435\u0441\u0442\u0435 \u0441\u043E \u0441\u0442\u0438\u043A\u0435\u0440\u043E\u043C \u0412\u0411)</option>\n                  <option value=\"receiving\" ").concat(trigger === 'receiving' ? 'selected' : '', ">\u041F\u0440\u0438\u0451\u043C\u043A\u0430 (\u0432\u043C\u0435\u0441\u0442\u0435 \u0441\u043E \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u043E\u043C \u0442\u043E\u0432\u0430\u0440\u0430)</option>\n                </select>\n              </div>\n\n              <p id=\"m-scan-hint\" style=\"display:").concat(mode === 'scan' ? 'block' : 'none', ";font-size:12px;color:var(--muted);margin-top:8px;\">\n                \u0414\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0440\u0435\u0436\u0438\u043C\u0430 \u043A\u043E\u0434 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u043D\u0430 \u043E\u0431\u043E\u0438\u0445 \u044D\u0442\u0430\u043F\u0430\u0445 \u0432\u0441\u0435\u0433\u0434\u0430: \u0444\u0443\u043B\u0444\u0438\u043B\u043C\u0435\u043D\u0442 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442 \u0432\u0430\u0448 \u043A\u043E\u0434\n                \u0438 \u043F\u0440\u0438 \u043F\u0440\u0438\u0451\u043C\u043A\u0435, \u0438 \u043F\u0440\u0438 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435 \u0437\u0430\u043A\u0430\u0437\u0430, \u0438 \u0441\u0430\u043C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442 \u0435\u0433\u043E \u0432 WB \u2014 \u0432\u0430\u043C \u043D\u0438\u0447\u0435\u0433\u043E \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u0432 \u043A\u0430\u0431\u0438\u043D\u0435\u0442\u0435 WB\n                \u0432\u0432\u043E\u0434\u0438\u0442\u044C \u043D\u0435 \u043D\u0443\u0436\u043D\u043E.\n              </p>\n\n              <div id=\"marking-summary\" style=\"font-size:14px;margin-top:12px;\">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430...</div>\n              <div style=\"margin-top:4px;\">\n                <a href=\"javascript:void(0)\" style=\"font-size:12px;color:var(--accent);\" onclick=\"toggleMarkingCodesList(").concat(itemId, ")\">\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043A\u043E\u0434\u044B \u043F\u0443\u043B\u0430 \u25BE</a>\n              </div>\n              <div id=\"marking-codes-list\" style=\"display:none;margin-top:6px;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;\"></div>\n              <div id=\"marking-codes-wrap\" style=\"display:").concat(mode === 'print' ? 'block' : 'none', ";\">\n                <label style=\"display:block;margin-top:10px;font-size:13px;color:var(--muted2);\">\u041A\u043E\u0434\u044B \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438 (\u043F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443)</label>\n                <textarea id=\"m-codes-text\" class=\"m-textarea\" rows=\"6\" placeholder=\"0104650123456789215...\"></textarea>\n                <button class=\"btn-big btn-blue btn-full\" style=\"margin-top:8px;\" onclick=\"uploadCodes(").concat(itemId, ")\">\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043A\u043E\u0434\u044B</button>\n              </div>\n            </div>\n\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"saveMarkingSettings(").concat(itemId, ")\">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+          markingCodesListOpen = false;
+          if (on) loadMarkingSummary(itemId);
+        case 2:
+          return _context4.a(2);
       }
-    }
-
-    async function loadMarkingSummary(itemId) {
-      const el = document.getElementById('marking-summary');
-      try {
-        const res = await window.API.seller.markingSummary(itemId);
-        const s = res.summary;
-        let txt = `Загружено кодов: ${s.total}. Свободно: ${s.available}. Использовано: ${s.used}.`;
-        if (s.manual_override > 0) txt += ` Без КИЗ вручную: ${s.manual_override}.`;
-        el.textContent = txt;
-      } catch (e) {
-        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
-        el.textContent = 'Не удалось загрузить сводку: ' + e.message;
+    }, _callee4);
+  }));
+  return _openMarkingModal.apply(this, arguments);
+}
+function onMarkingToggle(itemId) {
+  var on = document.getElementById('m-req-marking').checked;
+  document.getElementById('marking-fields').style.display = on ? 'block' : 'none';
+  if (on) loadMarkingSummary(itemId);
+}
+function onMarkingModeChange() {
+  var isPrint = UI.val('#m-mode') === 'print';
+  document.getElementById('marking-codes-wrap').style.display = isPrint ? 'block' : 'none';
+  document.getElementById('m-trigger-wrap').style.display = isPrint ? 'block' : 'none';
+  document.getElementById('m-scan-hint').style.display = isPrint ? 'none' : 'block';
+}
+function saveMarkingSettings(_x2) {
+  return _saveMarkingSettings.apply(this, arguments);
+}
+function _saveMarkingSettings() {
+  _saveMarkingSettings = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(itemId) {
+    var requiresMarking, data, res, it, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          requiresMarking = document.getElementById('m-req-marking').checked;
+          data = {
+            requires_marking: requiresMarking
+          };
+          if (requiresMarking) {
+            data.marking_trigger = UI.val('#m-trigger') || 'packing';
+            data.marking_mode = UI.val('#m-mode') || 'print';
+          }
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.seller.updateMarkingSettings(itemId, data);
+        case 2:
+          res = _context5.v;
+          it = items.find(function (x) {
+            return x.id === itemId;
+          });
+          if (it) {
+            it.requires_marking = res.item.requires_marking;
+            it.marking_trigger = res.item.marking_trigger;
+            it.marking_mode = res.item.marking_mode;
+          }
+          UI.notify.ok('Сохранено');
+          renderItems();
+          _context5.n = 5;
+          break;
+        case 3:
+          _context5.p = 3;
+          _t3 = _context5.v;
+          if (!isModuleDisabled(_t3)) {
+            _context5.n = 4;
+            break;
+          }
+          closeModal();
+          showModuleDisabled();
+          return _context5.a(2);
+        case 4:
+          UI.notify.err(_t3.message);
+        case 5:
+          return _context5.a(2);
       }
-    }
-
-    const MARKING_STATUS_PILL = {
-      available: { label: 'Свободен', color: 'var(--green)' },
-      used_sent: { label: 'Использован → отправлен в WB', color: 'var(--accent)' },
-      used_override: { label: 'Использован → ручной обход (не отправлен)', color: '#e08a2b' },
-      used_plain: { label: 'Использован', color: 'var(--muted2)' },
-    };
-    function markingCodeStatusKey(c) {
-      if (c.status === 'available') return 'available';
-      if (c.wb_submit_status === 'manual_override') return 'used_override';
-      if (c.wb_submit_status === 'sent') return 'used_sent';
-      return 'used_plain';
-    }
-    let markingCodesListOpen = false;
-    async function toggleMarkingCodesList(itemId) {
-      const box = document.getElementById('marking-codes-list');
-      if (!box) return;
-      markingCodesListOpen = !markingCodesListOpen;
-      box.style.display = markingCodesListOpen ? 'block' : 'none';
-      if (!markingCodesListOpen) return;
-      box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Загрузка…</div>';
-      try {
-        const res = await window.API.seller.markingCodes(itemId, { limit: 500 });
-        const rows = res.codes || [];
-        if (!rows.length) {
+    }, _callee5, null, [[1, 3]]);
+  }));
+  return _saveMarkingSettings.apply(this, arguments);
+}
+function loadMarkingSummary(_x3) {
+  return _loadMarkingSummary.apply(this, arguments);
+}
+function _loadMarkingSummary() {
+  _loadMarkingSummary = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(itemId) {
+    var el, res, s, txt, _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          el = document.getElementById('marking-summary');
+          _context6.p = 1;
+          _context6.n = 2;
+          return window.API.seller.markingSummary(itemId);
+        case 2:
+          res = _context6.v;
+          s = res.summary;
+          txt = "\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043E \u043A\u043E\u0434\u043E\u0432: ".concat(s.total, ". \u0421\u0432\u043E\u0431\u043E\u0434\u043D\u043E: ").concat(s.available, ". \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u043E: ").concat(s.used, ".");
+          if (s.manual_override > 0) txt += " \u0411\u0435\u0437 \u041A\u0418\u0417 \u0432\u0440\u0443\u0447\u043D\u0443\u044E: ".concat(s.manual_override, ".");
+          el.textContent = txt;
+          _context6.n = 5;
+          break;
+        case 3:
+          _context6.p = 3;
+          _t4 = _context6.v;
+          if (!isModuleDisabled(_t4)) {
+            _context6.n = 4;
+            break;
+          }
+          closeModal();
+          showModuleDisabled();
+          return _context6.a(2);
+        case 4:
+          el.textContent = 'Не удалось загрузить сводку: ' + _t4.message;
+        case 5:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[1, 3]]);
+  }));
+  return _loadMarkingSummary.apply(this, arguments);
+}
+var MARKING_STATUS_PILL = {
+  available: {
+    label: 'Свободен',
+    color: 'var(--green)'
+  },
+  used_sent: {
+    label: 'Использован → отправлен в WB',
+    color: 'var(--accent)'
+  },
+  used_override: {
+    label: 'Использован → ручной обход (не отправлен)',
+    color: '#e08a2b'
+  },
+  used_plain: {
+    label: 'Использован',
+    color: 'var(--muted2)'
+  }
+};
+function markingCodeStatusKey(c) {
+  if (c.status === 'available') return 'available';
+  if (c.wb_submit_status === 'manual_override') return 'used_override';
+  if (c.wb_submit_status === 'sent') return 'used_sent';
+  return 'used_plain';
+}
+var markingCodesListOpen = false;
+function toggleMarkingCodesList(_x4) {
+  return _toggleMarkingCodesList.apply(this, arguments);
+}
+function _toggleMarkingCodesList() {
+  _toggleMarkingCodesList = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(itemId) {
+    var box, res, rows, _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          box = document.getElementById('marking-codes-list');
+          if (box) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          markingCodesListOpen = !markingCodesListOpen;
+          box.style.display = markingCodesListOpen ? 'block' : 'none';
+          if (markingCodesListOpen) {
+            _context7.n = 2;
+            break;
+          }
+          return _context7.a(2);
+        case 2:
+          box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Загрузка…</div>';
+          _context7.p = 3;
+          _context7.n = 4;
+          return window.API.seller.markingCodes(itemId, {
+            limit: 500
+          });
+        case 4:
+          res = _context7.v;
+          rows = res.codes || [];
+          if (rows.length) {
+            _context7.n = 5;
+            break;
+          }
           box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Кодов пока нет</div>';
-          return;
-        }
-        box.innerHTML = rows.map(c => {
-          const p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
-          return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;">
-            <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex:0 0 auto;"></span>
-            <span style="font-family:monospace;flex:1;word-break:break-all;">${UI.escHtml(c.code)}</span>
-            <span style="color:${p.color};white-space:nowrap;">${p.label}</span>
-          </div>`;
-        }).join('');
-      } catch (e) {
-        box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
+          return _context7.a(2);
+        case 5:
+          box.innerHTML = rows.map(function (c) {
+            var p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
+            return "<div style=\"display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;\">\n            <span style=\"width:8px;height:8px;border-radius:50%;background:".concat(p.color, ";flex:0 0 auto;\"></span>\n            <span style=\"font-family:monospace;flex:1;word-break:break-all;\">").concat(UI.escHtml(c.code), "</span>\n            <span style=\"color:").concat(p.color, ";white-space:nowrap;\">").concat(p.label, "</span>\n          </div>");
+          }).join('');
+          _context7.n = 7;
+          break;
+        case 6:
+          _context7.p = 6;
+          _t5 = _context7.v;
+          box.innerHTML = "<div style=\"padding:10px;font-size:12px;color:var(--red);\">".concat(UI.escHtml(_t5.message), "</div>");
+        case 7:
+          return _context7.a(2);
       }
-    }
-
-    async function uploadCodes(itemId) {
-      const text = UI.val('#m-codes-text');
-      if (!text || !text.trim()) { UI.notify.err('Вставьте хотя бы один код'); return; }
-      try {
-        const res = await window.API.seller.importMarkingCodes(itemId, text);
-        UI.notify.ok(`Загружено: ${res.imported} шт.${res.duplicates ? ` (дублей пропущено: ${res.duplicates})` : ''}`);
-        UI.setVal('#m-codes-text', '');
-        await loadMarkingSummary(itemId);
-      } catch (e) {
-        if (isModuleDisabled(e)) { closeModal(); showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee7, null, [[3, 6]]);
+  }));
+  return _toggleMarkingCodesList.apply(this, arguments);
+}
+function uploadCodes(_x5) {
+  return _uploadCodes.apply(this, arguments);
+}
+function _uploadCodes() {
+  _uploadCodes = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(itemId) {
+    var text, res, _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          text = UI.val('#m-codes-text');
+          if (!(!text || !text.trim())) {
+            _context8.n = 1;
+            break;
+          }
+          UI.notify.err('Вставьте хотя бы один код');
+          return _context8.a(2);
+        case 1:
+          _context8.p = 1;
+          _context8.n = 2;
+          return window.API.seller.importMarkingCodes(itemId, text);
+        case 2:
+          res = _context8.v;
+          UI.notify.ok("\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043E: ".concat(res.imported, " \u0448\u0442.").concat(res.duplicates ? " (\u0434\u0443\u0431\u043B\u0435\u0439 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: ".concat(res.duplicates, ")") : ''));
+          UI.setVal('#m-codes-text', '');
+          _context8.n = 3;
+          return loadMarkingSummary(itemId);
+        case 3:
+          _context8.n = 6;
+          break;
+        case 4:
+          _context8.p = 4;
+          _t6 = _context8.v;
+          if (!isModuleDisabled(_t6)) {
+            _context8.n = 5;
+            break;
+          }
+          closeModal();
+          showModuleDisabled();
+          return _context8.a(2);
+        case 5:
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context8.a(2);
       }
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    loadItems();
-  </script>
+    }, _callee8, null, [[1, 4]]);
+  }));
+  return _uploadCodes.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+loadItems();</script>
 </body>
 </html>

@@ -102,323 +102,625 @@
   <script src="/shared/chart.umd.min.js"></script>
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
+  <script>function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
+function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
+function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
+      }
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+var SERVICE_LABELS = {
+  receiving: 'Приёмка',
+  storage: 'Хранение',
+  placement: 'Размещение',
+  picking: 'Сборка',
+  packing: 'Упаковка',
+  shipping: 'Отгрузка',
+  processing: 'Обработка',
+  returns: 'Возврат',
+  subscription: 'Подписка',
+  materials: 'Расходники'
+};
+var MOVEMENT_LABELS = {
+  receiving: 'Приёмка',
+  placement: 'Размещение',
+  picking: 'Сборка',
+  packing: 'Упаковка',
+  shipping: 'Отгрузка'
+};
 
-    const SERVICE_LABELS = {
-      receiving:'Приёмка', storage:'Хранение', placement:'Размещение', picking:'Сборка',
-      packing:'Упаковка', shipping:'Отгрузка', processing:'Обработка', returns:'Возврат',
-      subscription:'Подписка', materials:'Расходники',
-    };
-    const MOVEMENT_LABELS = {
-      receiving:'Приёмка', placement:'Размещение', picking:'Сборка', packing:'Упаковка', shipping:'Отгрузка',
-    };
+// Палитра под тему приложения (первые 4 — переменные темы, дальше — доп. цвета
+// для линий по клиентам, если их больше четырёх).
+var cs = getComputedStyle(document.documentElement);
+var PALETTE = [cs.getPropertyValue('--accent').trim() || '#0284c7', cs.getPropertyValue('--green').trim() || '#16a34a', cs.getPropertyValue('--yellow').trim() || '#d97706', cs.getPropertyValue('--red').trim() || '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#65a30d'];
+function fmtMoney(n) {
+  return Number(n || 0).toLocaleString('ru-RU', {
+    maximumFractionDigits: 0
+  }) + ' ₽';
+}
+function fmtInt(n) {
+  return Number(n || 0).toLocaleString('ru-RU', {
+    maximumFractionDigits: 0
+  });
+}
+var granularity = 'day';
+function setGranularity(g) {
+  granularity = g;
+  document.querySelectorAll('.tab[data-g]').forEach(function (t) {
+    return t.classList.toggle('active', t.dataset.g === g);
+  });
+  loadAll();
+}
+function currentClientId() {
+  return Number(UI.val('#f-client')) || null;
+}
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, sel, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context3.v;
+          sel = document.getElementById('f-client');
+          sel.innerHTML = '<option value="">Все клиенты</option>' + (res.clients || []).map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          _context3.n = 3;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t = _context3.v;
+        case 3:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function defaultDates() {
+  var to = new Date();
+  var from = new Date();
+  from.setDate(from.getDate() - 29);
+  var iso = function iso(d) {
+    return d.toISOString().slice(0, 10);
+  };
+  UI.setVal('#f-from', iso(from));
+  UI.setVal('#f-to', iso(to));
+}
+var chartRevenueSeries = null,
+  chartRevenueType = null,
+  chartPayrollSeries = null,
+  chartPayrollType = null,
+  chartStorageSeries = null,
+  chartRevenueTypeSeries = null;
+function destroyChart(c) {
+  if (c) c.destroy();
+  return null;
+}
+function loadRevenue(_x) {
+  return _loadRevenue.apply(this, arguments);
+}
+function _loadRevenue() {
+  _loadRevenue = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(params) {
+    var res, periods, clientIds, noteEl, datasets, totals, top, topIds, hasRest, _cnf, clientName, typesPresent, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          document.getElementById('revenue-module-off').style.display = 'none';
+          document.getElementById('revenue-by-client-card').style.display = 'none';
+          _context4.p = 1;
+          _context4.n = 2;
+          return window.API.billing.analytics.revenue(params);
+        case 2:
+          res = _context4.v;
+          document.getElementById('kpi-revenue').textContent = fmtMoney(res.grand_total);
+          document.getElementById('kpi-shipped-qty').textContent = fmtInt(res.shipped_qty_total);
+          document.getElementById('kpi-storage').textContent = fmtMoney(res.storage_total);
 
-    // Палитра под тему приложения (первые 4 — переменные темы, дальше — доп. цвета
-    // для линий по клиентам, если их больше четырёх).
-    const cs = getComputedStyle(document.documentElement);
-    const PALETTE = [
-      cs.getPropertyValue('--accent').trim()  || '#0284c7',
-      cs.getPropertyValue('--green').trim()   || '#16a34a',
-      cs.getPropertyValue('--yellow').trim()  || '#d97706',
-      cs.getPropertyValue('--red').trim()     || '#dc2626',
-      '#7c3aed', '#0891b2', '#db2777', '#65a30d',
-    ];
+          // Сводим series (period, client_id, total) в датасеты по клиентам поверх
+          // общего списка периодов - если выбран конкретный клиент, там будет всего
+          // один client_id и получится одна линия; если "все клиенты" - несколько.
+          // period_grid - ПОЛНЫЙ календарный список периодов от бэка (см. комментарий
+          // в billing.service.js:getRevenueAnalytics), а не список "только те периоды,
+          // где что-то начислено" - иначе дни без выручки выпадали бы из оси X, и
+          // график склеивал бы несмежные даты как соседние, искажая форму линии.
+          periods = res.period_grid;
+          clientIds = _toConsumableArray(new Set(res.series.map(function (r) {
+            return r.client_id;
+          })));
+          noteEl = document.getElementById('revenue-series-note');
+          if (!params.client_id && clientIds.length > 1) {
+            // "Все клиенты" - берём топ-6 по итоговой выручке отдельными линиями,
+            // остальное сворачиваем в "Остальные", чтобы график не превратился в кашу.
+            totals = res.by_client.slice();
+            top = totals.slice(0, 6);
+            topIds = new Set(top.map(function (c) {
+              return c.client_id;
+            }));
+            hasRest = totals.length > top.length;
+            noteEl.textContent = hasRest ? "\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u0442\u043E\u043F-".concat(top.length, " \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u0432 \u043F\u043E \u0432\u044B\u0440\u0443\u0447\u043A\u0435 \u0438\u0437 ").concat(totals.length, ", \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043E\u0431\u044A\u0435\u0434\u0438\u043D\u0435\u043D\u044B \u0432 \"\u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435\"") : '';
+            datasets = top.map(function (c, i) {
+              return {
+                label: c.client_name,
+                data: periods.map(function (p) {
+                  var row = res.series.find(function (r) {
+                    return r.period === p && r.client_id === c.client_id;
+                  });
+                  return row ? row.total : 0;
+                }),
+                borderColor: PALETTE[i % PALETTE.length],
+                backgroundColor: PALETTE[i % PALETTE.length],
+                tension: 0.25,
+                fill: false
+              };
+            });
+            if (hasRest) {
+              datasets.push({
+                label: 'Остальные',
+                data: periods.map(function (p) {
+                  return res.series.filter(function (r) {
+                    return r.period === p && !topIds.has(r.client_id);
+                  }).reduce(function (s, r) {
+                    return s + r.total;
+                  }, 0);
+                }),
+                borderColor: '#94a3b8',
+                backgroundColor: '#94a3b8',
+                borderDash: [4, 4],
+                tension: 0.25,
+                fill: false
+              });
+            }
+          } else {
+            noteEl.textContent = '';
+            _cnf = clientIds.length ? res.series.find(function (r) {
+              return r.client_id === clientIds[0];
+            }) : null;
+            clientName = clientIds.length ? _cnf && _cnf.client_name : 'Выручка';
+            datasets = [{
+              label: clientName || 'Выручка',
+              data: periods.map(function (p) {
+                var row = res.series.find(function (r) {
+                  return r.period === p;
+                });
+                return row ? row.total : 0;
+              }),
+              borderColor: PALETTE[0],
+              backgroundColor: PALETTE[0],
+              tension: 0.25,
+              fill: false
+            }];
+          }
 
-    function fmtMoney(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'; }
-    function fmtInt(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }); }
-
-    let granularity = 'day';
-    function setGranularity(g) {
-      granularity = g;
-      document.querySelectorAll('.tab[data-g]').forEach(t => t.classList.toggle('active', t.dataset.g === g));
-      loadAll();
-    }
-
-    function currentClientId() { return Number(UI.val('#f-client')) || null; }
-
-    async function loadClients() {
-      try {
-        const res = await window.API.clients.short();
-        const sel = document.getElementById('f-client');
-        sel.innerHTML = '<option value="">Все клиенты</option>' +
-          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-      } catch (e) { /* фильтр не критичен */ }
-    }
-
-    function defaultDates() {
-      const to = new Date();
-      const from = new Date(); from.setDate(from.getDate() - 29);
-      const iso = (d) => d.toISOString().slice(0, 10);
-      UI.setVal('#f-from', iso(from));
-      UI.setVal('#f-to', iso(to));
-    }
-
-    let chartRevenueSeries = null, chartRevenueType = null, chartPayrollSeries = null, chartPayrollType = null, chartStorageSeries = null, chartRevenueTypeSeries = null;
-    function destroyChart(c) { if (c) c.destroy(); return null; }
-
-    async function loadRevenue(params) {
-      document.getElementById('revenue-module-off').style.display = 'none';
-      document.getElementById('revenue-by-client-card').style.display = 'none';
-      try {
-        const res = await window.API.billing.analytics.revenue(params);
-        document.getElementById('kpi-revenue').textContent = fmtMoney(res.grand_total);
-        document.getElementById('kpi-shipped-qty').textContent = fmtInt(res.shipped_qty_total);
-        document.getElementById('kpi-storage').textContent = fmtMoney(res.storage_total);
-
-        // Сводим series (period, client_id, total) в датасеты по клиентам поверх
-        // общего списка периодов - если выбран конкретный клиент, там будет всего
-        // один client_id и получится одна линия; если "все клиенты" - несколько.
-        // period_grid - ПОЛНЫЙ календарный список периодов от бэка (см. комментарий
-        // в billing.service.js:getRevenueAnalytics), а не список "только те периоды,
-        // где что-то начислено" - иначе дни без выручки выпадали бы из оси X, и
-        // график склеивал бы несмежные даты как соседние, искажая форму линии.
-        const periods = res.period_grid;
-        const clientIds = [...new Set(res.series.map(r => r.client_id))];
-        const noteEl = document.getElementById('revenue-series-note');
-        let datasets;
-        if (!params.client_id && clientIds.length > 1) {
-          // "Все клиенты" - берём топ-6 по итоговой выручке отдельными линиями,
-          // остальное сворачиваем в "Остальные", чтобы график не превратился в кашу.
-          const totals = res.by_client.slice();
-          const top = totals.slice(0, 6);
-          const topIds = new Set(top.map(c => c.client_id));
-          const hasRest = totals.length > top.length;
-          noteEl.textContent = hasRest
-            ? `Показаны топ-${top.length} клиентов по выручке из ${totals.length}, остальные объединены в "Остальные"`
-            : '';
-          datasets = top.map((c, i) => ({
-            label: c.client_name,
-            data: periods.map(p => {
-              const row = res.series.find(r => r.period === p && r.client_id === c.client_id);
-              return row ? row.total : 0;
-            }),
-            borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length],
-            tension: 0.25, fill: false,
-          }));
-          if (hasRest) {
+          // Линия "Итого" — суммарная выручка по ВСЕМ клиентам за период (не
+          // только топ-6, что попали отдельными линиями выше) - иначе по графику
+          // не видно общую сумму за день, только разбивку по крупнейшим клиентам.
+          // Показываем только в режиме "все клиенты", когда есть что суммировать -
+          // при выбранном одном клиенте это была бы точная копия его же линии.
+          if (!params.client_id && clientIds.length > 1) {
             datasets.push({
-              label: 'Остальные',
-              data: periods.map(p => res.series.filter(r => r.period === p && !topIds.has(r.client_id))
-                .reduce((s, r) => s + r.total, 0)),
-              borderColor: '#94a3b8', backgroundColor: '#94a3b8', borderDash: [4,4],
-              tension: 0.25, fill: false,
+              label: 'Итого',
+              data: periods.map(function (p) {
+                return res.series.filter(function (r) {
+                  return r.period === p;
+                }).reduce(function (s, r) {
+                  return s + r.total;
+                }, 0);
+              }),
+              borderColor: '#0f172a',
+              backgroundColor: '#0f172a',
+              borderWidth: 3,
+              tension: 0.25,
+              fill: false
             });
           }
-        } else {
-          noteEl.textContent = '';
-          const _cnf = clientIds.length ? res.series.find(r=>r.client_id===clientIds[0]) : null;
-          const clientName = clientIds.length ? (_cnf && _cnf.client_name) : 'Выручка';
-          datasets = [{
-            label: clientName || 'Выручка',
-            data: periods.map(p => {
-              const row = res.series.find(r => r.period === p);
-              return row ? row.total : 0;
+
+          // Вторая линия — "Отгружено, шт" (сколько товаров реально уехало со
+          // склада), на отдельной оси Y справа: масштаб штук и рублей обычно
+          // сильно разный, на одной оси одна из линий превратилась бы в плоскую
+          // черту. Пунктир и своя ось сразу отличают её от линий выручки.
+          datasets = [].concat(_toConsumableArray(datasets), [{
+            label: 'Отгружено, шт',
+            data: periods.map(function (p) {
+              var row = (res.shipped_qty_series || []).find(function (r) {
+                return r.period === p;
+              });
+              return row ? row.qty : 0;
             }),
-            borderColor: PALETTE[0], backgroundColor: PALETTE[0], tension: 0.25, fill: false,
-          }];
-        }
-
-        // Линия "Итого" — суммарная выручка по ВСЕМ клиентам за период (не
-        // только топ-6, что попали отдельными линиями выше) - иначе по графику
-        // не видно общую сумму за день, только разбивку по крупнейшим клиентам.
-        // Показываем только в режиме "все клиенты", когда есть что суммировать -
-        // при выбранном одном клиенте это была бы точная копия его же линии.
-        if (!params.client_id && clientIds.length > 1) {
-          datasets.push({
-            label: 'Итого',
-            data: periods.map(p => res.series.filter(r => r.period === p)
-              .reduce((s, r) => s + r.total, 0)),
-            borderColor: '#0f172a', backgroundColor: '#0f172a',
-            borderWidth: 3, tension: 0.25, fill: false,
+            borderColor: '#f59e0b',
+            backgroundColor: '#f59e0b',
+            borderDash: [5, 3],
+            tension: 0.25,
+            fill: false,
+            yAxisID: 'y1'
+          }]);
+          chartRevenueSeries = destroyChart(chartRevenueSeries);
+          chartRevenueSeries = new Chart(document.getElementById('chart-revenue-series'), {
+            type: 'line',
+            data: {
+              labels: periods,
+              datasets: datasets
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: true
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  position: 'left'
+                },
+                y1: {
+                  beginAtZero: true,
+                  position: 'right',
+                  grid: {
+                    drawOnChartArea: false
+                  }
+                }
+              }
+            }
           });
-        }
 
-        // Вторая линия — "Отгружено, шт" (сколько товаров реально уехало со
-        // склада), на отдельной оси Y справа: масштаб штук и рублей обычно
-        // сильно разный, на одной оси одна из линий превратилась бы в плоскую
-        // черту. Пунктир и своя ось сразу отличают её от линий выручки.
-        datasets = [...datasets, {
-          label: 'Отгружено, шт',
-          data: periods.map(p => {
-            const row = (res.shipped_qty_series || []).find(r => r.period === p);
-            return row ? row.qty : 0;
-          }),
-          borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderDash: [5,3],
-          tension: 0.25, fill: false, yAxisID: 'y1',
-        }];
+          // Отдельный график по хранению — тот же period_grid, что и у основной
+          // "Динамики выручки", просто одна линия по service_type='storage'.
+          chartStorageSeries = destroyChart(chartStorageSeries);
+          chartStorageSeries = new Chart(document.getElementById('chart-storage-series'), {
+            type: 'line',
+            data: {
+              labels: periods,
+              datasets: [{
+                label: 'Хранение',
+                data: periods.map(function (p) {
+                  var row = (res.storage_series || []).find(function (r) {
+                    return r.period === p;
+                  });
+                  return row ? row.total : 0;
+                }),
+                borderColor: PALETTE[2] || '#16a34a',
+                backgroundColor: PALETTE[2] || '#16a34a',
+                tension: 0.25,
+                fill: false
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
 
-        chartRevenueSeries = destroyChart(chartRevenueSeries);
-        chartRevenueSeries = new Chart(document.getElementById('chart-revenue-series'), {
-          type: 'line',
-          data: { labels: periods, datasets },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: {
-              y:  { beginAtZero: true, position: 'left' },
-              y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } },
-            } },
-        });
-
-        // Отдельный график по хранению — тот же period_grid, что и у основной
-        // "Динамики выручки", просто одна линия по service_type='storage'.
-        chartStorageSeries = destroyChart(chartStorageSeries);
-        chartStorageSeries = new Chart(document.getElementById('chart-storage-series'), {
-          type: 'line',
-          data: {
-            labels: periods,
-            datasets: [{ label: 'Хранение', data: periods.map(p => {
-                const row = (res.storage_series || []).find(r => r.period === p);
-                return row ? row.total : 0;
-              }),
-              borderColor: PALETTE[2] || '#16a34a', backgroundColor: PALETTE[2] || '#16a34a', tension: 0.25, fill: false }],
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } } },
-        });
-
-        // Динамика выручки по типу операции (возврат/приёмка/хранение/обработка/…) -
-        // одна линия на каждый service_type, встречающийся в выборке за период.
-        // В отличие от разбивки по клиентам линий обычно немного (в системе всего
-        // 9 типов услуг), поэтому топ-N здесь не нужен - показываем все как есть.
-        const typesPresent = [...new Set((res.series_by_type || []).map(r => r.service_type))]
-          .sort((a, b) => {
-            const _fA = res.by_service_type.find(t => t.service_type === a);
-            const _fB = res.by_service_type.find(t => t.service_type === b);
-            const totalA = (_fA && _fA.total) || 0;
-            const totalB = (_fB && _fB.total) || 0;
+          // Динамика выручки по типу операции (возврат/приёмка/хранение/обработка/…) -
+          // одна линия на каждый service_type, встречающийся в выборке за период.
+          // В отличие от разбивки по клиентам линий обычно немного (в системе всего
+          // 9 типов услуг), поэтому топ-N здесь не нужен - показываем все как есть.
+          typesPresent = _toConsumableArray(new Set((res.series_by_type || []).map(function (r) {
+            return r.service_type;
+          }))).sort(function (a, b) {
+            var _fA = res.by_service_type.find(function (t) {
+              return t.service_type === a;
+            });
+            var _fB = res.by_service_type.find(function (t) {
+              return t.service_type === b;
+            });
+            var totalA = _fA && _fA.total || 0;
+            var totalB = _fB && _fB.total || 0;
             return totalB - totalA;
           });
-        chartRevenueTypeSeries = destroyChart(chartRevenueTypeSeries);
-        chartRevenueTypeSeries = new Chart(document.getElementById('chart-revenue-type-series'), {
-          type: 'line',
-          data: {
-            labels: periods,
-            datasets: typesPresent.map((t, i) => ({
-              label: SERVICE_LABELS[t] || t,
-              data: periods.map(p => {
-                const row = (res.series_by_type || []).find(r => r.period === p && r.service_type === t);
-                return row ? row.total : 0;
+          chartRevenueTypeSeries = destroyChart(chartRevenueTypeSeries);
+          chartRevenueTypeSeries = new Chart(document.getElementById('chart-revenue-type-series'), {
+            type: 'line',
+            data: {
+              labels: periods,
+              datasets: typesPresent.map(function (t, i) {
+                return {
+                  label: SERVICE_LABELS[t] || t,
+                  data: periods.map(function (p) {
+                    var row = (res.series_by_type || []).find(function (r) {
+                      return r.period === p && r.service_type === t;
+                    });
+                    return row ? row.total : 0;
+                  }),
+                  borderColor: PALETTE[i % PALETTE.length],
+                  backgroundColor: PALETTE[i % PALETTE.length],
+                  tension: 0.25,
+                  fill: false
+                };
+              })
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: true
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+          chartRevenueType = destroyChart(chartRevenueType);
+          chartRevenueType = new Chart(document.getElementById('chart-revenue-type'), {
+            type: 'bar',
+            data: {
+              labels: res.by_service_type.map(function (r) {
+                return SERVICE_LABELS[r.service_type] || r.service_type;
               }),
-              borderColor: PALETTE[i % PALETTE.length], backgroundColor: PALETTE[i % PALETTE.length],
-              tension: 0.25, fill: false,
-            })),
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: { y: { beginAtZero: true } } },
-        });
-
-        chartRevenueType = destroyChart(chartRevenueType);
-        chartRevenueType = new Chart(document.getElementById('chart-revenue-type'), {
-          type: 'bar',
-          data: {
-            labels: res.by_service_type.map(r => SERVICE_LABELS[r.service_type] || r.service_type),
-            datasets: [{ data: res.by_service_type.map(r => r.total), backgroundColor: PALETTE[0] }],
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } } },
-        });
-
-        if (!params.client_id && res.by_client.length > 1) {
-          document.getElementById('revenue-by-client-card').style.display = 'block';
-          document.getElementById('revenue-by-client-list').innerHTML = res.by_client.map(c => `
-            <div class="rank-row"><span class="name">${UI.escHtml(c.client_name)}</span><span class="amt">${fmtMoney(c.total)}</span></div>
-          `).join('');
-        }
-      } catch (e) {
-        if (isModuleDisabled(e)) { document.getElementById('revenue-module-off').style.display = 'block'; return; }
-        UI.notify.err(e.message);
+              datasets: [{
+                data: res.by_service_type.map(function (r) {
+                  return r.total;
+                }),
+                backgroundColor: PALETTE[0]
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+          if (!params.client_id && res.by_client.length > 1) {
+            document.getElementById('revenue-by-client-card').style.display = 'block';
+            document.getElementById('revenue-by-client-list').innerHTML = res.by_client.map(function (c) {
+              return "\n            <div class=\"rank-row\"><span class=\"name\">".concat(UI.escHtml(c.client_name), "</span><span class=\"amt\">").concat(fmtMoney(c.total), "</span></div>\n          ");
+            }).join('');
+          }
+          _context4.n = 5;
+          break;
+        case 3:
+          _context4.p = 3;
+          _t2 = _context4.v;
+          if (!isModuleDisabled(_t2)) {
+            _context4.n = 4;
+            break;
+          }
+          document.getElementById('revenue-module-off').style.display = 'block';
+          return _context4.a(2);
+        case 4:
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context4.a(2);
       }
-    }
+    }, _callee4, null, [[1, 3]]);
+  }));
+  return _loadRevenue.apply(this, arguments);
+}
+function loadPayroll(_x2) {
+  return _loadPayroll.apply(this, arguments);
+}
+function _loadPayroll() {
+  _loadPayroll = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(params) {
+    var res, payrollPeriods, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          document.getElementById('payroll-module-off').style.display = 'none';
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.payroll.analytics(params);
+        case 2:
+          res = _context5.v;
+          document.getElementById('kpi-payroll').textContent = fmtMoney(res.grand_total);
 
-    async function loadPayroll(params) {
-      document.getElementById('payroll-module-off').style.display = 'none';
-      try {
-        const res = await window.API.payroll.analytics(params);
-        document.getElementById('kpi-payroll').textContent = fmtMoney(res.grand_total);
-
-        // Тот же приём, что и в loadRevenue() - полная сетка периодов, а не только
-        // те, где реально что-то начислено.
-        const payrollPeriods = res.period_grid;
-        chartPayrollSeries = destroyChart(chartPayrollSeries);
-        chartPayrollSeries = new Chart(document.getElementById('chart-payroll-series'), {
-          type: 'line',
-          data: {
-            labels: payrollPeriods,
-            datasets: [{ label: 'ЗП', data: payrollPeriods.map(p => {
-                const row = res.series.find(r => r.period === p);
-                return row ? row.total : 0;
+          // Тот же приём, что и в loadRevenue() - полная сетка периодов, а не только
+          // те, где реально что-то начислено.
+          payrollPeriods = res.period_grid;
+          chartPayrollSeries = destroyChart(chartPayrollSeries);
+          chartPayrollSeries = new Chart(document.getElementById('chart-payroll-series'), {
+            type: 'line',
+            data: {
+              labels: payrollPeriods,
+              datasets: [{
+                label: 'ЗП',
+                data: payrollPeriods.map(function (p) {
+                  var row = res.series.find(function (r) {
+                    return r.period === p;
+                  });
+                  return row ? row.total : 0;
+                }),
+                borderColor: PALETTE[3],
+                backgroundColor: PALETTE[3],
+                tension: 0.25,
+                fill: true
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+          chartPayrollType = destroyChart(chartPayrollType);
+          chartPayrollType = new Chart(document.getElementById('chart-payroll-type'), {
+            type: 'bar',
+            data: {
+              labels: res.by_movement_type.map(function (r) {
+                return MOVEMENT_LABELS[r.movement_type] || r.movement_type;
               }),
-              borderColor: PALETTE[3], backgroundColor: PALETTE[3], tension: 0.25, fill: true }],
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } } },
-        });
-
-        chartPayrollType = destroyChart(chartPayrollType);
-        chartPayrollType = new Chart(document.getElementById('chart-payroll-type'), {
-          type: 'bar',
-          data: {
-            labels: res.by_movement_type.map(r => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
-            datasets: [{ data: res.by_movement_type.map(r => r.total), backgroundColor: PALETTE[3] }],
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } } },
-        });
-      } catch (e) {
-        if (isModuleDisabled(e)) { document.getElementById('payroll-module-off').style.display = 'block'; return; }
-        UI.notify.err(e.message);
+              datasets: [{
+                data: res.by_movement_type.map(function (r) {
+                  return r.total;
+                }),
+                backgroundColor: PALETTE[3]
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+          _context5.n = 5;
+          break;
+        case 3:
+          _context5.p = 3;
+          _t3 = _context5.v;
+          if (!isModuleDisabled(_t3)) {
+            _context5.n = 4;
+            break;
+          }
+          document.getElementById('payroll-module-off').style.display = 'block';
+          return _context5.a(2);
+        case 4:
+          UI.notify.err(_t3.message);
+        case 5:
+          return _context5.a(2);
       }
+    }, _callee5, null, [[1, 3]]);
+  }));
+  return _loadPayroll.apply(this, arguments);
+}
+function updateDiffKpi() {
+  var revText = document.getElementById('kpi-revenue').textContent;
+  var payText = document.getElementById('kpi-payroll').textContent;
+  var rev = Number(revText.replace(/[^\d.-]/g, '')) || 0;
+  var pay = Number(payText.replace(/[^\d.-]/g, '')) || 0;
+  var diff = rev - pay;
+  var el = document.getElementById('kpi-diff');
+  el.textContent = fmtMoney(diff);
+  el.style.color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+}
+function loadAll() {
+  return _loadAll.apply(this, arguments);
+}
+function _loadAll() {
+  _loadAll = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var dateFrom, dateTo, clientId, revenueParams, payrollParams;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.n) {
+        case 0:
+          dateFrom = UI.val('#f-from'), dateTo = UI.val('#f-to');
+          if (!(!dateFrom || !dateTo)) {
+            _context6.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите период');
+          return _context6.a(2);
+        case 1:
+          clientId = currentClientId();
+          document.getElementById('kpi-revenue').textContent = '—';
+          document.getElementById('kpi-payroll').textContent = '—';
+          document.getElementById('kpi-diff').textContent = '—';
+          // ВАЖНО: не кладём client_id в объект параметров вовсе, если клиент не выбран —
+          // new URLSearchParams({client_id: undefined, ...}) превратит его в буквальную
+          // строку "client_id=undefined" (а не пропустит ключ), и бэкенд воспримет её
+          // как невалидный client_id вместо "все клиенты".
+          revenueParams = {
+            date_from: dateFrom,
+            date_to: dateTo,
+            granularity: granularity
+          };
+          if (clientId) revenueParams.client_id = clientId;
+          payrollParams = {
+            date_from: dateFrom,
+            date_to: dateTo,
+            granularity: granularity
+          };
+          if (clientId) payrollParams.client_id = clientId;
+          _context6.n = 2;
+          return Promise.all([loadRevenue(revenueParams), loadPayroll(payrollParams)]);
+        case 2:
+          updateDiffKpi();
+        case 3:
+          return _context6.a(2);
+      }
+    }, _callee6);
+  }));
+  return _loadAll.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadClients();
+      case 1:
+        defaultDates();
+        _context.n = 2;
+        return loadAll();
+      case 2:
+        return _context.a(2);
     }
-
-    function updateDiffKpi() {
-      const revText = document.getElementById('kpi-revenue').textContent;
-      const payText = document.getElementById('kpi-payroll').textContent;
-      const rev = Number(revText.replace(/[^\d.-]/g, '')) || 0;
-      const pay = Number(payText.replace(/[^\d.-]/g, '')) || 0;
-      const diff = rev - pay;
-      const el = document.getElementById('kpi-diff');
-      el.textContent = fmtMoney(diff);
-      el.style.color = diff >= 0 ? 'var(--green)' : 'var(--red)';
-    }
-
-    async function loadAll() {
-      const dateFrom = UI.val('#f-from'), dateTo = UI.val('#f-to');
-      if (!dateFrom || !dateTo) { UI.notify.err('Укажите период'); return; }
-      const clientId = currentClientId();
-      document.getElementById('kpi-revenue').textContent = '—';
-      document.getElementById('kpi-payroll').textContent = '—';
-      document.getElementById('kpi-diff').textContent = '—';
-      // ВАЖНО: не кладём client_id в объект параметров вовсе, если клиент не выбран —
-      // new URLSearchParams({client_id: undefined, ...}) превратит его в буквальную
-      // строку "client_id=undefined" (а не пропустит ключ), и бэкенд воспримет её
-      // как невалидный client_id вместо "все клиенты".
-      const revenueParams = { date_from: dateFrom, date_to: dateTo, granularity };
-      if (clientId) revenueParams.client_id = clientId;
-      const payrollParams = { date_from: dateFrom, date_to: dateTo, granularity };
-      if (clientId) payrollParams.client_id = clientId;
-      await Promise.all([
-        loadRevenue(revenueParams),
-        loadPayroll(payrollParams),
-      ]);
-      updateDiffKpi();
-    }
-
-    (async () => {
-      await loadClients();
-      defaultDates();
-      await loadAll();
-    })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

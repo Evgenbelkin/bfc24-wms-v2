@@ -45,106 +45,142 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['seller'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    let rows = [];
-
-    async function loadHistory() {
-      try {
-        const params = {};
-        const from = UI.val('#f-from');
-        const to = UI.val('#f-to');
-        if (from) params.date_from = from;
-        if (to) params.date_to = to;
-        const res = await window.API.seller.receivingHistory(params);
-        rows = res.rows || [];
-        renderRows();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // Для многих товаров (не одежда — двери, лопатки, игрушки и т.п.) размер
-    // не задан и в базе лежит технический "0" — показывать его как настоящий
-    // размер вводит в заблуждение, прячем так же, как прячем пустой размер.
-    function fmtSize(size) {
-      const s = String(size != null ? size : '').trim();
-      return (!s || s === '0') ? '—' : UI.escHtml(s);
-    }
-
-    function getFiltered() {
-      const term = UI.val('#f-search').toLowerCase();
-      return term
-        ? rows.filter(r =>
-            (r.item_name||'').toLowerCase().includes(term) ||
-            (r.barcode||'').includes(term) ||
-            (r.vendor_code||'').toLowerCase().includes(term))
-        : rows;
-    }
-
-    function renderRows() {
-      const filtered = getFiltered();
-
-      document.getElementById('k-count').textContent = filtered.length;
-      document.getElementById('k-received').textContent = UI.fmtQty(filtered.reduce((a,r)=>a+Number(r.qty_received||0),0));
-      document.getElementById('k-damaged').textContent = UI.fmtQty(filtered.reduce((a,r)=>a+Number(r.qty_damaged||0),0));
-
-      const body = document.getElementById('rows-body');
-      if (!filtered.length) {
-        body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">Пока ничего не принято</td></tr>`;
-        return;
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t.return || t.return(); } finally { if (u) throw o; } } }; }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['seller'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-      body.innerHTML = filtered.map(r => `
-        <tr>
-          <td>${r.completed_at ? UI.fmtDateTime(r.completed_at) : '—'}</td>
-          <td>${UI.escHtml(r.item_name || '—')}</td>
-          <td>${UI.escHtml(r.vendor_code || '—')}</td>
-          <td>${fmtSize(r.size)}</td>
-          <td>${UI.escHtml(r.barcode || '—')}</td>
-          <td><strong>${UI.fmtQty(r.qty_received)}</strong></td>
-          <td>${Number(r.qty_damaged||0) > 0 ? `<span class="qty-damaged">${UI.fmtQty(r.qty_damaged)}</span>` : '—'}</td>
-        </tr>
-      `).join('');
-    }
-
-    // Выгрузка в Excel — берём ровно то, что сейчас отфильтровано на экране
-    // (поиск + диапазон дат), а не только видимую страницу — пагинации тут
-    // нет, всё уже загружено. Формат CSV с BOM и разделителем ";" — Excel
-    // на русской локали открывает такой файл сразу с кириллицей и без
-    // "текста в одну колонку", без сторонних библиотек на странице.
-    function exportExcel() {
-      const filtered = getFiltered();
-      if (!filtered.length) { UI.notify.warn('Нечего выгружать'); return; }
-      const headers = ['Дата приёмки','Товар','Артикул','Размер','Штрихкод','Принято','Брак'];
-      const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-      const lines = [headers.map(escCsv).join(';')];
-      for (const r of filtered) {
-        lines.push([
-          r.completed_at ? UI.fmtDateTime(r.completed_at) : '',
-          r.item_name || '',
-          r.vendor_code || '',
-          (String(r.size != null ? r.size : '').trim() === '0') ? '' : (r.size || ''),
-          r.barcode || '',
-          r.qty_received || 0,
-          r.qty_damaged || 0,
-        ].map(escCsv).join(';'));
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+var rows = [];
+function loadHistory() {
+  return _loadHistory.apply(this, arguments);
+} // Для многих товаров (не одежда — двери, лопатки, игрушки и т.п.) размер
+// не задан и в базе лежит технический "0" — показывать его как настоящий
+// размер вводит в заблуждение, прячем так же, как прячем пустой размер.
+function _loadHistory() {
+  _loadHistory = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var params, from, to, res, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          params = {};
+          from = UI.val('#f-from');
+          to = UI.val('#f-to');
+          if (from) params.date_from = from;
+          if (to) params.date_to = to;
+          _context2.n = 1;
+          return window.API.seller.receivingHistory(params);
+        case 1:
+          res = _context2.v;
+          rows = res.rows || [];
+          renderRows();
+          _context2.n = 3;
+          break;
+        case 2:
+          _context2.p = 2;
+          _t = _context2.v;
+          UI.notify.err(_t.message);
+        case 3:
+          return _context2.a(2);
       }
-      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Приёмка_${new Date().toISOString().slice(0,10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
+    }, _callee2, null, [[0, 2]]);
+  }));
+  return _loadHistory.apply(this, arguments);
+}
+function fmtSize(size) {
+  var s = String(size != null ? size : '').trim();
+  return !s || s === '0' ? '—' : UI.escHtml(s);
+}
+function getFiltered() {
+  var term = UI.val('#f-search').toLowerCase();
+  return term ? rows.filter(function (r) {
+    return (r.item_name || '').toLowerCase().includes(term) || (r.barcode || '').includes(term) || (r.vendor_code || '').toLowerCase().includes(term);
+  }) : rows;
+}
+function renderRows() {
+  var filtered = getFiltered();
+  document.getElementById('k-count').textContent = filtered.length;
+  document.getElementById('k-received').textContent = UI.fmtQty(filtered.reduce(function (a, r) {
+    return a + Number(r.qty_received || 0);
+  }, 0));
+  document.getElementById('k-damaged').textContent = UI.fmtQty(filtered.reduce(function (a, r) {
+    return a + Number(r.qty_damaged || 0);
+  }, 0));
+  var body = document.getElementById('rows-body');
+  if (!filtered.length) {
+    body.innerHTML = "<tr><td colspan=\"7\" style=\"text-align:center;color:var(--muted);padding:24px;\">\u041F\u043E\u043A\u0430 \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043F\u0440\u0438\u043D\u044F\u0442\u043E</td></tr>";
+    return;
+  }
+  body.innerHTML = filtered.map(function (r) {
+    return "\n        <tr>\n          <td>".concat(r.completed_at ? UI.fmtDateTime(r.completed_at) : '—', "</td>\n          <td>").concat(UI.escHtml(r.item_name || '—'), "</td>\n          <td>").concat(UI.escHtml(r.vendor_code || '—'), "</td>\n          <td>").concat(fmtSize(r.size), "</td>\n          <td>").concat(UI.escHtml(r.barcode || '—'), "</td>\n          <td><strong>").concat(UI.fmtQty(r.qty_received), "</strong></td>\n          <td>").concat(Number(r.qty_damaged || 0) > 0 ? "<span class=\"qty-damaged\">".concat(UI.fmtQty(r.qty_damaged), "</span>") : '—', "</td>\n        </tr>\n      ");
+  }).join('');
+}
 
-    loadHistory();
-  </script>
+// Выгрузка в Excel — берём ровно то, что сейчас отфильтровано на экране
+// (поиск + диапазон дат), а не только видимую страницу — пагинации тут
+// нет, всё уже загружено. Формат CSV с BOM и разделителем ";" — Excel
+// на русской локали открывает такой файл сразу с кириллицей и без
+// "текста в одну колонку", без сторонних библиотек на странице.
+function exportExcel() {
+  var filtered = getFiltered();
+  if (!filtered.length) {
+    UI.notify.warn('Нечего выгружать');
+    return;
+  }
+  var headers = ['Дата приёмки', 'Товар', 'Артикул', 'Размер', 'Штрихкод', 'Принято', 'Брак'];
+  var escCsv = function escCsv(v) {
+    return "\"".concat(String(v == null ? '' : v).replace(/"/g, '""'), "\"");
+  };
+  var lines = [headers.map(escCsv).join(';')];
+  var _iterator = _createForOfIteratorHelper(filtered),
+    _step;
+  try {
+    for (_iterator.s(); !(_step = _iterator.n()).done;) {
+      var r = _step.value;
+      lines.push([r.completed_at ? UI.fmtDateTime(r.completed_at) : '', r.item_name || '', r.vendor_code || '', String(r.size != null ? r.size : '').trim() === '0' ? '' : r.size || '', r.barcode || '', r.qty_received || 0, r.qty_damaged || 0].map(escCsv).join(';'));
+    }
+  } catch (err) {
+    _iterator.e(err);
+  } finally {
+    _iterator.f();
+  }
+  var blob = new Blob(['﻿' + lines.join('\r\n')], {
+    type: 'text/csv;charset=utf-8;'
+  });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = "\u041F\u0440\u0438\u0451\u043C\u043A\u0430_".concat(new Date().toISOString().slice(0, 10), ".csv");
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+loadHistory();</script>
 </body>
 </html>

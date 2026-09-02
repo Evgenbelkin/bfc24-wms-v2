@@ -112,354 +112,636 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/act-print.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['tenant_admin','supervisor','receiver'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    const user = window.API.getUser();
-    const canCancel = (user && user.role === 'tenant_admin') || (user && user.role === 'supervisor');
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    const STATUS_LABELS = {
-      draft:'черновик', confirmed:'отправлена складу', scheduled:'назначена дата приёмки',
-      in_progress:'приёмка началась', completed:'принята полностью', partial:'принята частично (закрыта)', cancelled:'отменена',
-    };
-    const STATUS_PILL = {
-      draft:'pill-gray', confirmed:'pill-blue', scheduled:'pill-blue',
-      in_progress:'pill-yellow', completed:'pill-green', partial:'pill-yellow', cancelled:'pill-red',
-    };
-    const LINE_STATUS_LABELS = { pending:'ожидает', partial:'частично', received:'принято', excess:'больше плана', cancelled:'отменена' };
-    const TERMINAL_STATUSES = ['completed', 'partial', 'cancelled'];
-
-    let currentOrderId = null;
-    let currentOrder = null;
-    let currentOrderLines = [];
-
-    async function loadClients() {
-      try {
-        const res = await window.API.clients.short();
-        const sel = document.getElementById('f-client');
-        sel.innerHTML = '<option value="">Все клиенты</option>' +
-          (res.clients||[]).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-        sel.addEventListener('change', () => loadOrders());
-      } catch (e) { /* фильтр не критичен, просто не подгрузится список клиентов */ }
-    }
-
-    async function loadOrders() {
-      const list = document.getElementById('orders-list');
-      try {
-        const params = { limit: 200 };
-        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
-        const status = UI.val('#f-status'); if (status) params.status = status;
-        const res = await window.API.inbound.list(params);
-        const orders = res.orders || [];
-        document.getElementById('orders-count').textContent = orders.length;
-        if (!orders.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Заявок нет</div>`;
-          return;
-        }
-        list.innerHTML = orders.map(o => `
-          <div class="list-row order-row" onclick="openOrder(${o.id})">
-            <div class="main">
-              <div class="title">${UI.escHtml(o.order_number)}</div>
-              <div class="sub">${UI.escHtml(o.client_name||'')} · Ожидается: ${o.expected_date ? UI.fmtDate(o.expected_date) : 'не указано'} · Единиц: ${o.total_expected_qty||0}</div>
-            </div>
-            <span class="pill ${STATUS_PILL[o.status]||'pill-gray'}">${STATUS_LABELS[o.status]||o.status}</span>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function openOrder(id) {
-      try {
-        currentOrderId = id;
-        const res = await window.API.inbound.get(id);
-        const o = res.order;
-        currentOrder = o;
-        currentOrderLines = res.lines || [];
-        document.getElementById('list-view').style.display = 'none';
-        document.getElementById('detail-view').style.display = 'block';
-
-        document.getElementById('d-number').textContent = o.order_number;
-        document.getElementById('d-status').textContent = STATUS_LABELS[o.status] || o.status;
-        document.getElementById('d-client').textContent = o.client_name || '—';
-        document.getElementById('d-expected').textContent = o.expected_date ? UI.fmtDate(o.expected_date) : '—';
-        document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
-        document.getElementById('d-barcode').textContent = o.barcode;
-        document.getElementById('d-notes').textContent = o.notes || '';
-        document.getElementById('d-driver-name').value = o.driver_name || '';
-        document.getElementById('d-vehicle-make').value = o.vehicle_make || '';
-
-        const closedInfo = document.getElementById('d-closed-info');
-        if (o.closed_at) {
-          closedInfo.style.display = 'block';
-          closedInfo.textContent = `Закрыта как есть ${UI.fmtDateTime(o.closed_at)}${o.closed_reason ? ' — ' + o.closed_reason : ''}`;
-        } else {
-          closedInfo.style.display = 'none';
-        }
-
-        const lines = res.lines || [];
-        document.getElementById('detail-lines-body').innerHTML = lines.length
-          ? lines.map(l => `
-              <tr>
-                <td>${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}<div style="color:var(--muted);font-size:11px;">${[l.vendor_code, l.size ? 'разм. '+l.size : null].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td>
-                <td>${UI.escHtml(l.barcode)}</td>
-                <td>${UI.fmtQty(l.qty_expected)}</td>
-                <td>${UI.fmtQty(l.qty_received||0)}</td>
-                <td>${LINE_STATUS_LABELS[l.status]||l.status||'—'}</td>
-              </tr>
-            `).join('')
-          : `<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет строк</td></tr>`;
-
-        document.getElementById('confirm-btn').style.display = (o.status === 'draft') ? 'block' : 'none';
-        document.getElementById('close-short-btn').style.display = !TERMINAL_STATUSES.includes(o.status) && o.status !== 'draft' ? 'block' : 'none';
-        document.getElementById('cancel-btn').style.display = (canCancel && !TERMINAL_STATUSES.includes(o.status)) ? 'block' : 'none';
-        // Акт доступен, как только по заявке хоть что-то фактически принято —
-        // раньше сверять нечего.
-        document.getElementById('act-btn').style.display = (Number(o.total_received_qty) > 0) ? 'block' : 'none';
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function confirmOrder() {
-      if (!currentOrderId) return;
-      try {
-        await window.API.inbound.confirm(currentOrderId);
-        UI.notify.ok('Заявка подтверждена');
-        await openOrder(currentOrderId);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function closeOrderShort() {
-      if (!currentOrderId) return;
-      const reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
-      if (reason === null) return;
-      if (!UI.confirm('Закрыть заявку как есть? Уже принятый товар останется на складе, заявка станет финальной.')) return;
-      try {
-        await window.API.inbound.closeShort(currentOrderId, reason);
-        UI.notify.ok('Заявка закрыта');
-        await openOrder(currentOrderId);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function saveDeliveryInfo() {
-      if (!currentOrderId) return;
-      try {
-        await window.API.inbound.updateDeliveryInfo(currentOrderId, {
-          driver_name: UI.val('#d-driver-name'),
-          vehicle_make: UI.val('#d-vehicle-make'),
-        });
-        UI.notify.ok('Сохранено');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function printOrderLabel() {
-      if (!currentOrderId) return;
-      // Открываем окно печати СИНХРОННО, до await — иначе мобильные браузеры
-      // блокируют popup, открытый уже после асинхронного запроса.
-      const win = window.open('', '_blank');
-      if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим этикетку...</p>');
-      try {
-        const res = await window.API.inbound.label(currentOrderId);
-        if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); return; }
-        win.document.open();
-        win.document.write(`
-          <html><head><title>${UI.escHtml(res.order_number)}</title>
-          <style>body{margin:0;display:flex;align-items:center;justify-content:center;} svg{max-width:100%;}</style>
-          </head><body onload="window.print()">${res.svg}</body></html>
-        `);
-        win.document.close();
-      } catch (e) {
-        if (win) win.close();
-        UI.notify.err(e.message);
+  <script>function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['tenant_admin', 'supervisor', 'receiver'])) {
+  window.location.href = '/app/menu.html';
+}
+var user = window.API.getUser();
+var canCancel = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-    }
-
-    // ============ Акт приёмки товара ============
-    // Один акт на заявку: если уже формировали раньше - открываем на
-    // редактирование (acts.update), иначе создаём новый (acts.create).
-
-    let currentAct = null; // { id, ...} существующего акта по этой заявке, если есть
-
-    async function openActModal() {
-      if (!currentOrder) return;
-      let client = null, tenant = null;
-      currentAct = null;
-      try {
-        const [clientRes, tenantRes, actsRes] = await Promise.all([
-          window.API.clients.get(currentOrder.client_id),
-          window.API.tenant.profile(),
-          window.API.acts.list({ inbound_order_id: currentOrderId, client_id: currentOrder.client_id }),
-        ]);
-        client = clientRes.client;
-        tenant = tenantRes.profile;
-        if (actsRes.acts && actsRes.acts.length) {
-          const full = await window.API.acts.get(actsRes.acts[0].id);
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+var STATUS_LABELS = {
+  draft: 'черновик',
+  confirmed: 'отправлена складу',
+  scheduled: 'назначена дата приёмки',
+  in_progress: 'приёмка началась',
+  completed: 'принята полностью',
+  partial: 'принята частично (закрыта)',
+  cancelled: 'отменена'
+};
+var STATUS_PILL = {
+  draft: 'pill-gray',
+  confirmed: 'pill-blue',
+  scheduled: 'pill-blue',
+  in_progress: 'pill-yellow',
+  completed: 'pill-green',
+  partial: 'pill-yellow',
+  cancelled: 'pill-red'
+};
+var LINE_STATUS_LABELS = {
+  pending: 'ожидает',
+  partial: 'частично',
+  received: 'принято',
+  excess: 'больше плана',
+  cancelled: 'отменена'
+};
+var TERMINAL_STATUSES = ['completed', 'partial', 'cancelled'];
+var currentOrderId = null;
+var currentOrder = null;
+var currentOrderLines = [];
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, sel, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context3.v;
+          sel = document.getElementById('f-client');
+          sel.innerHTML = '<option value="">Все клиенты</option>' + (res.clients || []).map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          sel.addEventListener('change', function () {
+            return loadOrders();
+          });
+          _context3.n = 3;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t = _context3.v;
+        case 3:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function loadOrders() {
+  return _loadOrders.apply(this, arguments);
+}
+function _loadOrders() {
+  _loadOrders = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var list, params, clientId, status, res, orders, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          list = document.getElementById('orders-list');
+          _context4.p = 1;
+          params = {
+            limit: 200
+          };
+          clientId = UI.val('#f-client');
+          if (clientId) params.client_id = clientId;
+          status = UI.val('#f-status');
+          if (status) params.status = status;
+          _context4.n = 2;
+          return window.API.inbound.list(params);
+        case 2:
+          res = _context4.v;
+          orders = res.orders || [];
+          document.getElementById('orders-count').textContent = orders.length;
+          if (orders.length) {
+            _context4.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M3 12h4l1.5 3h7L17 12h4\"/><path d=\"M12 3v6M9 6l3 3 3-3\"/></svg></div>\u0417\u0430\u044F\u0432\u043E\u043A \u043D\u0435\u0442</div>";
+          return _context4.a(2);
+        case 3:
+          list.innerHTML = orders.map(function (o) {
+            return "\n          <div class=\"list-row order-row\" onclick=\"openOrder(".concat(o.id, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(o.order_number), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(o.client_name || ''), " \xB7 \u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F: ").concat(o.expected_date ? UI.fmtDate(o.expected_date) : 'не указано', " \xB7 \u0415\u0434\u0438\u043D\u0438\u0446: ").concat(o.total_expected_qty || 0, "</div>\n            </div>\n            <span class=\"pill ").concat(STATUS_PILL[o.status] || 'pill-gray', "\">").concat(STATUS_LABELS[o.status] || o.status, "</span>\n          </div>\n        ");
+          }).join('');
+          _context4.n = 5;
+          break;
+        case 4:
+          _context4.p = 4;
+          _t2 = _context4.v;
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[1, 4]]);
+  }));
+  return _loadOrders.apply(this, arguments);
+}
+function openOrder(_x) {
+  return _openOrder.apply(this, arguments);
+}
+function _openOrder() {
+  _openOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(id) {
+    var res, o, closedInfo, lines, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          currentOrderId = id;
+          _context5.n = 1;
+          return window.API.inbound.get(id);
+        case 1:
+          res = _context5.v;
+          o = res.order;
+          currentOrder = o;
+          currentOrderLines = res.lines || [];
+          document.getElementById('list-view').style.display = 'none';
+          document.getElementById('detail-view').style.display = 'block';
+          document.getElementById('d-number').textContent = o.order_number;
+          document.getElementById('d-status').textContent = STATUS_LABELS[o.status] || o.status;
+          document.getElementById('d-client').textContent = o.client_name || '—';
+          document.getElementById('d-expected').textContent = o.expected_date ? UI.fmtDate(o.expected_date) : '—';
+          document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
+          document.getElementById('d-barcode').textContent = o.barcode;
+          document.getElementById('d-notes').textContent = o.notes || '';
+          document.getElementById('d-driver-name').value = o.driver_name || '';
+          document.getElementById('d-vehicle-make').value = o.vehicle_make || '';
+          closedInfo = document.getElementById('d-closed-info');
+          if (o.closed_at) {
+            closedInfo.style.display = 'block';
+            closedInfo.textContent = "\u0417\u0430\u043A\u0440\u044B\u0442\u0430 \u043A\u0430\u043A \u0435\u0441\u0442\u044C ".concat(UI.fmtDateTime(o.closed_at)).concat(o.closed_reason ? ' — ' + o.closed_reason : '');
+          } else {
+            closedInfo.style.display = 'none';
+          }
+          lines = res.lines || [];
+          document.getElementById('detail-lines-body').innerHTML = lines.length ? lines.map(function (l) {
+            return "\n              <tr>\n                <td>".concat(UI.escHtml(l.item_name_master || l.item_name || l.barcode), "<div style=\"color:var(--muted);font-size:11px;\">").concat([l.vendor_code, l.size ? 'разм. ' + l.size : null].filter(Boolean).map(UI.escHtml).join(' · '), "</div></td>\n                <td>").concat(UI.escHtml(l.barcode), "</td>\n                <td>").concat(UI.fmtQty(l.qty_expected), "</td>\n                <td>").concat(UI.fmtQty(l.qty_received || 0), "</td>\n                <td>").concat(LINE_STATUS_LABELS[l.status] || l.status || '—', "</td>\n              </tr>\n            ");
+          }).join('') : "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--muted);\">\u041D\u0435\u0442 \u0441\u0442\u0440\u043E\u043A</td></tr>";
+          document.getElementById('confirm-btn').style.display = o.status === 'draft' ? 'block' : 'none';
+          document.getElementById('close-short-btn').style.display = !TERMINAL_STATUSES.includes(o.status) && o.status !== 'draft' ? 'block' : 'none';
+          document.getElementById('cancel-btn').style.display = canCancel && !TERMINAL_STATUSES.includes(o.status) ? 'block' : 'none';
+          // Акт доступен, как только по заявке хоть что-то фактически принято —
+          // раньше сверять нечего.
+          document.getElementById('act-btn').style.display = Number(o.total_received_qty) > 0 ? 'block' : 'none';
+          _context5.n = 3;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 3:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _openOrder.apply(this, arguments);
+}
+function confirmOrder() {
+  return _confirmOrder.apply(this, arguments);
+}
+function _confirmOrder() {
+  _confirmOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          if (currentOrderId) {
+            _context6.n = 1;
+            break;
+          }
+          return _context6.a(2);
+        case 1:
+          _context6.p = 1;
+          _context6.n = 2;
+          return window.API.inbound.confirm(currentOrderId);
+        case 2:
+          UI.notify.ok('Заявка подтверждена');
+          _context6.n = 3;
+          return openOrder(currentOrderId);
+        case 3:
+          _context6.n = 5;
+          break;
+        case 4:
+          _context6.p = 4;
+          _t4 = _context6.v;
+          UI.notify.err(_t4.message);
+        case 5:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[1, 4]]);
+  }));
+  return _confirmOrder.apply(this, arguments);
+}
+function closeOrderShort() {
+  return _closeOrderShort.apply(this, arguments);
+}
+function _closeOrderShort() {
+  _closeOrderShort = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var reason, _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (currentOrderId) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
+          if (!(reason === null)) {
+            _context7.n = 2;
+            break;
+          }
+          return _context7.a(2);
+        case 2:
+          if (UI.confirm('Закрыть заявку как есть? Уже принятый товар останется на складе, заявка станет финальной.')) {
+            _context7.n = 3;
+            break;
+          }
+          return _context7.a(2);
+        case 3:
+          _context7.p = 3;
+          _context7.n = 4;
+          return window.API.inbound.closeShort(currentOrderId, reason);
+        case 4:
+          UI.notify.ok('Заявка закрыта');
+          _context7.n = 5;
+          return openOrder(currentOrderId);
+        case 5:
+          _context7.n = 7;
+          break;
+        case 6:
+          _context7.p = 6;
+          _t5 = _context7.v;
+          UI.notify.err(_t5.message);
+        case 7:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[3, 6]]);
+  }));
+  return _closeOrderShort.apply(this, arguments);
+}
+function saveDeliveryInfo() {
+  return _saveDeliveryInfo.apply(this, arguments);
+}
+function _saveDeliveryInfo() {
+  _saveDeliveryInfo = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          if (currentOrderId) {
+            _context8.n = 1;
+            break;
+          }
+          return _context8.a(2);
+        case 1:
+          _context8.p = 1;
+          _context8.n = 2;
+          return window.API.inbound.updateDeliveryInfo(currentOrderId, {
+            driver_name: UI.val('#d-driver-name'),
+            vehicle_make: UI.val('#d-vehicle-make')
+          });
+        case 2:
+          UI.notify.ok('Сохранено');
+          _context8.n = 4;
+          break;
+        case 3:
+          _context8.p = 3;
+          _t6 = _context8.v;
+          UI.notify.err(_t6.message);
+        case 4:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[1, 3]]);
+  }));
+  return _saveDeliveryInfo.apply(this, arguments);
+}
+function printOrderLabel() {
+  return _printOrderLabel.apply(this, arguments);
+} // ============ Акт приёмки товара ============
+// Один акт на заявку: если уже формировали раньше - открываем на
+// редактирование (acts.update), иначе создаём новый (acts.create).
+function _printOrderLabel() {
+  _printOrderLabel = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var win, res, _t7;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          if (currentOrderId) {
+            _context9.n = 1;
+            break;
+          }
+          return _context9.a(2);
+        case 1:
+          // Открываем окно печати СИНХРОННО, до await — иначе мобильные браузеры
+          // блокируют popup, открытый уже после асинхронного запроса.
+          win = window.open('', '_blank');
+          if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим этикетку...</p>');
+          _context9.p = 2;
+          _context9.n = 3;
+          return window.API.inbound.label(currentOrderId);
+        case 3:
+          res = _context9.v;
+          if (win) {
+            _context9.n = 4;
+            break;
+          }
+          UI.notify.err('Разрешите всплывающие окна для печати');
+          return _context9.a(2);
+        case 4:
+          win.document.open();
+          win.document.write("\n          <html><head><title>".concat(UI.escHtml(res.order_number), "</title>\n          <style>body{margin:0;display:flex;align-items:center;justify-content:center;} svg{max-width:100%;}</style>\n          </head><body onload=\"window.print()\">").concat(res.svg, "</body></html>\n        "));
+          win.document.close();
+          _context9.n = 6;
+          break;
+        case 5:
+          _context9.p = 5;
+          _t7 = _context9.v;
+          if (win) win.close();
+          UI.notify.err(_t7.message);
+        case 6:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[2, 5]]);
+  }));
+  return _printOrderLabel.apply(this, arguments);
+}
+var currentAct = null; // { id, ...} существующего акта по этой заявке, если есть
+function openActModal() {
+  return _openActModal.apply(this, arguments);
+}
+function _openActModal() {
+  _openActModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var client, tenant, _yield$Promise$all, _yield$Promise$all2, clientRes, tenantRes, actsRes, full, o, a, missingClientReq, missingTenantReq, linesRows, _t8;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          if (currentOrder) {
+            _context0.n = 1;
+            break;
+          }
+          return _context0.a(2);
+        case 1:
+          client = null, tenant = null;
+          currentAct = null;
+          _context0.p = 2;
+          _context0.n = 3;
+          return Promise.all([window.API.clients.get(currentOrder.client_id), window.API.tenant.profile(), window.API.acts.list({
+            inbound_order_id: currentOrderId,
+            client_id: currentOrder.client_id
+          })]);
+        case 3:
+          _yield$Promise$all = _context0.v;
+          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 3);
+          clientRes = _yield$Promise$all2[0];
+          tenantRes = _yield$Promise$all2[1];
+          actsRes = _yield$Promise$all2[2];
+          client = clientRes.client;
+          tenant = tenantRes.profile;
+          if (!(actsRes.acts && actsRes.acts.length)) {
+            _context0.n = 5;
+            break;
+          }
+          _context0.n = 4;
+          return window.API.acts.get(actsRes.acts[0].id);
+        case 4:
+          full = _context0.v;
           currentAct = full.act;
           // Существующий акт мог редактировать повреждения/примечания по строкам -
           // подтягиваем их в локальный кэш строк заявки для формы.
-          currentOrderLines = currentOrderLines.map(l => {
-            const saved = (full.lines || []).find(x => x.barcode === l.barcode);
-            return saved ? { ...l, qty_damaged: saved.qty_damaged, notes: saved.notes } : l;
+          currentOrderLines = currentOrderLines.map(function (l) {
+            var saved = (full.lines || []).find(function (x) {
+              return x.barcode === l.barcode;
+            });
+            return saved ? _objectSpread(_objectSpread({}, l), {}, {
+              qty_damaged: saved.qty_damaged,
+              notes: saved.notes
+            }) : l;
           });
-        }
-      } catch (e) { UI.notify.err(e.message); return; }
-
-      const o = currentOrder;
-      const a = currentAct || {};
-      const missingClientReq = !client.legal_name || !client.inn;
-      const missingTenantReq = !tenant.legal_name || !tenant.inn;
-
-      const linesRows = currentOrderLines.map((l, i) => `
-        <tr>
-          <td>${i + 1}. ${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}</td>
-          <td>${UI.fmtQty(l.qty_expected)}</td>
-          <td>${UI.fmtQty(l.qty_received || 0)}</td>
-          <td><input type="number" min="0" id="act-line-dmg-${l.id}" value="${Number(l.qty_damaged || 0)}"/></td>
-          <td><input type="text" id="act-line-note-${l.id}" value="${UI.escHtml(l.notes || '')}" placeholder="без замечаний"/></td>
-        </tr>
-      `).join('');
-
-      document.getElementById('act-modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeActModal()">
-          <div class="modal-card">
-            <div class="card-title">Акт приёмки товара — заявка ${UI.escHtml(o.order_number)}</div>
-
-            ${missingClientReq ? `<div class="act-warn">У клиента «${UI.escHtml(client.client_name)}» не заполнены юр. реквизиты (наименование/ИНН). Можно сформировать акт и без них, но лучше <a href="/app/clients.html" target="_blank">заполнить</a>.</div>` : ''}
-            ${missingTenantReq ? `<div class="act-warn">У вашей компании не заполнены юр. реквизиты. Можно сформировать акт и без них, но лучше <a href="/app/company-profile.html" target="_blank">заполнить</a>.</div>` : ''}
-
-            <div class="act-2col">
-              <div class="field"><label>Номер акта</label><input id="act-number" value="${UI.escHtml(a.act_number || o.order_number)}"/></div>
-              <div class="field"><label>Город</label><input id="act-city" value="${UI.escHtml(a.act_city || '')}"/></div>
-            </div>
-            <div class="field"><label>Поставщик/отправитель</label><input id="act-supplier" value="${UI.escHtml(a.act_supplier || client.client_name || '')}"/></div>
-            <div class="act-2col">
-              <div class="field"><label>Кол-во грузовых мест (коробов)</label><input type="number" min="0" id="act-boxes" value="${a.act_boxes_count != null ? a.act_boxes_count : ''}"/></div>
-              <div class="field"><label>Кол-во паллет</label><input type="number" min="0" id="act-pallets" value="${a.act_pallets_count != null ? a.act_pallets_count : ''}"/></div>
-            </div>
-            <div class="act-2col">
-              <div class="field"><label>Вес, кг</label><input type="number" min="0" step="0.1" id="act-weight" value="${a.act_weight_kg != null ? a.act_weight_kg : ''}"/></div>
-              <div class="field"><label>Перевозчик</label><input id="act-carrier" value="${UI.escHtml(a.act_carrier || '')}"/></div>
-            </div>
-            <div class="field"><label>Товарная накладная / УПД №</label><input id="act-source-doc" value="${UI.escHtml(a.act_source_doc || '')}" placeholder="УПД № ___ от ___"/></div>
-
-            <div class="field">
-              <label>Внешнее состояние упаковки и Товара</label>
-              <div style="display:flex;gap:16px;margin-top:6px;">
-                <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="radio" name="act-pkg-ok" id="act-pkg-ok-yes" ${a.act_packaging_ok === false ? '' : 'checked'}/> без замечаний</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="radio" name="act-pkg-ok" id="act-pkg-ok-no" ${a.act_packaging_ok === false ? 'checked' : ''}/> с замечаниями</label>
-              </div>
-            </div>
-            <div class="field"><label>Текст замечаний</label><textarea id="act-remarks" rows="2">${UI.escHtml(a.act_remarks || '')}</textarea></div>
-
-            <div class="card-title" style="margin-top:14px;font-size:14px;">Перечень и состояние товара</div>
-            <div class="table-wrap">
-              <table class="act-lines-table">
-                <thead><tr><th>Наименование</th><th>По документам</th><th>Фактически</th><th>Повреждено</th><th>Примечание</th></tr></thead>
-                <tbody>${linesRows}</tbody>
-              </table>
-            </div>
-
-            <div class="act-2col" style="margin-top:12px;">
-              <div class="field"><label>ФИО водителя</label><input id="act-driver-name" value="${UI.escHtml(a.driver_name || o.driver_name || '')}"/></div>
-              <div class="field"><label>Марка машины</label><input id="act-vehicle-make" value="${UI.escHtml(a.vehicle_make || o.vehicle_make || '')}"/></div>
-            </div>
-            <div class="act-2col">
-              <div class="field"><label>ФИО — Сдал (Заказчик)</label><input id="act-client-signer" value="${UI.escHtml(a.act_client_signer || a.driver_name || o.driver_name || '')}"/></div>
-              <div class="field"><label>ФИО — Принял (Исполнитель)</label><input id="act-operator-signer" value="${UI.escHtml(a.act_operator_signer || '')}"/></div>
-            </div>
-
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="saveAndPrintAct()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Сохранить и напечатать</button>
-              <button class="btn-big btn-yellow" onclick="closeActModal()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-
-      window.__actClient = client;
-      window.__actTenant = tenant;
-    }
-
-    function closeActModal() {
-      document.getElementById('act-modal-root').innerHTML = '';
-    }
-
-    async function saveAndPrintAct() {
-      if (!currentOrderId) return;
-      // Открываем окно печати СИНХРОННО (см. printOrderLabel) — до await,
-      // иначе мобильные браузеры блокируют popup.
-      const win = window.open('', '_blank');
-      if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим акт...</p>');
-
-      const act = {
-        act_number: UI.val('#act-number'),
-        act_city: UI.val('#act-city'),
-        act_supplier: UI.val('#act-supplier'),
-        act_boxes_count: UI.val('#act-boxes'),
-        act_pallets_count: UI.val('#act-pallets'),
-        act_weight_kg: UI.val('#act-weight'),
-        act_carrier: UI.val('#act-carrier'),
-        act_source_doc: UI.val('#act-source-doc'),
-        act_packaging_ok: document.getElementById('act-pkg-ok-no').checked ? false : true,
-        act_remarks: UI.val('#act-remarks'),
-        act_client_signer: UI.val('#act-client-signer'),
-        act_operator_signer: UI.val('#act-operator-signer'),
-        driver_name: UI.val('#act-driver-name'),
-        vehicle_make: UI.val('#act-vehicle-make'),
-      };
-      const lines = currentOrderLines.map(l => ({
-        item_id: l.item_id || null,
-        barcode: l.barcode,
-        item_name: l.item_name_master || l.item_name || l.barcode,
-        qty_expected: l.qty_expected,
-        qty_received: l.qty_received || 0,
-        qty_damaged: UI.val(`#act-line-dmg-${l.id}`) || 0,
-        notes: UI.val(`#act-line-note-${l.id}`),
-      }));
-
-      try {
-        const res = currentAct
-          ? await window.API.acts.update(currentAct.id, { act, lines })
-          : await window.API.acts.create({ client_id: currentOrder.client_id, inbound_order_id: currentOrderId, act, lines });
-        currentAct = res.act;
-        // Обновляем локальный кэш строк принятыми значениями повреждений/примечаний
-        currentOrderLines = currentOrderLines.map(l => {
-          const saved = (res.lines || []).find(x => x.barcode === l.barcode);
-          return saved ? { ...l, qty_damaged: saved.qty_damaged, notes: saved.notes } : l;
-        });
-
-        if (!win) { UI.notify.err('Разрешите всплывающие окна для печати'); closeActModal(); return; }
-        ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
-
-        closeActModal();
-        UI.notify.ok('Акт сохранён');
-      } catch (e) {
-        if (win) win.close();
-        UI.notify.err(e.message);
+        case 5:
+          _context0.n = 7;
+          break;
+        case 6:
+          _context0.p = 6;
+          _t8 = _context0.v;
+          UI.notify.err(_t8.message);
+          return _context0.a(2);
+        case 7:
+          o = currentOrder;
+          a = currentAct || {};
+          missingClientReq = !client.legal_name || !client.inn;
+          missingTenantReq = !tenant.legal_name || !tenant.inn;
+          linesRows = currentOrderLines.map(function (l, i) {
+            return "\n        <tr>\n          <td>".concat(i + 1, ". ").concat(UI.escHtml(l.item_name_master || l.item_name || l.barcode), "</td>\n          <td>").concat(UI.fmtQty(l.qty_expected), "</td>\n          <td>").concat(UI.fmtQty(l.qty_received || 0), "</td>\n          <td><input type=\"number\" min=\"0\" id=\"act-line-dmg-").concat(l.id, "\" value=\"").concat(Number(l.qty_damaged || 0), "\"/></td>\n          <td><input type=\"text\" id=\"act-line-note-").concat(l.id, "\" value=\"").concat(UI.escHtml(l.notes || ''), "\" placeholder=\"\u0431\u0435\u0437 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0439\"/></td>\n        </tr>\n      ");
+          }).join('');
+          document.getElementById('act-modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeActModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0410\u043A\u0442 \u043F\u0440\u0438\u0451\u043C\u043A\u0438 \u0442\u043E\u0432\u0430\u0440\u0430 \u2014 \u0437\u0430\u044F\u0432\u043A\u0430 ".concat(UI.escHtml(o.order_number), "</div>\n\n            ").concat(missingClientReq ? "<div class=\"act-warn\">\u0423 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \xAB".concat(UI.escHtml(client.client_name), "\xBB \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u044B \u044E\u0440. \u0440\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B (\u043D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435/\u0418\u041D\u041D). \u041C\u043E\u0436\u043D\u043E \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0430\u043A\u0442 \u0438 \u0431\u0435\u0437 \u043D\u0438\u0445, \u043D\u043E \u043B\u0443\u0447\u0448\u0435 <a href=\"/app/clients.html\" target=\"_blank\">\u0437\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C</a>.</div>") : '', "\n            ").concat(missingTenantReq ? "<div class=\"act-warn\">\u0423 \u0432\u0430\u0448\u0435\u0439 \u043A\u043E\u043C\u043F\u0430\u043D\u0438\u0438 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u044B \u044E\u0440. \u0440\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B. \u041C\u043E\u0436\u043D\u043E \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0430\u043A\u0442 \u0438 \u0431\u0435\u0437 \u043D\u0438\u0445, \u043D\u043E \u043B\u0443\u0447\u0448\u0435 <a href=\"/app/company-profile.html\" target=\"_blank\">\u0437\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C</a>.</div>" : '', "\n\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u041D\u043E\u043C\u0435\u0440 \u0430\u043A\u0442\u0430</label><input id=\"act-number\" value=\"").concat(UI.escHtml(a.act_number || o.order_number), "\"/></div>\n              <div class=\"field\"><label>\u0413\u043E\u0440\u043E\u0434</label><input id=\"act-city\" value=\"").concat(UI.escHtml(a.act_city || ''), "\"/></div>\n            </div>\n            <div class=\"field\"><label>\u041F\u043E\u0441\u0442\u0430\u0432\u0449\u0438\u043A/\u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u0435\u043B\u044C</label><input id=\"act-supplier\" value=\"").concat(UI.escHtml(a.act_supplier || client.client_name || ''), "\"/></div>\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u041A\u043E\u043B-\u0432\u043E \u0433\u0440\u0443\u0437\u043E\u0432\u044B\u0445 \u043C\u0435\u0441\u0442 (\u043A\u043E\u0440\u043E\u0431\u043E\u0432)</label><input type=\"number\" min=\"0\" id=\"act-boxes\" value=\"").concat(a.act_boxes_count != null ? a.act_boxes_count : '', "\"/></div>\n              <div class=\"field\"><label>\u041A\u043E\u043B-\u0432\u043E \u043F\u0430\u043B\u043B\u0435\u0442</label><input type=\"number\" min=\"0\" id=\"act-pallets\" value=\"").concat(a.act_pallets_count != null ? a.act_pallets_count : '', "\"/></div>\n            </div>\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u0412\u0435\u0441, \u043A\u0433</label><input type=\"number\" min=\"0\" step=\"0.1\" id=\"act-weight\" value=\"").concat(a.act_weight_kg != null ? a.act_weight_kg : '', "\"/></div>\n              <div class=\"field\"><label>\u041F\u0435\u0440\u0435\u0432\u043E\u0437\u0447\u0438\u043A</label><input id=\"act-carrier\" value=\"").concat(UI.escHtml(a.act_carrier || ''), "\"/></div>\n            </div>\n            <div class=\"field\"><label>\u0422\u043E\u0432\u0430\u0440\u043D\u0430\u044F \u043D\u0430\u043A\u043B\u0430\u0434\u043D\u0430\u044F / \u0423\u041F\u0414 \u2116</label><input id=\"act-source-doc\" value=\"").concat(UI.escHtml(a.act_source_doc || ''), "\" placeholder=\"\u0423\u041F\u0414 \u2116 ___ \u043E\u0442 ___\"/></div>\n\n            <div class=\"field\">\n              <label>\u0412\u043D\u0435\u0448\u043D\u0435\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 \u0438 \u0422\u043E\u0432\u0430\u0440\u0430</label>\n              <div style=\"display:flex;gap:16px;margin-top:6px;\">\n                <label style=\"display:flex;align-items:center;gap:6px;font-size:14px;\"><input type=\"radio\" name=\"act-pkg-ok\" id=\"act-pkg-ok-yes\" ").concat(a.act_packaging_ok === false ? '' : 'checked', "/> \u0431\u0435\u0437 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0439</label>\n                <label style=\"display:flex;align-items:center;gap:6px;font-size:14px;\"><input type=\"radio\" name=\"act-pkg-ok\" id=\"act-pkg-ok-no\" ").concat(a.act_packaging_ok === false ? 'checked' : '', "/> \u0441 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u044F\u043C\u0438</label>\n              </div>\n            </div>\n            <div class=\"field\"><label>\u0422\u0435\u043A\u0441\u0442 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0439</label><textarea id=\"act-remarks\" rows=\"2\">").concat(UI.escHtml(a.act_remarks || ''), "</textarea></div>\n\n            <div class=\"card-title\" style=\"margin-top:14px;font-size:14px;\">\u041F\u0435\u0440\u0435\u0447\u0435\u043D\u044C \u0438 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0442\u043E\u0432\u0430\u0440\u0430</div>\n            <div class=\"table-wrap\">\n              <table class=\"act-lines-table\">\n                <thead><tr><th>\u041D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435</th><th>\u041F\u043E \u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442\u0430\u043C</th><th>\u0424\u0430\u043A\u0442\u0438\u0447\u0435\u0441\u043A\u0438</th><th>\u041F\u043E\u0432\u0440\u0435\u0436\u0434\u0435\u043D\u043E</th><th>\u041F\u0440\u0438\u043C\u0435\u0447\u0430\u043D\u0438\u0435</th></tr></thead>\n                <tbody>").concat(linesRows, "</tbody>\n              </table>\n            </div>\n\n            <div class=\"act-2col\" style=\"margin-top:12px;\">\n              <div class=\"field\"><label>\u0424\u0418\u041E \u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044F</label><input id=\"act-driver-name\" value=\"").concat(UI.escHtml(a.driver_name || o.driver_name || ''), "\"/></div>\n              <div class=\"field\"><label>\u041C\u0430\u0440\u043A\u0430 \u043C\u0430\u0448\u0438\u043D\u044B</label><input id=\"act-vehicle-make\" value=\"").concat(UI.escHtml(a.vehicle_make || o.vehicle_make || ''), "\"/></div>\n            </div>\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u0424\u0418\u041E \u2014 \u0421\u0434\u0430\u043B (\u0417\u0430\u043A\u0430\u0437\u0447\u0438\u043A)</label><input id=\"act-client-signer\" value=\"").concat(UI.escHtml(a.act_client_signer || a.driver_name || o.driver_name || ''), "\"/></div>\n              <div class=\"field\"><label>\u0424\u0418\u041E \u2014 \u041F\u0440\u0438\u043D\u044F\u043B (\u0418\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C)</label><input id=\"act-operator-signer\" value=\"").concat(UI.escHtml(a.act_operator_signer || ''), "\"/></div>\n            </div>\n\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"saveAndPrintAct()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 9V2h12v7\"/><path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0438 \u043D\u0430\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeActModal()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+          window.__actClient = client;
+          window.__actTenant = tenant;
+        case 8:
+          return _context0.a(2);
       }
+    }, _callee0, null, [[2, 6]]);
+  }));
+  return _openActModal.apply(this, arguments);
+}
+function closeActModal() {
+  document.getElementById('act-modal-root').innerHTML = '';
+}
+function saveAndPrintAct() {
+  return _saveAndPrintAct.apply(this, arguments);
+}
+function _saveAndPrintAct() {
+  _saveAndPrintAct = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
+    var win, act, lines, res, _t9, _t0;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          if (currentOrderId) {
+            _context1.n = 1;
+            break;
+          }
+          return _context1.a(2);
+        case 1:
+          // Открываем окно печати СИНХРОННО (см. printOrderLabel) — до await,
+          // иначе мобильные браузеры блокируют popup.
+          win = window.open('', '_blank');
+          if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим акт...</p>');
+          act = {
+            act_number: UI.val('#act-number'),
+            act_city: UI.val('#act-city'),
+            act_supplier: UI.val('#act-supplier'),
+            act_boxes_count: UI.val('#act-boxes'),
+            act_pallets_count: UI.val('#act-pallets'),
+            act_weight_kg: UI.val('#act-weight'),
+            act_carrier: UI.val('#act-carrier'),
+            act_source_doc: UI.val('#act-source-doc'),
+            act_packaging_ok: document.getElementById('act-pkg-ok-no').checked ? false : true,
+            act_remarks: UI.val('#act-remarks'),
+            act_client_signer: UI.val('#act-client-signer'),
+            act_operator_signer: UI.val('#act-operator-signer'),
+            driver_name: UI.val('#act-driver-name'),
+            vehicle_make: UI.val('#act-vehicle-make')
+          };
+          lines = currentOrderLines.map(function (l) {
+            return {
+              item_id: l.item_id || null,
+              barcode: l.barcode,
+              item_name: l.item_name_master || l.item_name || l.barcode,
+              qty_expected: l.qty_expected,
+              qty_received: l.qty_received || 0,
+              qty_damaged: UI.val("#act-line-dmg-".concat(l.id)) || 0,
+              notes: UI.val("#act-line-note-".concat(l.id))
+            };
+          });
+          _context1.p = 2;
+          if (!currentAct) {
+            _context1.n = 4;
+            break;
+          }
+          _context1.n = 3;
+          return window.API.acts.update(currentAct.id, {
+            act: act,
+            lines: lines
+          });
+        case 3:
+          _t9 = _context1.v;
+          _context1.n = 6;
+          break;
+        case 4:
+          _context1.n = 5;
+          return window.API.acts.create({
+            client_id: currentOrder.client_id,
+            inbound_order_id: currentOrderId,
+            act: act,
+            lines: lines
+          });
+        case 5:
+          _t9 = _context1.v;
+        case 6:
+          res = _t9;
+          currentAct = res.act;
+          // Обновляем локальный кэш строк принятыми значениями повреждений/примечаний
+          currentOrderLines = currentOrderLines.map(function (l) {
+            var saved = (res.lines || []).find(function (x) {
+              return x.barcode === l.barcode;
+            });
+            return saved ? _objectSpread(_objectSpread({}, l), {}, {
+              qty_damaged: saved.qty_damaged,
+              notes: saved.notes
+            }) : l;
+          });
+          if (win) {
+            _context1.n = 7;
+            break;
+          }
+          UI.notify.err('Разрешите всплывающие окна для печати');
+          closeActModal();
+          return _context1.a(2);
+        case 7:
+          ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+          closeActModal();
+          UI.notify.ok('Акт сохранён');
+          _context1.n = 9;
+          break;
+        case 8:
+          _context1.p = 8;
+          _t0 = _context1.v;
+          if (win) win.close();
+          UI.notify.err(_t0.message);
+        case 9:
+          return _context1.a(2);
+      }
+    }, _callee1, null, [[2, 8]]);
+  }));
+  return _saveAndPrintAct.apply(this, arguments);
+}
+function cancelOrder() {
+  return _cancelOrder.apply(this, arguments);
+}
+function _cancelOrder() {
+  _cancelOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10() {
+    var _t1;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          if (currentOrderId) {
+            _context10.n = 1;
+            break;
+          }
+          return _context10.a(2);
+        case 1:
+          if (UI.confirm('Отменить заявку целиком? Если товар уже частично принят — используйте вместо этого "Закрыть как есть".')) {
+            _context10.n = 2;
+            break;
+          }
+          return _context10.a(2);
+        case 2:
+          _context10.p = 2;
+          _context10.n = 3;
+          return window.API.inbound.cancel(currentOrderId);
+        case 3:
+          UI.notify.ok('Заявка отменена');
+          _context10.n = 4;
+          return openOrder(currentOrderId);
+        case 4:
+          _context10.n = 6;
+          break;
+        case 5:
+          _context10.p = 5;
+          _t1 = _context10.v;
+          UI.notify.err(_t1.message);
+        case 6:
+          return _context10.a(2);
+      }
+    }, _callee10, null, [[2, 5]]);
+  }));
+  return _cancelOrder.apply(this, arguments);
+}
+function backToList() {
+  document.getElementById('detail-view').style.display = 'none';
+  document.getElementById('list-view').style.display = 'block';
+  currentOrderId = null;
+  loadOrders();
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadClients();
+      case 1:
+        _context.n = 2;
+        return loadOrders();
+      case 2:
+        return _context.a(2);
     }
-
-    async function cancelOrder() {
-      if (!currentOrderId) return;
-      if (!UI.confirm('Отменить заявку целиком? Если товар уже частично принят — используйте вместо этого "Закрыть как есть".')) return;
-      try {
-        await window.API.inbound.cancel(currentOrderId);
-        UI.notify.ok('Заявка отменена');
-        await openOrder(currentOrderId);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function backToList() {
-      document.getElementById('detail-view').style.display = 'none';
-      document.getElementById('list-view').style.display = 'block';
-      currentOrderId = null;
-      loadOrders();
-    }
-
-    (async () => { await loadClients(); await loadOrders(); })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

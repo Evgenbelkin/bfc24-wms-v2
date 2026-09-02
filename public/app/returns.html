@@ -151,184 +151,427 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin','receiver'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('content').style.display = 'none';
-    }
-
-    const DISP_LABELS = { resale: 'В продажу', writeoff: 'В утиль' };
-
-    function switchTab(name) {
-      ['register','history','byclient','wbclaims'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'history')  loadHistory();
-      if (name === 'byclient') loadByClient();
-    }
-
-    function onDispositionChange() {
-      const isResale = UI.val('#r-disposition') === 'resale';
-      document.getElementById('r-location-wrap').style.display = isResale ? 'block' : 'none';
-      if (isResale) maybeSuggestReturnLocation();
-    }
-
-    // Подсказка ячейки для возврата "в продажу" — тот же принцип, что и в
-    // приёмке/размещении (см. placement.service.js suggestTargetLocation):
-    // предпочитаем ячейку, где товар уже лежит и есть место, чтобы не
-    // раскидывать один товар по складу. Только подсказка, не принуждение —
-    // поле остаётся редактируемым.
-    let returnItemId = null;
-    async function lookupReturnItem() {
-      returnItemId = null;
-      const barcode = UI.val('#r-barcode');
-      const clientId = UI.val('#r-client');
-      if (!barcode || !clientId) return;
-      try {
-        const res = await window.API.items.byBarcode(barcode, clientId);
-        returnItemId = (res.item && res.item.id) || null;
-      } catch (e) { /* товар не найден в каталоге - подсказки не будет, обычная регистрация возврата это не блокирует */ }
-      maybeSuggestReturnLocation();
-    }
-    async function maybeSuggestReturnLocation() {
-      if (UI.val('#r-disposition') !== 'resale') return;
-      if (!returnItemId) return;
-      if (UI.val('#r-location')) return; // уже что-то введено вручную - не перетираем
-      const clientId = UI.val('#r-client');
-      const qty = Number(UI.val('#r-qty')) || 1;
-      try {
-        const res = await window.API.placement.suggest({ item_id: returnItemId, client_id: clientId, qty });
-        if (res.suggestion) UI.setVal('#r-location', res.suggestion.location_code);
-      } catch (e) { /* необязательная подсказка */ }
-    }
-
-    async function loadClientSelects() {
-      try {
-        const res = await window.API.clients.short();
-        const clients = res.clients || [];
-        UI.populateSelect('#r-client', clients, { valueKey:'id', labelKey:'client_name' });
-        UI.populateSelect('#h-client', clients, { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
-        UI.populateSelect('#wc-client', clients, { valueKey:'id', labelKey:'client_name' });
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); }
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin', 'receiver'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+}
+var DISP_LABELS = {
+  resale: 'В продажу',
+  writeoff: 'В утиль'
+};
+function switchTab(name) {
+  ['register', 'history', 'byclient', 'wbclaims'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'history') loadHistory();
+  if (name === 'byclient') loadByClient();
+}
+function onDispositionChange() {
+  var isResale = UI.val('#r-disposition') === 'resale';
+  document.getElementById('r-location-wrap').style.display = isResale ? 'block' : 'none';
+  if (isResale) maybeSuggestReturnLocation();
+}
 
-    UI.onScan('#r-barcode', (v) => { UI.setVal('#r-barcode', v); UI.setVal('#r-location', ''); lookupReturnItem(); });
-
-    async function registerReturn() {
-      const clientId = UI.val('#r-client');
-      const barcode = UI.val('#r-barcode');
-      const qty = Number(UI.val('#r-qty'));
-      const disposition = UI.val('#r-disposition');
-      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
-      if (!barcode) { UI.notify.err('Отсканируйте или введите штрихкод'); return; }
-      if (!qty || qty <= 0) { UI.notify.err('Укажите количество'); return; }
-      if (disposition === 'resale' && !UI.val('#r-location')) { UI.notify.err('Укажите ячейку, куда положить товар'); return; }
-
-      try {
-        const res = await window.API.returns.register({
-          client_id: clientId, barcode, qty, disposition,
-          location_code: UI.val('#r-location') || null,
-          marketplace_order_no: UI.val('#r-order-no') || null,
-          comment: UI.val('#r-comment') || null,
-        });
-        UI.beep('ok');
-        UI.notify.ok(`Возврат зарегистрирован${res.return.charge_id ? ' (начислено клиенту)' : ''}`);
-        UI.setVal('#r-barcode', ''); UI.setVal('#r-order-no', ''); UI.setVal('#r-comment', ''); UI.setVal('#r-location', '');
-        document.getElementById('r-qty').value = 1;
-        returnItemId = null;
-        document.getElementById('r-barcode').focus();
-      } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
-    }
-
-    async function loadHistory() {
-      try {
-        const params = {};
-        const clientId = UI.val('#h-client'); if (clientId) params.client_id = clientId;
-        const disposition = UI.val('#h-disposition'); if (disposition) params.disposition = disposition;
-        const from = UI.val('#h-from'); if (from) params.date_from = from;
-        const to = UI.val('#h-to'); if (to) params.date_to = to;
-        const res = await window.API.returns.history(params);
-        const rows = res.returns || [];
-        document.getElementById('h-total').textContent = res.total;
-        document.getElementById('h-resale').textContent = rows.filter(r => r.disposition==='resale').length;
-        document.getElementById('h-writeoff').textContent = rows.filter(r => r.disposition==='writeoff').length;
-        document.getElementById('h-body').innerHTML = rows.length ? rows.map(r => `
-          <tr>
-            <td>${UI.fmtDateTime(r.created_at)}</td>
-            <td>${UI.escHtml(r.client_name||'—')}</td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
-            <td>${UI.fmtQty(r.qty)}</td>
-            <td><span class="disp-pill disp-${r.disposition}">${DISP_LABELS[r.disposition]||r.disposition}</span></td>
-            <td>${UI.escHtml(r.location_code||'—')}</td>
-            <td>${UI.escHtml(r.marketplace_order_no||'—')}</td>
-            <td>${UI.escHtml(r.received_by_name||'—')}</td>
-          </tr>
-        `).join('') : `<tr><td colspan="8">Возвратов нет</td></tr>`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+// Подсказка ячейки для возврата "в продажу" — тот же принцип, что и в
+// приёмке/размещении (см. placement.service.js suggestTargetLocation):
+// предпочитаем ячейку, где товар уже лежит и есть место, чтобы не
+// раскидывать один товар по складу. Только подсказка, не принуждение —
+// поле остаётся редактируемым.
+var returnItemId = null;
+function lookupReturnItem() {
+  return _lookupReturnItem.apply(this, arguments);
+}
+function _lookupReturnItem() {
+  _lookupReturnItem = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var barcode, clientId, res, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          returnItemId = null;
+          barcode = UI.val('#r-barcode');
+          clientId = UI.val('#r-client');
+          if (!(!barcode || !clientId)) {
+            _context2.n = 1;
+            break;
+          }
+          return _context2.a(2);
+        case 1:
+          _context2.p = 1;
+          _context2.n = 2;
+          return window.API.items.byBarcode(barcode, clientId);
+        case 2:
+          res = _context2.v;
+          returnItemId = res.item && res.item.id || null;
+          _context2.n = 4;
+          break;
+        case 3:
+          _context2.p = 3;
+          _t = _context2.v;
+        case 4:
+          maybeSuggestReturnLocation();
+        case 5:
+          return _context2.a(2);
       }
-    }
-
-    async function loadByClient() {
-      try {
-        const params = {};
-        const from = UI.val('#bc-from'); if (from) params.date_from = from;
-        const to = UI.val('#bc-to'); if (to) params.date_to = to;
-        const res = await window.API.returns.byClient(params);
-        const rows = res.rows || [];
-        document.getElementById('bc-body').innerHTML = rows.length ? rows.map(r => `
-          <tr>
-            <td>${UI.escHtml(r.client_name)}</td>
-            <td>${r.total_returns}</td>
-            <td>${UI.fmtQty(r.total_qty)}</td>
-            <td>${r.resale_count}</td>
-            <td>${r.writeoff_count}</td>
-          </tr>
-        `).join('') : `<tr><td colspan="5">Возвратов нет</td></tr>`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee2, null, [[1, 3]]);
+  }));
+  return _lookupReturnItem.apply(this, arguments);
+}
+function maybeSuggestReturnLocation() {
+  return _maybeSuggestReturnLocation.apply(this, arguments);
+}
+function _maybeSuggestReturnLocation() {
+  _maybeSuggestReturnLocation = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var clientId, qty, res, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          if (!(UI.val('#r-disposition') !== 'resale')) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2);
+        case 1:
+          if (returnItemId) {
+            _context3.n = 2;
+            break;
+          }
+          return _context3.a(2);
+        case 2:
+          if (!UI.val('#r-location')) {
+            _context3.n = 3;
+            break;
+          }
+          return _context3.a(2);
+        case 3:
+          // уже что-то введено вручную - не перетираем
+          clientId = UI.val('#r-client');
+          qty = Number(UI.val('#r-qty')) || 1;
+          _context3.p = 4;
+          _context3.n = 5;
+          return window.API.placement.suggest({
+            item_id: returnItemId,
+            client_id: clientId,
+            qty: qty
+          });
+        case 5:
+          res = _context3.v;
+          if (res.suggestion) UI.setVal('#r-location', res.suggestion.location_code);
+          _context3.n = 7;
+          break;
+        case 6:
+          _context3.p = 6;
+          _t2 = _context3.v;
+        case 7:
+          return _context3.a(2);
       }
-    }
-
-    async function loadWbClaims() {
-      const clientId = UI.val('#wc-client');
-      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
-      try {
-        const res = await window.API.returns.wbClaims({ client_id: clientId, is_archive: UI.val('#wc-archive') });
-        const rows = res.claims || [];
-        document.getElementById('wc-count').textContent = rows.length;
-        document.getElementById('wc-body').innerHTML = rows.length ? rows.map(c => `
-          <tr>
-            <td>${UI.escHtml(c.item_name || (c.nm_id != null ? ('nmId ' + c.nm_id) : '—'))}${c.nm_id != null && c.item_name ? '<div style="font-size:11px;color:var(--muted2)">nmId '+UI.escHtml(String(c.nm_id))+'</div>' : ''}</td>
-            <td>${UI.escHtml(c.tech_size != null && c.tech_size !== '' ? String(c.tech_size) : '—')}</td>
-            <td>${UI.escHtml(c.status || '—')}</td>
-            <td>${c.order_dt ? UI.fmtDateTime(c.order_dt) : '—'}</td>
-            <td>${UI.escHtml(c.order_srid || '—')}</td>
-            <td>${UI.escHtml(c.comment || '—')}</td>
-            <td>${UI.escHtml(c.account_name || '—')}</td>
-          </tr>
-        `).join('') : `<tr><td colspan="7">Заявок нет (или модуль WB не подключён у клиента)</td></tr>`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee3, null, [[4, 6]]);
+  }));
+  return _maybeSuggestReturnLocation.apply(this, arguments);
+}
+function loadClientSelects() {
+  return _loadClientSelects.apply(this, arguments);
+}
+function _loadClientSelects() {
+  _loadClientSelects = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, clients, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context4.v;
+          clients = res.clients || [];
+          UI.populateSelect('#r-client', clients, {
+            valueKey: 'id',
+            labelKey: 'client_name'
+          });
+          UI.populateSelect('#h-client', clients, {
+            valueKey: 'id',
+            labelKey: 'client_name',
+            emptyLabel: 'Все клиенты'
+          });
+          UI.populateSelect('#wc-client', clients, {
+            valueKey: 'id',
+            labelKey: 'client_name'
+          });
+          _context4.n = 3;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t3 = _context4.v;
+          if (isModuleDisabled(_t3)) {
+            showModuleDisabled();
+          }
+        case 3:
+          return _context4.a(2);
       }
-    }
-
-    onDispositionChange();
-    loadClientSelects();
-  </script>
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _loadClientSelects.apply(this, arguments);
+}
+UI.onScan('#r-barcode', function (v) {
+  UI.setVal('#r-barcode', v);
+  UI.setVal('#r-location', '');
+  lookupReturnItem();
+});
+function registerReturn() {
+  return _registerReturn.apply(this, arguments);
+}
+function _registerReturn() {
+  _registerReturn = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var clientId, barcode, qty, disposition, res, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          clientId = UI.val('#r-client');
+          barcode = UI.val('#r-barcode');
+          qty = Number(UI.val('#r-qty'));
+          disposition = UI.val('#r-disposition');
+          if (clientId) {
+            _context5.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите клиента');
+          return _context5.a(2);
+        case 1:
+          if (barcode) {
+            _context5.n = 2;
+            break;
+          }
+          UI.notify.err('Отсканируйте или введите штрихкод');
+          return _context5.a(2);
+        case 2:
+          if (!(!qty || qty <= 0)) {
+            _context5.n = 3;
+            break;
+          }
+          UI.notify.err('Укажите количество');
+          return _context5.a(2);
+        case 3:
+          if (!(disposition === 'resale' && !UI.val('#r-location'))) {
+            _context5.n = 4;
+            break;
+          }
+          UI.notify.err('Укажите ячейку, куда положить товар');
+          return _context5.a(2);
+        case 4:
+          _context5.p = 4;
+          _context5.n = 5;
+          return window.API.returns.register({
+            client_id: clientId,
+            barcode: barcode,
+            qty: qty,
+            disposition: disposition,
+            location_code: UI.val('#r-location') || null,
+            marketplace_order_no: UI.val('#r-order-no') || null,
+            comment: UI.val('#r-comment') || null
+          });
+        case 5:
+          res = _context5.v;
+          UI.beep('ok');
+          UI.notify.ok("\u0412\u043E\u0437\u0432\u0440\u0430\u0442 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D".concat(res.return.charge_id ? ' (начислено клиенту)' : ''));
+          UI.setVal('#r-barcode', '');
+          UI.setVal('#r-order-no', '');
+          UI.setVal('#r-comment', '');
+          UI.setVal('#r-location', '');
+          document.getElementById('r-qty').value = 1;
+          returnItemId = null;
+          document.getElementById('r-barcode').focus();
+          _context5.n = 7;
+          break;
+        case 6:
+          _context5.p = 6;
+          _t4 = _context5.v;
+          UI.beep('err');
+          UI.notify.err(_t4.message);
+        case 7:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[4, 6]]);
+  }));
+  return _registerReturn.apply(this, arguments);
+}
+function loadHistory() {
+  return _loadHistory.apply(this, arguments);
+}
+function _loadHistory() {
+  _loadHistory = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var params, clientId, disposition, from, to, res, rows, _t5;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          params = {};
+          clientId = UI.val('#h-client');
+          if (clientId) params.client_id = clientId;
+          disposition = UI.val('#h-disposition');
+          if (disposition) params.disposition = disposition;
+          from = UI.val('#h-from');
+          if (from) params.date_from = from;
+          to = UI.val('#h-to');
+          if (to) params.date_to = to;
+          _context6.n = 1;
+          return window.API.returns.history(params);
+        case 1:
+          res = _context6.v;
+          rows = res.returns || [];
+          document.getElementById('h-total').textContent = res.total;
+          document.getElementById('h-resale').textContent = rows.filter(function (r) {
+            return r.disposition === 'resale';
+          }).length;
+          document.getElementById('h-writeoff').textContent = rows.filter(function (r) {
+            return r.disposition === 'writeoff';
+          }).length;
+          document.getElementById('h-body').innerHTML = rows.length ? rows.map(function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.created_at), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || r.barcode), "</td>\n            <td>").concat(UI.fmtQty(r.qty), "</td>\n            <td><span class=\"disp-pill disp-").concat(r.disposition, "\">").concat(DISP_LABELS[r.disposition] || r.disposition, "</span></td>\n            <td>").concat(UI.escHtml(r.location_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.marketplace_order_no || '—'), "</td>\n            <td>").concat(UI.escHtml(r.received_by_name || '—'), "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"8\">\u0412\u043E\u0437\u0432\u0440\u0430\u0442\u043E\u0432 \u043D\u0435\u0442</td></tr>";
+          _context6.n = 4;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t5 = _context6.v;
+          if (!isModuleDisabled(_t5)) {
+            _context6.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context6.a(2);
+        case 3:
+          UI.notify.err(_t5.message);
+        case 4:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _loadHistory.apply(this, arguments);
+}
+function loadByClient() {
+  return _loadByClient.apply(this, arguments);
+}
+function _loadByClient() {
+  _loadByClient = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var params, from, to, res, rows, _t6;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          _context7.p = 0;
+          params = {};
+          from = UI.val('#bc-from');
+          if (from) params.date_from = from;
+          to = UI.val('#bc-to');
+          if (to) params.date_to = to;
+          _context7.n = 1;
+          return window.API.returns.byClient(params);
+        case 1:
+          res = _context7.v;
+          rows = res.rows || [];
+          document.getElementById('bc-body').innerHTML = rows.length ? rows.map(function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(r.client_name), "</td>\n            <td>").concat(r.total_returns, "</td>\n            <td>").concat(UI.fmtQty(r.total_qty), "</td>\n            <td>").concat(r.resale_count, "</td>\n            <td>").concat(r.writeoff_count, "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"5\">\u0412\u043E\u0437\u0432\u0440\u0430\u0442\u043E\u0432 \u043D\u0435\u0442</td></tr>";
+          _context7.n = 4;
+          break;
+        case 2:
+          _context7.p = 2;
+          _t6 = _context7.v;
+          if (!isModuleDisabled(_t6)) {
+            _context7.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context7.a(2);
+        case 3:
+          UI.notify.err(_t6.message);
+        case 4:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[0, 2]]);
+  }));
+  return _loadByClient.apply(this, arguments);
+}
+function loadWbClaims() {
+  return _loadWbClaims.apply(this, arguments);
+}
+function _loadWbClaims() {
+  _loadWbClaims = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var clientId, res, rows, _t7;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          clientId = UI.val('#wc-client');
+          if (clientId) {
+            _context8.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите клиента');
+          return _context8.a(2);
+        case 1:
+          _context8.p = 1;
+          _context8.n = 2;
+          return window.API.returns.wbClaims({
+            client_id: clientId,
+            is_archive: UI.val('#wc-archive')
+          });
+        case 2:
+          res = _context8.v;
+          rows = res.claims || [];
+          document.getElementById('wc-count').textContent = rows.length;
+          document.getElementById('wc-body').innerHTML = rows.length ? rows.map(function (c) {
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(c.item_name || (c.nm_id != null ? 'nmId ' + c.nm_id : '—'))).concat(c.nm_id != null && c.item_name ? '<div style="font-size:11px;color:var(--muted2)">nmId ' + UI.escHtml(String(c.nm_id)) + '</div>' : '', "</td>\n            <td>").concat(UI.escHtml(c.tech_size != null && c.tech_size !== '' ? String(c.tech_size) : '—'), "</td>\n            <td>").concat(UI.escHtml(c.status || '—'), "</td>\n            <td>").concat(c.order_dt ? UI.fmtDateTime(c.order_dt) : '—', "</td>\n            <td>").concat(UI.escHtml(c.order_srid || '—'), "</td>\n            <td>").concat(UI.escHtml(c.comment || '—'), "</td>\n            <td>").concat(UI.escHtml(c.account_name || '—'), "</td>\n          </tr>\n        ");
+          }).join('') : "<tr><td colspan=\"7\">\u0417\u0430\u044F\u0432\u043E\u043A \u043D\u0435\u0442 (\u0438\u043B\u0438 \u043C\u043E\u0434\u0443\u043B\u044C WB \u043D\u0435 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0451\u043D \u0443 \u043A\u043B\u0438\u0435\u043D\u0442\u0430)</td></tr>";
+          _context8.n = 5;
+          break;
+        case 3:
+          _context8.p = 3;
+          _t7 = _context8.v;
+          if (!isModuleDisabled(_t7)) {
+            _context8.n = 4;
+            break;
+          }
+          showModuleDisabled();
+          return _context8.a(2);
+        case 4:
+          UI.notify.err(_t7.message);
+        case 5:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[1, 3]]);
+  }));
+  return _loadWbClaims.apply(this, arguments);
+}
+onDispositionChange();
+loadClientSelects();</script>
 </body>
 </html>

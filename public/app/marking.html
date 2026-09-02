@@ -122,231 +122,381 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['tenant_admin','supervisor'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('marking-content').style.display = 'none';
-    }
-
-    function switchTab(name) {
-      ['shipped','journal','overrides'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'overrides' && !overridesLoaded) loadOverrides();
-      if (name === 'journal' && !journalLoaded) loadJournal();
-    }
-
-    const WB_STATUS_LABELS = { sent:'Отправлено в WB', export_only:'Только выгрузка', manual_override:'Без привязки (вручную)' };
-    const WB_STATUS_PILL = { sent:'pill-green', export_only:'pill-yellow', manual_override:'pill-red' };
-    const CODE_STATUS_LABELS = { available:'В пуле', used:'Использован' };
-    const CODE_STATUS_PILL = { available:'pill-blue', used:'pill-green' };
-    const SOURCE_LABELS = { import:'импорт', scanned:'скан' };
-
-    let shippedRows = [];
-    let journalRows = [];
-    let journalLoaded = false;
-
-    async function loadClients() {
-      try {
-        const res = await window.API.clients.short();
-        UI.populateSelect('#f-client', res.clients || [], { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
-        UI.populateSelect('#j-client', res.clients || [], { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t.return || t.return(); } finally { if (u) throw o; } } }; }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['tenant_admin', 'supervisor'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-    }
-
-    function defaultDates() {
-      const to = new Date();
-      const from = new Date(); from.setDate(from.getDate() - 30);
-      const toStr = to.toISOString().slice(0,10);
-      const fromStr = from.toISOString().slice(0,10);
-      document.getElementById('f-date-to').value = toStr;
-      document.getElementById('f-date-from').value = fromStr;
-      document.getElementById('j-date-to').value = toStr;
-      document.getElementById('j-date-from').value = fromStr;
-    }
-
-    // Явно передаём limit, чтобы фронт знал, каким лимитом ограничен ответ, и
-    // мог предупредить, если выборка обрезана (иначе на клиентах с большим
-    // потоком заказов срез в 5000 строк выглядел бы как "это все данные",
-    // хотя на самом деле часть за период просто не поместилась).
-    const REPORT_LIMIT = 5000;
-
-    async function loadShippedReport() {
-      try {
-        const params = { limit: REPORT_LIMIT };
-        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
-        const dateFrom = UI.val('#f-date-from'); if (dateFrom) params.date_from = dateFrom;
-        const dateTo = UI.val('#f-date-to'); if (dateTo) params.date_to = dateTo;
-        const res = await window.API.marking.shippedReport(params);
-        shippedRows = res.rows || [];
-        if (shippedRows.length >= REPORT_LIMIT) {
-          UI.notify.warn(`Показаны первые ${REPORT_LIMIT} — сузьте период или выберите клиента, возможно есть ещё данные`);
-        }
-
-        document.getElementById('k-count').textContent = shippedRows.length;
-        document.getElementById('k-sent').textContent = shippedRows.filter(r => r.wb_submit_status==='sent').length;
-        document.getElementById('k-export').textContent = shippedRows.filter(r => r.wb_submit_status==='export_only').length;
-        document.getElementById('k-override').textContent = shippedRows.filter(r => r.wb_submit_status==='manual_override').length;
-
-        UI.renderTable('#shipped-body', shippedRows, (r) => `
-          <tr>
-            <td>${UI.fmtDateTime(r.used_at)}</td>
-            <td>${UI.escHtml(r.client_name||'—')}</td>
-            <td>${UI.escHtml(r.item_name||'—')}<div style="font-size:11px;color:var(--muted);">${UI.escHtml(r.vendor_code||'')}</div></td>
-            <td>${UI.escHtml(r.size||'—')}</td>
-            <td>${UI.escHtml(r.barcode||'—')}</td>
-            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
-            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.wb_sticker_code||'—')}</td>
-            <td>${UI.escHtml(r.shipment_code||'—')}</td>
-            <td><span class="pill ${WB_STATUS_PILL[r.wb_submit_status]||'pill-gray'}">${WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status||'—')}</span></td>
-          </tr>
-        `);
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('marking-content').style.display = 'none';
+}
+function switchTab(name) {
+  ['shipped', 'journal', 'overrides'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'overrides' && !overridesLoaded) loadOverrides();
+  if (name === 'journal' && !journalLoaded) loadJournal();
+}
+var WB_STATUS_LABELS = {
+  sent: 'Отправлено в WB',
+  export_only: 'Только выгрузка',
+  manual_override: 'Без привязки (вручную)'
+};
+var WB_STATUS_PILL = {
+  sent: 'pill-green',
+  export_only: 'pill-yellow',
+  manual_override: 'pill-red'
+};
+var CODE_STATUS_LABELS = {
+  available: 'В пуле',
+  used: 'Использован'
+};
+var CODE_STATUS_PILL = {
+  available: 'pill-blue',
+  used: 'pill-green'
+};
+var SOURCE_LABELS = {
+  import: 'импорт',
+  scanned: 'скан'
+};
+var shippedRows = [];
+var journalRows = [];
+var journalLoaded = false;
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context3.v;
+          UI.populateSelect('#f-client', res.clients || [], {
+            valueKey: 'id',
+            labelKey: 'client_name',
+            emptyLabel: 'Все клиенты'
+          });
+          UI.populateSelect('#j-client', res.clients || [], {
+            valueKey: 'id',
+            labelKey: 'client_name',
+            emptyLabel: 'Все клиенты'
+          });
+          _context3.n = 4;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t = _context3.v;
+          if (!isModuleDisabled(_t)) {
+            _context3.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context3.a(2);
+        case 3:
+          UI.notify.err(_t.message);
+        case 4:
+          return _context3.a(2);
       }
-    }
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function defaultDates() {
+  var to = new Date();
+  var from = new Date();
+  from.setDate(from.getDate() - 30);
+  var toStr = to.toISOString().slice(0, 10);
+  var fromStr = from.toISOString().slice(0, 10);
+  document.getElementById('f-date-to').value = toStr;
+  document.getElementById('f-date-from').value = fromStr;
+  document.getElementById('j-date-to').value = toStr;
+  document.getElementById('j-date-from').value = fromStr;
+}
 
-    // Клиентский экспорт в CSV (Excel открывает такие файлы сразу, с BOM для
-    // корректной кириллицы) — тот же подход, что и в других отчётах WMS
-    // (см. public/seller/receiving-history.html), без сторонних библиотек.
-    function exportShippedCsv() {
-      if (!shippedRows.length) { UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"'); return; }
-      const headers = ['Дата','Клиент','Товар','Артикул','Размер','Штрихкод','Код Честный знак','Стикер ВБ','Поставка','Статус в WB'];
-      const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-      const lines = [headers.map(escCsv).join(';')];
-      for (const r of shippedRows) {
-        lines.push([
-          r.used_at ? UI.fmtDateTime(r.used_at) : '',
-          r.client_name || '',
-          r.item_name || '',
-          r.vendor_code || '',
-          r.size || '',
-          r.barcode || '',
-          r.code || '',
-          r.wb_sticker_code || '',
-          r.shipment_code || '',
-          WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || '',
-        ].map(escCsv).join(';'));
+// Явно передаём limit, чтобы фронт знал, каким лимитом ограничен ответ, и
+// мог предупредить, если выборка обрезана (иначе на клиентах с большим
+// потоком заказов срез в 5000 строк выглядел бы как "это все данные",
+// хотя на самом деле часть за период просто не поместилась).
+var REPORT_LIMIT = 5000;
+function loadShippedReport() {
+  return _loadShippedReport.apply(this, arguments);
+} // Клиентский экспорт в CSV (Excel открывает такие файлы сразу, с BOM для
+// корректной кириллицы) — тот же подход, что и в других отчётах WMS
+// (см. public/seller/receiving-history.html), без сторонних библиотек.
+function _loadShippedReport() {
+  _loadShippedReport = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var params, clientId, dateFrom, dateTo, res, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          params = {
+            limit: REPORT_LIMIT
+          };
+          clientId = UI.val('#f-client');
+          if (clientId) params.client_id = clientId;
+          dateFrom = UI.val('#f-date-from');
+          if (dateFrom) params.date_from = dateFrom;
+          dateTo = UI.val('#f-date-to');
+          if (dateTo) params.date_to = dateTo;
+          _context4.n = 1;
+          return window.API.marking.shippedReport(params);
+        case 1:
+          res = _context4.v;
+          shippedRows = res.rows || [];
+          if (shippedRows.length >= REPORT_LIMIT) {
+            UI.notify.warn("\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u043F\u0435\u0440\u0432\u044B\u0435 ".concat(REPORT_LIMIT, " \u2014 \u0441\u0443\u0437\u044C\u0442\u0435 \u043F\u0435\u0440\u0438\u043E\u0434 \u0438\u043B\u0438 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u0430, \u0432\u043E\u0437\u043C\u043E\u0436\u043D\u043E \u0435\u0441\u0442\u044C \u0435\u0449\u0451 \u0434\u0430\u043D\u043D\u044B\u0435"));
+          }
+          document.getElementById('k-count').textContent = shippedRows.length;
+          document.getElementById('k-sent').textContent = shippedRows.filter(function (r) {
+            return r.wb_submit_status === 'sent';
+          }).length;
+          document.getElementById('k-export').textContent = shippedRows.filter(function (r) {
+            return r.wb_submit_status === 'export_only';
+          }).length;
+          document.getElementById('k-override').textContent = shippedRows.filter(function (r) {
+            return r.wb_submit_status === 'manual_override';
+          }).length;
+          UI.renderTable('#shipped-body', shippedRows, function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.used_at), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "<div style=\"font-size:11px;color:var(--muted);\">").concat(UI.escHtml(r.vendor_code || ''), "</div></td>\n            <td>").concat(UI.escHtml(r.size || '—'), "</td>\n            <td>").concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.wb_sticker_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.shipment_code || '—'), "</td>\n            <td><span class=\"pill ").concat(WB_STATUS_PILL[r.wb_submit_status] || 'pill-gray', "\">").concat(WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status || '—'), "</span></td>\n          </tr>\n        ");
+          });
+          _context4.n = 4;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t2 = _context4.v;
+          if (!isModuleDisabled(_t2)) {
+            _context4.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context4.a(2);
+        case 3:
+          UI.notify.err(_t2.message);
+        case 4:
+          return _context4.a(2);
       }
-      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `chz-otgruzheno-${new Date().toISOString().slice(0,10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _loadShippedReport.apply(this, arguments);
+}
+function exportShippedCsv() {
+  if (!shippedRows.length) {
+    UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"');
+    return;
+  }
+  var headers = ['Дата', 'Клиент', 'Товар', 'Артикул', 'Размер', 'Штрихкод', 'Код Честный знак', 'Стикер ВБ', 'Поставка', 'Статус в WB'];
+  var escCsv = function escCsv(v) {
+    return "\"".concat(String(v == null ? '' : v).replace(/"/g, '""'), "\"");
+  };
+  var lines = [headers.map(escCsv).join(';')];
+  var _iterator = _createForOfIteratorHelper(shippedRows),
+    _step;
+  try {
+    for (_iterator.s(); !(_step = _iterator.n()).done;) {
+      var r = _step.value;
+      lines.push([r.used_at ? UI.fmtDateTime(r.used_at) : '', r.client_name || '', r.item_name || '', r.vendor_code || '', r.size || '', r.barcode || '', r.code || '', r.wb_sticker_code || '', r.shipment_code || '', WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || ''].map(escCsv).join(';'));
     }
-
-    async function loadJournal() {
-      try {
-        journalLoaded = true;
-        const params = { limit: REPORT_LIMIT };
-        const clientId = UI.val('#j-client'); if (clientId) params.client_id = clientId;
-        const status = UI.val('#j-status'); if (status) params.status = status;
-        const barcode = UI.val('#j-barcode'); if (barcode) params.barcode = barcode.trim();
-        const dateFrom = UI.val('#j-date-from'); if (dateFrom) params.date_from = dateFrom;
-        const dateTo = UI.val('#j-date-to'); if (dateTo) params.date_to = dateTo;
-        const res = await window.API.marking.codesJournal(params);
-        journalRows = res.rows || [];
-        if (journalRows.length >= REPORT_LIMIT) {
-          UI.notify.warn(`Показаны первые ${REPORT_LIMIT} — сузьте период/фильтры, возможно есть ещё данные`);
-        }
-
-        document.getElementById('j-count').textContent = journalRows.length;
-        document.getElementById('j-available').textContent = journalRows.filter(r => r.status==='available').length;
-        document.getElementById('j-used').textContent = journalRows.filter(r => r.status==='used').length;
-
-        UI.renderTable('#journal-body', journalRows, (r) => `
-          <tr>
-            <td>${UI.escHtml(r.barcode||'—')}</td>
-            <td>${UI.escHtml(r.item_name||'—')}<div style="font-size:11px;color:var(--muted);">${UI.escHtml(r.vendor_code||'')} ${UI.escHtml(r.size||'')}</div></td>
-            <td>${UI.escHtml(r.client_name||'—')}</td>
-            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
-            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.wb_sticker_code||'—')}</td>
-            <td><span class="pill ${CODE_STATUS_PILL[r.status]||'pill-gray'}">${CODE_STATUS_LABELS[r.status] || UI.escHtml(r.status||'—')}</span></td>
-            <td>${UI.fmtDateTime(r.created_at)}<div style="font-size:11px;color:var(--muted);">${SOURCE_LABELS[r.source]||UI.escHtml(r.source||'')}</div></td>
-            <td>${r.used_at ? UI.fmtDateTime(r.used_at) : '—'}${r.used_at ? `<div style="font-size:11px;color:var(--muted);">${WB_STATUS_LABELS[r.wb_submit_status]||UI.escHtml(r.wb_submit_status||'')}</div>` : ''}</td>
-            <td>${UI.escHtml(r.shipment_code||'—')}</td>
-          </tr>
-        `);
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  } catch (err) {
+    _iterator.e(err);
+  } finally {
+    _iterator.f();
+  }
+  var blob = new Blob(['﻿' + lines.join('\r\n')], {
+    type: 'text/csv;charset=utf-8;'
+  });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = "chz-otgruzheno-".concat(new Date().toISOString().slice(0, 10), ".csv");
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function loadJournal() {
+  return _loadJournal.apply(this, arguments);
+}
+function _loadJournal() {
+  _loadJournal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var params, clientId, status, barcode, dateFrom, dateTo, res, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          journalLoaded = true;
+          params = {
+            limit: REPORT_LIMIT
+          };
+          clientId = UI.val('#j-client');
+          if (clientId) params.client_id = clientId;
+          status = UI.val('#j-status');
+          if (status) params.status = status;
+          barcode = UI.val('#j-barcode');
+          if (barcode) params.barcode = barcode.trim();
+          dateFrom = UI.val('#j-date-from');
+          if (dateFrom) params.date_from = dateFrom;
+          dateTo = UI.val('#j-date-to');
+          if (dateTo) params.date_to = dateTo;
+          _context5.n = 1;
+          return window.API.marking.codesJournal(params);
+        case 1:
+          res = _context5.v;
+          journalRows = res.rows || [];
+          if (journalRows.length >= REPORT_LIMIT) {
+            UI.notify.warn("\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u043F\u0435\u0440\u0432\u044B\u0435 ".concat(REPORT_LIMIT, " \u2014 \u0441\u0443\u0437\u044C\u0442\u0435 \u043F\u0435\u0440\u0438\u043E\u0434/\u0444\u0438\u043B\u044C\u0442\u0440\u044B, \u0432\u043E\u0437\u043C\u043E\u0436\u043D\u043E \u0435\u0441\u0442\u044C \u0435\u0449\u0451 \u0434\u0430\u043D\u043D\u044B\u0435"));
+          }
+          document.getElementById('j-count').textContent = journalRows.length;
+          document.getElementById('j-available').textContent = journalRows.filter(function (r) {
+            return r.status === 'available';
+          }).length;
+          document.getElementById('j-used').textContent = journalRows.filter(function (r) {
+            return r.status === 'used';
+          }).length;
+          UI.renderTable('#journal-body', journalRows, function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "<div style=\"font-size:11px;color:var(--muted);\">").concat(UI.escHtml(r.vendor_code || ''), " ").concat(UI.escHtml(r.size || ''), "</div></td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.wb_sticker_code || '—'), "</td>\n            <td><span class=\"pill ").concat(CODE_STATUS_PILL[r.status] || 'pill-gray', "\">").concat(CODE_STATUS_LABELS[r.status] || UI.escHtml(r.status || '—'), "</span></td>\n            <td>").concat(UI.fmtDateTime(r.created_at), "<div style=\"font-size:11px;color:var(--muted);\">").concat(SOURCE_LABELS[r.source] || UI.escHtml(r.source || ''), "</div></td>\n            <td>").concat(r.used_at ? UI.fmtDateTime(r.used_at) : '—').concat(r.used_at ? "<div style=\"font-size:11px;color:var(--muted);\">".concat(WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status || ''), "</div>") : '', "</td>\n            <td>").concat(UI.escHtml(r.shipment_code || '—'), "</td>\n          </tr>\n        ");
+          });
+          _context5.n = 4;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t3 = _context5.v;
+          if (!isModuleDisabled(_t3)) {
+            _context5.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context5.a(2);
+        case 3:
+          UI.notify.err(_t3.message);
+        case 4:
+          return _context5.a(2);
       }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _loadJournal.apply(this, arguments);
+}
+function exportJournalCsv() {
+  if (!journalRows.length) {
+    UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"');
+    return;
+  }
+  var headers = ['Штрихкод', 'Товар', 'Артикул', 'Размер', 'Клиент', 'Код Честный знак', 'Стикер ВБ', 'Статус', 'Приход (дата)', 'Приход (источник)', 'Расход (дата)', 'Статус в WB', 'Поставка'];
+  var escCsv = function escCsv(v) {
+    return "\"".concat(String(v == null ? '' : v).replace(/"/g, '""'), "\"");
+  };
+  var lines = [headers.map(escCsv).join(';')];
+  var _iterator2 = _createForOfIteratorHelper(journalRows),
+    _step2;
+  try {
+    for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
+      var r = _step2.value;
+      lines.push([r.barcode || '', r.item_name || '', r.vendor_code || '', r.size || '', r.client_name || '', r.code || '', r.wb_sticker_code || '', CODE_STATUS_LABELS[r.status] || r.status || '', r.created_at ? UI.fmtDateTime(r.created_at) : '', SOURCE_LABELS[r.source] || r.source || '', r.used_at ? UI.fmtDateTime(r.used_at) : '', r.used_at ? WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || '' : '', r.shipment_code || ''].map(escCsv).join(';'));
     }
-
-    function exportJournalCsv() {
-      if (!journalRows.length) { UI.notify.warn('Нечего выгружать — сначала нажмите "Показать"'); return; }
-      const headers = ['Штрихкод','Товар','Артикул','Размер','Клиент','Код Честный знак','Стикер ВБ','Статус','Приход (дата)','Приход (источник)','Расход (дата)','Статус в WB','Поставка'];
-      const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-      const lines = [headers.map(escCsv).join(';')];
-      for (const r of journalRows) {
-        lines.push([
-          r.barcode || '',
-          r.item_name || '',
-          r.vendor_code || '',
-          r.size || '',
-          r.client_name || '',
-          r.code || '',
-          r.wb_sticker_code || '',
-          CODE_STATUS_LABELS[r.status] || r.status || '',
-          r.created_at ? UI.fmtDateTime(r.created_at) : '',
-          SOURCE_LABELS[r.source] || r.source || '',
-          r.used_at ? UI.fmtDateTime(r.used_at) : '',
-          r.used_at ? (WB_STATUS_LABELS[r.wb_submit_status] || r.wb_submit_status || '') : '',
-          r.shipment_code || '',
-        ].map(escCsv).join(';'));
+  } catch (err) {
+    _iterator2.e(err);
+  } finally {
+    _iterator2.f();
+  }
+  var blob = new Blob(['﻿' + lines.join('\r\n')], {
+    type: 'text/csv;charset=utf-8;'
+  });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = "chz-zhurnal-".concat(new Date().toISOString().slice(0, 10), ".csv");
+  a.click();
+  URL.revokeObjectURL(url);
+}
+var overridesLoaded = false;
+function loadOverrides() {
+  return _loadOverrides.apply(this, arguments);
+}
+function _loadOverrides() {
+  _loadOverrides = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, rows, _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          overridesLoaded = true;
+          _context6.n = 1;
+          return window.API.marking.pendingOverrides({
+            limit: 200
+          });
+        case 1:
+          res = _context6.v;
+          rows = res.rows || [];
+          UI.renderTable('#overrides-body', rows, function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.used_at), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.wb_override_reason || '—'), "</td>\n            <td>").concat(UI.escHtml(r.packed_by_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.override_by_name || '—'), "</td>\n          </tr>\n        ");
+          });
+          _context6.n = 4;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t4 = _context6.v;
+          if (!isModuleDisabled(_t4)) {
+            _context6.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context6.a(2);
+        case 3:
+          UI.notify.err(_t4.message);
+        case 4:
+          return _context6.a(2);
       }
-      const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `chz-zhurnal-${new Date().toISOString().slice(0,10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _loadOverrides.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        defaultDates();
+        _context.n = 1;
+        return loadClients();
+      case 1:
+        _context.n = 2;
+        return loadShippedReport();
+      case 2:
+        return _context.a(2);
     }
-
-    let overridesLoaded = false;
-    async function loadOverrides() {
-      try {
-        overridesLoaded = true;
-        const res = await window.API.marking.pendingOverrides({ limit: 200 });
-        const rows = res.rows || [];
-        UI.renderTable('#overrides-body', rows, (r) => `
-          <tr>
-            <td>${UI.fmtDateTime(r.used_at)}</td>
-            <td>${UI.escHtml(r.item_name||'—')}</td>
-            <td>${UI.escHtml(r.barcode||'—')}</td>
-            <td style="font-family:monospace;font-size:12px;">${UI.escHtml(r.code||'—')}</td>
-            <td>${UI.escHtml(r.wb_override_reason||'—')}</td>
-            <td>${UI.escHtml(r.packed_by_name||'—')}</td>
-            <td>${UI.escHtml(r.override_by_name||'—')}</td>
-          </tr>
-        `);
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
-      }
-    }
-
-    (async () => {
-      defaultDates();
-      await loadClients();
-      await loadShippedReport();
-    })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

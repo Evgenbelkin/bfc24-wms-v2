@@ -110,200 +110,498 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['inventory_manager','supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
+  <script>function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
+function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
+function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['inventory_manager', 'supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
+      }
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+function switchTab(name) {
+  ['tasks', 'new', 'discrepancies'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'discrepancies') loadDiscrepancies();
+  if (name === 'tasks') loadTasks();
+}
+var LAST_CLIENT_KEY = 'wms2_last_client_id';
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var sel, res, list, saved, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          sel = document.getElementById('client-select');
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.clients.short();
+        case 2:
+          res = _context3.v;
+          list = res.clients || [];
+          sel.innerHTML = "<option value=\"\">\u0412\u0441\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u044B</option>" + list.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          saved = localStorage.getItem(LAST_CLIENT_KEY);
+          if (saved && list.some(function (c) {
+            return String(c.id) === saved;
+          })) sel.value = saved;
+          sel.addEventListener('change', function () {
+            localStorage.setItem(LAST_CLIENT_KEY, sel.value);
+            loadTasks();
+          });
+          _context3.n = 4;
+          break;
+        case 3:
+          _context3.p = 3;
+          _t = _context3.v;
+          UI.notify.err(_t.message);
+        case 4:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[1, 3]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function getClientId() {
+  var v = UI.val('#client-select');
+  return v ? Number(v) : null;
+}
+
+// ---------- Задачи ----------
+var tasks = [];
+var currentTask = null;
+var actualQty = 0;
+function loadTasks() {
+  return _loadTasks.apply(this, arguments);
+}
+function _loadTasks() {
+  _loadTasks = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var clientId, params, _yield$Promise$all, _yield$Promise$all2, openRes, progRes, list, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          clientId = getClientId();
+          params = {
+            limit: 100
+          }; // показываем и открытые, и уже взятые в работу
+          _context4.n = 1;
+          return Promise.all([window.API.inventory.tasks(_objectSpread(_objectSpread({}, params), {}, {
+            status: 'open'
+          }, clientId ? {
+            client_id: clientId
+          } : {})), window.API.inventory.tasks(_objectSpread(_objectSpread({}, params), {}, {
+            status: 'in_progress'
+          }, clientId ? {
+            client_id: clientId
+          } : {}))]);
+        case 1:
+          _yield$Promise$all = _context4.v;
+          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 2);
+          openRes = _yield$Promise$all2[0];
+          progRes = _yield$Promise$all2[1];
+          tasks = [].concat(_toConsumableArray(progRes.tasks || []), _toConsumableArray(openRes.tasks || []));
+          document.getElementById('tasks-count').textContent = tasks.length;
+          list = document.getElementById('tasks-list');
+          if (tasks.length) {
+            _context4.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg></div>\u041D\u0435\u0442 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0437\u0430\u0434\u0430\u0447 \u0438\u043D\u0432\u0435\u043D\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438</div>";
+          return _context4.a(2);
+        case 2:
+          list.innerHTML = tasks.map(function (t, idx) {
+            return "\n          <div class=\"list-row task-row\" onclick=\"openTask(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(t.item_name || t.barcode || 'Проверка ячейки'), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(t.location_code), " \xB7 ").concat(UI.escHtml(t.client_name || ''), " ").concat(t.reason ? '· ' + UI.escHtml(t.reason) : '', "</div>\n            </div>\n            <span class=\"pill ").concat(t.status === 'in_progress' ? 'pill-blue' : 'pill-gray', "\">").concat(t.status === 'in_progress' ? 'в работе' : 'открыта', "</span>\n          </div>\n        ");
+          }).join('');
+          _context4.n = 4;
+          break;
+        case 3:
+          _context4.p = 3;
+          _t2 = _context4.v;
+          UI.notify.err(_t2.message);
+        case 4:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 3]]);
+  }));
+  return _loadTasks.apply(this, arguments);
+}
+function openTask(_x) {
+  return _openTask.apply(this, arguments);
+}
+function _openTask() {
+  _openTask = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(idx) {
+    var t, me, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          t = tasks[idx];
+          _context5.p = 1;
+          if (!(t.status === 'open')) {
+            _context5.n = 2;
+            break;
+          }
+          me = window.API.getUser();
+          _context5.n = 2;
+          return window.API.inventory.assign(t.id, {
+            assignee_id: me.id
+          });
+        case 2:
+          currentTask = t;
+          actualQty = Number(t.qty_system || 0);
+          document.getElementById('count-barcode').textContent = t.barcode || '(вся ячейка)';
+          document.getElementById('count-item-name').textContent = t.item_name || t.barcode || 'Проверка ячейки';
+          document.getElementById('count-location').textContent = t.location_code;
+          document.getElementById('count-system').textContent = t.qty_system != null ? t.qty_system : '—';
+          document.getElementById('actual-val').value = actualQty;
+          UI.setVal('#count-comment', '');
+          document.getElementById('tasks-list-card').style.display = 'none';
+          document.getElementById('count-card').style.display = 'block';
+          _context5.n = 4;
+          break;
+        case 3:
+          _context5.p = 3;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 4:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[1, 3]]);
+  }));
+  return _openTask.apply(this, arguments);
+}
+function closeCountCard() {
+  currentTask = null;
+  document.getElementById('count-card').style.display = 'none';
+  document.getElementById('tasks-list-card').style.display = 'block';
+  loadTasks();
+}
+function stepActual(delta) {
+  actualQty = Math.max(0, actualQty + delta);
+  document.getElementById('actual-val').value = actualQty;
+}
+function setActual(val) {
+  actualQty = Math.max(0, Math.round(Number(val)) || 0);
+  document.getElementById('actual-val').value = actualQty;
+}
+function submitCount() {
+  return _submitCount.apply(this, arguments);
+}
+function _submitCount() {
+  _submitCount = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, delta, _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          if (currentTask) {
+            _context6.n = 1;
+            break;
+          }
+          return _context6.a(2);
+        case 1:
+          _context6.p = 1;
+          _context6.n = 2;
+          return window.API.inventory.count(currentTask.id, {
+            qty_actual: actualQty,
+            comment: UI.val('#count-comment') || undefined
+          });
+        case 2:
+          res = _context6.v;
+          delta = res.task && res.task.qty_delta != null ? res.task.qty_delta : actualQty - Number(currentTask.qty_system || 0);
+          if (!(res.task && res.task.item_id)) {
+            // item_id=NULL - товар этой задачи не привязан к каталогу (обычно
+            // значит, что штрихкод не найден у выбранного клиента - см. фикс в
+            // inventory.service.js createTask). В таком случае остаток НЕ
+            // меняется, хотя задача и закрывается - явно предупреждаем, а не
+            // молча показываем "Расхождение: 0", как будто всё ок.
+            UI.notify.warn('Счёт внесён, но товар не привязан к каталогу - остаток НЕ изменён. Проверьте, что был выбран правильный клиент.');
+          } else {
+            UI.notify.ok("\u0421\u0447\u0451\u0442 \u0432\u043D\u0435\u0441\u0451\u043D. \u0420\u0430\u0441\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0435: ".concat(delta > 0 ? '+' : '').concat(delta));
+          }
+          closeCountCard();
+          _context6.n = 4;
+          break;
+        case 3:
+          _context6.p = 3;
+          _t4 = _context6.v;
+          UI.notify.err(_t4.message);
+        case 4:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[1, 3]]);
+  }));
+  return _submitCount.apply(this, arguments);
+}
+function cancelTask() {
+  return _cancelTask.apply(this, arguments);
+} // ---------- Новая проверка ----------
+function _cancelTask() {
+  _cancelTask = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (currentTask) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          if (UI.confirm('Отменить эту задачу инвентаризации без пересчёта?')) {
+            _context7.n = 2;
+            break;
+          }
+          return _context7.a(2);
+        case 2:
+          _context7.p = 2;
+          _context7.n = 3;
+          return window.API.inventory.close(currentTask.id, {
+            status: 'cancelled'
+          });
+        case 3:
+          UI.notify.warn('Задача отменена');
+          closeCountCard();
+          _context7.n = 5;
+          break;
+        case 4:
+          _context7.p = 4;
+          _t5 = _context7.v;
+          UI.notify.err(_t5.message);
+        case 5:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[2, 4]]);
+  }));
+  return _cancelTask.apply(this, arguments);
+}
+function createCheck() {
+  return _createCheck.apply(this, arguments);
+}
+function _createCheck() {
+  _createCheck = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var location, barcode, clientId, statusEl, res, _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          location = UI.val('#new-location');
+          barcode = UI.val('#new-barcode');
+          clientId = getClientId();
+          if (location) {
+            _context8.n = 1;
+            break;
+          }
+          UI.notify.err('Отсканируйте ячейку');
+          return _context8.a(2);
+        case 1:
+          if (clientId) {
+            _context8.n = 2;
+            break;
+          }
+          UI.notify.err('Выберите клиента вверху страницы');
+          return _context8.a(2);
+        case 2:
+          statusEl = document.getElementById('new-status');
+          _context8.p = 3;
+          if (!barcode) {
+            _context8.n = 5;
+            break;
+          }
+          _context8.n = 4;
+          return window.API.inventory.createTask({
+            barcode: barcode,
+            location_code: location,
+            client_id: clientId
+          });
+        case 4:
+          statusEl.textContent = "\u0421\u043E\u0437\u0434\u0430\u043D\u0430 \u0437\u0430\u0434\u0430\u0447\u0430: ".concat(barcode, " \u0432 ").concat(location);
+          _context8.n = 7;
+          break;
+        case 5:
+          _context8.n = 6;
+          return window.API.inventory.createBatch({
+            location_code: location,
+            client_id: clientId
+          });
+        case 6:
+          res = _context8.v;
+          statusEl.textContent = "\u0421\u043E\u0437\u0434\u0430\u043D\u043E \u0437\u0430\u0434\u0430\u0447: ".concat(res.created, ", \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E (\u0443\u0436\u0435 \u0435\u0441\u0442\u044C): ").concat(res.skipped);
+        case 7:
+          UI.notify.ok('Готово');
+          UI.setVal('#new-location', '');
+          UI.setVal('#new-barcode', '');
+          switchTab('tasks');
+          _context8.n = 9;
+          break;
+        case 8:
+          _context8.p = 8;
+          _t6 = _context8.v;
+          UI.notify.err(_t6.message);
+        case 9:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[3, 8]]);
+  }));
+  return _createCheck.apply(this, arguments);
+}
+UI.onScan('#new-location', function (v) {
+  UI.setVal('#new-location', v);
+  document.getElementById('new-barcode').focus();
+});
+UI.onScan('#new-barcode', function (v) {
+  return UI.setVal('#new-barcode', v);
+});
+
+// ---------- Новая проверка: пачкой по нескольким ячейкам ----------
+// Textarea, а не отдельные скан-поля — сканер сам шлёт Enter после
+// каждого скана, что в <textarea> и так превращается в перенос строки,
+// так что можно просто сканировать ячейку за ячейкой без лишних кликов.
+function createCheckBatchMulti() {
+  return _createCheckBatchMulti.apply(this, arguments);
+} // ---------- Расхождения ----------
+function _createCheckBatchMulti() {
+  _createCheckBatchMulti = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var raw, clientId, statusEl, res, failed, _t7;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          raw = UI.val('#new-locations-batch');
+          clientId = getClientId();
+          if (!(!raw || !raw.trim())) {
+            _context9.n = 1;
+            break;
+          }
+          UI.notify.err('Отсканируйте или впишите хотя бы одну ячейку');
+          return _context9.a(2);
+        case 1:
+          if (clientId) {
+            _context9.n = 2;
+            break;
+          }
+          UI.notify.err('Выберите клиента вверху страницы');
+          return _context9.a(2);
+        case 2:
+          statusEl = document.getElementById('new-status-multi');
+          statusEl.textContent = 'Создаю...';
+          _context9.p = 3;
+          _context9.n = 4;
+          return window.API.inventory.createBatchMulti({
+            location_codes: raw,
+            client_id: clientId
+          });
+        case 4:
+          res = _context9.v;
+          failed = (res.results || []).filter(function (r) {
+            return !r.ok;
+          });
+          statusEl.innerHTML = "\u042F\u0447\u0435\u0435\u043A \u043E\u0431\u0440\u0430\u0431\u043E\u0442\u0430\u043D\u043E: ".concat(res.locations, ". \u0421\u043E\u0437\u0434\u0430\u043D\u043E \u0437\u0430\u0434\u0430\u0447: ").concat(res.created, ", \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E (\u0443\u0436\u0435 \u0435\u0441\u0442\u044C): ").concat(res.skipped) + (failed.length ? "<br><span style=\"color:var(--red);\">\u041E\u0448\u0438\u0431\u043A\u0438 (".concat(failed.length, "): ").concat(failed.map(function (f) {
+            return UI.escHtml(f.location_code) + ' — ' + UI.escHtml(f.error);
+          }).join('; '), "</span>") : '');
+          UI.notify.ok('Готово');
+          UI.setVal('#new-locations-batch', '');
+          switchTab('tasks');
+          _context9.n = 6;
+          break;
+        case 5:
+          _context9.p = 5;
+          _t7 = _context9.v;
+          UI.notify.err(_t7.message);
+          statusEl.textContent = '';
+        case 6:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[3, 5]]);
+  }));
+  return _createCheckBatchMulti.apply(this, arguments);
+}
+function loadDiscrepancies() {
+  return _loadDiscrepancies.apply(this, arguments);
+}
+function _loadDiscrepancies() {
+  _loadDiscrepancies = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var clientId, res, _t8;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          _context0.p = 0;
+          clientId = getClientId();
+          _context0.n = 1;
+          return window.API.inventory.discrepancies(clientId ? {
+            client_id: clientId,
+            limit: 200
+          } : {
+            limit: 200
+          });
+        case 1:
+          res = _context0.v;
+          UI.renderTable('#discrepancies-body', res.rows, function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.closed_at), "</td>\n            <td>").concat(UI.escHtml(r.item_name || r.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(r.location_code), "</td>\n            <td>").concat(UI.fmtQty(r.qty_system), "</td>\n            <td>").concat(UI.fmtQty(r.qty_actual), "</td>\n            <td class=\"").concat(r.qty_delta > 0 ? 'delta-pos' : 'delta-neg', "\">").concat(r.qty_delta > 0 ? '+' : '').concat(r.qty_delta, "</td>\n          </tr>\n        ");
+          });
+          _context0.n = 3;
+          break;
+        case 2:
+          _context0.p = 2;
+          _t8 = _context0.v;
+          UI.notify.err(_t8.message);
+        case 3:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[0, 2]]);
+  }));
+  return _loadDiscrepancies.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadClients();
+      case 1:
+        _context.n = 2;
+        return loadTasks();
+      case 2:
+        return _context.a(2);
     }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function switchTab(name) {
-      ['tasks','new','discrepancies'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'discrepancies') loadDiscrepancies();
-      if (name === 'tasks') loadTasks();
-    }
-
-    const LAST_CLIENT_KEY = 'wms2_last_client_id';
-    async function loadClients() {
-      const sel = document.getElementById('client-select');
-      try {
-        const res = await window.API.clients.short();
-        const list = res.clients || [];
-        sel.innerHTML = `<option value="">Все клиенты</option>` +
-          list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-        const saved = localStorage.getItem(LAST_CLIENT_KEY);
-        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
-        sel.addEventListener('change', () => { localStorage.setItem(LAST_CLIENT_KEY, sel.value); loadTasks(); });
-      } catch (e) { UI.notify.err(e.message); }
-    }
-    function getClientId() {
-      const v = UI.val('#client-select');
-      return v ? Number(v) : null;
-    }
-
-    // ---------- Задачи ----------
-    let tasks = [];
-    let currentTask = null;
-    let actualQty = 0;
-
-    async function loadTasks() {
-      try {
-        const clientId = getClientId();
-        const params = { limit: 100 };
-        // показываем и открытые, и уже взятые в работу
-        const [openRes, progRes] = await Promise.all([
-          window.API.inventory.tasks({ ...params, status: 'open', ...(clientId?{client_id:clientId}:{}) }),
-          window.API.inventory.tasks({ ...params, status: 'in_progress', ...(clientId?{client_id:clientId}:{}) }),
-        ]);
-        tasks = [...(progRes.tasks||[]), ...(openRes.tasks||[])];
-        document.getElementById('tasks-count').textContent = tasks.length;
-        const list = document.getElementById('tasks-list');
-        if (!tasks.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>Нет открытых задач инвентаризации</div>`;
-          return;
-        }
-        list.innerHTML = tasks.map((t, idx) => `
-          <div class="list-row task-row" onclick="openTask(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(t.item_name || t.barcode || 'Проверка ячейки')}</div>
-              <div class="sub">${UI.escHtml(t.location_code)} · ${UI.escHtml(t.client_name||'')} ${t.reason ? '· '+UI.escHtml(t.reason) : ''}</div>
-            </div>
-            <span class="pill ${t.status==='in_progress'?'pill-blue':'pill-gray'}">${t.status==='in_progress'?'в работе':'открыта'}</span>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function openTask(idx) {
-      const t = tasks[idx];
-      try {
-        if (t.status === 'open') {
-          const me = window.API.getUser();
-          await window.API.inventory.assign(t.id, { assignee_id: me.id });
-        }
-        currentTask = t;
-        actualQty = Number(t.qty_system || 0);
-        document.getElementById('count-barcode').textContent = t.barcode || '(вся ячейка)';
-        document.getElementById('count-item-name').textContent = t.item_name || t.barcode || 'Проверка ячейки';
-        document.getElementById('count-location').textContent = t.location_code;
-        document.getElementById('count-system').textContent = t.qty_system != null ? t.qty_system : '—';
-        document.getElementById('actual-val').value = actualQty;
-        UI.setVal('#count-comment','');
-        document.getElementById('tasks-list-card').style.display = 'none';
-        document.getElementById('count-card').style.display = 'block';
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function closeCountCard() {
-      currentTask = null;
-      document.getElementById('count-card').style.display = 'none';
-      document.getElementById('tasks-list-card').style.display = 'block';
-      loadTasks();
-    }
-
-    function stepActual(delta) { actualQty = Math.max(0, actualQty + delta); document.getElementById('actual-val').value = actualQty; }
-    function setActual(val) { actualQty = Math.max(0, Math.round(Number(val)) || 0); document.getElementById('actual-val').value = actualQty; }
-
-    async function submitCount() {
-      if (!currentTask) return;
-      try {
-        const res = await window.API.inventory.count(currentTask.id, {
-          qty_actual: actualQty, comment: UI.val('#count-comment') || undefined,
-        });
-        const delta = (res.task && res.task.qty_delta != null) ? res.task.qty_delta : (actualQty - Number(currentTask.qty_system||0));
-        if (!(res.task && res.task.item_id)) {
-          // item_id=NULL - товар этой задачи не привязан к каталогу (обычно
-          // значит, что штрихкод не найден у выбранного клиента - см. фикс в
-          // inventory.service.js createTask). В таком случае остаток НЕ
-          // меняется, хотя задача и закрывается - явно предупреждаем, а не
-          // молча показываем "Расхождение: 0", как будто всё ок.
-          UI.notify.warn('Счёт внесён, но товар не привязан к каталогу - остаток НЕ изменён. Проверьте, что был выбран правильный клиент.');
-        } else {
-          UI.notify.ok(`Счёт внесён. Расхождение: ${delta > 0 ? '+' : ''}${delta}`);
-        }
-        closeCountCard();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function cancelTask() {
-      if (!currentTask) return;
-      if (!UI.confirm('Отменить эту задачу инвентаризации без пересчёта?')) return;
-      try {
-        await window.API.inventory.close(currentTask.id, { status: 'cancelled' });
-        UI.notify.warn('Задача отменена');
-        closeCountCard();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Новая проверка ----------
-    async function createCheck() {
-      const location = UI.val('#new-location');
-      const barcode  = UI.val('#new-barcode');
-      const clientId = getClientId();
-      if (!location) { UI.notify.err('Отсканируйте ячейку'); return; }
-      if (!clientId) { UI.notify.err('Выберите клиента вверху страницы'); return; }
-      const statusEl = document.getElementById('new-status');
-      try {
-        if (barcode) {
-          await window.API.inventory.createTask({ barcode, location_code: location, client_id: clientId });
-          statusEl.textContent = `Создана задача: ${barcode} в ${location}`;
-        } else {
-          const res = await window.API.inventory.createBatch({ location_code: location, client_id: clientId });
-          statusEl.textContent = `Создано задач: ${res.created}, пропущено (уже есть): ${res.skipped}`;
-        }
-        UI.notify.ok('Готово');
-        UI.setVal('#new-location',''); UI.setVal('#new-barcode','');
-        switchTab('tasks');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-    UI.onScan('#new-location', (v) => { UI.setVal('#new-location', v); document.getElementById('new-barcode').focus(); });
-    UI.onScan('#new-barcode', (v) => UI.setVal('#new-barcode', v));
-
-    // ---------- Новая проверка: пачкой по нескольким ячейкам ----------
-    // Textarea, а не отдельные скан-поля — сканер сам шлёт Enter после
-    // каждого скана, что в <textarea> и так превращается в перенос строки,
-    // так что можно просто сканировать ячейку за ячейкой без лишних кликов.
-    async function createCheckBatchMulti() {
-      const raw = UI.val('#new-locations-batch');
-      const clientId = getClientId();
-      if (!raw || !raw.trim()) { UI.notify.err('Отсканируйте или впишите хотя бы одну ячейку'); return; }
-      if (!clientId) { UI.notify.err('Выберите клиента вверху страницы'); return; }
-      const statusEl = document.getElementById('new-status-multi');
-      statusEl.textContent = 'Создаю...';
-      try {
-        const res = await window.API.inventory.createBatchMulti({ location_codes: raw, client_id: clientId });
-        const failed = (res.results || []).filter(r => !r.ok);
-        statusEl.innerHTML = `Ячеек обработано: ${res.locations}. Создано задач: ${res.created}, пропущено (уже есть): ${res.skipped}` +
-          (failed.length ? `<br><span style="color:var(--red);">Ошибки (${failed.length}): ${failed.map(f => UI.escHtml(f.location_code)+' — '+UI.escHtml(f.error)).join('; ')}</span>` : '');
-        UI.notify.ok('Готово');
-        UI.setVal('#new-locations-batch', '');
-        switchTab('tasks');
-      } catch (e) { UI.notify.err(e.message); statusEl.textContent = ''; }
-    }
-
-    // ---------- Расхождения ----------
-    async function loadDiscrepancies() {
-      try {
-        const clientId = getClientId();
-        const res = await window.API.inventory.discrepancies(clientId ? { client_id: clientId, limit: 200 } : { limit: 200 });
-        UI.renderTable('#discrepancies-body', res.rows, (r) => `
-          <tr>
-            <td>${UI.fmtDateTime(r.closed_at)}</td>
-            <td>${UI.escHtml(r.item_name || r.barcode || '—')}</td>
-            <td>${UI.escHtml(r.location_code)}</td>
-            <td>${UI.fmtQty(r.qty_system)}</td>
-            <td>${UI.fmtQty(r.qty_actual)}</td>
-            <td class="${r.qty_delta > 0 ? 'delta-pos' : 'delta-neg'}">${r.qty_delta > 0 ? '+' : ''}${r.qty_delta}</td>
-          </tr>
-        `);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    (async () => { await loadClients(); await loadTasks(); })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

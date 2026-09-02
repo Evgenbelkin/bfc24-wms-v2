@@ -178,299 +178,445 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-
-    let deliveryLoaded = false;
-    function switchTab(name) {
-      ['overview','delivery'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'delivery' && !deliveryLoaded) {
-        deliveryLoaded = true;
-        loadDeliveryFilters();
-        setDeliveryPreset(30);
+  <script>function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t.return || t.return(); } finally { if (u) throw o; } } }; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
+function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
+function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+var deliveryLoaded = false;
+function switchTab(name) {
+  ['overview', 'delivery'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'delivery' && !deliveryLoaded) {
+    deliveryLoaded = true;
+    loadDeliveryFilters();
+    setDeliveryPreset(30);
+  }
+}
+function fmtMoney(n) {
+  var num = Number(n) || 0;
+  return num.toLocaleString('ru-RU', {
+    maximumFractionDigits: 0
+  }) + ' ₽';
+}
+function fmtNum(n) {
+  return (Number(n) || 0).toLocaleString('ru-RU');
+}
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+function setPreset(days) {
+  document.querySelectorAll('#tab-overview .preset').forEach(function (b) {
+    return b.classList.toggle('active', Number(b.dataset.days) === days);
+  });
+  var to = new Date();
+  var from = new Date(to.getTime() - days * 86400000);
+  document.getElementById('f-from').value = isoDate(from);
+  document.getElementById('f-to').value = isoDate(to);
+  load();
+}
+function loadCustomRange() {
+  document.querySelectorAll('#tab-overview .preset').forEach(function (b) {
+    return b.classList.remove('active');
+  });
+  load();
+}
+function deltaHtml(curQty, prevQty) {
+  if (!prevQty) return '';
+  var diff = curQty - prevQty;
+  var pct = diff / prevQty * 100;
+  var cls = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+  var sign = diff > 0 ? '+' : '';
+  return "<div class=\"delta ".concat(cls, "\">").concat(sign).concat(fmtNum(diff), " (").concat(sign).concat(pct.toFixed(1), "%) \u043A \u043F\u0440\u0435\u0434. \u043F\u0435\u0440\u0438\u043E\u0434\u0443</div>");
+}
+function fmtHours(h) {
+  if (h === null || h === undefined) return '—';
+  return h.toFixed(1) + ' ч';
+}
+function bucketClass(key) {
+  if (key === 'h0_13' || key === 'h13_42') return 'discount';
+  if (key === 'h42_48') return 'base';
+  return 'penalty';
+}
+function loadSpeed(_x, _x2) {
+  return _loadSpeed.apply(this, arguments);
+}
+function _loadSpeed() {
+  _loadSpeed = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(from, to) {
+    var res, maxPct, _t;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.p = _context.n) {
+        case 0:
+          _context.p = 0;
+          _context.n = 1;
+          return window.API.fbsAnalytics.speed({
+            from: from,
+            to: to
+          });
+        case 1:
+          res = _context.v;
+          document.getElementById('speed-ontime').textContent = res.on_time_rate === null ? '—' : res.on_time_rate.toFixed(1) + '%';
+          document.getElementById('speed-avg-towb').textContent = fmtHours(res.avg_hours_to_wb);
+          document.getElementById('speed-avg-tosold').textContent = fmtHours(res.avg_hours_to_sold);
+          document.getElementById('speed-meta').textContent = "\u0423\u0447\u0442\u0435\u043D\u043E \u0437\u0430\u043A\u0430\u0437\u043E\u0432 (\u0443\u0436\u0435 \u043F\u0435\u0440\u0435\u0434\u0430\u043D\u044B \u0432 WB): ".concat(fmtNum(res.processed));
+          maxPct = Math.max.apply(Math, _toConsumableArray(res.buckets.map(function (b) {
+            return b.pct;
+          })).concat([1]));
+          document.getElementById('speed-buckets').innerHTML = res.buckets.map(function (b) {
+            return "\n          <div class=\"speed-row\">\n            <div class=\"speed-label\">".concat(UI.escHtml(b.label), "</div>\n            <div class=\"speed-bar-wrap\"><div class=\"speed-bar ").concat(bucketClass(b.key), "\" style=\"width:").concat((b.pct / maxPct * 100).toFixed(1), "%\"></div></div>\n            <div class=\"speed-qty\">").concat(fmtNum(b.qty), " \u0448\u0442 (").concat(b.pct.toFixed(1), "%)</div>\n          </div>\n        ");
+          }).join('');
+          _context.n = 3;
+          break;
+        case 2:
+          _context.p = 2;
+          _t = _context.v;
+          UI.toast(_t.message || 'Ошибка загрузки сроков', 'error');
+        case 3:
+          return _context.a(2);
       }
-    }
-
-    function fmtMoney(n) {
-      const num = Number(n) || 0;
-      return num.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
-    }
-    function fmtNum(n) { return (Number(n) || 0).toLocaleString('ru-RU'); }
-    function isoDate(d) { return d.toISOString().slice(0, 10); }
-
-    function setPreset(days) {
-      document.querySelectorAll('#tab-overview .preset').forEach(b => b.classList.toggle('active', Number(b.dataset.days) === days));
-      const to = new Date();
-      const from = new Date(to.getTime() - days * 86400000);
-      document.getElementById('f-from').value = isoDate(from);
-      document.getElementById('f-to').value = isoDate(to);
-      load();
-    }
-
-    function loadCustomRange() {
-      document.querySelectorAll('#tab-overview .preset').forEach(b => b.classList.remove('active'));
-      load();
-    }
-
-    function deltaHtml(curQty, prevQty) {
-      if (!prevQty) return '';
-      const diff = curQty - prevQty;
-      const pct = (diff / prevQty) * 100;
-      const cls = diff > 0 ? 'up' : (diff < 0 ? 'down' : 'flat');
-      const sign = diff > 0 ? '+' : '';
-      return `<div class="delta ${cls}">${sign}${fmtNum(diff)} (${sign}${pct.toFixed(1)}%) к пред. периоду</div>`;
-    }
-
-    function fmtHours(h) {
-      if (h === null || h === undefined) return '—';
-      return h.toFixed(1) + ' ч';
-    }
-    function bucketClass(key) {
-      if (key === 'h0_13' || key === 'h13_42') return 'discount';
-      if (key === 'h42_48') return 'base';
-      return 'penalty';
-    }
-
-    async function loadSpeed(from, to) {
-      try {
-        const res = await window.API.fbsAnalytics.speed({ from, to });
-        document.getElementById('speed-ontime').textContent = res.on_time_rate === null ? '—' : res.on_time_rate.toFixed(1) + '%';
-        document.getElementById('speed-avg-towb').textContent = fmtHours(res.avg_hours_to_wb);
-        document.getElementById('speed-avg-tosold').textContent = fmtHours(res.avg_hours_to_sold);
-        document.getElementById('speed-meta').textContent = `Учтено заказов (уже переданы в WB): ${fmtNum(res.processed)}`;
-        const maxPct = Math.max(...res.buckets.map(b => b.pct), 1);
-        document.getElementById('speed-buckets').innerHTML = res.buckets.map(b => `
-          <div class="speed-row">
-            <div class="speed-label">${UI.escHtml(b.label)}</div>
-            <div class="speed-bar-wrap"><div class="speed-bar ${bucketClass(b.key)}" style="width:${(b.pct / maxPct * 100).toFixed(1)}%"></div></div>
-            <div class="speed-qty">${fmtNum(b.qty)} шт (${b.pct.toFixed(1)}%)</div>
-          </div>
-        `).join('');
-      } catch (e) {
-        UI.toast(e.message || 'Ошибка загрузки сроков', 'error');
-      }
-    }
-
-    function rateColor(pct) {
-      if (pct >= 90) return 'var(--green2,#2e9e5b)';
-      if (pct >= 70) return 'var(--text)';
-      return 'var(--red,#c0392b)';
-    }
-
-    async function loadSpeedByClient(from, to) {
-      try {
-        const res = await window.API.fbsAnalytics.speedByClient({ from, to });
-        const tbody = document.getElementById('speed-by-client');
-        const empty = document.getElementById('speed-by-client-empty');
-        if (!res.clients.length) {
+    }, _callee, null, [[0, 2]]);
+  }));
+  return _loadSpeed.apply(this, arguments);
+}
+function rateColor(pct) {
+  if (pct >= 90) return 'var(--green2,#2e9e5b)';
+  if (pct >= 70) return 'var(--text)';
+  return 'var(--red,#c0392b)';
+}
+function loadSpeedByClient(_x3, _x4) {
+  return _loadSpeedByClient.apply(this, arguments);
+}
+function _loadSpeedByClient() {
+  _loadSpeedByClient = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(from, to) {
+    var res, tbody, empty, _t2;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          _context2.n = 1;
+          return window.API.fbsAnalytics.speedByClient({
+            from: from,
+            to: to
+          });
+        case 1:
+          res = _context2.v;
+          tbody = document.getElementById('speed-by-client');
+          empty = document.getElementById('speed-by-client-empty');
+          if (res.clients.length) {
+            _context2.n = 2;
+            break;
+          }
           tbody.innerHTML = '';
           empty.style.display = 'block';
-          return;
-        }
-        empty.style.display = 'none';
-        tbody.innerHTML = res.clients.map(c => {
-          const byKey = {};
-          for (const b of c.buckets) byKey[b.key] = b;
-          const bucketCell = (key) => {
-            const b = byKey[key];
-            const cls = b.qty === 0 ? 'zero' : bucketClass(key);
-            return `<td><span class="bc ${cls}">${b.pct.toFixed(0)}%</span></td>`;
+          return _context2.a(2);
+        case 2:
+          empty.style.display = 'none';
+          tbody.innerHTML = res.clients.map(function (c) {
+            var byKey = {};
+            var _iterator = _createForOfIteratorHelper(c.buckets),
+              _step;
+            try {
+              for (_iterator.s(); !(_step = _iterator.n()).done;) {
+                var b = _step.value;
+                byKey[b.key] = b;
+              }
+            } catch (err) {
+              _iterator.e(err);
+            } finally {
+              _iterator.f();
+            }
+            var bucketCell = function bucketCell(key) {
+              var b = byKey[key];
+              var cls = b.qty === 0 ? 'zero' : bucketClass(key);
+              return "<td><span class=\"bc ".concat(cls, "\">").concat(b.pct.toFixed(0), "%</span></td>");
+            };
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(c.client_name), "</td>\n            <td>").concat(fmtNum(c.processed), "</td>\n            <td style=\"color:").concat(rateColor(c.on_time_rate), ";font-weight:600;\">").concat(c.on_time_rate.toFixed(1), "%</td>\n            <td>").concat(fmtHours(c.avg_hours_to_wb), "</td>\n            ").concat(bucketCell('h0_13')).concat(bucketCell('h13_42')).concat(bucketCell('h42_48')).concat(bucketCell('h48_54')).concat(bucketCell('h54_60')).concat(bucketCell('h60plus'), "\n          </tr>\n        ");
+          }).join('');
+          _context2.n = 4;
+          break;
+        case 3:
+          _context2.p = 3;
+          _t2 = _context2.v;
+          UI.toast(_t2.message || 'Ошибка загрузки сроков по клиентам', 'error');
+        case 4:
+          return _context2.a(2);
+      }
+    }, _callee2, null, [[0, 3]]);
+  }));
+  return _loadSpeedByClient.apply(this, arguments);
+}
+function load() {
+  return _load.apply(this, arguments);
+}
+function _load() {
+  _load = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var from, to, res, prevByKey, _iterator2, _step2, b, _t3;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          from = document.getElementById('f-from').value;
+          to = document.getElementById('f-to').value;
+          if (!(!from || !to)) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2);
+        case 1:
+          loadSpeed(from, to);
+          loadSpeedByClient(from, to);
+          _context3.p = 2;
+          _context3.n = 3;
+          return window.API.fbsAnalytics.summary({
+            from: from,
+            to: to
+          });
+        case 3:
+          res = _context3.v;
+          document.getElementById('meta').textContent = "\u041F\u0435\u0440\u0438\u043E\u0434: ".concat(from, " \u2014 ").concat(to, ". \u0421\u0442\u0430\u0442\u0443\u0441 \u043E\u0431\u043D\u043E\u0432\u043B\u044F\u0435\u0442\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 (\u0440\u0430\u0437 \u0432 30 \u043C\u0438\u043D\u0443\u0442).");
+          document.getElementById('total-qty').textContent = fmtNum(res.current.total.qty);
+          document.getElementById('total-amount').textContent = fmtMoney(res.current.total.amount);
+          document.getElementById('purchase-rate').textContent = res.current.purchase_rate === null ? '—' : res.current.purchase_rate.toFixed(1) + '%';
+          prevByKey = {};
+          _iterator2 = _createForOfIteratorHelper(res.previous.buckets);
+          try {
+            for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
+              b = _step2.value;
+              prevByKey[b.key] = b;
+            }
+          } catch (err) {
+            _iterator2.e(err);
+          } finally {
+            _iterator2.f();
+          }
+          document.getElementById('buckets').innerHTML = res.current.buckets.map(function (b) {
+            var prev = prevByKey[b.key] || {
+              qty: 0
+            };
+            return "\n            <div class=\"kpi\">\n              <div class=\"label\">".concat(UI.escHtml(b.label), "</div>\n              <div class=\"num\">").concat(fmtNum(b.qty), " \u0448\u0442</div>\n              <div class=\"amount\">").concat(fmtMoney(b.amount), "</div>\n              ").concat(deltaHtml(b.qty, prev.qty), "\n            </div>\n          ");
+          }).join('');
+          _context3.n = 5;
+          break;
+        case 4:
+          _context3.p = 4;
+          _t3 = _context3.v;
+          UI.toast(_t3.message || 'Ошибка загрузки аналитики', 'error');
+        case 5:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[2, 4]]);
+  }));
+  return _load.apply(this, arguments);
+}
+function refreshNow() {
+  return _refreshNow.apply(this, arguments);
+} // ─────────────── Вкладка "Время доставки" ───────────────
+function _refreshNow() {
+  _refreshNow = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var btn, res, _t4;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          btn = document.getElementById('btn-refresh');
+          btn.disabled = true;
+          _context4.p = 1;
+          _context4.n = 2;
+          return window.API.fbsAnalytics.refreshNow();
+        case 2:
+          res = _context4.v;
+          UI.toast("\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E \u0437\u0430\u043A\u0430\u0437\u043E\u0432: ".concat(res.checked, ", \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E: ").concat(res.updated), 'success');
+          _context4.n = 3;
+          return load();
+        case 3:
+          _context4.n = 5;
+          break;
+        case 4:
+          _context4.p = 4;
+          _t4 = _context4.v;
+          UI.toast(_t4.message || 'Ошибка обновления', 'error');
+        case 5:
+          _context4.p = 5;
+          btn.disabled = false;
+          return _context4.f(5);
+        case 6:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[1, 4, 5, 6]]);
+  }));
+  return _refreshNow.apply(this, arguments);
+}
+function fmtHoursDelivery(h) {
+  if (h === null || h === undefined) return '—';
+  if (h < 24) return h.toFixed(1) + ' ч';
+  return (h / 24).toFixed(1) + ' дн (' + h.toFixed(0) + ' ч)';
+}
+var deliveryRows = [];
+var deliverySortKey = 'orders';
+var deliverySortDir = -1;
+function setDeliveryPreset(days) {
+  document.querySelectorAll('#tab-delivery .preset').forEach(function (b) {
+    return b.classList.toggle('active', Number(b.dataset.days) === days);
+  });
+  var to = new Date();
+  var from = new Date(to.getTime() - days * 86400000);
+  document.getElementById('d-from').value = isoDate(from);
+  document.getElementById('d-to').value = isoDate(to);
+  loadDelivery();
+}
+function loadDeliveryCustomRange() {
+  document.querySelectorAll('#tab-delivery .preset').forEach(function (b) {
+    return b.classList.remove('active');
+  });
+  loadDelivery();
+}
+function sortDeliveryBy(key) {
+  if (deliverySortKey === key) {
+    deliverySortDir *= -1;
+  } else {
+    deliverySortKey = key;
+    deliverySortDir = -1;
+  }
+  renderDelivery();
+}
+function renderDelivery() {
+  var tbody = document.getElementById('d-rows');
+  var empty = document.getElementById('d-empty');
+  if (!deliveryRows.length) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  var sorted = _toConsumableArray(deliveryRows).sort(function (a, b) {
+    var av = a[deliverySortKey] != null ? a[deliverySortKey] : -Infinity,
+      bv = b[deliverySortKey] != null ? b[deliverySortKey] : -Infinity;
+    return (av - bv) * deliverySortDir;
+  });
+  tbody.innerHTML = sorted.map(function (r) {
+    return "\n        <tr>\n          <td>".concat(UI.escHtml(r.client_name || '—'), "</td>\n          <td>").concat(UI.escHtml(r.wb_sc_name || '—'), "</td>\n          <td>").concat(UI.escHtml(r.region_name || '—'), "</td>\n          <td>").concat(UI.escHtml(r.oblast_okrug_name || '—'), "</td>\n          <td>").concat(fmtNum(r.orders), "</td>\n          <td>").concat(fmtHoursDelivery(r.avg_hours_from_order), "</td>\n          <td>\n            <div style=\"color:").concat(purchaseRateColor(r.purchase_rate), ";font-weight:600;\">").concat(fmtPct(r.purchase_rate), "</div>\n            <div style=\"font-size:11px;color:var(--muted);\">").concat(fmtNum(r.sold), " \u0432\u044B\u043A\u0443\u043F \xB7 ").concat(fmtNum(r.cancelled), " \u043E\u0442\u043A\u0430\u0437").concat(r.pending ? ' · ' + fmtNum(r.pending) + ' ждёт' : '', "</div>\n          </td>\n        </tr>\n      ");
+  }).join('');
+}
+function fmtPct(p) {
+  return p === null || p === undefined ? '—' : p.toFixed(1) + '%';
+}
+function purchaseRateColor(p) {
+  if (p === null || p === undefined) return 'inherit';
+  if (p >= 90) return 'var(--green2,#2e9e5b)';
+  if (p >= 70) return 'inherit';
+  return 'var(--red,#c0392b)';
+}
+function fillDeliverySelect(sel, values, allLabel) {
+  sel.innerHTML = "<option value=\"\">".concat(allLabel, "</option>") + values.map(function (v) {
+    return "<option value=\"".concat(UI.escHtml(v), "\">").concat(UI.escHtml(v), "</option>");
+  }).join('');
+}
+function loadDeliveryFilters() {
+  return _loadDeliveryFilters.apply(this, arguments);
+}
+function _loadDeliveryFilters() {
+  _loadDeliveryFilters = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var _yield$Promise$all, _yield$Promise$all2, clientsRes, filtersRes, clientSel, _t5;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          _context5.n = 1;
+          return Promise.all([window.API.clients.short(), window.API.fbsAnalytics.regionDeliveryFilters()]);
+        case 1:
+          _yield$Promise$all = _context5.v;
+          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 2);
+          clientsRes = _yield$Promise$all2[0];
+          filtersRes = _yield$Promise$all2[1];
+          clientSel = document.getElementById('d-client');
+          clientSel.innerHTML = '<option value="">Все клиенты</option>' + (clientsRes.clients || []).map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          fillDeliverySelect(document.getElementById('d-warehouse'), filtersRes.warehouses || [], 'Все склады (СЦ WB)');
+          fillDeliverySelect(document.getElementById('d-region'), filtersRes.regions || [], 'Все регионы');
+          fillDeliverySelect(document.getElementById('d-okrug'), filtersRes.oblast_okrugs || [], 'Все федеральные округа');
+          _context5.n = 3;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t5 = _context5.v;
+        case 3:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _loadDeliveryFilters.apply(this, arguments);
+}
+function loadDelivery() {
+  return _loadDelivery.apply(this, arguments);
+}
+function _loadDelivery() {
+  _loadDelivery = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var from, to, params, clientId, wbScName, regionName, okrugName, res, s, _t6;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          from = document.getElementById('d-from').value;
+          to = document.getElementById('d-to').value;
+          if (!(!from || !to)) {
+            _context6.n = 1;
+            break;
+          }
+          return _context6.a(2);
+        case 1:
+          params = {
+            from: from,
+            to: to
           };
-          return `
-          <tr>
-            <td>${UI.escHtml(c.client_name)}</td>
-            <td>${fmtNum(c.processed)}</td>
-            <td style="color:${rateColor(c.on_time_rate)};font-weight:600;">${c.on_time_rate.toFixed(1)}%</td>
-            <td>${fmtHours(c.avg_hours_to_wb)}</td>
-            ${bucketCell('h0_13')}${bucketCell('h13_42')}${bucketCell('h42_48')}${bucketCell('h48_54')}${bucketCell('h54_60')}${bucketCell('h60plus')}
-          </tr>
-        `;
-        }).join('');
-      } catch (e) {
-        UI.toast(e.message || 'Ошибка загрузки сроков по клиентам', 'error');
+          clientId = document.getElementById('d-client').value;
+          wbScName = document.getElementById('d-warehouse').value;
+          regionName = document.getElementById('d-region').value;
+          okrugName = document.getElementById('d-okrug').value;
+          if (clientId) params.client_id = clientId;
+          if (wbScName) params.wb_sc_name = wbScName;
+          if (regionName) params.region_name = regionName;
+          if (okrugName) params.oblast_okrug_name = okrugName;
+          _context6.p = 2;
+          _context6.n = 3;
+          return window.API.fbsAnalytics.regionDelivery(params);
+        case 3:
+          res = _context6.v;
+          document.getElementById('d-meta').textContent = "\u041F\u0435\u0440\u0438\u043E\u0434: ".concat(from, " \u2014 ").concat(to, ". \u0423\u0447\u0438\u0442\u044B\u0432\u0430\u044E\u0442\u0441\u044F \u0442\u043E\u043B\u044C\u043A\u043E \u0437\u0430\u043A\u0430\u0437\u044B, \u0443\u0436\u0435 \u0434\u043E\u0435\u0445\u0430\u0432\u0448\u0438\u0435 \u0434\u043E \u043F\u0443\u043D\u043A\u0442\u0430 \u0432\u044B\u0434\u0430\u0447\u0438.");
+          deliveryRows = res.rows || [];
+          renderDelivery();
+          s = res.summary || {};
+          document.getElementById('d-sum-orders').textContent = fmtNum(s.orders);
+          document.getElementById('d-sum-from-order').textContent = fmtHoursDelivery(s.avg_hours_from_order);
+          document.getElementById('d-sum-purchase-rate').textContent = fmtPct(s.purchase_rate);
+          document.getElementById('d-sum-purchase-detail').textContent = "".concat(fmtNum(s.sold), " \u0432\u044B\u043A\u0443\u043F\u043B\u0435\u043D\u043E \xB7 ").concat(fmtNum(s.cancelled), " \u043E\u0442\u043A\u0430\u0437 \xB7 ").concat(fmtNum(s.pending), " \u0435\u0449\u0451 \u0436\u0434\u0451\u0442 \u043D\u0430 \u041F\u0412\u0417");
+          _context6.n = 5;
+          break;
+        case 4:
+          _context6.p = 4;
+          _t6 = _context6.v;
+          UI.toast(_t6.message || 'Ошибка загрузки отчёта', 'error');
+        case 5:
+          return _context6.a(2);
       }
-    }
-
-    async function load() {
-      const from = document.getElementById('f-from').value;
-      const to = document.getElementById('f-to').value;
-      if (!from || !to) return;
-      loadSpeed(from, to);
-      loadSpeedByClient(from, to);
-      try {
-        const res = await window.API.fbsAnalytics.summary({ from, to });
-        document.getElementById('meta').textContent = `Период: ${from} — ${to}. Статус обновляется автоматически (раз в 30 минут).`;
-        document.getElementById('total-qty').textContent = fmtNum(res.current.total.qty);
-        document.getElementById('total-amount').textContent = fmtMoney(res.current.total.amount);
-        document.getElementById('purchase-rate').textContent = res.current.purchase_rate === null ? '—' : res.current.purchase_rate.toFixed(1) + '%';
-
-        const prevByKey = {};
-        for (const b of res.previous.buckets) prevByKey[b.key] = b;
-
-        document.getElementById('buckets').innerHTML = res.current.buckets.map(b => {
-          const prev = prevByKey[b.key] || { qty: 0 };
-          return `
-            <div class="kpi">
-              <div class="label">${UI.escHtml(b.label)}</div>
-              <div class="num">${fmtNum(b.qty)} шт</div>
-              <div class="amount">${fmtMoney(b.amount)}</div>
-              ${deltaHtml(b.qty, prev.qty)}
-            </div>
-          `;
-        }).join('');
-      } catch (e) {
-        UI.toast(e.message || 'Ошибка загрузки аналитики', 'error');
-      }
-    }
-
-    async function refreshNow() {
-      const btn = document.getElementById('btn-refresh');
-      btn.disabled = true;
-      try {
-        const res = await window.API.fbsAnalytics.refreshNow();
-        UI.toast(`Проверено заказов: ${res.checked}, обновлено: ${res.updated}`, 'success');
-        await load();
-      } catch (e) {
-        UI.toast(e.message || 'Ошибка обновления', 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    }
-
-    // ─────────────── Вкладка "Время доставки" ───────────────
-
-    function fmtHoursDelivery(h) {
-      if (h === null || h === undefined) return '—';
-      if (h < 24) return h.toFixed(1) + ' ч';
-      return (h / 24).toFixed(1) + ' дн (' + h.toFixed(0) + ' ч)';
-    }
-
-    let deliveryRows = [];
-    let deliverySortKey = 'orders';
-    let deliverySortDir = -1;
-
-    function setDeliveryPreset(days) {
-      document.querySelectorAll('#tab-delivery .preset').forEach(b => b.classList.toggle('active', Number(b.dataset.days) === days));
-      const to = new Date();
-      const from = new Date(to.getTime() - days * 86400000);
-      document.getElementById('d-from').value = isoDate(from);
-      document.getElementById('d-to').value = isoDate(to);
-      loadDelivery();
-    }
-
-    function loadDeliveryCustomRange() {
-      document.querySelectorAll('#tab-delivery .preset').forEach(b => b.classList.remove('active'));
-      loadDelivery();
-    }
-
-    function sortDeliveryBy(key) {
-      if (deliverySortKey === key) { deliverySortDir *= -1; } else { deliverySortKey = key; deliverySortDir = -1; }
-      renderDelivery();
-    }
-
-    function renderDelivery() {
-      const tbody = document.getElementById('d-rows');
-      const empty = document.getElementById('d-empty');
-      if (!deliveryRows.length) {
-        tbody.innerHTML = '';
-        empty.style.display = 'block';
-        return;
-      }
-      empty.style.display = 'none';
-      const sorted = [...deliveryRows].sort((a, b) => {
-        const av = (a[deliverySortKey] != null ? a[deliverySortKey] : -Infinity), bv = (b[deliverySortKey] != null ? b[deliverySortKey] : -Infinity);
-        return (av - bv) * deliverySortDir;
-      });
-      tbody.innerHTML = sorted.map(r => `
-        <tr>
-          <td>${UI.escHtml(r.client_name || '—')}</td>
-          <td>${UI.escHtml(r.wb_sc_name || '—')}</td>
-          <td>${UI.escHtml(r.region_name || '—')}</td>
-          <td>${UI.escHtml(r.oblast_okrug_name || '—')}</td>
-          <td>${fmtNum(r.orders)}</td>
-          <td>${fmtHoursDelivery(r.avg_hours_from_order)}</td>
-          <td>
-            <div style="color:${purchaseRateColor(r.purchase_rate)};font-weight:600;">${fmtPct(r.purchase_rate)}</div>
-            <div style="font-size:11px;color:var(--muted);">${fmtNum(r.sold)} выкуп · ${fmtNum(r.cancelled)} отказ${r.pending ? ' · ' + fmtNum(r.pending) + ' ждёт' : ''}</div>
-          </td>
-        </tr>
-      `).join('');
-    }
-
-    function fmtPct(p) {
-      return (p === null || p === undefined) ? '—' : p.toFixed(1) + '%';
-    }
-    function purchaseRateColor(p) {
-      if (p === null || p === undefined) return 'inherit';
-      if (p >= 90) return 'var(--green2,#2e9e5b)';
-      if (p >= 70) return 'inherit';
-      return 'var(--red,#c0392b)';
-    }
-
-    function fillDeliverySelect(sel, values, allLabel) {
-      sel.innerHTML = `<option value="">${allLabel}</option>` +
-        values.map(v => `<option value="${UI.escHtml(v)}">${UI.escHtml(v)}</option>`).join('');
-    }
-
-    async function loadDeliveryFilters() {
-      try {
-        const [clientsRes, filtersRes] = await Promise.all([
-          window.API.clients.short(),
-          window.API.fbsAnalytics.regionDeliveryFilters(),
-        ]);
-        const clientSel = document.getElementById('d-client');
-        clientSel.innerHTML = '<option value="">Все клиенты</option>' +
-          (clientsRes.clients || []).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-
-        fillDeliverySelect(document.getElementById('d-warehouse'), filtersRes.warehouses || [], 'Все склады (СЦ WB)');
-        fillDeliverySelect(document.getElementById('d-region'), filtersRes.regions || [], 'Все регионы');
-        fillDeliverySelect(document.getElementById('d-okrug'), filtersRes.oblast_okrugs || [], 'Все федеральные округа');
-      } catch (e) {
-        // не критично для основной таблицы - просто не будет фильтров
-      }
-    }
-
-    async function loadDelivery() {
-      const from = document.getElementById('d-from').value;
-      const to = document.getElementById('d-to').value;
-      if (!from || !to) return;
-
-      const params = { from, to };
-      const clientId = document.getElementById('d-client').value;
-      const wbScName = document.getElementById('d-warehouse').value;
-      const regionName = document.getElementById('d-region').value;
-      const okrugName = document.getElementById('d-okrug').value;
-      if (clientId) params.client_id = clientId;
-      if (wbScName) params.wb_sc_name = wbScName;
-      if (regionName) params.region_name = regionName;
-      if (okrugName) params.oblast_okrug_name = okrugName;
-
-      try {
-        const res = await window.API.fbsAnalytics.regionDelivery(params);
-        document.getElementById('d-meta').textContent = `Период: ${from} — ${to}. Учитываются только заказы, уже доехавшие до пункта выдачи.`;
-        deliveryRows = res.rows || [];
-        renderDelivery();
-
-        const s = res.summary || {};
-        document.getElementById('d-sum-orders').textContent = fmtNum(s.orders);
-        document.getElementById('d-sum-from-order').textContent = fmtHoursDelivery(s.avg_hours_from_order);
-        document.getElementById('d-sum-purchase-rate').textContent = fmtPct(s.purchase_rate);
-        document.getElementById('d-sum-purchase-detail').textContent =
-          `${fmtNum(s.sold)} выкуплено · ${fmtNum(s.cancelled)} отказ · ${fmtNum(s.pending)} ещё ждёт на ПВЗ`;
-      } catch (e) {
-        UI.toast(e.message || 'Ошибка загрузки отчёта', 'error');
-      }
-    }
-
-    document.getElementById('d-client').addEventListener('change', loadDelivery);
-    document.getElementById('d-warehouse').addEventListener('change', loadDelivery);
-    document.getElementById('d-region').addEventListener('change', loadDelivery);
-    document.getElementById('d-okrug').addEventListener('change', loadDelivery);
-
-    setPreset(7);
-  </script>
+    }, _callee6, null, [[2, 4]]);
+  }));
+  return _loadDelivery.apply(this, arguments);
+}
+document.getElementById('d-client').addEventListener('change', loadDelivery);
+document.getElementById('d-warehouse').addEventListener('change', loadDelivery);
+document.getElementById('d-region').addEventListener('change', loadDelivery);
+document.getElementById('d-okrug').addEventListener('change', loadDelivery);
+setPreset(7);</script>
 </body>
 </html>

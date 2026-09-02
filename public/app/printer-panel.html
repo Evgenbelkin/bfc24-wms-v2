@@ -83,673 +83,1038 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function switchTab(name) {
-      ['printers','routes','workstations','jobs'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'routes' && !routesLoaded) loadRoutes();
-      if (name === 'workstations' && !workstationsLoaded) loadWorkstations();
-      if (name === 'jobs' && !jobsLoaded) loadJobs();
-    }
-
-    const CONN_LABELS = { agent:'Через агент (авто)', network:'По сети (IP)', usb:'Локально (браузер/USB)' };
-    const DOC_TYPES = [
-      { value:'pick_list_label', label:'Внутренняя наклейка сборочного листа' },
-      { value:'wb_sticker',      label:'Стикер WB (упаковка)' },
-      { value:'shipping_qr',     label:'QR поставки (отгрузка)' },
-      { value:'item_barcode',    label:'Этикетка товара (штрихкод+название)' },
-      { value:'marking_code',    label:'Код маркировки "Честный знак"' },
-      { value:'other',           label:'Другое' },
-    ];
-
-    const ZONE_TYPES = [
-      { value:'packing',  label:'Стол упаковки' },
-      { value:'picking',  label:'Зона сборки' },
-      { value:'shipping', label:'Зона отгрузки' },
-      { value:'inbound',  label:'Приёмка' },
-      { value:'other',    label:'Другое' },
-    ];
-
-    let warehouses = [];
-    let printersList = [];
-    let workstationsList = [];
-    let routesLoaded = false, jobsLoaded = false, workstationsLoaded = false;
-
-    async function loadWarehouses() {
-      try { warehouses = (await window.API.warehouses.list()).warehouses || []; } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // Статус агента печати для строки списка/модалки — показываем явно, чтобы
-    // "тихое" падение агента (истёк доступ, выключен компьютер и т.п.) было видно
-    // сразу здесь, а не обнаруживалось по зависшей очереди печати.
-    function agentStatusHtml(p) {
-      // Раньше показывали только для connection_type='agent'. Печать "по IP"
-      // (connection_type='network') технически тоже идёт ЧЕРЕЗ АГЕНТА и его
-      // ключ — просто на компьютере агента этот принтер добавлен в Windows не
-      // по USB, а через TCP/IP-порт (см. onConnChange hint ниже), поэтому и
-      // тут статус связи агента актуален и важен так же, как для обычного.
-      if (p.connection_type !== 'agent' && p.connection_type !== 'network') return '';
-      if (!p.has_agent_key) return ' · <span class="pill pill-yellow">ключ агента не выпущен</span>';
-      if (!p.agent_last_seen_at) return ' · <span class="pill pill-gray">ключ выпущен, агент ещё не выходил на связь</span>';
-      const diffMs = Date.now() - new Date(p.agent_last_seen_at).getTime();
-      const mins = Math.floor(diffMs / 60000);
-      if (mins <= 2) return ' · <span class="pill pill-green">агент на связи</span>';
-      if (mins < 60) return ` · <span class="pill pill-yellow">агент не выходил на связь ${mins} мин</span>`;
-      const hours = Math.floor(mins / 60);
-      if (hours < 48) return ` · <span class="pill pill-red">агент не выходил на связь ${hours} ч</span>`;
-      return ` · <span class="pill pill-red">агент не выходил на связь давно (${UI.fmtDateTime(p.agent_last_seen_at)})</span>`;
-    }
-
-    // ---------- Принтеры ----------
-    async function loadPrinters() {
-      try {
-        const res = await window.API.printing.printers.list();
-        printersList = res.printers || [];
-        document.getElementById('pr-count').textContent = printersList.length;
-        const list = document.getElementById('pr-list');
-        if (!printersList.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg></div>Принтеров пока нет</div>`;
-          return;
-        }
-        list.innerHTML = printersList.map((p, idx) => `
-          <div class="list-row row-item" onclick="openPrinterModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(p.printer_name)} ${p.is_default ? '<span class="pill pill-blue">по умолч.</span>' : ''}</div>
-              <div class="sub">${UI.escHtml(CONN_LABELS[p.connection_type]||p.connection_type)} · ${UI.escHtml(p.warehouse_name||'без склада')} ${p.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}${agentStatusHtml(p)}</div>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openPrinterModal(idx) {
-      const p = idx !== null ? printersList[idx] : null;
-      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(w => `<option value="${w.id}" ${p && p.warehouse_id===w.id ? 'selected':''}>${UI.escHtml(w.warehouse_name)}</option>`).join('');
-      const connOptions = Object.entries(CONN_LABELS).map(([k,v]) => `<option value="${k}" ${p && p.connection_type===k ? 'selected':''}>${v}</option>`).join('');
-
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${p ? UI.escHtml(p.printer_name) : 'Новый принтер'}</div>
-            <div class="field"><label>Название</label><input id="m-name" value="${p ? UI.escHtml(p.printer_name):''}" placeholder="Принтер на упаковке"/></div>
-            <div class="field"><label>Склад (опционально)</label><select id="m-warehouse" ${p?'disabled':''}>${whOptions}</select></div>
-            <div class="field"><label>Способ подключения</label><select id="m-conn" onchange="onConnChange()" ${p?'disabled':''}>${connOptions}</select></div>
-            <div id="conn-hint"></div>
-            <div class="field" id="device-fields">
-              <label>Точное имя устройства в Windows</label>
-              <input id="m-device" value="${p && p.device_name ? UI.escHtml(p.device_name):''}" placeholder="например: Xprinter XP-365B"/>
-              <div class="hint-box" style="margin-top:6px;" id="device-fields-hint">Как принтер называется в самой Windows на компьютере с агентом: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).</div>
-            </div>
-            <div class="field" id="paper-size-fields">
-              <label>Имя формата бумаги в драйвере (опционально)</label>
-              <input id="m-paper-size" value="${p && p.paper_size_name ? UI.escHtml(p.paper_size_name):''}" placeholder="например: 58x40"/>
-              <div class="hint-box" style="margin-top:6px;">Если в настройках драйвера этого принтера (обычно "Свойства принтера" → "Настройка страницы"/Page Setup → список Stock/Paper Size) заведён свой именованный формат бумаги — впишите его точное имя сюда. Агент будет ссылаться на этот формат по имени при автоматической печати, а не создавать размер заново — это важно, если в именованном формате настроена ещё и калибровка датчика зазора между этикетками. Если оставить пустым, агент подставит размер просто в мм.</div>
-            </div>
-            <div class="field-row2" id="network-fields" style="display:none">
-              <div class="field"><label>IP-адрес принтера (справочно)</label><input id="m-ip" value="${p && p.ip_address ? UI.escHtml(p.ip_address):''}" placeholder="192.168.1.50"/></div>
-              <div class="field"><label>Порт (справочно)</label><input id="m-port" type="number" value="${p && p.port ? p.port:9100}" placeholder="9100"/></div>
-            </div>
-            <div class="field"><label style="display:inline;">Принтер по умолчанию</label> <input type="checkbox" id="m-default" ${p && p.is_default ? 'checked':''}/></div>
-            ${p ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${p.is_active ? 'checked':''}/></div>` : ''}
-            ${p && (p.connection_type === 'agent' || p.connection_type === 'network') ? `
-              <div class="field">
-                <label>Доступ агента печати</label>
-                <div class="hint-box" style="margin-top:0;">${p.has_agent_key ? 'Ключ уже выпущен.' : 'Ключ ещё не выпущен — без него агент не сможет подключиться.'} ${agentStatusHtml(p)}</div>
-                <button class="btn-sm btn-blue" style="margin-top:8px;" onclick="issueAgentKey(${p.id})"><svg class="i" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3"/></svg> ${p.has_agent_key ? 'Перевыпустить ключ' : 'Выпустить ключ агента'}</button>
-                <div id="agent-key-reveal"></div>
-                ${p.connection_type === 'agent' ? `
-                <div class="hint-box" style="margin-top:8px;">
-                  Для термопринтеров этикеток (один раз на компьютер с агентом): скачайте
-                  <a href="https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" target="_blank">SumatraPDF 3.6.1 (portable, .zip)</a>,
-                  достаньте <code>SumatraPDF.exe</code> и положите его в папку агента по пути
-                  <code>printer-agent\bin\SumatraPDF.exe</code>. Без этого файла агент работает по старой,
-                  менее надёжной логике печати.
-                </div>
-                ` : `
-                <div class="hint-box" style="margin-top:8px;">
-                  Для способа «По сети (IP)» печать всё равно идёт через обычный драйвер Windows и
-                  SumatraPDF (та же откалиброванная логика: формат бумаги, кириллица, разворот), просто
-                  сам принтер в Windows подключён не по USB-кабелю, а по сети. Один раз на компьютере
-                  с агентом: <b>Параметры → Устройства → Принтеры и сканеры → Добавить принтер → «Нужного
-                  принтера нет в списке» → «Добавить принтер по TCP/IP-адресу или имени узла»</b> — укажите
-                  IP-адрес ${p.ip_address ? `<b>${UI.escHtml(p.ip_address)}</b>` : 'принтера'} и порт
-                  <b>${p.port || 9100}</b>, выберите обычный драйвер этого принтера (тот же, что и для USB —
-                  установите его заранее, если ещё не стоит) и задайте принтеру любое имя. Это имя впишите
-                  в поле «Точное имя устройства в Windows» выше — дальше всё работает как для обычного
-                  принтера на агенте.
-                </div>
-                `}
-              </div>
-            ` : ''}
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="savePrinter(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-      onConnChange(p ? p.connection_type : 'agent');
-    }
-
-    async function issueAgentKey(printerId) {
-      const _pf = printersList.find(p => p.id === printerId);
-      const isReissue = _pf && _pf.has_agent_key;
-      if (isReissue && !UI.confirm('Перевыпустить ключ? Старый ключ сразу перестанет работать — агенту, который уже настроен, придётся вписать новый.')) return;
-      try {
-        const res = await window.API.printing.printers.issueAgentKey(printerId);
-        document.getElementById('agent-key-reveal').innerHTML = `
-          <div class="hint-box" style="border-left-color:var(--amber);margin-top:8px;">
-            <b>Скопируйте ключ сейчас — второй раз он показан не будет.</b><br/>
-            Вписывается в настройки агента (<b>AGENT_KEY</b>) на компьютере, подключённом к принтеру —
-            <a href="/downloads/printer-agent.zip" target="_blank">скачайте программу-агент и инструкцию (.zip)</a>,
-            распакуйте на этом компьютере и запустите install.bat, он сам попросит вставить ключ.
-            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
-              Дополнительно (для термопринтеров этикеток, один раз на компьютер): скачайте
-              <a href="https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" target="_blank">SumatraPDF 3.6.1 (portable, .zip)</a>,
-              достаньте из архива файл <code>SumatraPDF.exe</code> и положите его в папку агента по пути
-              <code>printer-agent\bin\SumatraPDF.exe</code> (папку <code>bin</code> создайте, если её нет). В сам
-              printer-agent.zip этот файл не входит — без него агент работает, но со старой (менее надёжной)
-              логикой печати.
-            </div>
-            <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
-              <input readonly value="${UI.escHtml(res.agent_key)}" style="flex:1;font-family:monospace;font-size:12px;" onclick="this.select()"/>
-              <button class="btn-sm btn-blue" onclick="navigator.clipboard.writeText('${res.agent_key}'); UI.notify.ok('Скопировано')">Копировать</button>
-            </div>
-          </div>
-        `;
-        UI.notify.ok('Ключ выпущен');
-        await loadPrinters();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function onConnChange(forceVal) {
-      const val = forceVal || UI.val('#m-conn');
-      const hint = document.getElementById('conn-hint');
-      document.getElementById('network-fields').style.display = (val === 'network') ? 'flex' : 'none';
-      // Имя устройства Windows и именованный формат бумаги драйвера нужны и
-      // для "агент" (USB), и для "по IP" (сетевой Windows-принтер через
-      // TCP/IP-порт) — в обоих случаях печать идёт через один и тот же
-      // драйвер+SumatraPDF, разница только в том, как этот принтер подключён
-      // физически на уровне Windows. Показываем оба поля в обоих случаях.
-      const deviceFields = document.getElementById('device-fields');
-      const paperFields = document.getElementById('paper-size-fields');
-      const deviceHint = document.getElementById('device-fields-hint');
-      if (deviceFields) deviceFields.style.display = 'block';
-      if (paperFields)  paperFields.style.display  = 'block';
-      if (deviceHint) {
-        deviceHint.textContent = val === 'network'
-          ? 'Имя, которое вы зададите принтеру при добавлении его в Windows через TCP/IP-порт (см. подсказку про способ «По сети (IP)» ниже) — не путать с IP-адресом.'
-          : 'Как принтер называется в самой Windows на компьютере с агентом: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).';
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-      const hints = {
-        agent:   'Нужна небольшая программа-агент (устанавливается один раз на компьютер, к которому физически подключён принтер, — <a href="/downloads/printer-agent.zip" target="_blank" onclick="event.stopPropagation()">скачать установщик (.zip)</a>, внутри есть install.bat и подробная инструкция для склада). Дальше агент сам забирает задания на печать и отправляет на принтер — ничего в самой WMS донастраивать не нужно, кроме ключа доступа (появится после сохранения принтера).',
-        network: 'Принтер подключён не по USB, а по сети (IP), но печать всё равно идёт через тот же агент и тот же драйвер Windows — просто сам принтер добавлен в Windows через TCP/IP-порт вместо кабеля (пошагово — см. подсказку ниже после сохранения). Нужен агент на любом компьютере склада (не обязательно физически рядом с принтером), ключ доступа появится после сохранения принтера.',
-        usb:     'Печать через обычное диалоговое окно браузера на этом устройстве — просто выбирается принтер из тех, что уже подключены к компьютеру/телефону.',
-      };
-      hint.innerHTML = `<div class="hint-box">${hints[val] || ''}</div>`;
-    }
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+function switchTab(name) {
+  ['printers', 'routes', 'workstations', 'jobs'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'routes' && !routesLoaded) loadRoutes();
+  if (name === 'workstations' && !workstationsLoaded) loadWorkstations();
+  if (name === 'jobs' && !jobsLoaded) loadJobs();
+}
+var CONN_LABELS = {
+  agent: 'Через агент (авто)',
+  network: 'По сети (IP)',
+  usb: 'Локально (браузер/USB)'
+};
+var DOC_TYPES = [{
+  value: 'pick_list_label',
+  label: 'Внутренняя наклейка сборочного листа'
+}, {
+  value: 'wb_sticker',
+  label: 'Стикер WB (упаковка)'
+}, {
+  value: 'shipping_qr',
+  label: 'QR поставки (отгрузка)'
+}, {
+  value: 'item_barcode',
+  label: 'Этикетка товара (штрихкод+название)'
+}, {
+  value: 'marking_code',
+  label: 'Код маркировки "Честный знак"'
+}, {
+  value: 'other',
+  label: 'Другое'
+}];
+var ZONE_TYPES = [{
+  value: 'packing',
+  label: 'Стол упаковки'
+}, {
+  value: 'picking',
+  label: 'Зона сборки'
+}, {
+  value: 'shipping',
+  label: 'Зона отгрузки'
+}, {
+  value: 'inbound',
+  label: 'Приёмка'
+}, {
+  value: 'other',
+  label: 'Другое'
+}];
+var warehouses = [];
+var printersList = [];
+var workstationsList = [];
+var routesLoaded = false,
+  jobsLoaded = false,
+  workstationsLoaded = false;
+function loadWarehouses() {
+  return _loadWarehouses.apply(this, arguments);
+} // Статус агента печати для строки списка/модалки — показываем явно, чтобы
+// "тихое" падение агента (истёк доступ, выключен компьютер и т.п.) было видно
+// сразу здесь, а не обнаруживалось по зависшей очереди печати.
+function _loadWarehouses() {
+  _loadWarehouses = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var _t, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.warehouses.list();
+        case 1:
+          _t = _context3.v.warehouses;
+          if (_t) {
+            _context3.n = 2;
+            break;
+          }
+          _t = [];
+        case 2:
+          warehouses = _t;
+          _context3.n = 4;
+          break;
+        case 3:
+          _context3.p = 3;
+          _t2 = _context3.v;
+          UI.notify.err(_t2.message);
+        case 4:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[0, 3]]);
+  }));
+  return _loadWarehouses.apply(this, arguments);
+}
+function agentStatusHtml(p) {
+  // Раньше показывали только для connection_type='agent'. Печать "по IP"
+  // (connection_type='network') технически тоже идёт ЧЕРЕЗ АГЕНТА и его
+  // ключ — просто на компьютере агента этот принтер добавлен в Windows не
+  // по USB, а через TCP/IP-порт (см. onConnChange hint ниже), поэтому и
+  // тут статус связи агента актуален и важен так же, как для обычного.
+  if (p.connection_type !== 'agent' && p.connection_type !== 'network') return '';
+  if (!p.has_agent_key) return ' · <span class="pill pill-yellow">ключ агента не выпущен</span>';
+  if (!p.agent_last_seen_at) return ' · <span class="pill pill-gray">ключ выпущен, агент ещё не выходил на связь</span>';
+  var diffMs = Date.now() - new Date(p.agent_last_seen_at).getTime();
+  var mins = Math.floor(diffMs / 60000);
+  if (mins <= 2) return ' · <span class="pill pill-green">агент на связи</span>';
+  if (mins < 60) return " \xB7 <span class=\"pill pill-yellow\">\u0430\u0433\u0435\u043D\u0442 \u043D\u0435 \u0432\u044B\u0445\u043E\u0434\u0438\u043B \u043D\u0430 \u0441\u0432\u044F\u0437\u044C ".concat(mins, " \u043C\u0438\u043D</span>");
+  var hours = Math.floor(mins / 60);
+  if (hours < 48) return " \xB7 <span class=\"pill pill-red\">\u0430\u0433\u0435\u043D\u0442 \u043D\u0435 \u0432\u044B\u0445\u043E\u0434\u0438\u043B \u043D\u0430 \u0441\u0432\u044F\u0437\u044C ".concat(hours, " \u0447</span>");
+  return " \xB7 <span class=\"pill pill-red\">\u0430\u0433\u0435\u043D\u0442 \u043D\u0435 \u0432\u044B\u0445\u043E\u0434\u0438\u043B \u043D\u0430 \u0441\u0432\u044F\u0437\u044C \u0434\u0430\u0432\u043D\u043E (".concat(UI.fmtDateTime(p.agent_last_seen_at), ")</span>");
+}
 
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    async function savePrinter(idx) {
-      const p = idx !== null ? printersList[idx] : null;
-      const data = {
-        printer_name: UI.val('#m-name'),
-        device_name:  UI.val('#m-device'),
-        paper_size_name: UI.val('#m-paper-size') || null,
-      };
-      try {
-        if (p) {
+// ---------- Принтеры ----------
+function loadPrinters() {
+  return _loadPrinters.apply(this, arguments);
+}
+function _loadPrinters() {
+  _loadPrinters = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, list, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.printing.printers.list();
+        case 1:
+          res = _context4.v;
+          printersList = res.printers || [];
+          document.getElementById('pr-count').textContent = printersList.length;
+          list = document.getElementById('pr-list');
+          if (printersList.length) {
+            _context4.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 9V3h12v6\"/><rect x=\"4\" y=\"9\" width=\"16\" height=\"8\" rx=\"1.5\"/><path d=\"M6 14h12v7H6z\"/></svg></div>\u041F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</div>";
+          return _context4.a(2);
+        case 2:
+          list.innerHTML = printersList.map(function (p, idx) {
+            return "\n          <div class=\"list-row row-item\" onclick=\"openPrinterModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(p.printer_name), " ").concat(p.is_default ? '<span class="pill pill-blue">по умолч.</span>' : '', "</div>\n              <div class=\"sub\">").concat(UI.escHtml(CONN_LABELS[p.connection_type] || p.connection_type), " \xB7 ").concat(UI.escHtml(p.warehouse_name || 'без склада'), " ").concat(p.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>').concat(agentStatusHtml(p), "</div>\n            </div>\n          </div>\n        ");
+          }).join('');
+          _context4.n = 4;
+          break;
+        case 3:
+          _context4.p = 3;
+          _t3 = _context4.v;
+          UI.notify.err(_t3.message);
+        case 4:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 3]]);
+  }));
+  return _loadPrinters.apply(this, arguments);
+}
+function openPrinterModal(idx) {
+  var p = idx !== null ? printersList[idx] : null;
+  var whOptions = "<option value=\"\">\u2014 \u0431\u0435\u0437 \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438 \u2014</option>" + warehouses.map(function (w) {
+    return "<option value=\"".concat(w.id, "\" ").concat(p && p.warehouse_id === w.id ? 'selected' : '', ">").concat(UI.escHtml(w.warehouse_name), "</option>");
+  }).join('');
+  var connOptions = Object.entries(CONN_LABELS).map(function (_ref) {
+    var _ref2 = _slicedToArray(_ref, 2),
+      k = _ref2[0],
+      v = _ref2[1];
+    return "<option value=\"".concat(k, "\" ").concat(p && p.connection_type === k ? 'selected' : '', ">").concat(v, "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(p ? UI.escHtml(p.printer_name) : 'Новый принтер', "</div>\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435</label><input id=\"m-name\" value=\"").concat(p ? UI.escHtml(p.printer_name) : '', "\" placeholder=\"\u041F\u0440\u0438\u043D\u0442\u0435\u0440 \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435\"/></div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label><select id=\"m-warehouse\" ").concat(p ? 'disabled' : '', ">").concat(whOptions, "</select></div>\n            <div class=\"field\"><label>\u0421\u043F\u043E\u0441\u043E\u0431 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F</label><select id=\"m-conn\" onchange=\"onConnChange()\" ").concat(p ? 'disabled' : '', ">").concat(connOptions, "</select></div>\n            <div id=\"conn-hint\"></div>\n            <div class=\"field\" id=\"device-fields\">\n              <label>\u0422\u043E\u0447\u043D\u043E\u0435 \u0438\u043C\u044F \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430 \u0432 Windows</label>\n              <input id=\"m-device\" value=\"").concat(p && p.device_name ? UI.escHtml(p.device_name) : '', "\" placeholder=\"\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: Xprinter XP-365B\"/>\n              <div class=\"hint-box\" style=\"margin-top:6px;\" id=\"device-fields-hint\">\u041A\u0430\u043A \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u043D\u0430\u0437\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u0441\u0430\u043C\u043E\u0439 Windows \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435 \u0441 \u0430\u0433\u0435\u043D\u0442\u043E\u043C: \u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B \u2192 \u0423\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430 \u2192 \u041F\u0440\u0438\u043D\u0442\u0435\u0440\u044B \u0438 \u0441\u043A\u0430\u043D\u0435\u0440\u044B \u2192 \u043D\u0430\u0439\u0442\u0438 \u043D\u0443\u0436\u043D\u044B\u0439 \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u2192 \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0435\u0433\u043E \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0440\u043E\u0432\u043D\u043E \u043A\u0430\u043A \u0442\u0430\u043C \u043D\u0430\u043F\u0438\u0441\u0430\u043D\u043E (\u043D\u0435 \u043F\u0440\u0438\u0434\u0443\u043C\u044B\u0432\u0430\u0442\u044C \u0441\u0432\u043E\u0451).</div>\n            </div>\n            <div class=\"field\" id=\"paper-size-fields\">\n              <label>\u0418\u043C\u044F \u0444\u043E\u0440\u043C\u0430\u0442\u0430 \u0431\u0443\u043C\u0430\u0433\u0438 \u0432 \u0434\u0440\u0430\u0439\u0432\u0435\u0440\u0435 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label>\n              <input id=\"m-paper-size\" value=\"").concat(p && p.paper_size_name ? UI.escHtml(p.paper_size_name) : '', "\" placeholder=\"\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: 58x40\"/>\n              <div class=\"hint-box\" style=\"margin-top:6px;\">\u0415\u0441\u043B\u0438 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u0434\u0440\u0430\u0439\u0432\u0435\u0440\u0430 \u044D\u0442\u043E\u0433\u043E \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 (\u043E\u0431\u044B\u0447\u043D\u043E \"\u0421\u0432\u043E\u0439\u0441\u0442\u0432\u0430 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430\" \u2192 \"\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u044B\"/Page Setup \u2192 \u0441\u043F\u0438\u0441\u043E\u043A Stock/Paper Size) \u0437\u0430\u0432\u0435\u0434\u0451\u043D \u0441\u0432\u043E\u0439 \u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u043D\u044B\u0439 \u0444\u043E\u0440\u043C\u0430\u0442 \u0431\u0443\u043C\u0430\u0433\u0438 \u2014 \u0432\u043F\u0438\u0448\u0438\u0442\u0435 \u0435\u0433\u043E \u0442\u043E\u0447\u043D\u043E\u0435 \u0438\u043C\u044F \u0441\u044E\u0434\u0430. \u0410\u0433\u0435\u043D\u0442 \u0431\u0443\u0434\u0435\u0442 \u0441\u0441\u044B\u043B\u0430\u0442\u044C\u0441\u044F \u043D\u0430 \u044D\u0442\u043E\u0442 \u0444\u043E\u0440\u043C\u0430\u0442 \u043F\u043E \u0438\u043C\u0435\u043D\u0438 \u043F\u0440\u0438 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u043E\u0439 \u043F\u0435\u0447\u0430\u0442\u0438, \u0430 \u043D\u0435 \u0441\u043E\u0437\u0434\u0430\u0432\u0430\u0442\u044C \u0440\u0430\u0437\u043C\u0435\u0440 \u0437\u0430\u043D\u043E\u0432\u043E \u2014 \u044D\u0442\u043E \u0432\u0430\u0436\u043D\u043E, \u0435\u0441\u043B\u0438 \u0432 \u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u043D\u043E\u043C \u0444\u043E\u0440\u043C\u0430\u0442\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D\u0430 \u0435\u0449\u0451 \u0438 \u043A\u0430\u043B\u0438\u0431\u0440\u043E\u0432\u043A\u0430 \u0434\u0430\u0442\u0447\u0438\u043A\u0430 \u0437\u0430\u0437\u043E\u0440\u0430 \u043C\u0435\u0436\u0434\u0443 \u044D\u0442\u0438\u043A\u0435\u0442\u043A\u0430\u043C\u0438. \u0415\u0441\u043B\u0438 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043F\u0443\u0441\u0442\u044B\u043C, \u0430\u0433\u0435\u043D\u0442 \u043F\u043E\u0434\u0441\u0442\u0430\u0432\u0438\u0442 \u0440\u0430\u0437\u043C\u0435\u0440 \u043F\u0440\u043E\u0441\u0442\u043E \u0432 \u043C\u043C.</div>\n            </div>\n            <div class=\"field-row2\" id=\"network-fields\" style=\"display:none\">\n              <div class=\"field\"><label>IP-\u0430\u0434\u0440\u0435\u0441 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 (\u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u043E)</label><input id=\"m-ip\" value=\"").concat(p && p.ip_address ? UI.escHtml(p.ip_address) : '', "\" placeholder=\"192.168.1.50\"/></div>\n              <div class=\"field\"><label>\u041F\u043E\u0440\u0442 (\u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u043E)</label><input id=\"m-port\" type=\"number\" value=\"").concat(p && p.port ? p.port : 9100, "\" placeholder=\"9100\"/></div>\n            </div>\n            <div class=\"field\"><label style=\"display:inline;\">\u041F\u0440\u0438\u043D\u0442\u0435\u0440 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E</label> <input type=\"checkbox\" id=\"m-default\" ").concat(p && p.is_default ? 'checked' : '', "/></div>\n            ").concat(p ? "<div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u0435\u043D</label> <input type=\"checkbox\" id=\"m-active\" ".concat(p.is_active ? 'checked' : '', "/></div>") : '', "\n            ").concat(p && (p.connection_type === 'agent' || p.connection_type === 'network') ? "\n              <div class=\"field\">\n                <label>\u0414\u043E\u0441\u0442\u0443\u043F \u0430\u0433\u0435\u043D\u0442\u0430 \u043F\u0435\u0447\u0430\u0442\u0438</label>\n                <div class=\"hint-box\" style=\"margin-top:0;\">".concat(p.has_agent_key ? 'Ключ уже выпущен.' : 'Ключ ещё не выпущен — без него агент не сможет подключиться.', " ").concat(agentStatusHtml(p), "</div>\n                <button class=\"btn-sm btn-blue\" style=\"margin-top:8px;\" onclick=\"issueAgentKey(").concat(p.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3\"/></svg> ").concat(p.has_agent_key ? 'Перевыпустить ключ' : 'Выпустить ключ агента', "</button>\n                <div id=\"agent-key-reveal\"></div>\n                ").concat(p.connection_type === 'agent' ? "\n                <div class=\"hint-box\" style=\"margin-top:8px;\">\n                  \u0414\u043B\u044F \u0442\u0435\u0440\u043C\u043E\u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432 \u044D\u0442\u0438\u043A\u0435\u0442\u043E\u043A (\u043E\u0434\u0438\u043D \u0440\u0430\u0437 \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440 \u0441 \u0430\u0433\u0435\u043D\u0442\u043E\u043C): \u0441\u043A\u0430\u0447\u0430\u0439\u0442\u0435\n                  <a href=\"https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip\" target=\"_blank\">SumatraPDF 3.6.1 (portable, .zip)</a>,\n                  \u0434\u043E\u0441\u0442\u0430\u043D\u044C\u0442\u0435 <code>SumatraPDF.exe</code> \u0438 \u043F\u043E\u043B\u043E\u0436\u0438\u0442\u0435 \u0435\u0433\u043E \u0432 \u043F\u0430\u043F\u043A\u0443 \u0430\u0433\u0435\u043D\u0442\u0430 \u043F\u043E \u043F\u0443\u0442\u0438\n                  <code>printer-agent\binSumatraPDF.exe</code>. \u0411\u0435\u0437 \u044D\u0442\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430 \u0430\u0433\u0435\u043D\u0442 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u043F\u043E \u0441\u0442\u0430\u0440\u043E\u0439,\n                  \u043C\u0435\u043D\u0435\u0435 \u043D\u0430\u0434\u0451\u0436\u043D\u043E\u0439 \u043B\u043E\u0433\u0438\u043A\u0435 \u043F\u0435\u0447\u0430\u0442\u0438.\n                </div>\n                " : "\n                <div class=\"hint-box\" style=\"margin-top:8px;\">\n                  \u0414\u043B\u044F \u0441\u043F\u043E\u0441\u043E\u0431\u0430 \xAB\u041F\u043E \u0441\u0435\u0442\u0438 (IP)\xBB \u043F\u0435\u0447\u0430\u0442\u044C \u0432\u0441\u0451 \u0440\u0430\u0432\u043D\u043E \u0438\u0434\u0451\u0442 \u0447\u0435\u0440\u0435\u0437 \u043E\u0431\u044B\u0447\u043D\u044B\u0439 \u0434\u0440\u0430\u0439\u0432\u0435\u0440 Windows \u0438\n                  SumatraPDF (\u0442\u0430 \u0436\u0435 \u043E\u0442\u043A\u0430\u043B\u0438\u0431\u0440\u043E\u0432\u0430\u043D\u043D\u0430\u044F \u043B\u043E\u0433\u0438\u043A\u0430: \u0444\u043E\u0440\u043C\u0430\u0442 \u0431\u0443\u043C\u0430\u0433\u0438, \u043A\u0438\u0440\u0438\u043B\u043B\u0438\u0446\u0430, \u0440\u0430\u0437\u0432\u043E\u0440\u043E\u0442), \u043F\u0440\u043E\u0441\u0442\u043E\n                  \u0441\u0430\u043C \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u0432 Windows \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0451\u043D \u043D\u0435 \u043F\u043E USB-\u043A\u0430\u0431\u0435\u043B\u044E, \u0430 \u043F\u043E \u0441\u0435\u0442\u0438. \u041E\u0434\u0438\u043D \u0440\u0430\u0437 \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435\n                  \u0441 \u0430\u0433\u0435\u043D\u0442\u043E\u043C: <b>\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B \u2192 \u0423\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430 \u2192 \u041F\u0440\u0438\u043D\u0442\u0435\u0440\u044B \u0438 \u0441\u043A\u0430\u043D\u0435\u0440\u044B \u2192 \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u2192 \xAB\u041D\u0443\u0436\u043D\u043E\u0433\u043E\n                  \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 \u043D\u0435\u0442 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435\xBB \u2192 \xAB\u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u043F\u043E TCP/IP-\u0430\u0434\u0440\u0435\u0441\u0443 \u0438\u043B\u0438 \u0438\u043C\u0435\u043D\u0438 \u0443\u0437\u043B\u0430\xBB</b> \u2014 \u0443\u043A\u0430\u0436\u0438\u0442\u0435\n                  IP-\u0430\u0434\u0440\u0435\u0441 ".concat(p.ip_address ? "<b>".concat(UI.escHtml(p.ip_address), "</b>") : 'принтера', " \u0438 \u043F\u043E\u0440\u0442\n                  <b>").concat(p.port || 9100, "</b>, \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043E\u0431\u044B\u0447\u043D\u044B\u0439 \u0434\u0440\u0430\u0439\u0432\u0435\u0440 \u044D\u0442\u043E\u0433\u043E \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 (\u0442\u043E\u0442 \u0436\u0435, \u0447\u0442\u043E \u0438 \u0434\u043B\u044F USB \u2014\n                  \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u0435 \u0435\u0433\u043E \u0437\u0430\u0440\u0430\u043D\u0435\u0435, \u0435\u0441\u043B\u0438 \u0435\u0449\u0451 \u043D\u0435 \u0441\u0442\u043E\u0438\u0442) \u0438 \u0437\u0430\u0434\u0430\u0439\u0442\u0435 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0443 \u043B\u044E\u0431\u043E\u0435 \u0438\u043C\u044F. \u042D\u0442\u043E \u0438\u043C\u044F \u0432\u043F\u0438\u0448\u0438\u0442\u0435\n                  \u0432 \u043F\u043E\u043B\u0435 \xAB\u0422\u043E\u0447\u043D\u043E\u0435 \u0438\u043C\u044F \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430 \u0432 Windows\xBB \u0432\u044B\u0448\u0435 \u2014 \u0434\u0430\u043B\u044C\u0448\u0435 \u0432\u0441\u0451 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u043A\u0430\u043A \u0434\u043B\u044F \u043E\u0431\u044B\u0447\u043D\u043E\u0433\u043E\n                  \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 \u043D\u0430 \u0430\u0433\u0435\u043D\u0442\u0435.\n                </div>\n                "), "\n              </div>\n            ") : '', "\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"savePrinter(").concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+  onConnChange(p ? p.connection_type : 'agent');
+}
+function issueAgentKey(_x) {
+  return _issueAgentKey.apply(this, arguments);
+}
+function _issueAgentKey() {
+  _issueAgentKey = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(printerId) {
+    var _pf, isReissue, res, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _pf = printersList.find(function (p) {
+            return p.id === printerId;
+          });
+          isReissue = _pf && _pf.has_agent_key;
+          if (!(isReissue && !UI.confirm('Перевыпустить ключ? Старый ключ сразу перестанет работать — агенту, который уже настроен, придётся вписать новый.'))) {
+            _context5.n = 1;
+            break;
+          }
+          return _context5.a(2);
+        case 1:
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.printing.printers.issueAgentKey(printerId);
+        case 2:
+          res = _context5.v;
+          document.getElementById('agent-key-reveal').innerHTML = "\n          <div class=\"hint-box\" style=\"border-left-color:var(--amber);margin-top:8px;\">\n            <b>\u0421\u043A\u043E\u043F\u0438\u0440\u0443\u0439\u0442\u0435 \u043A\u043B\u044E\u0447 \u0441\u0435\u0439\u0447\u0430\u0441 \u2014 \u0432\u0442\u043E\u0440\u043E\u0439 \u0440\u0430\u0437 \u043E\u043D \u043F\u043E\u043A\u0430\u0437\u0430\u043D \u043D\u0435 \u0431\u0443\u0434\u0435\u0442.</b><br/>\n            \u0412\u043F\u0438\u0441\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0430\u0433\u0435\u043D\u0442\u0430 (<b>AGENT_KEY</b>) \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435, \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0451\u043D\u043D\u043E\u043C \u043A \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0443 \u2014\n            <a href=\"/downloads/printer-agent.zip\" target=\"_blank\">\u0441\u043A\u0430\u0447\u0430\u0439\u0442\u0435 \u043F\u0440\u043E\u0433\u0440\u0430\u043C\u043C\u0443-\u0430\u0433\u0435\u043D\u0442 \u0438 \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u044E (.zip)</a>,\n            \u0440\u0430\u0441\u043F\u0430\u043A\u0443\u0439\u0442\u0435 \u043D\u0430 \u044D\u0442\u043E\u043C \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435 \u0438 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 install.bat, \u043E\u043D \u0441\u0430\u043C \u043F\u043E\u043F\u0440\u043E\u0441\u0438\u0442 \u0432\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u043A\u043B\u044E\u0447.\n            <div style=\"margin-top:8px;padding-top:8px;border-top:1px solid var(--border);\">\n              \u0414\u043E\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u043E (\u0434\u043B\u044F \u0442\u0435\u0440\u043C\u043E\u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432 \u044D\u0442\u0438\u043A\u0435\u0442\u043E\u043A, \u043E\u0434\u0438\u043D \u0440\u0430\u0437 \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440): \u0441\u043A\u0430\u0447\u0430\u0439\u0442\u0435\n              <a href=\"https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip\" target=\"_blank\">SumatraPDF 3.6.1 (portable, .zip)</a>,\n              \u0434\u043E\u0441\u0442\u0430\u043D\u044C\u0442\u0435 \u0438\u0437 \u0430\u0440\u0445\u0438\u0432\u0430 \u0444\u0430\u0439\u043B <code>SumatraPDF.exe</code> \u0438 \u043F\u043E\u043B\u043E\u0436\u0438\u0442\u0435 \u0435\u0433\u043E \u0432 \u043F\u0430\u043F\u043A\u0443 \u0430\u0433\u0435\u043D\u0442\u0430 \u043F\u043E \u043F\u0443\u0442\u0438\n              <code>printer-agent\binSumatraPDF.exe</code> (\u043F\u0430\u043F\u043A\u0443 <code>bin</code> \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435, \u0435\u0441\u043B\u0438 \u0435\u0451 \u043D\u0435\u0442). \u0412 \u0441\u0430\u043C\n              printer-agent.zip \u044D\u0442\u043E\u0442 \u0444\u0430\u0439\u043B \u043D\u0435 \u0432\u0445\u043E\u0434\u0438\u0442 \u2014 \u0431\u0435\u0437 \u043D\u0435\u0433\u043E \u0430\u0433\u0435\u043D\u0442 \u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442, \u043D\u043E \u0441\u043E \u0441\u0442\u0430\u0440\u043E\u0439 (\u043C\u0435\u043D\u0435\u0435 \u043D\u0430\u0434\u0451\u0436\u043D\u043E\u0439)\n              \u043B\u043E\u0433\u0438\u043A\u043E\u0439 \u043F\u0435\u0447\u0430\u0442\u0438.\n            </div>\n            <div style=\"display:flex;gap:8px;margin-top:8px;align-items:center;\">\n              <input readonly value=\"".concat(UI.escHtml(res.agent_key), "\" style=\"flex:1;font-family:monospace;font-size:12px;\" onclick=\"this.select()\"/>\n              <button class=\"btn-sm btn-blue\" onclick=\"navigator.clipboard.writeText('").concat(res.agent_key, "'); UI.notify.ok('\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E')\">\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>\n            </div>\n          </div>\n        ");
+          UI.notify.ok('Ключ выпущен');
+          _context5.n = 3;
+          return loadPrinters();
+        case 3:
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t4 = _context5.v;
+          UI.notify.err(_t4.message);
+        case 5:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[1, 4]]);
+  }));
+  return _issueAgentKey.apply(this, arguments);
+}
+function onConnChange(forceVal) {
+  var val = forceVal || UI.val('#m-conn');
+  var hint = document.getElementById('conn-hint');
+  document.getElementById('network-fields').style.display = val === 'network' ? 'flex' : 'none';
+  // Имя устройства Windows и именованный формат бумаги драйвера нужны и
+  // для "агент" (USB), и для "по IP" (сетевой Windows-принтер через
+  // TCP/IP-порт) — в обоих случаях печать идёт через один и тот же
+  // драйвер+SumatraPDF, разница только в том, как этот принтер подключён
+  // физически на уровне Windows. Показываем оба поля в обоих случаях.
+  var deviceFields = document.getElementById('device-fields');
+  var paperFields = document.getElementById('paper-size-fields');
+  var deviceHint = document.getElementById('device-fields-hint');
+  if (deviceFields) deviceFields.style.display = 'block';
+  if (paperFields) paperFields.style.display = 'block';
+  if (deviceHint) {
+    deviceHint.textContent = val === 'network' ? 'Имя, которое вы зададите принтеру при добавлении его в Windows через TCP/IP-порт (см. подсказку про способ «По сети (IP)» ниже) — не путать с IP-адресом.' : 'Как принтер называется в самой Windows на компьютере с агентом: Параметры → Устройства → Принтеры и сканеры → найти нужный принтер → скопировать его название ровно как там написано (не придумывать своё).';
+  }
+  var hints = {
+    agent: 'Нужна небольшая программа-агент (устанавливается один раз на компьютер, к которому физически подключён принтер, — <a href="/downloads/printer-agent.zip" target="_blank" onclick="event.stopPropagation()">скачать установщик (.zip)</a>, внутри есть install.bat и подробная инструкция для склада). Дальше агент сам забирает задания на печать и отправляет на принтер — ничего в самой WMS донастраивать не нужно, кроме ключа доступа (появится после сохранения принтера).',
+    network: 'Принтер подключён не по USB, а по сети (IP), но печать всё равно идёт через тот же агент и тот же драйвер Windows — просто сам принтер добавлен в Windows через TCP/IP-порт вместо кабеля (пошагово — см. подсказку ниже после сохранения). Нужен агент на любом компьютере склада (не обязательно физически рядом с принтером), ключ доступа появится после сохранения принтера.',
+    usb: 'Печать через обычное диалоговое окно браузера на этом устройстве — просто выбирается принтер из тех, что уже подключены к компьютеру/телефону.'
+  };
+  hint.innerHTML = "<div class=\"hint-box\">".concat(hints[val] || '', "</div>");
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+function savePrinter(_x2) {
+  return _savePrinter.apply(this, arguments);
+} // ---------- Массовый импорт принтеров ----------
+function _savePrinter() {
+  _savePrinter = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(idx) {
+    var p, data, res, newIdx, _t5;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          p = idx !== null ? printersList[idx] : null;
+          data = {
+            printer_name: UI.val('#m-name'),
+            device_name: UI.val('#m-device'),
+            paper_size_name: UI.val('#m-paper-size') || null
+          };
+          _context6.p = 1;
+          if (!p) {
+            _context6.n = 4;
+            break;
+          }
           data.is_active = document.getElementById('m-active').checked;
           data.is_default = document.getElementById('m-default').checked;
           if (p.connection_type === 'network') {
             data.ip_address = UI.val('#m-ip');
             data.port = UI.val('#m-port') || null;
           }
-          await window.API.printing.printers.update(p.id, data);
+          _context6.n = 2;
+          return window.API.printing.printers.update(p.id, data);
+        case 2:
           UI.notify.ok('Принтер обновлён');
           closeModal();
-          await loadPrinters();
-        } else {
+          _context6.n = 3;
+          return loadPrinters();
+        case 3:
+          _context6.n = 9;
+          break;
+        case 4:
           data.connection_type = UI.val('#m-conn');
           data.warehouse_id = UI.val('#m-warehouse') || null;
           data.ip_address = UI.val('#m-ip');
           data.port = UI.val('#m-port') || null;
           data.is_default = document.getElementById('m-default').checked;
-          if (!data.printer_name) { UI.notify.err('Укажите название'); return; }
-          const res = await window.API.printing.printers.create(data);
-          UI.notify.ok('Принтер создан');
-          await loadPrinters();
-          // Для "через агент" и "по IP" сразу открываем карточку заново, в
-          // режиме редактирования уже сохранённого принтера — именно там
-          // появляется ссылка на установщик и кнопка выпуска ключа (их не
-          // видно на форме создания, что раньше сбивало с толку).
-          if ((data.connection_type === 'agent' || data.connection_type === 'network') && res && res.printer && res.printer.id) {
-            const newIdx = printersList.findIndex(x => x.id === res.printer.id);
-            if (newIdx !== -1) { openPrinterModal(newIdx); return; }
+          if (data.printer_name) {
+            _context6.n = 5;
+            break;
           }
+          UI.notify.err('Укажите название');
+          return _context6.a(2);
+        case 5:
+          _context6.n = 6;
+          return window.API.printing.printers.create(data);
+        case 6:
+          res = _context6.v;
+          UI.notify.ok('Принтер создан');
+          _context6.n = 7;
+          return loadPrinters();
+        case 7:
+          if (!((data.connection_type === 'agent' || data.connection_type === 'network') && res && res.printer && res.printer.id)) {
+            _context6.n = 8;
+            break;
+          }
+          newIdx = printersList.findIndex(function (x) {
+            return x.id === res.printer.id;
+          });
+          if (!(newIdx !== -1)) {
+            _context6.n = 8;
+            break;
+          }
+          openPrinterModal(newIdx);
+          return _context6.a(2);
+        case 8:
           closeModal();
-        }
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Массовый импорт принтеров ----------
-    function openPrinterBulkModal() {
-      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Импорт принтеров списком</div>
-            <div class="hint-box" style="margin-top:0;">По одному названию принтера на строку. Склад и способ подключения — общие для всех строк этого импорта; при необходимости отдельный принтер потом можно донастроить через карточку как обычно.</div>
-            <div class="field"><label>Названия принтеров (по одному на строку)</label>
-              <textarea id="pbi-names" rows="8" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:monospace;" placeholder="Стол упаковки 1&#10;Стол упаковки 2&#10;Стол упаковки 3"></textarea>
-            </div>
-            <div class="field"><label>Склад (опционально, для всех)</label><select id="pbi-warehouse">${whOptions}</select></div>
-            <div class="field"><label style="display:inline;">Сразу выпустить ключи агента</label> <input type="checkbox" id="pbi-issue-keys" checked/></div>
-            <div class="hint-box" style="margin-top:0;">Если способ подключения этих принтеров — «через агент» (обычный случай), сразу выпустятся ключи для каждого, и результат импорта можно будет скачать как <code>printers.csv</code> — готовый файл для массовой установки агентов на компьютере-хабе (см. HUB-ИНСТРУКЦИЯ.txt внутри архива агента).</div>
-            <div id="pbi-result"></div>
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="submitPrinterBulk()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Импортировать</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function submitPrinterBulk() {
-      const names = UI.val('#pbi-names').split('\n').map(s => s.trim()).filter(Boolean);
-      if (!names.length) { UI.notify.err('Впишите хотя бы одно название'); return; }
-      const warehouse_id = UI.val('#pbi-warehouse') || null;
-      const issueKeys = document.getElementById('pbi-issue-keys').checked;
-      const printers = names.map(printer_name => ({ printer_name, warehouse_id, connection_type: 'agent' }));
-      try {
-        const res = await window.API.printing.printers.bulkImport(printers, issueKeys);
-        UI.notify.ok(`Создано принтеров: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}`);
-        const withKeys = res.created.filter(c => c.agent_key);
-        let html = `<div class="hint-box" style="margin-top:8px;">Создано: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}</div>`;
-        if (res.errors.length) {
-          html += `<div class="hint-box" style="border-left-color:var(--red);margin-top:8px;">${res.errors.map(e => `Строка ${e.row} (${UI.escHtml(e.printer_name||'')}): ${UI.escHtml(e.error)}`).join('<br/>')}</div>`;
-        }
-        if (withKeys.length) {
-          const csv = 'name,agent_key\n' + withKeys.map(c => `${c.printer_name},${c.agent_key}`).join('\n');
-          const blob = new Blob([csv], { type: 'text/csv' });
-          const url = URL.createObjectURL(blob);
-          html += `<div class="field"><a class="btn-sm btn-blue" href="${url}" download="printers.csv">Скачать printers.csv (${withKeys.length} ключей)</a></div>`;
-          html += `<div class="hint-box" style="margin-top:0;">Положите этот файл в папку printer-agent на компьютере-хабе рядом с hub-install.ps1 и запустите его — ключи вставлять вручную не нужно.</div>`;
-        }
-        document.getElementById('pbi-result').innerHTML = html;
-        await loadPrinters();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Маршруты ----------
-    let routesList = [];
-
-    async function loadRoutes() {
-      try {
-        routesLoaded = true;
-        const res = await window.API.printing.routes.list();
-        routesList = res.routes || [];
-        document.getElementById('rt-count').textContent = routesList.length;
-        const list = document.getElementById('rt-list');
-        if (!routesList.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M17 3h4v4"/><path d="M21 3l-6.6 6.6"/><path d="M3 21l6-6"/><path d="M3 7h3.5L15 20.5h6"/><path d="M3 3h3.5L11 9"/><path d="M17 21h4v-4"/></svg></div>Маршрутов пока нет — без них задания создаются, но печать не назначена на конкретный принтер</div>`;
-          return;
-        }
-        list.innerHTML = routesList.map((r, idx) => `
-          <div class="list-row row-item" onclick="openRouteModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===r.doc_type)||{}).label || r.doc_type)}</div>
-              <div class="sub">→ ${UI.escHtml(r.printer_name)} ${r.is_default ? '' : '· не по умолчанию'} ${r.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openRouteModal(idx) {
-      const r = (idx !== null && idx !== undefined) ? routesList[idx] : null;
-      if (!r && !printersList.length) { UI.notify.err('Сначала добавьте хотя бы один принтер'); return; }
-      const printerOptions = printersList.map(p => `<option value="${p.id}" ${r && r.printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
-      const docOptions = DOC_TYPES.map(d => `<option value="${d.value}" ${r && r.doc_type===d.value ? 'selected':''}>${d.label}</option>`).join('');
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${r ? UI.escHtml(r.route_code) : 'Новый маршрут печати'}</div>
-            ${r ? '' : `<div class="field"><label>Код маршрута</label><input id="rm-code" placeholder="route-wb-sticker-1"/></div>`}
-            <div class="field"><label>Что печатаем</label><select id="rm-doctype">${docOptions}</select></div>
-            <div class="field"><label>На каком принтере</label><select id="rm-printer">${printerOptions}</select></div>
-            <div class="field"><label style="display:inline;">По умолчанию для этого типа</label> <input type="checkbox" id="rm-default" ${!r || r.is_default ? 'checked':''}/></div>
-            ${r ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="rm-active" ${r.is_active ? 'checked':''}/></div>` : ''}
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveRoute(${idx !== null && idx !== undefined ? idx : 'null'})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
-              ${r ? `<button class="btn-big btn-red" onclick="deleteRoute(${r.id})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function saveRoute(idx) {
-      const r = (idx !== null && idx !== undefined) ? routesList[idx] : null;
-      try {
-        if (r) {
-          const data = {
+        case 9:
+          _context6.n = 11;
+          break;
+        case 10:
+          _context6.p = 10;
+          _t5 = _context6.v;
+          UI.notify.err(_t5.message);
+        case 11:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[1, 10]]);
+  }));
+  return _savePrinter.apply(this, arguments);
+}
+function openPrinterBulkModal() {
+  var whOptions = "<option value=\"\">\u2014 \u0431\u0435\u0437 \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438 \u2014</option>" + warehouses.map(function (w) {
+    return "<option value=\"".concat(w.id, "\">").concat(UI.escHtml(w.warehouse_name), "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0418\u043C\u043F\u043E\u0440\u0442 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432 \u0441\u043F\u0438\u0441\u043A\u043E\u043C</div>\n            <div class=\"hint-box\" style=\"margin-top:0;\">\u041F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u044E \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443. \u0421\u043A\u043B\u0430\u0434 \u0438 \u0441\u043F\u043E\u0441\u043E\u0431 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u2014 \u043E\u0431\u0449\u0438\u0435 \u0434\u043B\u044F \u0432\u0441\u0435\u0445 \u0441\u0442\u0440\u043E\u043A \u044D\u0442\u043E\u0433\u043E \u0438\u043C\u043F\u043E\u0440\u0442\u0430; \u043F\u0440\u0438 \u043D\u0435\u043E\u0431\u0445\u043E\u0434\u0438\u043C\u043E\u0441\u0442\u0438 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0439 \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u043F\u043E\u0442\u043E\u043C \u043C\u043E\u0436\u043D\u043E \u0434\u043E\u043D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C \u0447\u0435\u0440\u0435\u0437 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0443 \u043A\u0430\u043A \u043E\u0431\u044B\u0447\u043D\u043E.</div>\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u044F \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432 (\u043F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443)</label>\n              <textarea id=\"pbi-names\" rows=\"8\" style=\"width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:monospace;\" placeholder=\"\u0421\u0442\u043E\u043B \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 1&#10;\u0421\u0442\u043E\u043B \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 2&#10;\u0421\u0442\u043E\u043B \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 3\"></textarea>\n            </div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E, \u0434\u043B\u044F \u0432\u0441\u0435\u0445)</label><select id=\"pbi-warehouse\">".concat(whOptions, "</select></div>\n            <div class=\"field\"><label style=\"display:inline;\">\u0421\u0440\u0430\u0437\u0443 \u0432\u044B\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u043A\u043B\u044E\u0447\u0438 \u0430\u0433\u0435\u043D\u0442\u0430</label> <input type=\"checkbox\" id=\"pbi-issue-keys\" checked/></div>\n            <div class=\"hint-box\" style=\"margin-top:0;\">\u0415\u0441\u043B\u0438 \u0441\u043F\u043E\u0441\u043E\u0431 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u044D\u0442\u0438\u0445 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432 \u2014 \xAB\u0447\u0435\u0440\u0435\u0437 \u0430\u0433\u0435\u043D\u0442\xBB (\u043E\u0431\u044B\u0447\u043D\u044B\u0439 \u0441\u043B\u0443\u0447\u0430\u0439), \u0441\u0440\u0430\u0437\u0443 \u0432\u044B\u043F\u0443\u0441\u0442\u044F\u0442\u0441\u044F \u043A\u043B\u044E\u0447\u0438 \u0434\u043B\u044F \u043A\u0430\u0436\u0434\u043E\u0433\u043E, \u0438 \u0440\u0435\u0437\u0443\u043B\u044C\u0442\u0430\u0442 \u0438\u043C\u043F\u043E\u0440\u0442\u0430 \u043C\u043E\u0436\u043D\u043E \u0431\u0443\u0434\u0435\u0442 \u0441\u043A\u0430\u0447\u0430\u0442\u044C \u043A\u0430\u043A <code>printers.csv</code> \u2014 \u0433\u043E\u0442\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B \u0434\u043B\u044F \u043C\u0430\u0441\u0441\u043E\u0432\u043E\u0439 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0438 \u0430\u0433\u0435\u043D\u0442\u043E\u0432 \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435-\u0445\u0430\u0431\u0435 (\u0441\u043C. HUB-\u0418\u041D\u0421\u0422\u0420\u0423\u041A\u0426\u0418\u042F.txt \u0432\u043D\u0443\u0442\u0440\u0438 \u0430\u0440\u0445\u0438\u0432\u0430 \u0430\u0433\u0435\u043D\u0442\u0430).</div>\n            <div id=\"pbi-result\"></div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"submitPrinterBulk()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0418\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function submitPrinterBulk() {
+  return _submitPrinterBulk.apply(this, arguments);
+} // ---------- Маршруты ----------
+function _submitPrinterBulk() {
+  _submitPrinterBulk = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var names, warehouse_id, issueKeys, printers, res, withKeys, html, csv, blob, url, _t6;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          names = UI.val('#pbi-names').split('\n').map(function (s) {
+            return s.trim();
+          }).filter(Boolean);
+          if (names.length) {
+            _context7.n = 1;
+            break;
+          }
+          UI.notify.err('Впишите хотя бы одно название');
+          return _context7.a(2);
+        case 1:
+          warehouse_id = UI.val('#pbi-warehouse') || null;
+          issueKeys = document.getElementById('pbi-issue-keys').checked;
+          printers = names.map(function (printer_name) {
+            return {
+              printer_name: printer_name,
+              warehouse_id: warehouse_id,
+              connection_type: 'agent'
+            };
+          });
+          _context7.p = 2;
+          _context7.n = 3;
+          return window.API.printing.printers.bulkImport(printers, issueKeys);
+        case 3:
+          res = _context7.v;
+          UI.notify.ok("\u0421\u043E\u0437\u0434\u0430\u043D\u043E \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432: ".concat(res.created_count).concat(res.error_count ? ", \u043E\u0448\u0438\u0431\u043E\u043A: ".concat(res.error_count) : ''));
+          withKeys = res.created.filter(function (c) {
+            return c.agent_key;
+          });
+          html = "<div class=\"hint-box\" style=\"margin-top:8px;\">\u0421\u043E\u0437\u0434\u0430\u043D\u043E: ".concat(res.created_count).concat(res.error_count ? ", \u043E\u0448\u0438\u0431\u043E\u043A: ".concat(res.error_count) : '', "</div>");
+          if (res.errors.length) {
+            html += "<div class=\"hint-box\" style=\"border-left-color:var(--red);margin-top:8px;\">".concat(res.errors.map(function (e) {
+              return "\u0421\u0442\u0440\u043E\u043A\u0430 ".concat(e.row, " (").concat(UI.escHtml(e.printer_name || ''), "): ").concat(UI.escHtml(e.error));
+            }).join('<br/>'), "</div>");
+          }
+          if (withKeys.length) {
+            csv = 'name,agent_key\n' + withKeys.map(function (c) {
+              return "".concat(c.printer_name, ",").concat(c.agent_key);
+            }).join('\n');
+            blob = new Blob([csv], {
+              type: 'text/csv'
+            });
+            url = URL.createObjectURL(blob);
+            html += "<div class=\"field\"><a class=\"btn-sm btn-blue\" href=\"".concat(url, "\" download=\"printers.csv\">\u0421\u043A\u0430\u0447\u0430\u0442\u044C printers.csv (").concat(withKeys.length, " \u043A\u043B\u044E\u0447\u0435\u0439)</a></div>");
+            html += "<div class=\"hint-box\" style=\"margin-top:0;\">\u041F\u043E\u043B\u043E\u0436\u0438\u0442\u0435 \u044D\u0442\u043E\u0442 \u0444\u0430\u0439\u043B \u0432 \u043F\u0430\u043F\u043A\u0443 printer-agent \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435-\u0445\u0430\u0431\u0435 \u0440\u044F\u0434\u043E\u043C \u0441 hub-install.ps1 \u0438 \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u0435 \u0435\u0433\u043E \u2014 \u043A\u043B\u044E\u0447\u0438 \u0432\u0441\u0442\u0430\u0432\u043B\u044F\u0442\u044C \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u043D\u0435 \u043D\u0443\u0436\u043D\u043E.</div>";
+          }
+          document.getElementById('pbi-result').innerHTML = html;
+          _context7.n = 4;
+          return loadPrinters();
+        case 4:
+          _context7.n = 6;
+          break;
+        case 5:
+          _context7.p = 5;
+          _t6 = _context7.v;
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[2, 5]]);
+  }));
+  return _submitPrinterBulk.apply(this, arguments);
+}
+var routesList = [];
+function loadRoutes() {
+  return _loadRoutes.apply(this, arguments);
+}
+function _loadRoutes() {
+  _loadRoutes = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var res, list, _t7;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          _context8.p = 0;
+          routesLoaded = true;
+          _context8.n = 1;
+          return window.API.printing.routes.list();
+        case 1:
+          res = _context8.v;
+          routesList = res.routes || [];
+          document.getElementById('rt-count').textContent = routesList.length;
+          list = document.getElementById('rt-list');
+          if (routesList.length) {
+            _context8.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M17 3h4v4\"/><path d=\"M21 3l-6.6 6.6\"/><path d=\"M3 21l6-6\"/><path d=\"M3 7h3.5L15 20.5h6\"/><path d=\"M3 3h3.5L11 9\"/><path d=\"M17 21h4v-4\"/></svg></div>\u041C\u0430\u0440\u0448\u0440\u0443\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u2014 \u0431\u0435\u0437 \u043D\u0438\u0445 \u0437\u0430\u0434\u0430\u043D\u0438\u044F \u0441\u043E\u0437\u0434\u0430\u044E\u0442\u0441\u044F, \u043D\u043E \u043F\u0435\u0447\u0430\u0442\u044C \u043D\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D\u0430 \u043D\u0430 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0439 \u043F\u0440\u0438\u043D\u0442\u0435\u0440</div>";
+          return _context8.a(2);
+        case 2:
+          list.innerHTML = routesList.map(function (r, idx) {
+            return "\n          <div class=\"list-row row-item\" onclick=\"openRouteModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml((DOC_TYPES.find(function (d) {
+              return d.value === r.doc_type;
+            }) || {}).label || r.doc_type), "</div>\n              <div class=\"sub\">\u2192 ").concat(UI.escHtml(r.printer_name), " ").concat(r.is_default ? '' : '· не по умолчанию', " ").concat(r.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>', "</div>\n            </div>\n          </div>\n        ");
+          }).join('');
+          _context8.n = 4;
+          break;
+        case 3:
+          _context8.p = 3;
+          _t7 = _context8.v;
+          UI.notify.err(_t7.message);
+        case 4:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[0, 3]]);
+  }));
+  return _loadRoutes.apply(this, arguments);
+}
+function openRouteModal(idx) {
+  var r = idx !== null && idx !== undefined ? routesList[idx] : null;
+  if (!r && !printersList.length) {
+    UI.notify.err('Сначала добавьте хотя бы один принтер');
+    return;
+  }
+  var printerOptions = printersList.map(function (p) {
+    return "<option value=\"".concat(p.id, "\" ").concat(r && r.printer_id === p.id ? 'selected' : '', ">").concat(UI.escHtml(p.printer_name), "</option>");
+  }).join('');
+  var docOptions = DOC_TYPES.map(function (d) {
+    return "<option value=\"".concat(d.value, "\" ").concat(r && r.doc_type === d.value ? 'selected' : '', ">").concat(d.label, "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(r ? UI.escHtml(r.route_code) : 'Новый маршрут печати', "</div>\n            ").concat(r ? '' : "<div class=\"field\"><label>\u041A\u043E\u0434 \u043C\u0430\u0440\u0448\u0440\u0443\u0442\u0430</label><input id=\"rm-code\" placeholder=\"route-wb-sticker-1\"/></div>", "\n            <div class=\"field\"><label>\u0427\u0442\u043E \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u043C</label><select id=\"rm-doctype\">").concat(docOptions, "</select></div>\n            <div class=\"field\"><label>\u041D\u0430 \u043A\u0430\u043A\u043E\u043C \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0435</label><select id=\"rm-printer\">").concat(printerOptions, "</select></div>\n            <div class=\"field\"><label style=\"display:inline;\">\u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0442\u0438\u043F\u0430</label> <input type=\"checkbox\" id=\"rm-default\" ").concat(!r || r.is_default ? 'checked' : '', "/></div>\n            ").concat(r ? "<div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u0435\u043D</label> <input type=\"checkbox\" id=\"rm-active\" ".concat(r.is_active ? 'checked' : '', "/></div>") : '', "\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"saveRoute(").concat(idx !== null && idx !== undefined ? idx : 'null', ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              ").concat(r ? "<button class=\"btn-big btn-red\" onclick=\"deleteRoute(".concat(r.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function saveRoute(_x3) {
+  return _saveRoute.apply(this, arguments);
+}
+function _saveRoute() {
+  _saveRoute = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9(idx) {
+    var r, data, _data, _t8;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          r = idx !== null && idx !== undefined ? routesList[idx] : null;
+          _context9.p = 1;
+          if (!r) {
+            _context9.n = 3;
+            break;
+          }
+          data = {
             printer_id: UI.val('#rm-printer'),
-            doc_type:   UI.val('#rm-doctype'),
+            doc_type: UI.val('#rm-doctype'),
             is_default: document.getElementById('rm-default').checked,
-            is_active:  document.getElementById('rm-active').checked,
+            is_active: document.getElementById('rm-active').checked
           };
-          await window.API.printing.routes.update(r.id, data);
+          _context9.n = 2;
+          return window.API.printing.routes.update(r.id, data);
+        case 2:
           UI.notify.ok('Маршрут обновлён');
-        } else {
-          const data = {
+          _context9.n = 6;
+          break;
+        case 3:
+          _data = {
             route_code: UI.val('#rm-code'),
-            doc_type:   UI.val('#rm-doctype'),
+            doc_type: UI.val('#rm-doctype'),
             printer_id: UI.val('#rm-printer'),
-            is_default: document.getElementById('rm-default').checked,
+            is_default: document.getElementById('rm-default').checked
           };
-          if (!data.route_code) { UI.notify.err('Укажите код маршрута'); return; }
-          await window.API.printing.routes.create(data);
+          if (_data.route_code) {
+            _context9.n = 4;
+            break;
+          }
+          UI.notify.err('Укажите код маршрута');
+          return _context9.a(2);
+        case 4:
+          _context9.n = 5;
+          return window.API.printing.routes.create(_data);
+        case 5:
           UI.notify.ok('Маршрут создан');
-        }
-        closeModal();
-        await loadRoutes();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deleteRoute(id) {
-      if (!UI.confirm('Удалить маршрут печати? Задания продолжат создаваться, но без назначенного принтера этого типа.')) return;
-      try {
-        await window.API.printing.routes.delete(id);
-        UI.notify.ok('Маршрут удалён');
-        closeModal();
-        await loadRoutes();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Рабочие места ----------
-    async function loadWorkstations() {
-      try {
-        workstationsLoaded = true;
-        const res = await window.API.workstations.list();
-        workstationsList = res.workstations || [];
-        document.getElementById('ws-count').textContent = workstationsList.length;
-        const list = document.getElementById('ws-list');
-        if (!workstationsList.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M3 3h18v14H3z"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></div>Рабочих мест пока нет</div>`;
-          return;
-        }
-        list.innerHTML = workstationsList.map((w, idx) => `
-          <div class="list-row row-item" onclick="openWorkstationModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(w.station_name)}</div>
-              <div class="sub">${UI.escHtml((ZONE_TYPES.find(z=>z.value===w.zone_type)||{}).label || w.zone_type)} · ${UI.escHtml(w.warehouse_name||'без склада')} · ${w.printer_name ? 'печать: '+UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>'}${w.marking_printer_name ? ' · ЧЗ: '+UI.escHtml(w.marking_printer_name) : ''} ${w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>'}</div>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openWorkstationModal(idx) {
-      const w = idx !== null ? workstationsList[idx] : null;
-      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}" ${w && w.warehouse_id===wh.id ? 'selected':''}>${UI.escHtml(wh.warehouse_name)}</option>`).join('');
-      const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}" ${w && w.zone_type===z.value ? 'selected':''}>${z.label}</option>`).join('');
-      const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.default_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
-      const markingPrinterOptions = `<option value="">— туда же, что и основная печать —</option>` + printersList.map(p => `<option value="${p.id}" ${w && w.marking_printer_id===p.id ? 'selected':''}>${UI.escHtml(p.printer_name)}</option>`).join('');
-
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${w ? UI.escHtml(w.station_name) : 'Новое рабочее место'}</div>
-            <div class="field"><label>Название</label><input id="wsm-name" value="${w ? UI.escHtml(w.station_name):''}" placeholder="Стол упаковки №14"/></div>
-            <div class="field"><label>Тип места</label><select id="wsm-zone">${zoneOptions}</select></div>
-            <div class="field"><label>Склад (опционально)</label><select id="wsm-warehouse" ${w?'disabled':''}>${whOptions}</select></div>
-            <div class="field"><label>Принтер этого места</label><select id="wsm-printer">${printerOptions}</select></div>
-            <div class="field"><label>Принтер для кодов "Честный знак" (опционально)</label><select id="wsm-marking-printer">${markingPrinterOptions}</select></div>
-            <div class="hint-box" style="margin-top:0;">Сотрудник сканирует код этого рабочего места на телефоне один раз (в начале смены/при смене места) — дальше вся печать со сканирования штрихкода на этом месте идёт на выбранный здесь принтер. Если на столе два принтера (стикер ВБ и отдельно коды ЧЗ) — укажите второй принтер отдельным полем выше, иначе оставьте "туда же".</div>
-            ${w ? `<div class="field"><label style="display:inline;">Активно</label> <input type="checkbox" id="wsm-active" ${w.is_active ? 'checked':''}/></div>` : ''}
-            ${w ? `
-              <div class="field">
-                <button class="btn-sm btn-blue" onclick="printStationSticker(${w.id})"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Напечатать код рабочего места</button>
-                <div class="hint-box" style="margin-top:6px;">Откроется страница с QR-кодом и названием — распечатайте на обычном принтере и наклейте на стол. Код: <b>${UI.escHtml(w.station_code)}</b></div>
-              </div>
-            ` : ''}
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveWorkstation(${idx !== null ? idx : 'null'})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
-              ${w ? `<button class="btn-big btn-red" onclick="deleteWorkstation(${w.id})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function saveWorkstation(idx) {
-      const w = (idx !== null && idx !== undefined) ? workstationsList[idx] : null;
-      const name = UI.val('#wsm-name');
-      if (!name) { UI.notify.err('Укажите название'); return; }
-      try {
-        if (w) {
-          const data = {
+        case 6:
+          closeModal();
+          _context9.n = 7;
+          return loadRoutes();
+        case 7:
+          _context9.n = 9;
+          break;
+        case 8:
+          _context9.p = 8;
+          _t8 = _context9.v;
+          UI.notify.err(_t8.message);
+        case 9:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[1, 8]]);
+  }));
+  return _saveRoute.apply(this, arguments);
+}
+function deleteRoute(_x4) {
+  return _deleteRoute.apply(this, arguments);
+} // ---------- Рабочие места ----------
+function _deleteRoute() {
+  _deleteRoute = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0(id) {
+    var _t9;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          if (UI.confirm('Удалить маршрут печати? Задания продолжат создаваться, но без назначенного принтера этого типа.')) {
+            _context0.n = 1;
+            break;
+          }
+          return _context0.a(2);
+        case 1:
+          _context0.p = 1;
+          _context0.n = 2;
+          return window.API.printing.routes.delete(id);
+        case 2:
+          UI.notify.ok('Маршрут удалён');
+          closeModal();
+          _context0.n = 3;
+          return loadRoutes();
+        case 3:
+          _context0.n = 5;
+          break;
+        case 4:
+          _context0.p = 4;
+          _t9 = _context0.v;
+          UI.notify.err(_t9.message);
+        case 5:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[1, 4]]);
+  }));
+  return _deleteRoute.apply(this, arguments);
+}
+function loadWorkstations() {
+  return _loadWorkstations.apply(this, arguments);
+}
+function _loadWorkstations() {
+  _loadWorkstations = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
+    var res, list, _t0;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          _context1.p = 0;
+          workstationsLoaded = true;
+          _context1.n = 1;
+          return window.API.workstations.list();
+        case 1:
+          res = _context1.v;
+          workstationsList = res.workstations || [];
+          document.getElementById('ws-count').textContent = workstationsList.length;
+          list = document.getElementById('ws-list');
+          if (workstationsList.length) {
+            _context1.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 3h18v14H3z\"/><path d=\"M8 21h8\"/><path d=\"M12 17v4\"/></svg></div>\u0420\u0430\u0431\u043E\u0447\u0438\u0445 \u043C\u0435\u0441\u0442 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</div>";
+          return _context1.a(2);
+        case 2:
+          list.innerHTML = workstationsList.map(function (w, idx) {
+            return "\n          <div class=\"list-row row-item\" onclick=\"openWorkstationModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(w.station_name), "</div>\n              <div class=\"sub\">").concat(UI.escHtml((ZONE_TYPES.find(function (z) {
+              return z.value === w.zone_type;
+            }) || {}).label || w.zone_type), " \xB7 ").concat(UI.escHtml(w.warehouse_name || 'без склада'), " \xB7 ").concat(w.printer_name ? 'печать: ' + UI.escHtml(w.printer_name) : '<span style=\"color:var(--red)\">принтер не назначен</span>').concat(w.marking_printer_name ? ' · ЧЗ: ' + UI.escHtml(w.marking_printer_name) : '', " ").concat(w.is_active ? '' : '· <span style=\"color:var(--red)\">выключено</span>', "</div>\n            </div>\n          </div>\n        ");
+          }).join('');
+          _context1.n = 4;
+          break;
+        case 3:
+          _context1.p = 3;
+          _t0 = _context1.v;
+          UI.notify.err(_t0.message);
+        case 4:
+          return _context1.a(2);
+      }
+    }, _callee1, null, [[0, 3]]);
+  }));
+  return _loadWorkstations.apply(this, arguments);
+}
+function openWorkstationModal(idx) {
+  var w = idx !== null ? workstationsList[idx] : null;
+  var whOptions = "<option value=\"\">\u2014 \u0431\u0435\u0437 \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438 \u2014</option>" + warehouses.map(function (wh) {
+    return "<option value=\"".concat(wh.id, "\" ").concat(w && w.warehouse_id === wh.id ? 'selected' : '', ">").concat(UI.escHtml(wh.warehouse_name), "</option>");
+  }).join('');
+  var zoneOptions = ZONE_TYPES.map(function (z) {
+    return "<option value=\"".concat(z.value, "\" ").concat(w && w.zone_type === z.value ? 'selected' : '', ">").concat(z.label, "</option>");
+  }).join('');
+  var printerOptions = "<option value=\"\">\u2014 \u043D\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u2014</option>" + printersList.map(function (p) {
+    return "<option value=\"".concat(p.id, "\" ").concat(w && w.default_printer_id === p.id ? 'selected' : '', ">").concat(UI.escHtml(p.printer_name), "</option>");
+  }).join('');
+  var markingPrinterOptions = "<option value=\"\">\u2014 \u0442\u0443\u0434\u0430 \u0436\u0435, \u0447\u0442\u043E \u0438 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043F\u0435\u0447\u0430\u0442\u044C \u2014</option>" + printersList.map(function (p) {
+    return "<option value=\"".concat(p.id, "\" ").concat(w && w.marking_printer_id === p.id ? 'selected' : '', ">").concat(UI.escHtml(p.printer_name), "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(w ? UI.escHtml(w.station_name) : 'Новое рабочее место', "</div>\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435</label><input id=\"wsm-name\" value=\"").concat(w ? UI.escHtml(w.station_name) : '', "\" placeholder=\"\u0421\u0442\u043E\u043B \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 \u211614\"/></div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u043C\u0435\u0441\u0442\u0430</label><select id=\"wsm-zone\">").concat(zoneOptions, "</select></div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label><select id=\"wsm-warehouse\" ").concat(w ? 'disabled' : '', ">").concat(whOptions, "</select></div>\n            <div class=\"field\"><label>\u041F\u0440\u0438\u043D\u0442\u0435\u0440 \u044D\u0442\u043E\u0433\u043E \u043C\u0435\u0441\u0442\u0430</label><select id=\"wsm-printer\">").concat(printerOptions, "</select></div>\n            <div class=\"field\"><label>\u041F\u0440\u0438\u043D\u0442\u0435\u0440 \u0434\u043B\u044F \u043A\u043E\u0434\u043E\u0432 \"\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A\" (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label><select id=\"wsm-marking-printer\">").concat(markingPrinterOptions, "</select></div>\n            <div class=\"hint-box\" style=\"margin-top:0;\">\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442 \u043A\u043E\u0434 \u044D\u0442\u043E\u0433\u043E \u0440\u0430\u0431\u043E\u0447\u0435\u0433\u043E \u043C\u0435\u0441\u0442\u0430 \u043D\u0430 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435 \u043E\u0434\u0438\u043D \u0440\u0430\u0437 (\u0432 \u043D\u0430\u0447\u0430\u043B\u0435 \u0441\u043C\u0435\u043D\u044B/\u043F\u0440\u0438 \u0441\u043C\u0435\u043D\u0435 \u043C\u0435\u0441\u0442\u0430) \u2014 \u0434\u0430\u043B\u044C\u0448\u0435 \u0432\u0441\u044F \u043F\u0435\u0447\u0430\u0442\u044C \u0441\u043E \u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u044F \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u0430 \u043D\u0430 \u044D\u0442\u043E\u043C \u043C\u0435\u0441\u0442\u0435 \u0438\u0434\u0451\u0442 \u043D\u0430 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u0437\u0434\u0435\u0441\u044C \u043F\u0440\u0438\u043D\u0442\u0435\u0440. \u0415\u0441\u043B\u0438 \u043D\u0430 \u0441\u0442\u043E\u043B\u0435 \u0434\u0432\u0430 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430 (\u0441\u0442\u0438\u043A\u0435\u0440 \u0412\u0411 \u0438 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E \u043A\u043E\u0434\u044B \u0427\u0417) \u2014 \u0443\u043A\u0430\u0436\u0438\u0442\u0435 \u0432\u0442\u043E\u0440\u043E\u0439 \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u043F\u043E\u043B\u0435\u043C \u0432\u044B\u0448\u0435, \u0438\u043D\u0430\u0447\u0435 \u043E\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \"\u0442\u0443\u0434\u0430 \u0436\u0435\".</div>\n            ").concat(w ? "<div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u043D\u043E</label> <input type=\"checkbox\" id=\"wsm-active\" ".concat(w.is_active ? 'checked' : '', "/></div>") : '', "\n            ").concat(w ? "\n              <div class=\"field\">\n                <button class=\"btn-sm btn-blue\" onclick=\"printStationSticker(".concat(w.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 9V3h12v6\"/><rect x=\"4\" y=\"9\" width=\"16\" height=\"8\" rx=\"1.5\"/><path d=\"M6 14h12v7H6z\"/></svg> \u041D\u0430\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C \u043A\u043E\u0434 \u0440\u0430\u0431\u043E\u0447\u0435\u0433\u043E \u043C\u0435\u0441\u0442\u0430</button>\n                <div class=\"hint-box\" style=\"margin-top:6px;\">\u041E\u0442\u043A\u0440\u043E\u0435\u0442\u0441\u044F \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0430 \u0441 QR-\u043A\u043E\u0434\u043E\u043C \u0438 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435\u043C \u2014 \u0440\u0430\u0441\u043F\u0435\u0447\u0430\u0442\u0430\u0439\u0442\u0435 \u043D\u0430 \u043E\u0431\u044B\u0447\u043D\u043E\u043C \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0435 \u0438 \u043D\u0430\u043A\u043B\u0435\u0439\u0442\u0435 \u043D\u0430 \u0441\u0442\u043E\u043B. \u041A\u043E\u0434: <b>").concat(UI.escHtml(w.station_code), "</b></div>\n              </div>\n            ") : '', "\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"saveWorkstation(").concat(idx !== null ? idx : 'null', ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              ").concat(w ? "<button class=\"btn-big btn-red\" onclick=\"deleteWorkstation(".concat(w.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function saveWorkstation(_x5) {
+  return _saveWorkstation.apply(this, arguments);
+}
+function _saveWorkstation() {
+  _saveWorkstation = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10(idx) {
+    var w, name, data, _data2, _t1;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          w = idx !== null && idx !== undefined ? workstationsList[idx] : null;
+          name = UI.val('#wsm-name');
+          if (name) {
+            _context10.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите название');
+          return _context10.a(2);
+        case 1:
+          _context10.p = 1;
+          if (!w) {
+            _context10.n = 3;
+            break;
+          }
+          data = {
             station_name: name,
             zone_type: UI.val('#wsm-zone'),
             default_printer_id: UI.val('#wsm-printer') || null,
             marking_printer_id: UI.val('#wsm-marking-printer') || null,
-            is_active: document.getElementById('wsm-active').checked,
+            is_active: document.getElementById('wsm-active').checked
           };
-          await window.API.workstations.update(w.id, data);
+          _context10.n = 2;
+          return window.API.workstations.update(w.id, data);
+        case 2:
           UI.notify.ok('Рабочее место обновлено');
-        } else {
-          const data = {
+          _context10.n = 5;
+          break;
+        case 3:
+          _data2 = {
             station_name: name,
             zone_type: UI.val('#wsm-zone'),
             warehouse_id: UI.val('#wsm-warehouse') || null,
             default_printer_id: UI.val('#wsm-printer') || null,
-            marking_printer_id: UI.val('#wsm-marking-printer') || null,
+            marking_printer_id: UI.val('#wsm-marking-printer') || null
           };
-          await window.API.workstations.create(data);
+          _context10.n = 4;
+          return window.API.workstations.create(_data2);
+        case 4:
           UI.notify.ok('Рабочее место создано');
-        }
-        closeModal();
-        await loadWorkstations();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deleteWorkstation(id) {
-      if (!UI.confirm('Удалить рабочее место? Сотрудники, у которых оно выбрано текущим, перестанут иметь привязку к принтеру и печать пойдёт по общему маршруту.')) return;
-      try {
-        await window.API.workstations.delete(id);
-        UI.notify.ok('Рабочее место удалено');
-        closeModal();
-        await loadWorkstations();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Массовый импорт рабочих мест ----------
-    // У КАЖДОГО стола обычно СВОЯ пара принтеров (стикер ВБ + отдельно ЧЗ) —
-    // общий на весь импорт принтер тут бесполезен. Раньше принтер для строки
-    // вводился текстом (через запятую) и искался по точному названию — на
-    // практике это оказалось неочевидно и приводило к опечаткам ("принтер не
-    // назначен" без понятной причины). Теперь на каждую строку — обычные
-    // выпадающие списки принтеров, как в карточке одного места, ошибиться
-    // мимо существующего принтера уже нельзя.
-    let wbiRowSeq = 0;
-
-    function workstationBulkRowHtml(rowId) {
-      const printerOptions = `<option value="">— не назначен —</option>` + printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
-      const markingOptions = `<option value="">— туда же, что и основная печать —</option>` + printersList.map(p => `<option value="${p.id}">${UI.escHtml(p.printer_name)}</option>`).join('');
-      return `
-        <div class="wbi-row" data-row-id="${rowId}" style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;">
-          <div class="field" style="margin-bottom:6px;"><label>Название</label><input class="wbi-row-name" placeholder="Стол упаковки 1"/></div>
-          <div class="field-row2">
-            <div class="field"><label>Принтер этого места</label><select class="wbi-row-printer">${printerOptions}</select></div>
-            <div class="field"><label>Принтер для ЧЗ</label><select class="wbi-row-marking">${markingOptions}</select></div>
-          </div>
-          <button class="btn-sm btn-red" style="margin-top:6px;" onclick="this.closest('.wbi-row').remove()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Убрать строку</button>
-        </div>
-      `;
-    }
-
-    function addWorkstationBulkRow() {
-      wbiRowSeq++;
-      document.getElementById('wbi-rows').insertAdjacentHTML('beforeend', workstationBulkRowHtml(wbiRowSeq));
-    }
-
-    function openWorkstationBulkModal() {
-      const whOptions = `<option value="">— без привязки —</option>` + warehouses.map(wh => `<option value="${wh.id}">${UI.escHtml(wh.warehouse_name)}</option>`).join('');
-      const zoneOptions = ZONE_TYPES.map(z => `<option value="${z.value}">${z.label}</option>`).join('');
-      wbiRowSeq = 0;
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Импорт рабочих мест списком</div>
-            <div class="hint-box" style="margin-top:0;">Добавьте по строке на каждое рабочее место — название и, если у стола два принтера, выбор обоих сразу из уже созданных принтеров. Тип места и склад общие для всего импорта. Сначала создайте принтеры (вкладка «Принтеры»), потом рабочие места.</div>
-            <div class="field"><label>Тип места (для всех)</label><select id="wbi-zone">${zoneOptions}</select></div>
-            <div class="field"><label>Склад (опционально, для всех)</label><select id="wbi-warehouse">${whOptions}</select></div>
-            <div id="wbi-rows"></div>
-            <button class="btn-sm btn-blue" style="margin-top:8px;" onclick="addWorkstationBulkRow()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Добавить строку</button>
-            <div id="wbi-result"></div>
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="submitWorkstationBulk()"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Импортировать</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-      // Начинаем сразу с 3 пустых строк, чтобы не приходилось нажимать
-      // "Добавить" перед первым же вводом.
-      addWorkstationBulkRow(); addWorkstationBulkRow(); addWorkstationBulkRow();
-    }
-
-    async function submitWorkstationBulk() {
-      const rowEls = Array.from(document.querySelectorAll('#wbi-rows .wbi-row'));
-      const zone_type = UI.val('#wbi-zone');
-      const warehouse_id = UI.val('#wbi-warehouse') || null;
-      const workstationsRows = rowEls.map(el => ({
-        station_name: el.querySelector('.wbi-row-name').value.trim(),
-        zone_type,
-        warehouse_id,
-        default_printer_id: el.querySelector('.wbi-row-printer').value || null,
-        marking_printer_id: el.querySelector('.wbi-row-marking').value || null,
-      })).filter(r => r.station_name);
-      if (!workstationsRows.length) { UI.notify.err('Заполните название хотя бы у одной строки'); return; }
-      try {
-        const res = await window.API.workstations.bulkImport(workstationsRows);
-        UI.notify.ok(`Создано мест: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}`);
-        let html = `<div class="hint-box" style="margin-top:8px;">Создано: ${res.created_count}${res.error_count ? `, ошибок: ${res.error_count}` : ''}</div>`;
-        if (res.errors.length) {
-          html += `<div class="hint-box" style="border-left-color:var(--red);margin-top:8px;">${res.errors.map(e => `Строка ${e.row} (${UI.escHtml(e.station_name||'')}): ${UI.escHtml(e.error)}`).join('<br/>')}</div>`;
-        }
-        document.getElementById('wbi-result').innerHTML = html;
-        await loadWorkstations();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function printStationSticker(id) {
-      // Открываем окно СРАЗУ, синхронно по клику — если сделать это после
-      // await (когда придёт ответ сервера), браузер (особенно мобильный)
-      // считает это не результатом действия пользователя и молча блокирует
-      // всплывающее окно — получается пустая вкладка. Поэтому: сначала
-      // window.open (не document.open — это разные вещи, у document.open
-      // ненадёжное поведение в мобильных браузерах), потом уже запрос.
-      const w = window.open('', '_blank');
-      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этого сайта и попробуйте снова'); return; }
-      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Готовим стикер…</p>');
-      try {
-        const res = await window.API.workstations.sticker(id);
-        w.document.open();
-        w.document.write(`
-          <html><head><title>${UI.escHtml(res.station_name)}</title>
-          <style>
-            /* Стикер намеренно небольшой (макс. 70мм в ширину) и сам
-               подстраивается под любую выбранную в диалоге печати бумагу —
-               и обычный A4/Letter, и маленький формат термопринтера
-               этикеток (если он остался выбран по умолчанию с прошлой
-               печати) — без ручного уменьшения масштаба. */
-            @page { margin: 8mm; }
-            html,body{margin:0;padding:0;}
-            body{font-family:sans-serif;text-align:center;padding:10px;}
-            .sticker{display:inline-block;max-width:70mm;width:100%;}
-            .sticker svg{width:100%;height:auto;display:block;margin:0 auto;}
-            .code{font-size:12px;color:#555;margin-top:8px;font-family:monospace;word-break:break-all;}
-            .name{font-size:16px;font-weight:700;margin-top:10px;}
-          </style></head><body>
-          <div class="sticker">
-            ${res.svg}
-            <div class="name">${UI.escHtml(res.station_name)}</div>
-            <div class="code">${UI.escHtml(res.station_code)}</div>
-          </div>
-          <script>window.onload = () => window.print();<\/script>
-          </body></html>
-        `);
-        w.document.close();
-      } catch (e) {
-        w.document.body.innerHTML = `<p style="font-family:sans-serif;text-align:center;padding:40px;color:#c00;">Ошибка: ${UI.escHtml(e.message)}</p>`;
-        UI.notify.err(e.message);
+        case 5:
+          closeModal();
+          _context10.n = 6;
+          return loadWorkstations();
+        case 6:
+          _context10.n = 8;
+          break;
+        case 7:
+          _context10.p = 7;
+          _t1 = _context10.v;
+          UI.notify.err(_t1.message);
+        case 8:
+          return _context10.a(2);
       }
+    }, _callee10, null, [[1, 7]]);
+  }));
+  return _saveWorkstation.apply(this, arguments);
+}
+function deleteWorkstation(_x6) {
+  return _deleteWorkstation.apply(this, arguments);
+} // ---------- Массовый импорт рабочих мест ----------
+// У КАЖДОГО стола обычно СВОЯ пара принтеров (стикер ВБ + отдельно ЧЗ) —
+// общий на весь импорт принтер тут бесполезен. Раньше принтер для строки
+// вводился текстом (через запятую) и искался по точному названию — на
+// практике это оказалось неочевидно и приводило к опечаткам ("принтер не
+// назначен" без понятной причины). Теперь на каждую строку — обычные
+// выпадающие списки принтеров, как в карточке одного места, ошибиться
+// мимо существующего принтера уже нельзя.
+function _deleteWorkstation() {
+  _deleteWorkstation = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11(id) {
+    var _t10;
+    return _regenerator().w(function (_context11) {
+      while (1) switch (_context11.p = _context11.n) {
+        case 0:
+          if (UI.confirm('Удалить рабочее место? Сотрудники, у которых оно выбрано текущим, перестанут иметь привязку к принтеру и печать пойдёт по общему маршруту.')) {
+            _context11.n = 1;
+            break;
+          }
+          return _context11.a(2);
+        case 1:
+          _context11.p = 1;
+          _context11.n = 2;
+          return window.API.workstations.delete(id);
+        case 2:
+          UI.notify.ok('Рабочее место удалено');
+          closeModal();
+          _context11.n = 3;
+          return loadWorkstations();
+        case 3:
+          _context11.n = 5;
+          break;
+        case 4:
+          _context11.p = 4;
+          _t10 = _context11.v;
+          UI.notify.err(_t10.message);
+        case 5:
+          return _context11.a(2);
+      }
+    }, _callee11, null, [[1, 4]]);
+  }));
+  return _deleteWorkstation.apply(this, arguments);
+}
+var wbiRowSeq = 0;
+function workstationBulkRowHtml(rowId) {
+  var printerOptions = "<option value=\"\">\u2014 \u043D\u0435 \u043D\u0430\u0437\u043D\u0430\u0447\u0435\u043D \u2014</option>" + printersList.map(function (p) {
+    return "<option value=\"".concat(p.id, "\">").concat(UI.escHtml(p.printer_name), "</option>");
+  }).join('');
+  var markingOptions = "<option value=\"\">\u2014 \u0442\u0443\u0434\u0430 \u0436\u0435, \u0447\u0442\u043E \u0438 \u043E\u0441\u043D\u043E\u0432\u043D\u0430\u044F \u043F\u0435\u0447\u0430\u0442\u044C \u2014</option>" + printersList.map(function (p) {
+    return "<option value=\"".concat(p.id, "\">").concat(UI.escHtml(p.printer_name), "</option>");
+  }).join('');
+  return "\n        <div class=\"wbi-row\" data-row-id=\"".concat(rowId, "\" style=\"border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px;\">\n          <div class=\"field\" style=\"margin-bottom:6px;\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435</label><input class=\"wbi-row-name\" placeholder=\"\u0421\u0442\u043E\u043B \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 1\"/></div>\n          <div class=\"field-row2\">\n            <div class=\"field\"><label>\u041F\u0440\u0438\u043D\u0442\u0435\u0440 \u044D\u0442\u043E\u0433\u043E \u043C\u0435\u0441\u0442\u0430</label><select class=\"wbi-row-printer\">").concat(printerOptions, "</select></div>\n            <div class=\"field\"><label>\u041F\u0440\u0438\u043D\u0442\u0435\u0440 \u0434\u043B\u044F \u0427\u0417</label><select class=\"wbi-row-marking\">").concat(markingOptions, "</select></div>\n          </div>\n          <button class=\"btn-sm btn-red\" style=\"margin-top:6px;\" onclick=\"this.closest('.wbi-row').remove()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u0423\u0431\u0440\u0430\u0442\u044C \u0441\u0442\u0440\u043E\u043A\u0443</button>\n        </div>\n      ");
+}
+function addWorkstationBulkRow() {
+  wbiRowSeq++;
+  document.getElementById('wbi-rows').insertAdjacentHTML('beforeend', workstationBulkRowHtml(wbiRowSeq));
+}
+function openWorkstationBulkModal() {
+  var whOptions = "<option value=\"\">\u2014 \u0431\u0435\u0437 \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438 \u2014</option>" + warehouses.map(function (wh) {
+    return "<option value=\"".concat(wh.id, "\">").concat(UI.escHtml(wh.warehouse_name), "</option>");
+  }).join('');
+  var zoneOptions = ZONE_TYPES.map(function (z) {
+    return "<option value=\"".concat(z.value, "\">").concat(z.label, "</option>");
+  }).join('');
+  wbiRowSeq = 0;
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0418\u043C\u043F\u043E\u0440\u0442 \u0440\u0430\u0431\u043E\u0447\u0438\u0445 \u043C\u0435\u0441\u0442 \u0441\u043F\u0438\u0441\u043A\u043E\u043C</div>\n            <div class=\"hint-box\" style=\"margin-top:0;\">\u0414\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u043F\u043E \u0441\u0442\u0440\u043E\u043A\u0435 \u043D\u0430 \u043A\u0430\u0436\u0434\u043E\u0435 \u0440\u0430\u0431\u043E\u0447\u0435\u0435 \u043C\u0435\u0441\u0442\u043E \u2014 \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0438, \u0435\u0441\u043B\u0438 \u0443 \u0441\u0442\u043E\u043B\u0430 \u0434\u0432\u0430 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430, \u0432\u044B\u0431\u043E\u0440 \u043E\u0431\u043E\u0438\u0445 \u0441\u0440\u0430\u0437\u0443 \u0438\u0437 \u0443\u0436\u0435 \u0441\u043E\u0437\u0434\u0430\u043D\u043D\u044B\u0445 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u043E\u0432. \u0422\u0438\u043F \u043C\u0435\u0441\u0442\u0430 \u0438 \u0441\u043A\u043B\u0430\u0434 \u043E\u0431\u0449\u0438\u0435 \u0434\u043B\u044F \u0432\u0441\u0435\u0433\u043E \u0438\u043C\u043F\u043E\u0440\u0442\u0430. \u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u043F\u0440\u0438\u043D\u0442\u0435\u0440\u044B (\u0432\u043A\u043B\u0430\u0434\u043A\u0430 \xAB\u041F\u0440\u0438\u043D\u0442\u0435\u0440\u044B\xBB), \u043F\u043E\u0442\u043E\u043C \u0440\u0430\u0431\u043E\u0447\u0438\u0435 \u043C\u0435\u0441\u0442\u0430.</div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u043C\u0435\u0441\u0442\u0430 (\u0434\u043B\u044F \u0432\u0441\u0435\u0445)</label><select id=\"wbi-zone\">".concat(zoneOptions, "</select></div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E, \u0434\u043B\u044F \u0432\u0441\u0435\u0445)</label><select id=\"wbi-warehouse\">").concat(whOptions, "</select></div>\n            <div id=\"wbi-rows\"></div>\n            <button class=\"btn-sm btn-blue\" style=\"margin-top:8px;\" onclick=\"addWorkstationBulkRow()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M12 5v14M5 12h14\"/></svg> \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u0441\u0442\u0440\u043E\u043A\u0443</button>\n            <div id=\"wbi-result\"></div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"submitWorkstationBulk()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0418\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+  // Начинаем сразу с 3 пустых строк, чтобы не приходилось нажимать
+  // "Добавить" перед первым же вводом.
+  addWorkstationBulkRow();
+  addWorkstationBulkRow();
+  addWorkstationBulkRow();
+}
+function submitWorkstationBulk() {
+  return _submitWorkstationBulk.apply(this, arguments);
+}
+function _submitWorkstationBulk() {
+  _submitWorkstationBulk = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12() {
+    var rowEls, zone_type, warehouse_id, workstationsRows, res, html, _t11;
+    return _regenerator().w(function (_context12) {
+      while (1) switch (_context12.p = _context12.n) {
+        case 0:
+          rowEls = Array.from(document.querySelectorAll('#wbi-rows .wbi-row'));
+          zone_type = UI.val('#wbi-zone');
+          warehouse_id = UI.val('#wbi-warehouse') || null;
+          workstationsRows = rowEls.map(function (el) {
+            return {
+              station_name: el.querySelector('.wbi-row-name').value.trim(),
+              zone_type: zone_type,
+              warehouse_id: warehouse_id,
+              default_printer_id: el.querySelector('.wbi-row-printer').value || null,
+              marking_printer_id: el.querySelector('.wbi-row-marking').value || null
+            };
+          }).filter(function (r) {
+            return r.station_name;
+          });
+          if (workstationsRows.length) {
+            _context12.n = 1;
+            break;
+          }
+          UI.notify.err('Заполните название хотя бы у одной строки');
+          return _context12.a(2);
+        case 1:
+          _context12.p = 1;
+          _context12.n = 2;
+          return window.API.workstations.bulkImport(workstationsRows);
+        case 2:
+          res = _context12.v;
+          UI.notify.ok("\u0421\u043E\u0437\u0434\u0430\u043D\u043E \u043C\u0435\u0441\u0442: ".concat(res.created_count).concat(res.error_count ? ", \u043E\u0448\u0438\u0431\u043E\u043A: ".concat(res.error_count) : ''));
+          html = "<div class=\"hint-box\" style=\"margin-top:8px;\">\u0421\u043E\u0437\u0434\u0430\u043D\u043E: ".concat(res.created_count).concat(res.error_count ? ", \u043E\u0448\u0438\u0431\u043E\u043A: ".concat(res.error_count) : '', "</div>");
+          if (res.errors.length) {
+            html += "<div class=\"hint-box\" style=\"border-left-color:var(--red);margin-top:8px;\">".concat(res.errors.map(function (e) {
+              return "\u0421\u0442\u0440\u043E\u043A\u0430 ".concat(e.row, " (").concat(UI.escHtml(e.station_name || ''), "): ").concat(UI.escHtml(e.error));
+            }).join('<br/>'), "</div>");
+          }
+          document.getElementById('wbi-result').innerHTML = html;
+          _context12.n = 3;
+          return loadWorkstations();
+        case 3:
+          _context12.n = 5;
+          break;
+        case 4:
+          _context12.p = 4;
+          _t11 = _context12.v;
+          UI.notify.err(_t11.message);
+        case 5:
+          return _context12.a(2);
+      }
+    }, _callee12, null, [[1, 4]]);
+  }));
+  return _submitWorkstationBulk.apply(this, arguments);
+}
+function printStationSticker(_x7) {
+  return _printStationSticker.apply(this, arguments);
+} // ---------- Очередь печати ----------
+function _printStationSticker() {
+  _printStationSticker = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee13(id) {
+    var w, res, _t12;
+    return _regenerator().w(function (_context13) {
+      while (1) switch (_context13.p = _context13.n) {
+        case 0:
+          // Открываем окно СРАЗУ, синхронно по клику — если сделать это после
+          // await (когда придёт ответ сервера), браузер (особенно мобильный)
+          // считает это не результатом действия пользователя и молча блокирует
+          // всплывающее окно — получается пустая вкладка. Поэтому: сначала
+          // window.open (не document.open — это разные вещи, у document.open
+          // ненадёжное поведение в мобильных браузерах), потом уже запрос.
+          w = window.open('', '_blank');
+          if (w) {
+            _context13.n = 1;
+            break;
+          }
+          UI.notify.err('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этого сайта и попробуйте снова');
+          return _context13.a(2);
+        case 1:
+          w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Готовим стикер…</p>');
+          _context13.p = 2;
+          _context13.n = 3;
+          return window.API.workstations.sticker(id);
+        case 3:
+          res = _context13.v;
+          w.document.open();
+          w.document.write("\n          <html><head><title>".concat(UI.escHtml(res.station_name), "</title>\n          <style>\n            /* \u0421\u0442\u0438\u043A\u0435\u0440 \u043D\u0430\u043C\u0435\u0440\u0435\u043D\u043D\u043E \u043D\u0435\u0431\u043E\u043B\u044C\u0448\u043E\u0439 (\u043C\u0430\u043A\u0441. 70\u043C\u043C \u0432 \u0448\u0438\u0440\u0438\u043D\u0443) \u0438 \u0441\u0430\u043C\n               \u043F\u043E\u0434\u0441\u0442\u0440\u0430\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u043F\u043E\u0434 \u043B\u044E\u0431\u0443\u044E \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u0443\u044E \u0432 \u0434\u0438\u0430\u043B\u043E\u0433\u0435 \u043F\u0435\u0447\u0430\u0442\u0438 \u0431\u0443\u043C\u0430\u0433\u0443 \u2014\n               \u0438 \u043E\u0431\u044B\u0447\u043D\u044B\u0439 A4/Letter, \u0438 \u043C\u0430\u043B\u0435\u043D\u044C\u043A\u0438\u0439 \u0444\u043E\u0440\u043C\u0430\u0442 \u0442\u0435\u0440\u043C\u043E\u043F\u0440\u0438\u043D\u0442\u0435\u0440\u0430\n               \u044D\u0442\u0438\u043A\u0435\u0442\u043E\u043A (\u0435\u0441\u043B\u0438 \u043E\u043D \u043E\u0441\u0442\u0430\u043B\u0441\u044F \u0432\u044B\u0431\u0440\u0430\u043D \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u0441 \u043F\u0440\u043E\u0448\u043B\u043E\u0439\n               \u043F\u0435\u0447\u0430\u0442\u0438) \u2014 \u0431\u0435\u0437 \u0440\u0443\u0447\u043D\u043E\u0433\u043E \u0443\u043C\u0435\u043D\u044C\u0448\u0435\u043D\u0438\u044F \u043C\u0430\u0441\u0448\u0442\u0430\u0431\u0430. */\n            @page { margin: 8mm; }\n            html,body{margin:0;padding:0;}\n            body{font-family:sans-serif;text-align:center;padding:10px;}\n            .sticker{display:inline-block;max-width:70mm;width:100%;}\n            .sticker svg{width:100%;height:auto;display:block;margin:0 auto;}\n            .code{font-size:12px;color:#555;margin-top:8px;font-family:monospace;word-break:break-all;}\n            .name{font-size:16px;font-weight:700;margin-top:10px;}\n          </style></head><body>\n          <div class=\"sticker\">\n            ").concat(res.svg, "\n            <div class=\"name\">").concat(UI.escHtml(res.station_name), "</div>\n            <div class=\"code\">").concat(UI.escHtml(res.station_code), "</div>\n          </div>\n          <script>window.onload = () => window.print();<\/script>\n          </body></html>\n        "));
+          w.document.close();
+          _context13.n = 5;
+          break;
+        case 4:
+          _context13.p = 4;
+          _t12 = _context13.v;
+          w.document.body.innerHTML = "<p style=\"font-family:sans-serif;text-align:center;padding:40px;color:#c00;\">\u041E\u0448\u0438\u0431\u043A\u0430: ".concat(UI.escHtml(_t12.message), "</p>");
+          UI.notify.err(_t12.message);
+        case 5:
+          return _context13.a(2);
+      }
+    }, _callee13, null, [[2, 4]]);
+  }));
+  return _printStationSticker.apply(this, arguments);
+}
+var JOB_STATUS_LABELS = {
+  new: 'Новое',
+  processing: 'В процессе',
+  printed: 'Напечатано',
+  error: 'Ошибка',
+  cancelled: 'Отменено'
+};
+var JOB_STATUS_PILL = {
+  new: 'pill-blue',
+  processing: 'pill-yellow',
+  printed: 'pill-green',
+  error: 'pill-red',
+  cancelled: 'pill-gray'
+};
+function loadJobs() {
+  return _loadJobs.apply(this, arguments);
+}
+function _loadJobs() {
+  _loadJobs = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee14() {
+    var status, res, jobs, list, _t13;
+    return _regenerator().w(function (_context14) {
+      while (1) switch (_context14.p = _context14.n) {
+        case 0:
+          _context14.p = 0;
+          jobsLoaded = true;
+          status = UI.val('#job-status') || 'new';
+          _context14.n = 1;
+          return window.API.printing.jobs({
+            status: status,
+            limit: 100
+          });
+        case 1:
+          res = _context14.v;
+          jobs = res.data || [];
+          document.getElementById('job-count').textContent = jobs.length;
+          list = document.getElementById('job-list');
+          if (jobs.length) {
+            _context14.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 9V3h12v6\"/><rect x=\"4\" y=\"9\" width=\"16\" height=\"8\" rx=\"1.5\"/><path d=\"M6 14h12v7H6z\"/></svg></div>\u041F\u0443\u0441\u0442\u043E</div>";
+          return _context14.a(2);
+        case 2:
+          list.innerHTML = jobs.map(function (j) {
+            return "\n          <div class=\"list-row\">\n            <div class=\"main\">\n              <div class=\"title\">".concat(UI.escHtml((DOC_TYPES.find(function (d) {
+              return d.value === j.doc_type;
+            }) || {}).label || j.doc_type), " <span class=\"pill ").concat(JOB_STATUS_PILL[j.status] || 'pill-gray', "\">").concat(JOB_STATUS_LABELS[j.status] || j.status, "</span></div>\n              <div class=\"sub\">").concat(UI.escHtml(j.printer_name), " \xB7 ").concat(UI.fmtDateTime(j.created_at), " ").concat(j.error_text ? '· <span style=\"color:var(--red)\">' + UI.escHtml(j.error_text) + '</span>' : '', "</div>\n            </div>\n            <div style=\"display:flex;gap:6px;\">\n              ").concat(j.status === 'error' || j.status === 'printed' || j.status === 'new' ? "<button class=\"btn-sm btn-back\" onclick=\"reprintJob(".concat(j.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M23 4v6h-6\"/><path d=\"M1 20v-6h6\"/><path d=\"M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15\"/></svg> \u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C</button>") : '', "\n              ").concat(j.status === 'new' || j.status === 'processing' ? "<button class=\"btn-sm btn-red\" onclick=\"cancelJob(".concat(j.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C</button>") : '', "\n            </div>\n          </div>\n        ");
+          }).join('');
+          _context14.n = 4;
+          break;
+        case 3:
+          _context14.p = 3;
+          _t13 = _context14.v;
+          UI.notify.err(_t13.message);
+        case 4:
+          return _context14.a(2);
+      }
+    }, _callee14, null, [[0, 3]]);
+  }));
+  return _loadJobs.apply(this, arguments);
+}
+function reprintJob(_x8) {
+  return _reprintJob.apply(this, arguments);
+}
+function _reprintJob() {
+  _reprintJob = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee15(jobId) {
+    var _t14;
+    return _regenerator().w(function (_context15) {
+      while (1) switch (_context15.p = _context15.n) {
+        case 0:
+          _context15.p = 0;
+          _context15.n = 1;
+          return window.API.printing.reprint(jobId);
+        case 1:
+          UI.notify.ok('Задание на повторную печать создано (на текущий принтер по маршруту)');
+          _context15.n = 2;
+          return loadJobs();
+        case 2:
+          _context15.n = 4;
+          break;
+        case 3:
+          _context15.p = 3;
+          _t14 = _context15.v;
+          UI.notify.err(_t14.message);
+        case 4:
+          return _context15.a(2);
+      }
+    }, _callee15, null, [[0, 3]]);
+  }));
+  return _reprintJob.apply(this, arguments);
+}
+function cancelJob(_x9) {
+  return _cancelJob.apply(this, arguments);
+}
+function _cancelJob() {
+  _cancelJob = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee16(jobId) {
+    var _t15;
+    return _regenerator().w(function (_context16) {
+      while (1) switch (_context16.p = _context16.n) {
+        case 0:
+          if (UI.confirm('Отменить задание на печать? Если документ всё ещё нужен — используйте "Повторить", он создаст новое задание на актуальный принтер.')) {
+            _context16.n = 1;
+            break;
+          }
+          return _context16.a(2);
+        case 1:
+          _context16.p = 1;
+          _context16.n = 2;
+          return window.API.printing.updateJob(jobId, {
+            status: 'cancelled'
+          });
+        case 2:
+          UI.notify.ok('Задание отменено');
+          _context16.n = 3;
+          return loadJobs();
+        case 3:
+          _context16.n = 5;
+          break;
+        case 4:
+          _context16.p = 4;
+          _t15 = _context16.v;
+          UI.notify.err(_t15.message);
+        case 5:
+          return _context16.a(2);
+      }
+    }, _callee16, null, [[1, 4]]);
+  }));
+  return _cancelJob.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadWarehouses();
+      case 1:
+        _context.n = 2;
+        return loadPrinters();
+      case 2:
+        return _context.a(2);
     }
-
-    // ---------- Очередь печати ----------
-    const JOB_STATUS_LABELS = { new:'Новое', processing:'В процессе', printed:'Напечатано', error:'Ошибка', cancelled:'Отменено' };
-    const JOB_STATUS_PILL   = { new:'pill-blue', processing:'pill-yellow', printed:'pill-green', error:'pill-red', cancelled:'pill-gray' };
-
-    async function loadJobs() {
-      try {
-        jobsLoaded = true;
-        const status = UI.val('#job-status') || 'new';
-        const res = await window.API.printing.jobs({ status, limit: 100 });
-        const jobs = res.data || [];
-        document.getElementById('job-count').textContent = jobs.length;
-        const list = document.getElementById('job-list');
-        if (!jobs.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg></div>Пусто</div>`;
-          return;
-        }
-        list.innerHTML = jobs.map(j => `
-          <div class="list-row">
-            <div class="main">
-              <div class="title">${UI.escHtml((DOC_TYPES.find(d=>d.value===j.doc_type)||{}).label || j.doc_type)} <span class="pill ${JOB_STATUS_PILL[j.status]||'pill-gray'}">${JOB_STATUS_LABELS[j.status]||j.status}</span></div>
-              <div class="sub">${UI.escHtml(j.printer_name)} · ${UI.fmtDateTime(j.created_at)} ${j.error_text ? '· <span style=\"color:var(--red)\">'+UI.escHtml(j.error_text)+'</span>' : ''}</div>
-            </div>
-            <div style="display:flex;gap:6px;">
-              ${(j.status==='error'||j.status==='printed'||j.status==='new') ? `<button class="btn-sm btn-back" onclick="reprintJob(${j.id})"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Повторить</button>` : ''}
-              ${(j.status==='new'||j.status==='processing') ? `<button class="btn-sm btn-red" onclick="cancelJob(${j.id})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Отменить</button>` : ''}
-            </div>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function reprintJob(jobId) {
-      try {
-        await window.API.printing.reprint(jobId);
-        UI.notify.ok('Задание на повторную печать создано (на текущий принтер по маршруту)');
-        await loadJobs();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function cancelJob(jobId) {
-      if (!UI.confirm('Отменить задание на печать? Если документ всё ещё нужен — используйте "Повторить", он создаст новое задание на актуальный принтер.')) return;
-      try {
-        await window.API.printing.updateJob(jobId, { status: 'cancelled' });
-        UI.notify.ok('Задание отменено');
-        await loadJobs();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    (async () => { await loadWarehouses(); await loadPrinters(); })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

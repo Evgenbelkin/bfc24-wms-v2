@@ -41,123 +41,192 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    const user = window.API.getUser();
-    const canEdit = user && user.role === 'tenant_admin'; // create/patch — только tenant_admin на бэкенде
-    if (canEdit) document.getElementById('add-btn').style.display = 'block';
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    let clientCache = [];
-
-    async function loadClients() {
-      try {
-        const params = {};
-        const search = UI.val('#f-search'); if (search) params.search = search;
-        const res = await window.API.clients.list(params);
-        clientCache = res.clients || [];
-        document.getElementById('client-count').textContent = clientCache.length;
-
-        const list = document.getElementById('client-list');
-        if (!clientCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1"/></svg></div>Клиентов нет</div>`;
-          return;
-        }
-        list.innerHTML = clientCache.map((c, idx) => `
-          <div class="list-row client-row" onclick="openModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(c.client_name)}</div>
-              <div class="sub">${UI.escHtml(c.client_code)} · ${UI.escHtml(c.contact_name||'без контакта')} ${c.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
-            </div>
-            <div class="badge"><span>Продавцов</span><div>${c.seller_count||0}</div></div>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function openModal(idx) {
-      const c = idx !== null ? clientCache[idx] : null;
-      let full = c;
-      if (c) {
-        try { full = (await window.API.clients.get(c.id)).client; } catch (e) { UI.notify.err(e.message); return; }
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+var user = window.API.getUser();
+var canEdit = user && user.role === 'tenant_admin'; // create/patch — только tenant_admin на бэкенде
+if (canEdit) document.getElementById('add-btn').style.display = 'block';
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${full ? UI.escHtml(full.client_name) : 'Новый клиент'}</div>
-            <div class="field"><label>Код клиента</label><input id="m-code" value="${full ? UI.escHtml(full.client_code) : ''}" ${full?'disabled':''}/></div>
-            <div class="field"><label>Название</label><input id="m-name" value="${full ? UI.escHtml(full.client_name) : ''}"/></div>
-            <div class="field"><label>Контактное лицо</label><input id="m-contact" value="${full && full.contact_name ? UI.escHtml(full.contact_name):''}"/></div>
-            <div class="field"><label>Email</label><input id="m-email" value="${full && full.contact_email ? UI.escHtml(full.contact_email):''}"/></div>
-            <div class="field"><label>Телефон</label><input id="m-phone" value="${full && full.contact_phone ? UI.escHtml(full.contact_phone):''}"/></div>
-            <div class="field"><label>Telegram chat id</label><input id="m-tg" value="${full && full.telegram_chat_id ? UI.escHtml(full.telegram_chat_id):''}"/></div>
-            <div class="card-title" style="margin-top:14px;font-size:14px;">Реквизиты (для актов приёмки)</div>
-            <div class="field"><label>Юр. наименование</label><input id="m-legal-name" placeholder="ИП Иванов Иван Иванович" value="${full && full.legal_name ? UI.escHtml(full.legal_name):''}"/></div>
-            <div class="field"><label>ИНН</label><input id="m-inn" value="${full && full.inn ? UI.escHtml(full.inn):''}"/></div>
-            <div class="field"><label>Юр. адрес</label><input id="m-legal-address" value="${full && full.legal_address ? UI.escHtml(full.legal_address):''}"/></div>
-            <div class="field"><label>Заметки</label><textarea id="m-notes" rows="3">${full && full.notes ? UI.escHtml(full.notes):''}</textarea></div>
-            <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!full || full.is_active ? 'checked':''}/></div>
-            ${full ? `
-            <div class="field">
-              <label style="display:inline;">Отправлять коды "Честный знак" в WB сразу на упаковке</label>
-              <input type="checkbox" id="m-marking-wb-submit" ${full.settings && full.settings.marking_wb_submit_disabled ? '' : 'checked'}/>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
-                Если выключить — на упаковке код всё равно обязательно сканируется (для привязки единицы к заказу),
-                но в WB не отправляется. Для клиентов, которым сначала нужно передать право собственности на код
-                в "Честном знаке" на нужное ИП (например, через Тотал Марк) — коды берутся из выгрузки по поставке
-                (кнопка "Выгрузить кизы" в карточке поставки на отгрузке).
-              </div>
-            </div>
-            ` : ''}
-            <div class="btn-row">
-              ${canEdit ? `<button class="btn-big btn-green" onclick="saveClient(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    async function saveClient(idx) {
-      const c = idx !== null ? clientCache[idx] : null;
-      const data = {
-        client_name: UI.val('#m-name'),
-        contact_name: UI.val('#m-contact'),
-        contact_email: UI.val('#m-email'),
-        contact_phone: UI.val('#m-phone'),
-        telegram_chat_id: UI.val('#m-tg'),
-        legal_name: UI.val('#m-legal-name'),
-        inn: UI.val('#m-inn'),
-        legal_address: UI.val('#m-legal-address'),
-        notes: UI.val('#m-notes'),
-        is_active: document.getElementById('m-active').checked,
-      };
-      const markingCb = document.getElementById('m-marking-wb-submit');
-      if (markingCb) data.marking_wb_submit_disabled = !markingCb.checked;
-      try {
-        if (c) {
-          await window.API.clients.update(c.id, data);
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+var clientCache = [];
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var params, search, res, list, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          params = {};
+          search = UI.val('#f-search');
+          if (search) params.search = search;
+          _context2.n = 1;
+          return window.API.clients.list(params);
+        case 1:
+          res = _context2.v;
+          clientCache = res.clients || [];
+          document.getElementById('client-count').textContent = clientCache.length;
+          list = document.getElementById('client-list');
+          if (clientCache.length) {
+            _context2.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"4\" y=\"2\" width=\"16\" height=\"20\" rx=\"1\"/><path d=\"M9 22v-4h6v4M9 6h1M9 10h1M9 14h1M14 6h1M14 10h1M14 14h1\"/></svg></div>\u041A\u043B\u0438\u0435\u043D\u0442\u043E\u0432 \u043D\u0435\u0442</div>";
+          return _context2.a(2);
+        case 2:
+          list.innerHTML = clientCache.map(function (c, idx) {
+            return "\n          <div class=\"list-row client-row\" onclick=\"openModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(c.client_name), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(c.client_code), " \xB7 ").concat(UI.escHtml(c.contact_name || 'без контакта'), " ").concat(c.is_active ? '' : '· <span style="color:var(--red)">выключен</span>', "</div>\n            </div>\n            <div class=\"badge\"><span>\u041F\u0440\u043E\u0434\u0430\u0432\u0446\u043E\u0432</span><div>").concat(c.seller_count || 0, "</div></div>\n          </div>\n        ");
+          }).join('');
+          _context2.n = 4;
+          break;
+        case 3:
+          _context2.p = 3;
+          _t = _context2.v;
+          UI.notify.err(_t.message);
+        case 4:
+          return _context2.a(2);
+      }
+    }, _callee2, null, [[0, 3]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function openModal(_x) {
+  return _openModal.apply(this, arguments);
+}
+function _openModal() {
+  _openModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(idx) {
+    var c, full, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          c = idx !== null ? clientCache[idx] : null;
+          full = c;
+          if (!c) {
+            _context3.n = 4;
+            break;
+          }
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.clients.get(c.id);
+        case 2:
+          full = _context3.v.client;
+          _context3.n = 4;
+          break;
+        case 3:
+          _context3.p = 3;
+          _t2 = _context3.v;
+          UI.notify.err(_t2.message);
+          return _context3.a(2);
+        case 4:
+          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(full ? UI.escHtml(full.client_name) : 'Новый клиент', "</div>\n            <div class=\"field\"><label>\u041A\u043E\u0434 \u043A\u043B\u0438\u0435\u043D\u0442\u0430</label><input id=\"m-code\" value=\"").concat(full ? UI.escHtml(full.client_code) : '', "\" ").concat(full ? 'disabled' : '', "/></div>\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435</label><input id=\"m-name\" value=\"").concat(full ? UI.escHtml(full.client_name) : '', "\"/></div>\n            <div class=\"field\"><label>\u041A\u043E\u043D\u0442\u0430\u043A\u0442\u043D\u043E\u0435 \u043B\u0438\u0446\u043E</label><input id=\"m-contact\" value=\"").concat(full && full.contact_name ? UI.escHtml(full.contact_name) : '', "\"/></div>\n            <div class=\"field\"><label>Email</label><input id=\"m-email\" value=\"").concat(full && full.contact_email ? UI.escHtml(full.contact_email) : '', "\"/></div>\n            <div class=\"field\"><label>\u0422\u0435\u043B\u0435\u0444\u043E\u043D</label><input id=\"m-phone\" value=\"").concat(full && full.contact_phone ? UI.escHtml(full.contact_phone) : '', "\"/></div>\n            <div class=\"field\"><label>Telegram chat id</label><input id=\"m-tg\" value=\"").concat(full && full.telegram_chat_id ? UI.escHtml(full.telegram_chat_id) : '', "\"/></div>\n            <div class=\"card-title\" style=\"margin-top:14px;font-size:14px;\">\u0420\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B (\u0434\u043B\u044F \u0430\u043A\u0442\u043E\u0432 \u043F\u0440\u0438\u0451\u043C\u043A\u0438)</div>\n            <div class=\"field\"><label>\u042E\u0440. \u043D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435</label><input id=\"m-legal-name\" placeholder=\"\u0418\u041F \u0418\u0432\u0430\u043D\u043E\u0432 \u0418\u0432\u0430\u043D \u0418\u0432\u0430\u043D\u043E\u0432\u0438\u0447\" value=\"").concat(full && full.legal_name ? UI.escHtml(full.legal_name) : '', "\"/></div>\n            <div class=\"field\"><label>\u0418\u041D\u041D</label><input id=\"m-inn\" value=\"").concat(full && full.inn ? UI.escHtml(full.inn) : '', "\"/></div>\n            <div class=\"field\"><label>\u042E\u0440. \u0430\u0434\u0440\u0435\u0441</label><input id=\"m-legal-address\" value=\"").concat(full && full.legal_address ? UI.escHtml(full.legal_address) : '', "\"/></div>\n            <div class=\"field\"><label>\u0417\u0430\u043C\u0435\u0442\u043A\u0438</label><textarea id=\"m-notes\" rows=\"3\">").concat(full && full.notes ? UI.escHtml(full.notes) : '', "</textarea></div>\n            <div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u0435\u043D</label> <input type=\"checkbox\" id=\"m-active\" ").concat(!full || full.is_active ? 'checked' : '', "/></div>\n            ").concat(full ? "\n            <div class=\"field\">\n              <label style=\"display:inline;\">\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0442\u044C \u043A\u043E\u0434\u044B \"\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A\" \u0432 WB \u0441\u0440\u0430\u0437\u0443 \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435</label>\n              <input type=\"checkbox\" id=\"m-marking-wb-submit\" ".concat(full.settings && full.settings.marking_wb_submit_disabled ? '' : 'checked', "/>\n              <div style=\"font-size:12px;color:var(--muted);margin-top:4px;\">\n                \u0415\u0441\u043B\u0438 \u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u2014 \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435 \u043A\u043E\u0434 \u0432\u0441\u0451 \u0440\u0430\u0432\u043D\u043E \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442\u0441\u044F (\u0434\u043B\u044F \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438 \u0435\u0434\u0438\u043D\u0438\u0446\u044B \u043A \u0437\u0430\u043A\u0430\u0437\u0443),\n                \u043D\u043E \u0432 WB \u043D\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442\u0441\u044F. \u0414\u043B\u044F \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u0432, \u043A\u043E\u0442\u043E\u0440\u044B\u043C \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u043D\u0443\u0436\u043D\u043E \u043F\u0435\u0440\u0435\u0434\u0430\u0442\u044C \u043F\u0440\u0430\u0432\u043E \u0441\u043E\u0431\u0441\u0442\u0432\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u043D\u0430 \u043A\u043E\u0434\n                \u0432 \"\u0427\u0435\u0441\u0442\u043D\u043E\u043C \u0437\u043D\u0430\u043A\u0435\" \u043D\u0430 \u043D\u0443\u0436\u043D\u043E\u0435 \u0418\u041F (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440, \u0447\u0435\u0440\u0435\u0437 \u0422\u043E\u0442\u0430\u043B \u041C\u0430\u0440\u043A) \u2014 \u043A\u043E\u0434\u044B \u0431\u0435\u0440\u0443\u0442\u0441\u044F \u0438\u0437 \u0432\u044B\u0433\u0440\u0443\u0437\u043A\u0438 \u043F\u043E \u043F\u043E\u0441\u0442\u0430\u0432\u043A\u0435\n                (\u043A\u043D\u043E\u043F\u043A\u0430 \"\u0412\u044B\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043A\u0438\u0437\u044B\" \u0432 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0435 \u043F\u043E\u0441\u0442\u0430\u0432\u043A\u0438 \u043D\u0430 \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0435).\n              </div>\n            </div>\n            ") : '', "\n            <div class=\"btn-row\">\n              ").concat(canEdit ? "<button class=\"btn-big btn-green\" onclick=\"saveClient(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+        case 5:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[1, 3]]);
+  }));
+  return _openModal.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+function saveClient(_x2) {
+  return _saveClient.apply(this, arguments);
+}
+function _saveClient() {
+  _saveClient = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(idx) {
+    var c, data, markingCb, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          c = idx !== null ? clientCache[idx] : null;
+          data = {
+            client_name: UI.val('#m-name'),
+            contact_name: UI.val('#m-contact'),
+            contact_email: UI.val('#m-email'),
+            contact_phone: UI.val('#m-phone'),
+            telegram_chat_id: UI.val('#m-tg'),
+            legal_name: UI.val('#m-legal-name'),
+            inn: UI.val('#m-inn'),
+            legal_address: UI.val('#m-legal-address'),
+            notes: UI.val('#m-notes'),
+            is_active: document.getElementById('m-active').checked
+          };
+          markingCb = document.getElementById('m-marking-wb-submit');
+          if (markingCb) data.marking_wb_submit_disabled = !markingCb.checked;
+          _context4.p = 1;
+          if (!c) {
+            _context4.n = 3;
+            break;
+          }
+          _context4.n = 2;
+          return window.API.clients.update(c.id, data);
+        case 2:
           UI.notify.ok('Клиент обновлён');
-        } else {
+          _context4.n = 7;
+          break;
+        case 3:
           data.client_code = UI.val('#m-code');
-          if (!data.client_code) { UI.notify.err('Укажите код клиента'); return; }
-          if (!data.client_name) { UI.notify.err('Укажите название'); return; }
-          await window.API.clients.create(data);
+          if (data.client_code) {
+            _context4.n = 4;
+            break;
+          }
+          UI.notify.err('Укажите код клиента');
+          return _context4.a(2);
+        case 4:
+          if (data.client_name) {
+            _context4.n = 5;
+            break;
+          }
+          UI.notify.err('Укажите название');
+          return _context4.a(2);
+        case 5:
+          _context4.n = 6;
+          return window.API.clients.create(data);
+        case 6:
           UI.notify.ok('Клиент создан');
-        }
-        closeModal();
-        await loadClients();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    loadClients();
-  </script>
+        case 7:
+          closeModal();
+          _context4.n = 8;
+          return loadClients();
+        case 8:
+          _context4.n = 10;
+          break;
+        case 9:
+          _context4.p = 9;
+          _t3 = _context4.v;
+          UI.notify.err(_t3.message);
+        case 10:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[1, 9]]);
+  }));
+  return _saveClient.apply(this, arguments);
+}
+loadClients();</script>
 </body>
 </html>

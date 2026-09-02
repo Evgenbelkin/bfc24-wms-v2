@@ -104,224 +104,402 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['seller'])) {
-      window.location.href = '/app/menu.html';
-    }
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['seller'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
+      }
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+var STATUS_LABELS = {
+  draft: 'черновик',
+  confirmed: 'отправлена складу',
+  scheduled: 'назначена дата приёмки',
+  in_progress: 'приёмка началась',
+  completed: 'принята',
+  partial: 'принята частично',
+  cancelled: 'отменена'
+};
+var STATUS_PILL = {
+  draft: 'pill-gray',
+  confirmed: 'pill-blue',
+  scheduled: 'pill-blue',
+  in_progress: 'pill-yellow',
+  completed: 'pill-green',
+  partial: 'pill-yellow',
+  cancelled: 'pill-red'
+};
+var LINE_STATUS_LABELS = {
+  pending: 'ожидает',
+  partial: 'частично',
+  received: 'принято',
+  excess: 'больше плана',
+  cancelled: 'отменена'
+};
+var myItems = null; // каталог клиента, для автодополнения — грузим один раз
+var orderLines = []; // { barcode, qty, item_name }
+var addQty = 1;
+var pendingItemName = null;
+var currentOrderId = null;
 
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
+// ---------- List ----------
+function loadOrders() {
+  return _loadOrders.apply(this, arguments);
+} // ---------- Detail ----------
+function _loadOrders() {
+  _loadOrders = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var list, res, orders, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          list = document.getElementById('orders-list');
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.seller.inbound.list({
+            limit: 100
+          });
+        case 2:
+          res = _context3.v;
+          orders = res.orders || [];
+          if (orders.length) {
+            _context3.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M3 12h4l1.5 3h7L17 12h4\"/><path d=\"M12 3v6M9 6l3 3 3-3\"/></svg></div>\u0417\u0430\u044F\u0432\u043E\u043A \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u2014 \u0441\u043E\u0437\u0434\u0430\u0439\u0442\u0435 \u043F\u0435\u0440\u0432\u0443\u044E \u043A\u043D\u043E\u043F\u043A\u043E\u0439 \u0432\u044B\u0448\u0435</div>";
+          return _context3.a(2);
+        case 3:
+          list.innerHTML = orders.map(function (o) {
+            return "\n          <div class=\"list-row order-row\" onclick=\"openOrder(".concat(o.id, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(o.order_number), "</div>\n              <div class=\"sub\">\u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F: ").concat(o.expected_date ? UI.fmtDate(o.expected_date) : 'не указано', " \xB7 \u0415\u0434\u0438\u043D\u0438\u0446: ").concat(o.total_expected_qty || 0, "</div>\n            </div>\n            <span class=\"pill ").concat(STATUS_PILL[o.status] || 'pill-gray', "\">").concat(STATUS_LABELS[o.status] || o.status, "</span>\n          </div>\n        ");
+          }).join('');
+          _context3.n = 5;
+          break;
+        case 4:
+          _context3.p = 4;
+          _t = _context3.v;
+          UI.notify.err(_t.message);
+        case 5:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[1, 4]]);
+  }));
+  return _loadOrders.apply(this, arguments);
+}
+function openOrder(_x) {
+  return _openOrder.apply(this, arguments);
+}
+function _openOrder() {
+  _openOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(id) {
+    var res, o, deliveryInfo, lines, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          currentOrderId = id;
+          _context4.n = 1;
+          return window.API.seller.inbound.get(id);
+        case 1:
+          res = _context4.v;
+          o = res.order;
+          document.getElementById('list-view').style.display = 'none';
+          document.getElementById('create-view').style.display = 'none';
+          document.getElementById('detail-view').style.display = 'block';
+          document.getElementById('d-number').textContent = o.order_number;
+          document.getElementById('d-status').textContent = STATUS_LABELS[o.status] || o.status;
+          document.getElementById('d-expected').textContent = o.expected_date ? UI.fmtDate(o.expected_date) : '—';
+          document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
+          document.getElementById('d-notes').textContent = o.notes || '';
+          deliveryInfo = document.getElementById('d-delivery-info');
+          if (o.driver_name || o.vehicle_make) {
+            deliveryInfo.style.display = 'block';
+            deliveryInfo.textContent = ['Водитель: ' + (o.driver_name || '—'), 'Машина: ' + (o.vehicle_make || '—')].join(' · ');
+          } else {
+            deliveryInfo.style.display = 'none';
+          }
+          lines = res.lines || [];
+          document.getElementById('detail-lines-body').innerHTML = lines.length ? lines.map(function (l) {
+            return "\n              <tr>\n                <td>".concat(UI.escHtml(l.item_name_master || l.item_name || l.barcode), "</td>\n                <td>").concat(UI.escHtml(l.barcode), "</td>\n                <td>").concat(UI.fmtQty(l.qty_expected), "</td>\n                <td>").concat(UI.fmtQty(l.qty_received || 0), "</td>\n                <td>").concat(LINE_STATUS_LABELS[l.status] || l.status || '—', "</td>\n              </tr>\n            ");
+          }).join('') : "<tr><td colspan=\"5\" style=\"text-align:center;color:var(--muted);\">\u041D\u0435\u0442 \u0441\u0442\u0440\u043E\u043A</td></tr>";
+          document.getElementById('confirm-btn').style.display = o.status === 'draft' ? 'block' : 'none';
+          _context4.n = 3;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t2 = _context4.v;
+          UI.notify.err(_t2.message);
+        case 3:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _openOrder.apply(this, arguments);
+}
+function confirmOrder() {
+  return _confirmOrder.apply(this, arguments);
+}
+function _confirmOrder() {
+  _confirmOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          if (currentOrderId) {
+            _context5.n = 1;
+            break;
+          }
+          return _context5.a(2);
+        case 1:
+          if (UI.confirm('Отправить заявку складу? После этого редактировать состав будет нельзя.')) {
+            _context5.n = 2;
+            break;
+          }
+          return _context5.a(2);
+        case 2:
+          _context5.p = 2;
+          _context5.n = 3;
+          return window.API.seller.inbound.confirm(currentOrderId);
+        case 3:
+          UI.notify.ok('Заявка отправлена складу');
+          _context5.n = 4;
+          return openOrder(currentOrderId);
+        case 4:
+          _context5.n = 6;
+          break;
+        case 5:
+          _context5.p = 5;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 6:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[2, 5]]);
+  }));
+  return _confirmOrder.apply(this, arguments);
+}
+function backToList() {
+  document.getElementById('detail-view').style.display = 'none';
+  document.getElementById('create-view').style.display = 'none';
+  document.getElementById('list-view').style.display = 'block';
+  currentOrderId = null;
+  loadOrders();
+}
 
-    const STATUS_LABELS = {
-      draft:'черновик', confirmed:'отправлена складу', scheduled:'назначена дата приёмки',
-      in_progress:'приёмка началась', completed:'принята', partial:'принята частично', cancelled:'отменена',
-    };
-    const STATUS_PILL = {
-      draft:'pill-gray', confirmed:'pill-blue', scheduled:'pill-blue',
-      in_progress:'pill-yellow', completed:'pill-green', partial:'pill-yellow', cancelled:'pill-red',
-    };
-    const LINE_STATUS_LABELS = { pending:'ожидает', partial:'частично', received:'принято', excess:'больше плана', cancelled:'отменена' };
-
-    let myItems = null;      // каталог клиента, для автодополнения — грузим один раз
-    let orderLines = [];     // { barcode, qty, item_name }
-    let addQty = 1;
-    let pendingItemName = null;
-    let currentOrderId = null;
-
-    // ---------- List ----------
-    async function loadOrders() {
-      const list = document.getElementById('orders-list');
-      try {
-        const res = await window.API.seller.inbound.list({ limit: 100 });
-        const orders = res.orders || [];
-        if (!orders.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Заявок пока нет — создайте первую кнопкой выше</div>`;
-          return;
-        }
-        list.innerHTML = orders.map(o => `
-          <div class="list-row order-row" onclick="openOrder(${o.id})">
-            <div class="main">
-              <div class="title">${UI.escHtml(o.order_number)}</div>
-              <div class="sub">Ожидается: ${o.expected_date ? UI.fmtDate(o.expected_date) : 'не указано'} · Единиц: ${o.total_expected_qty||0}</div>
-            </div>
-            <span class="pill ${STATUS_PILL[o.status]||'pill-gray'}">${STATUS_LABELS[o.status]||o.status}</span>
-          </div>
-        `).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Detail ----------
-    async function openOrder(id) {
-      try {
-        currentOrderId = id;
-        const res = await window.API.seller.inbound.get(id);
-        const o = res.order;
-        document.getElementById('list-view').style.display = 'none';
-        document.getElementById('create-view').style.display = 'none';
-        document.getElementById('detail-view').style.display = 'block';
-
-        document.getElementById('d-number').textContent = o.order_number;
-        document.getElementById('d-status').textContent = STATUS_LABELS[o.status] || o.status;
-        document.getElementById('d-expected').textContent = o.expected_date ? UI.fmtDate(o.expected_date) : '—';
-        document.getElementById('d-total').textContent = UI.fmtQty(o.total_expected_qty);
-        document.getElementById('d-notes').textContent = o.notes || '';
-
-        const deliveryInfo = document.getElementById('d-delivery-info');
-        if (o.driver_name || o.vehicle_make) {
-          deliveryInfo.style.display = 'block';
-          deliveryInfo.textContent = ['Водитель: ' + (o.driver_name || '—'), 'Машина: ' + (o.vehicle_make || '—')].join(' · ');
-        } else {
-          deliveryInfo.style.display = 'none';
-        }
-
-        const lines = res.lines || [];
-        document.getElementById('detail-lines-body').innerHTML = lines.length
-          ? lines.map(l => `
-              <tr>
-                <td>${UI.escHtml(l.item_name_master || l.item_name || l.barcode)}</td>
-                <td>${UI.escHtml(l.barcode)}</td>
-                <td>${UI.fmtQty(l.qty_expected)}</td>
-                <td>${UI.fmtQty(l.qty_received||0)}</td>
-                <td>${LINE_STATUS_LABELS[l.status]||l.status||'—'}</td>
-              </tr>
-            `).join('')
-          : `<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет строк</td></tr>`;
-
-        document.getElementById('confirm-btn').style.display = (o.status === 'draft') ? 'block' : 'none';
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function confirmOrder() {
-      if (!currentOrderId) return;
-      if (!UI.confirm('Отправить заявку складу? После этого редактировать состав будет нельзя.')) return;
-      try {
-        await window.API.seller.inbound.confirm(currentOrderId);
-        UI.notify.ok('Заявка отправлена складу');
-        await openOrder(currentOrderId);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function backToList() {
-      document.getElementById('detail-view').style.display = 'none';
-      document.getElementById('create-view').style.display = 'none';
-      document.getElementById('list-view').style.display = 'block';
-      currentOrderId = null;
-      loadOrders();
-    }
-
-    // ---------- Create ----------
-    function openCreateForm() {
-      document.getElementById('list-view').style.display = 'none';
-      document.getElementById('create-view').style.display = 'block';
-      UI.setVal('#c-expected-date', '');
-      UI.setVal('#c-notes', '');
-      UI.setVal('#c-driver-name', '');
-      UI.setVal('#c-vehicle-make', '');
-      orderLines = [];
-      renderLines();
-    }
-
-    function stepAddQty(delta) { addQty = Math.max(1, addQty + delta); document.getElementById('add-qty-val').value = addQty; }
-    function setAddQty(val) { addQty = Math.max(1, Math.round(Number(val)) || 1); document.getElementById('add-qty-val').value = addQty; }
-
-    async function ensureItemsLoaded() {
-      if (myItems) return myItems;
-      try {
-        const res = await window.API.seller.items({ limit: 500 });
-        myItems = res.items || [];
-      } catch (e) { myItems = []; }
-      return myItems;
-    }
-
-    function selectSuggestion(item) {
-      UI.setVal('#add-barcode', item.barcode);
-      pendingItemName = item.item_name;
-      document.getElementById('add-item-name').innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> ${UI.escHtml(item.item_name)}`;
-      UI.setVal('#search-item', '');
-      document.getElementById('suggest-list').innerHTML = '';
-    }
-
-    let searchTimer = null;
-    document.getElementById('search-item').addEventListener('input', (e) => {
-      clearTimeout(searchTimer);
-      const term = e.target.value.trim().toLowerCase();
-      searchTimer = setTimeout(async () => {
-        const box = document.getElementById('suggest-list');
-        if (!term || term.length < 2) { box.innerHTML = ''; return; }
-        const items = await ensureItemsLoaded();
-        const matches = items.filter(it => (it.item_name||'').toLowerCase().includes(term) || (it.barcode||'').includes(term)).slice(0, 15);
-        if (!matches.length) { box.innerHTML = `<div class="refresh-note">Ничего не найдено — можно ввести штрихкод вручную ниже, это будет новый товар</div>`; return; }
-        box.innerHTML = matches.map((it, idx) => `
-          <div class="list-row suggest-row" onclick="selectSuggestion(window.__suggestCache[${idx}])">
-            <div class="main">
-              <div class="title">${UI.escHtml(it.item_name)}</div>
-              <div class="sub">${UI.escHtml(it.barcode)}</div>
-            </div>
-          </div>
-        `).join('');
-        window.__suggestCache = matches;
-      }, 250);
+// ---------- Create ----------
+function openCreateForm() {
+  document.getElementById('list-view').style.display = 'none';
+  document.getElementById('create-view').style.display = 'block';
+  UI.setVal('#c-expected-date', '');
+  UI.setVal('#c-notes', '');
+  UI.setVal('#c-driver-name', '');
+  UI.setVal('#c-vehicle-make', '');
+  orderLines = [];
+  renderLines();
+}
+function stepAddQty(delta) {
+  addQty = Math.max(1, addQty + delta);
+  document.getElementById('add-qty-val').value = addQty;
+}
+function setAddQty(val) {
+  addQty = Math.max(1, Math.round(Number(val)) || 1);
+  document.getElementById('add-qty-val').value = addQty;
+}
+function ensureItemsLoaded() {
+  return _ensureItemsLoaded.apply(this, arguments);
+}
+function _ensureItemsLoaded() {
+  _ensureItemsLoaded = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          if (!myItems) {
+            _context6.n = 1;
+            break;
+          }
+          return _context6.a(2, myItems);
+        case 1:
+          _context6.p = 1;
+          _context6.n = 2;
+          return window.API.seller.items({
+            limit: 500
+          });
+        case 2:
+          res = _context6.v;
+          myItems = res.items || [];
+          _context6.n = 4;
+          break;
+        case 3:
+          _context6.p = 3;
+          _t4 = _context6.v;
+          myItems = [];
+        case 4:
+          return _context6.a(2, myItems);
+      }
+    }, _callee6, null, [[1, 3]]);
+  }));
+  return _ensureItemsLoaded.apply(this, arguments);
+}
+function selectSuggestion(item) {
+  UI.setVal('#add-barcode', item.barcode);
+  pendingItemName = item.item_name;
+  document.getElementById('add-item-name').innerHTML = "<svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M20 6 9 17l-5-5\"/></svg> ".concat(UI.escHtml(item.item_name));
+  UI.setVal('#search-item', '');
+  document.getElementById('suggest-list').innerHTML = '';
+}
+var searchTimer = null;
+document.getElementById('search-item').addEventListener('input', function (e) {
+  clearTimeout(searchTimer);
+  var term = e.target.value.trim().toLowerCase();
+  searchTimer = setTimeout(/*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    var box, items, matches;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          box = document.getElementById('suggest-list');
+          if (!(!term || term.length < 2)) {
+            _context.n = 1;
+            break;
+          }
+          box.innerHTML = '';
+          return _context.a(2);
+        case 1:
+          _context.n = 2;
+          return ensureItemsLoaded();
+        case 2:
+          items = _context.v;
+          matches = items.filter(function (it) {
+            return (it.item_name || '').toLowerCase().includes(term) || (it.barcode || '').includes(term);
+          }).slice(0, 15);
+          if (matches.length) {
+            _context.n = 3;
+            break;
+          }
+          box.innerHTML = "<div class=\"refresh-note\">\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u2014 \u043C\u043E\u0436\u043D\u043E \u0432\u0432\u0435\u0441\u0442\u0438 \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434 \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u043D\u0438\u0436\u0435, \u044D\u0442\u043E \u0431\u0443\u0434\u0435\u0442 \u043D\u043E\u0432\u044B\u0439 \u0442\u043E\u0432\u0430\u0440</div>";
+          return _context.a(2);
+        case 3:
+          box.innerHTML = matches.map(function (it, idx) {
+            return "\n          <div class=\"list-row suggest-row\" onclick=\"selectSuggestion(window.__suggestCache[".concat(idx, "])\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(it.item_name), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(it.barcode), "</div>\n            </div>\n          </div>\n        ");
+          }).join('');
+          window.__suggestCache = matches;
+        case 4:
+          return _context.a(2);
+      }
+    }, _callee);
+  })), 250);
+});
+document.getElementById('add-barcode').addEventListener('input', function () {
+  pendingItemName = null;
+  document.getElementById('add-item-name').textContent = '';
+});
+function addLine() {
+  var barcode = UI.val('#add-barcode');
+  if (!barcode) {
+    UI.notify.err('Введите или выберите штрихкод');
+    return;
+  }
+  var existing = orderLines.find(function (l) {
+    return l.barcode === barcode;
+  });
+  if (existing) {
+    existing.qty += addQty;
+  } else {
+    orderLines.push({
+      barcode: barcode,
+      qty: addQty,
+      item_name: pendingItemName
     });
-
-    document.getElementById('add-barcode').addEventListener('input', () => { pendingItemName = null; document.getElementById('add-item-name').textContent = ''; });
-
-    function addLine() {
-      const barcode = UI.val('#add-barcode');
-      if (!barcode) { UI.notify.err('Введите или выберите штрихкод'); return; }
-      const existing = orderLines.find(l => l.barcode === barcode);
-      if (existing) {
-        existing.qty += addQty;
-      } else {
-        orderLines.push({ barcode, qty: addQty, item_name: pendingItemName });
+  }
+  UI.setVal('#add-barcode', '');
+  document.getElementById('add-item-name').textContent = '';
+  pendingItemName = null;
+  addQty = 1;
+  document.getElementById('add-qty-val').value = 1;
+  renderLines();
+}
+function removeLine(idx) {
+  orderLines.splice(idx, 1);
+  renderLines();
+}
+function renderLines() {
+  document.getElementById('lines-count').textContent = orderLines.length;
+  var list = document.getElementById('lines-list');
+  if (!orderLines.length) {
+    list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg></div>\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E \u2014 \u0434\u043E\u0431\u0430\u0432\u044C\u0442\u0435 \u0442\u043E\u0432\u0430\u0440\u044B \u0432\u044B\u0448\u0435</div>";
+    return;
+  }
+  list.innerHTML = orderLines.map(function (l, idx) {
+    return "\n        <div class=\"list-row\">\n          <div class=\"main\">\n            <div class=\"title\">".concat(UI.escHtml(l.item_name || l.barcode), "</div>\n            <div class=\"sub\">").concat(UI.escHtml(l.barcode), "</div>\n          </div>\n          <div class=\"badge\"><span>\u041A\u043E\u043B-\u0432\u043E</span><div>").concat(UI.fmtQty(l.qty), "</div></div>\n          <button class=\"btn-remove\" onclick=\"removeLine(").concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M18 6 6 18\"/><path d=\"M6 6l12 12\"/></svg></button>\n        </div>\n      ");
+  }).join('');
+}
+function submitOrder() {
+  return _submitOrder.apply(this, arguments);
+}
+function _submitOrder() {
+  _submitOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var res, _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (orderLines.length) {
+            _context7.n = 1;
+            break;
+          }
+          UI.notify.err('Добавьте хотя бы один товар');
+          return _context7.a(2);
+        case 1:
+          _context7.p = 1;
+          _context7.n = 2;
+          return window.API.seller.inbound.create({
+            expected_date: UI.val('#c-expected-date') || null,
+            notes: UI.val('#c-notes') || null,
+            driver_name: UI.val('#c-driver-name') || null,
+            vehicle_make: UI.val('#c-vehicle-make') || null,
+            lines: orderLines.map(function (l) {
+              return {
+                barcode: l.barcode,
+                qty_expected: l.qty
+              };
+            })
+          });
+        case 2:
+          res = _context7.v;
+          UI.notify.ok("\u0417\u0430\u044F\u0432\u043A\u0430 ".concat(res.order.order_number, " \u0441\u043E\u0437\u0434\u0430\u043D\u0430 (\u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A)"));
+          orderLines = [];
+          _context7.n = 3;
+          return openOrder(res.order.id);
+        case 3:
+          _context7.n = 5;
+          break;
+        case 4:
+          _context7.p = 4;
+          _t5 = _context7.v;
+          UI.notify.err(_t5.message);
+        case 5:
+          return _context7.a(2);
       }
-      UI.setVal('#add-barcode', '');
-      document.getElementById('add-item-name').textContent = '';
-      pendingItemName = null;
-      addQty = 1; document.getElementById('add-qty-val').value = 1;
-      renderLines();
-    }
-
-    function removeLine(idx) {
-      orderLines.splice(idx, 1);
-      renderLines();
-    }
-
-    function renderLines() {
-      document.getElementById('lines-count').textContent = orderLines.length;
-      const list = document.getElementById('lines-list');
-      if (!orderLines.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></div>Пока пусто — добавьте товары выше</div>`;
-        return;
-      }
-      list.innerHTML = orderLines.map((l, idx) => `
-        <div class="list-row">
-          <div class="main">
-            <div class="title">${UI.escHtml(l.item_name || l.barcode)}</div>
-            <div class="sub">${UI.escHtml(l.barcode)}</div>
-          </div>
-          <div class="badge"><span>Кол-во</span><div>${UI.fmtQty(l.qty)}</div></div>
-          <button class="btn-remove" onclick="removeLine(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg></button>
-        </div>
-      `).join('');
-    }
-
-    async function submitOrder() {
-      if (!orderLines.length) { UI.notify.err('Добавьте хотя бы один товар'); return; }
-      try {
-        const res = await window.API.seller.inbound.create({
-          expected_date: UI.val('#c-expected-date') || null,
-          notes: UI.val('#c-notes') || null,
-          driver_name: UI.val('#c-driver-name') || null,
-          vehicle_make: UI.val('#c-vehicle-make') || null,
-          lines: orderLines.map(l => ({ barcode: l.barcode, qty_expected: l.qty })),
-        });
-        UI.notify.ok(`Заявка ${res.order.order_number} создана (черновик)`);
-        orderLines = [];
-        await openOrder(res.order.id);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    loadOrders();
-  </script>
+    }, _callee7, null, [[1, 4]]);
+  }));
+  return _submitOrder.apply(this, arguments);
+}
+loadOrders();</script>
 </body>
 </html>

@@ -64,85 +64,152 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function metric(m) {
-      return `<div class="fmetric ${m.cls||''}"><div class="n">${m.num}</div><div class="l">${m.label}</div></div>`;
-    }
-
-    function stage(colorClass, icon, title, href, items) {
-      return `
-        <div class="funnel-stage ${colorClass}" onclick="location.href='${href}'">
-          <div class="funnel-stage-head">
-            <div class="funnel-stage-icon">${icon}</div>
-            <div class="funnel-stage-title">${title}</div>
-          </div>
-          <div class="funnel-stage-metrics">${items.map(metric).join('')}</div>
-        </div>
-        <div class="funnel-chevron">⌄</div>
-      `;
-    }
-
-    async function loadAll() {
-      try {
-        const res = await window.API.overview.funnel();
-        const r  = res.receiving   || {};
-        const p  = res.placement   || {};
-        const w  = res.waveBacklog || {};
-        const pk = res.picking     || {};
-        const pc = res.packing     || {};
-        const sh = res.shipping    || {};
-
-        // Сводка сверху: сколько всего требует внимания прямо сейчас, по всей воронке
-        const attention = (p.lines_pending||0) + (w.backlog_orders||0) + (pk.tasks_pending||0) + (pc.tasks_pending||0);
-        document.getElementById('kpi-grid').innerHTML = [
-          { num: attention,           label:'Требует внимания', cls: attention>0 ? 'warn':'ok' },
-          { num: sh.ready_to_ship||0, label:'Готовы к отгрузке', cls: sh.ready_to_ship>0 ? 'ok':'' },
-          { num: sh.in_transit||0,    label:'В пути', cls:'' },
-        ].map(k => `<div class="kpi ${k.cls}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>`).join('');
-
-        let html = '';
-        html += stage('c-receiving', '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg>', 'Приёмка', 'receiving.html?from=overview', [
-          { label:'Заявок',    num: r.active_orders||0 },
-          { label:'Ожидается', num: r.units_expected||0 },
-          { label:'Принято',   num: r.units_received||0, cls:'ok' },
-        ]);
-        html += stage('c-placement', '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>', 'Размещение', 'placement.html?from=overview', [
-          { label:'Строк',  num: p.lines_pending||0,  cls: p.lines_pending>0 ? 'warn':'' },
-          { label:'Единиц', num: p.units_pending||0,  cls: p.units_pending>0 ? 'warn':'' },
-        ]);
-        html += stage('c-wave', '<svg class="i" viewBox="0 0 24 24"><path d="M2 7c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/><path d="M2 13c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/><path d="M2 19c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>', 'Волна', 'wb.html?from=overview', [
-          { label:'Без волны', num: w.backlog_orders||0, cls: w.backlog_orders>0 ? 'warn':'ok' },
-        ]);
-        html += stage('c-picking', '<svg class="i" viewBox="0 0 24 24"><path d="M3 10h18l-1.5 9a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/><path d="M8 10 10 4M16 10 14 4M3 10h18"/></svg>', 'Сборка', 'admin-dashboard.html?from=overview', [
-          { label:'Строк ждут',    num: pk.tasks_pending||0, cls: pk.tasks_pending>0 ? 'warn':'' },
-          { label:'Штук ждут',     num: pk.qty_pending||0,   cls: pk.qty_pending>0 ? 'warn':'' },
-          { label:'Строк собрано', num: pk.tasks_done||0,    cls:'ok' },
-        ]);
-        html += stage('c-packing', '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>', 'Упаковка', 'admin-dashboard.html?from=overview', [
-          { label:'Отгрузок ждут',      num: pc.tasks_pending||0, cls: pc.tasks_pending>0 ? 'warn':'' },
-          { label:'Отгрузок упаковано', num: pc.tasks_done||0,    cls:'ok' },
-        ]);
-        html += stage('c-shipping', '<svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg>', 'Отгрузка', 'shipping.html?from=overview', [
-          { label:'Готовы',     num: sh.ready_to_ship||0, cls: sh.ready_to_ship>0 ? 'ok':'' },
-          { label:'В пути',     num: sh.in_transit||0 },
-          { label:'Доставлено', num: sh.done_total||0,    cls:'ok' },
-        ]);
-        // убираем шеврон после последнего этапа
-        html = html.replace(/<div class="funnel-chevron">⌄<\/div>\s*$/, '');
-
-        document.getElementById('funnel-rows').innerHTML = html;
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    loadAll();
-    setInterval(loadAll, 20000);
-  </script>
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
+      }
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function metric(m) {
+  return "<div class=\"fmetric ".concat(m.cls || '', "\"><div class=\"n\">").concat(m.num, "</div><div class=\"l\">").concat(m.label, "</div></div>");
+}
+function stage(colorClass, icon, title, href, items) {
+  return "\n        <div class=\"funnel-stage ".concat(colorClass, "\" onclick=\"location.href='").concat(href, "'\">\n          <div class=\"funnel-stage-head\">\n            <div class=\"funnel-stage-icon\">").concat(icon, "</div>\n            <div class=\"funnel-stage-title\">").concat(title, "</div>\n          </div>\n          <div class=\"funnel-stage-metrics\">").concat(items.map(metric).join(''), "</div>\n        </div>\n        <div class=\"funnel-chevron\">\u2304</div>\n      ");
+}
+function loadAll() {
+  return _loadAll.apply(this, arguments);
+}
+function _loadAll() {
+  _loadAll = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var res, r, p, w, pk, pc, sh, attention, html, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          _context2.n = 1;
+          return window.API.overview.funnel();
+        case 1:
+          res = _context2.v;
+          r = res.receiving || {};
+          p = res.placement || {};
+          w = res.waveBacklog || {};
+          pk = res.picking || {};
+          pc = res.packing || {};
+          sh = res.shipping || {}; // Сводка сверху: сколько всего требует внимания прямо сейчас, по всей воронке
+          attention = (p.lines_pending || 0) + (w.backlog_orders || 0) + (pk.tasks_pending || 0) + (pc.tasks_pending || 0);
+          document.getElementById('kpi-grid').innerHTML = [{
+            num: attention,
+            label: 'Требует внимания',
+            cls: attention > 0 ? 'warn' : 'ok'
+          }, {
+            num: sh.ready_to_ship || 0,
+            label: 'Готовы к отгрузке',
+            cls: sh.ready_to_ship > 0 ? 'ok' : ''
+          }, {
+            num: sh.in_transit || 0,
+            label: 'В пути',
+            cls: ''
+          }].map(function (k) {
+            return "<div class=\"kpi ".concat(k.cls, "\"><div class=\"num\">").concat(k.num, "</div><div class=\"label\">").concat(k.label, "</div></div>");
+          }).join('');
+          html = '';
+          html += stage('c-receiving', '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg>', 'Приёмка', 'receiving.html?from=overview', [{
+            label: 'Заявок',
+            num: r.active_orders || 0
+          }, {
+            label: 'Ожидается',
+            num: r.units_expected || 0
+          }, {
+            label: 'Принято',
+            num: r.units_received || 0,
+            cls: 'ok'
+          }]);
+          html += stage('c-placement', '<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg>', 'Размещение', 'placement.html?from=overview', [{
+            label: 'Строк',
+            num: p.lines_pending || 0,
+            cls: p.lines_pending > 0 ? 'warn' : ''
+          }, {
+            label: 'Единиц',
+            num: p.units_pending || 0,
+            cls: p.units_pending > 0 ? 'warn' : ''
+          }]);
+          html += stage('c-wave', '<svg class="i" viewBox="0 0 24 24"><path d="M2 7c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/><path d="M2 13c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/><path d="M2 19c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/></svg>', 'Волна', 'wb.html?from=overview', [{
+            label: 'Без волны',
+            num: w.backlog_orders || 0,
+            cls: w.backlog_orders > 0 ? 'warn' : 'ok'
+          }]);
+          html += stage('c-picking', '<svg class="i" viewBox="0 0 24 24"><path d="M3 10h18l-1.5 9a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/><path d="M8 10 10 4M16 10 14 4M3 10h18"/></svg>', 'Сборка', 'admin-dashboard.html?from=overview', [{
+            label: 'Строк ждут',
+            num: pk.tasks_pending || 0,
+            cls: pk.tasks_pending > 0 ? 'warn' : ''
+          }, {
+            label: 'Штук ждут',
+            num: pk.qty_pending || 0,
+            cls: pk.qty_pending > 0 ? 'warn' : ''
+          }, {
+            label: 'Строк собрано',
+            num: pk.tasks_done || 0,
+            cls: 'ok'
+          }]);
+          html += stage('c-packing', '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>', 'Упаковка', 'admin-dashboard.html?from=overview', [{
+            label: 'Отгрузок ждут',
+            num: pc.tasks_pending || 0,
+            cls: pc.tasks_pending > 0 ? 'warn' : ''
+          }, {
+            label: 'Отгрузок упаковано',
+            num: pc.tasks_done || 0,
+            cls: 'ok'
+          }]);
+          html += stage('c-shipping', '<svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg>', 'Отгрузка', 'shipping.html?from=overview', [{
+            label: 'Готовы',
+            num: sh.ready_to_ship || 0,
+            cls: sh.ready_to_ship > 0 ? 'ok' : ''
+          }, {
+            label: 'В пути',
+            num: sh.in_transit || 0
+          }, {
+            label: 'Доставлено',
+            num: sh.done_total || 0,
+            cls: 'ok'
+          }]);
+          // убираем шеврон после последнего этапа
+          html = html.replace(/<div class="funnel-chevron">⌄<\/div>\s*$/, '');
+          document.getElementById('funnel-rows').innerHTML = html;
+          _context2.n = 3;
+          break;
+        case 2:
+          _context2.p = 2;
+          _t = _context2.v;
+          UI.notify.err(_t.message);
+        case 3:
+          return _context2.a(2);
+      }
+    }, _callee2, null, [[0, 2]]);
+  }));
+  return _loadAll.apply(this, arguments);
+}
+loadAll();
+setInterval(loadAll, 20000);</script>
 </body>
 </html>

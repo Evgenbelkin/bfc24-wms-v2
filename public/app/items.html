@@ -76,606 +76,965 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin','receiver','picker','packer'])) {
-      window.location.href = '/app/menu.html';
-    }
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin', 'receiver', 'picker', 'packer'])) {
+  window.location.href = '/app/menu.html';
+}
+var user = window.API.getUser();
+var canEdit = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
+if (canEdit) document.getElementById('add-btn').style.display = 'block';
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
+      }
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+var UNITS = ['шт', 'л', 'кг', 'м', 'компл', 'пара', 'упак'];
+var clientsList = [];
+var itemOffset = 0;
+var PAGE_SIZE = 100;
+var itemCache = [];
+var selectedItemIds = new Set();
+function onItemCheck(id, checked) {
+  if (checked) selectedItemIds.add(id);else selectedItemIds.delete(id);
+  updateSelectBar();
+}
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.item-cb').forEach(function (cb) {
+    var id = Number(cb.dataset.id);
+    cb.checked = checked;
+    if (checked) selectedItemIds.add(id);else selectedItemIds.delete(id);
+  });
+  updateSelectBar();
+}
+function updateSelectBar() {
+  document.getElementById('selected-count').textContent = selectedItemIds.size;
+  document.getElementById('select-bar').style.display = canEdit ? 'block' : 'none';
+  var allOnPage = itemCache.length > 0 && itemCache.every(function (it) {
+    return selectedItemIds.has(it.id);
+  });
+  var allCb = document.getElementById('select-all-cb');
+  if (allCb) allCb.checked = allOnPage;
+}
+function openBulkMarkingModal() {
+  if (!selectedItemIds.size) {
+    UI.notify.err('Отметьте хотя бы один товар');
+    return;
+  }
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u041C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0430 \"\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A\" \u0434\u043B\u044F ".concat(selectedItemIds.size, " \u0442\u043E\u0432\u0430\u0440(\u043E\u0432)</div>\n            <div class=\"field\">\n              <label style=\"display:inline;\">\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438</label>\n              <input type=\"checkbox\" id=\"bm-required\" checked onchange=\"document.getElementById('bm-mode-wrap').style.display=this.checked?'block':'none'\"/>\n            </div>\n            <div id=\"bm-mode-wrap\">\n              <div class=\"field\">\n                <label>\u041A\u0442\u043E \u043C\u0430\u0440\u043A\u0438\u0440\u0443\u0435\u0442 \u0442\u043E\u0432\u0430\u0440</label>\n                <select id=\"bm-mode\">\n                  <option value=\"print\">\u041C\u044B (\u0424\u0424) \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u043C \u043A\u043E\u0434 \u0438\u0437 \u0441\u0432\u043E\u0435\u0433\u043E \u043F\u0443\u043B\u0430</option>\n                  <option value=\"scan\">\u041A\u043B\u0438\u0435\u043D\u0442 \u0443\u0436\u0435 \u043A\u043B\u0435\u0438\u0442 DataMatrix \u043D\u0430 \u043F\u0440\u043E\u0438\u0437\u0432\u043E\u0434\u0441\u0442\u0432\u0435 \u2014 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u043C \u043D\u0430 \u043F\u0440\u0438\u0451\u043C\u043A\u0435 \u0438 \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435</option>\n                  <option value=\"scan_packing\">\u041A\u043B\u0438\u0435\u043D\u0442 \u043A\u043B\u0435\u0438\u0442 DataMatrix \u2014 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u043C \u0422\u041E\u041B\u042C\u041A\u041E \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435, \u0431\u0435\u0437 \u043F\u0440\u0438\u0451\u043C\u043A\u0438</option>\n                </select>\n              </div>\n            </div>\n            <p style=\"font-size:12px;color:var(--muted);margin-top:6px;\">\n              \u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u0441\u044F \u0441\u0440\u0430\u0437\u0443 \u043A\u043E \u0432\u0441\u0435\u043C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u043C \u0442\u043E\u0432\u0430\u0440\u0430\u043C, \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0438\u0448\u0443\u0442\u0441\u044F.\n              \u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043D\u044B\u0435 \u0440\u0430\u043D\u0435\u0435 \u043A\u043E\u0434\u044B \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438 (\u0435\u0441\u043B\u0438 \u0431\u044B\u043B\u0438) \u043D\u0435 \u0443\u0434\u0430\u043B\u044F\u044E\u0442\u0441\u044F.\n            </p>\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"submitBulkMarking()\">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u043A ").concat(selectedItemIds.size, "</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function submitBulkMarking() {
+  return _submitBulkMarking.apply(this, arguments);
+}
+function _submitBulkMarking() {
+  _submitBulkMarking = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var required, data, res, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          required = document.getElementById('bm-required').checked;
+          data = {
+            requires_marking: required
+          };
+          if (required) data.marking_mode = UI.val('#bm-mode') || 'print';
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.marking.bulkUpdateSettings(Array.from(selectedItemIds), data);
+        case 2:
+          res = _context3.v;
+          UI.notify.ok("\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u0442\u043E\u0432\u0430\u0440\u043E\u0432: ".concat(res.updated));
+          closeModal();
+          selectedItemIds.clear();
+          _context3.n = 3;
+          return loadItems();
+        case 3:
+          _context3.n = 5;
+          break;
+        case 4:
+          _context3.p = 4;
+          _t = _context3.v;
+          UI.notify.err(_t.message);
+        case 5:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[1, 4]]);
+  }));
+  return _submitBulkMarking.apply(this, arguments);
+}
+function deleteSelectedItems() {
+  return _deleteSelectedItems.apply(this, arguments);
+}
+function _deleteSelectedItems() {
+  _deleteSelectedItems = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          if (selectedItemIds.size) {
+            _context4.n = 1;
+            break;
+          }
+          UI.notify.err('Отметьте хотя бы один товар');
+          return _context4.a(2);
+        case 1:
+          if (UI.confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0435 \u0442\u043E\u0432\u0430\u0440\u044B (".concat(selectedItemIds.size, " \u0448\u0442.)? \u0422\u043E\u0432\u0430\u0440\u044B \u0441 \u043E\u0441\u0442\u0430\u0442\u043A\u043E\u043C \u043F\u0440\u043E\u043F\u0443\u0441\u0442\u044F\u0442\u0441\u044F."))) {
+            _context4.n = 2;
+            break;
+          }
+          return _context4.a(2);
+        case 2:
+          _context4.p = 2;
+          _context4.n = 3;
+          return window.API.items.bulkDelete(Array.from(selectedItemIds));
+        case 3:
+          res = _context4.v;
+          UI.notify.ok("\u0423\u0434\u0430\u043B\u0435\u043D\u043E: ".concat(res.deleted).concat(res.deactivated ? ", \u0434\u0435\u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D\u043E: ".concat(res.deactivated) : '').concat(res.skipped ? ", \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E (\u0435\u0441\u0442\u044C \u043E\u0441\u0442\u0430\u0442\u043E\u043A): ".concat(res.skipped) : ''));
+          selectedItemIds.clear();
+          _context4.n = 4;
+          return loadItems();
+        case 4:
+          _context4.n = 6;
+          break;
+        case 5:
+          _context4.p = 5;
+          _t2 = _context4.v;
+          UI.notify.err(_t2.message);
+        case 6:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[2, 5]]);
+  }));
+  return _deleteSelectedItems.apply(this, arguments);
+}
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var res, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          _context5.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context5.v;
+          clientsList = res.clients || [];
+          UI.populateSelect('#f-client', clientsList, {
+            valueKey: 'id',
+            labelKey: 'client_name',
+            emptyLabel: 'Все клиенты'
+          });
+          document.getElementById('f-client').addEventListener('change', function () {
+            return loadItems();
+          });
+          _context5.n = 3;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 3:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function loadItems() {
+  return _loadItems.apply(this, arguments);
+}
+function _loadItems() {
+  _loadItems = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var append,
+      params,
+      clientId,
+      search,
+      res,
+      list,
+      _args6 = arguments,
+      _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          append = _args6.length > 0 && _args6[0] !== undefined ? _args6[0] : false;
+          _context6.p = 1;
+          if (!append) itemOffset = 0;
+          params = {
+            limit: PAGE_SIZE,
+            offset: itemOffset
+          };
+          clientId = UI.val('#f-client');
+          if (clientId) params.client_id = clientId;
+          search = UI.val('#f-search');
+          if (search) params.search = search;
+          _context6.n = 2;
+          return window.API.items.list(params);
+        case 2:
+          res = _context6.v;
+          itemCache = append ? itemCache.concat(res.items) : res.items;
+          document.getElementById('item-total').textContent = res.total;
+          document.getElementById('item-count').textContent = itemCache.length;
+          list = document.getElementById('item-list');
+          if (itemCache.length) {
+            _context6.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z\"/><circle cx=\"15.5\" cy=\"7.5\" r=\"1.4\"/></svg></div>\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</div>";
+          return _context6.a(2);
+        case 3:
+          list.innerHTML = itemCache.map(function (it, idx) {
+            return "\n          <div class=\"list-row item-row\" style=\"display:flex;align-items:center;gap:10px;\" onclick=\"openModal(".concat(idx, ")\">\n            ").concat(canEdit ? "<input type=\"checkbox\" class=\"item-cb\" data-id=\"".concat(it.id, "\" onclick=\"event.stopPropagation(); onItemCheck(").concat(it.id, ", this.checked);\" ").concat(selectedItemIds.has(it.id) ? 'checked' : '', "/>") : '', "\n            <div class=\"main\" style=\"flex:1;\">\n              <div class=\"title\">").concat(UI.escHtml(it.item_name), "</div>\n              <div class=\"sub\">").concat([it.vendor_code, it.size ? 'разм. ' + it.size : null, it.barcode].filter(Boolean).map(UI.escHtml).join(' · '), " \xB7 ").concat(UI.escHtml(it.client_name || ''), " ").concat(it.is_active ? '' : '· <span style="color:var(--red)">выключен</span>', "</div>\n            </div>\n            <div class=\"badge\"><span>\u0415\u0434.</span><div>").concat(UI.escHtml(it.unit), "</div></div>\n          </div>\n        ");
+          }).join('');
+          updateSelectBar();
+          _context6.n = 5;
+          break;
+        case 4:
+          _context6.p = 4;
+          _t4 = _context6.v;
+          UI.notify.err(_t4.message);
+        case 5:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[1, 4]]);
+  }));
+  return _loadItems.apply(this, arguments);
+}
+function loadMore() {
+  itemOffset += PAGE_SIZE;
+  loadItems(true);
+}
+UI.onScan('#f-search', function (v) {
+  UI.setVal('#f-search', v);
+  loadItems();
+});
+function openModal(idx) {
+  var it = idx !== null ? itemCache[idx] : null;
+  var clientOptions = clientsList.map(function (c) {
+    return "<option value=\"".concat(c.id, "\" ").concat(it && it.client_id === c.id ? 'selected' : '', ">").concat(UI.escHtml(c.client_name), "</option>");
+  }).join('');
+  var unitOptions = UNITS.map(function (u) {
+    return "<option value=\"".concat(u, "\" ").concat(it && it.unit === u ? 'selected' : '', ">").concat(u, "</option>");
+  }).join('');
+  var kitBaseOptions = it ? ['<option value="">— не комплект —</option>'].concat(itemCache.filter(function (x) {
+    return x.id !== it.id && x.client_id === it.client_id;
+  }).map(function (x) {
+    return "<option value=\"".concat(x.id, "\" ").concat(it.kit_of_item_id === x.id ? 'selected' : '', ">").concat(UI.escHtml(x.item_name), " (").concat(UI.escHtml(x.barcode), ")</option>");
+  })).join('') : '';
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(it ? UI.escHtml(it.item_name) : 'Новый товар', "</div>\n            ").concat(!it ? "<div class=\"field\"><label>\u041A\u043B\u0438\u0435\u043D\u0442</label><select id=\"m-client\">".concat(clientOptions, "</select></div>") : '', "\n            <div class=\"field\"><label>\u0428\u0442\u0440\u0438\u0445\u043A\u043E\u0434</label><input id=\"m-barcode\" value=\"").concat(it ? UI.escHtml(it.barcode) : '', "\" ").concat(it ? 'disabled' : '', "/></div>\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435</label><input id=\"m-name\" value=\"").concat(it ? UI.escHtml(it.item_name) : '', "\"/></div>\n            <div class=\"field-row2\">\n              <div class=\"field\"><label>\u0410\u0440\u0442\u0438\u043A\u0443\u043B</label><input id=\"m-vendor\" value=\"").concat(it && it.vendor_code ? UI.escHtml(it.vendor_code) : '', "\"/></div>\n              <div class=\"field\"><label>\u0410\u0440\u0442\u0438\u043A\u0443\u043B WB</label><input id=\"m-wbvendor\" value=\"").concat(it && it.wb_vendor_code ? UI.escHtml(it.wb_vendor_code) : '', "\"/></div>\n            </div>\n            <div class=\"field-row2\">\n              <div class=\"field\"><label>\u0411\u0440\u0435\u043D\u0434</label><input id=\"m-brand\" value=\"").concat(it && it.brand ? UI.escHtml(it.brand) : '', "\"/></div>\n              <div class=\"field\"><label>\u0415\u0434. \u0438\u0437\u043C.</label><select id=\"m-unit\">").concat(unitOptions, "</select></div>\n            </div>\n            <div class=\"field-row2\">\n              <div class=\"field\"><label>\u0420\u0430\u0437\u043C\u0435\u0440</label><input id=\"m-size\" placeholder=\"128, 42, L...\" value=\"").concat(it && it.size ? UI.escHtml(it.size) : '', "\"/></div>\n              <div class=\"field\"></div>\n            </div>\n            <div class=\"field-row2\">\n              <div class=\"field\"><label>\u0412\u0435\u0441, \u0433</label><input id=\"m-weight\" type=\"number\" value=\"").concat(it && it.weight_grams != null ? it.weight_grams : '', "\"/></div>\n              <div class=\"field\"><label>\u041E\u0431\u044A\u0451\u043C, \u043B</label><input id=\"m-volume\" type=\"number\" value=\"").concat(it && it.volume_liters != null ? it.volume_liters : '', "\"/></div>\n            </div>\n            <div class=\"field\"><label style=\"display:inline;\">\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438</label> <input type=\"checkbox\" id=\"m-needspkg\" ").concat(it ? "onchange=\"document.getElementById('pkg-materials-wrap').style.display=this.checked?'block':'none';\"" : '', " ").concat(it && it.needs_packaging ? 'checked' : '', "/></div>\n            ").concat(it ? "\n            <div class=\"field\" id=\"pkg-materials-wrap\" style=\"display:".concat(it.needs_packaging ? 'block' : 'none', ";border-top:1px solid var(--border);padding-top:12px;margin-top:4px;\">\n              <label>\u041C\u0430\u0442\u0435\u0440\u0438\u0430\u043B\u044B \u0434\u043B\u044F \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 (\u0441\u043F\u0438\u0448\u0443\u0442\u0441\u044F \u0441\u043E \u0441\u043A\u043B\u0430\u0434\u0430 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u0440\u0438 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435 \u044D\u0442\u043E\u0433\u043E \u0442\u043E\u0432\u0430\u0440\u0430, \u0438 \u0435\u0441\u043B\u0438 \u0443 \u0440\u0430\u0441\u0445\u043E\u0434\u043D\u0438\u043A\u0430 \u0437\u0430\u0434\u0430\u043D\u0430 \u0446\u0435\u043D\u0430 \u043A\u043B\u0438\u0435\u043D\u0442\u0443 \u2014 \u043D\u0430\u0447\u0438\u0441\u043B\u0438\u0442\u0441\u044F \u0441\u0443\u043C\u043C\u0430 \u0437\u0430 \u0443\u0441\u043B\u0443\u0433\u0443)</label>\n              <div id=\"pkg-materials-rows\" style=\"margin-top:8px;\"></div>\n              <button type=\"button\" class=\"btn-sm btn-back\" style=\"margin-top:8px;\" onclick=\"addPkgMaterialRow()\">+ \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043C\u0430\u0442\u0435\u0440\u0438\u0430\u043B</button>\n              <button type=\"button\" class=\"btn-big btn-blue btn-full\" style=\"margin-top:10px;\" onclick=\"savePkgMaterials(").concat(idx, ")\">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u043C\u0430\u0442\u0435\u0440\u0438\u0430\u043B\u044B</button>\n            </div>\n            ") : '', "\n            <div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u0435\u043D</label> <input type=\"checkbox\" id=\"m-active\" ").concat(!it || it.is_active ? 'checked' : '', "/></div>\n            <div class=\"field\" style=\"border-top:1px solid var(--border);padding-top:12px;margin-top:4px;\">\n              <label style=\"display:inline;\">\u0422\u0440\u0435\u0431\u0443\u0435\u0442 \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438 \"\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A\"</label> <input type=\"checkbox\" id=\"m-marking\" onchange=\"document.getElementById('marking-trigger-wrap').style.display=this.checked?'block':'none'\" ").concat(it && it.requires_marking ? 'checked' : '', "/>\n              <div class=\"field\" id=\"marking-trigger-wrap\" style=\"display:").concat(it && it.requires_marking ? 'block' : 'none', ";margin-top:6px;\">\n                <label>\u041A\u0442\u043E \u043C\u0430\u0440\u043A\u0438\u0440\u0443\u0435\u0442 \u0442\u043E\u0432\u0430\u0440</label>\n                <select id=\"m-marking-mode\" onchange=\"\n                  document.getElementById('marking-print-wrap').style.display=this.value==='print'?'block':'none';\n                  document.getElementById('marking-scan-hint').style.display=this.value==='scan'?'block':'none';\n                  document.getElementById('marking-scan-packing-hint').style.display=this.value==='scan_packing'?'block':'none';\n                  document.getElementById('marking-trigger-select-wrap').style.display=this.value==='print'?'block':'none';\n                \">\n                  <option value=\"print\" ").concat(!it || (it.marking_mode || 'print') === 'print' ? 'selected' : '', ">\u041C\u044B (\u0424\u0424) \u043F\u0435\u0447\u0430\u0442\u0430\u0435\u043C \u043A\u043E\u0434 \u0438\u0437 \u0441\u0432\u043E\u0435\u0433\u043E \u043F\u0443\u043B\u0430</option>\n                  <option value=\"scan\" ").concat(it && it.marking_mode === 'scan' ? 'selected' : '', ">\u041A\u043B\u0438\u0435\u043D\u0442 \u0443\u0436\u0435 \u043A\u043B\u0435\u0438\u0442 DataMatrix \u043D\u0430 \u043F\u0440\u043E\u0438\u0437\u0432\u043E\u0434\u0441\u0442\u0432\u0435 \u2014 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u043C \u043D\u0430 \u043F\u0440\u0438\u0451\u043C\u043A\u0435 \u0438 \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435</option>\n                  <option value=\"scan_packing\" ").concat(it && it.marking_mode === 'scan_packing' ? 'selected' : '', ">\u041A\u043B\u0438\u0435\u043D\u0442 \u043A\u043B\u0435\u0438\u0442 DataMatrix \u2014 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u043C \u0422\u041E\u041B\u042C\u041A\u041E \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435, \u0431\u0435\u0437 \u043F\u0440\u0438\u0451\u043C\u043A\u0438</option>\n                </select>\n                <div id=\"marking-trigger-select-wrap\" style=\"display:").concat(it && (it.marking_mode === 'scan' || it.marking_mode === 'scan_packing') ? 'none' : 'block', ";\">\n                  <label style=\"margin-top:6px;\">\u041A\u043E\u0433\u0434\u0430 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u0434</label>\n                  <select id=\"m-marking-trigger\">\n                    <option value=\"packing\" ").concat(!it || (it.marking_trigger || 'packing') === 'packing' ? 'selected' : '', ">\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430 (\u0432\u043C\u0435\u0441\u0442\u0435 \u0441\u043E \u0441\u0442\u0438\u043A\u0435\u0440\u043E\u043C \u0412\u0411)</option>\n                    <option value=\"receiving\" ").concat(it && it.marking_trigger === 'receiving' ? 'selected' : '', ">\u041F\u0440\u0438\u0451\u043C\u043A\u0430 (\u0432\u043C\u0435\u0441\u0442\u0435 \u0441\u043E \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u043E\u043C \u0442\u043E\u0432\u0430\u0440\u0430)</option>\n                  </select>\n                </div>\n                <p id=\"marking-scan-hint\" style=\"display:").concat(it && it.marking_mode === 'scan' ? 'block' : 'none', ";font-size:12px;color:var(--muted);margin-top:6px;\">\n                  \u0414\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0440\u0435\u0436\u0438\u043C\u0430 \u043A\u043E\u0434 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u043D\u0430 \u041E\u0411\u041E\u0418\u0425 \u044D\u0442\u0430\u043F\u0430\u0445 \u0432\u0441\u0435\u0433\u0434\u0430 (\u0432\u044B\u0431\u043E\u0440 \"\u043A\u043E\u0433\u0434\u0430 \u0444\u0438\u043A\u0441\u0438\u0440\u043E\u0432\u0430\u0442\u044C\" \u0437\u0434\u0435\u0441\u044C \u043D\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442):\n                  \u043D\u0430 \u043F\u0440\u0438\u0451\u043C\u043A\u0435 DataMatrix \u043A\u0430\u0436\u0434\u043E\u0439 \u0435\u0434\u0438\u043D\u0438\u0446\u044B \u0437\u0430\u043D\u043E\u0441\u0438\u0442\u0441\u044F \u0432 \u043F\u0443\u043B, \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435 \u043E\u043D \u0441\u0432\u0435\u0440\u044F\u0435\u0442\u0441\u044F \u0441 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0439\n                  \u0435\u0434\u0438\u043D\u0438\u0446\u0435\u0439 \u0438 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0443\u0445\u043E\u0434\u0438\u0442 \u0432 WB \u0447\u0435\u0440\u0435\u0437 API \u2014 \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u0432 \u043A\u0430\u0431\u0438\u043D\u0435\u0442\u0435 WB \u0432\u0432\u043E\u0434\u0438\u0442\u044C \u043D\u0435 \u043D\u0443\u0436\u043D\u043E.\n                </p>\n                <p id=\"marking-scan-packing-hint\" style=\"display:").concat(it && it.marking_mode === 'scan_packing' ? 'block' : 'none', ";font-size:12px;color:var(--muted);margin-top:6px;\">\n                  \u041F\u0440\u0438\u0451\u043C\u043A\u0430 \u043A\u0438\u0437\u044B \u0432\u043E\u043E\u0431\u0449\u0435 \u043D\u0435 \u0441\u043F\u0440\u0430\u0448\u0438\u0432\u0430\u0435\u0442 \u2014 \u043A\u043E\u0434 \u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432\u043F\u0435\u0440\u0432\u044B\u0435 \u043F\u0440\u044F\u043C\u043E \u043D\u0430 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0435, \u0442\u0430\u043C \u0436\u0435\n                  \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0432 \u043F\u0443\u043B \u0438 \u0441\u0440\u0430\u0437\u0443 \u0433\u0430\u0441\u0438\u0442\u0441\u044F, \u043F\u0440\u0438\u0432\u044F\u0437\u044B\u0432\u0430\u044F\u0441\u044C \u043A \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u0443 \u0442\u043E\u0432\u0430\u0440\u0430. \u041E\u0442\u043F\u0440\u0430\u0432\u043A\u0430 \u0432 WB API\n                  \u0437\u0430\u0432\u0438\u0441\u0438\u0442 \u043E\u0442 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \"\u043D\u0435 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0442\u044C \u0432 WB\" \u2014 \u0435\u0441\u043B\u0438 \u0432\u043A\u043B\u044E\u0447\u0435\u043D\u0430, \u043A\u043E\u0434 \u0442\u043E\u043B\u044C\u043A\u043E \u043A\u043E\u043F\u0438\u0442\u0441\u044F\n                  \u0434\u043B\u044F \u0432\u044B\u0433\u0440\u0443\u0437\u043A\u0438 \u0432 Excel \u043F\u043E \u043F\u043E\u0441\u0442\u0430\u0432\u043A\u0435.\n                </p>\n              </div>\n              ").concat(it ? "\n              <div style=\"margin-top:10px;font-size:13px;color:var(--muted);\" id=\"marking-summary\">\u041A\u043E\u0434\u044B: \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026</div>\n              <div style=\"margin-top:4px;\">\n                <a href=\"javascript:void(0)\" style=\"font-size:12px;color:var(--blue);\" onclick=\"toggleMarkingCodesList(".concat(it.id, ")\">\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u043A\u043E\u0434\u044B \u043F\u0443\u043B\u0430 \u25BE</a>\n              </div>\n              <div id=\"marking-codes-list\" style=\"display:none;margin-top:6px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;\"></div>\n              <div id=\"marking-print-wrap\" style=\"display:").concat(!it.marking_mode || it.marking_mode === 'print' ? 'block' : 'none', ";\">\n                <div style=\"font-size:12px;color:var(--red);margin-bottom:4px;\">\u0422\u043E\u043B\u044C\u043A\u043E \u0444\u0438\u0437\u0438\u0447\u0435\u0441\u043A\u0438\u043C \u0441\u043A\u0430\u043D\u0435\u0440\u043E\u043C (\u0440\u0435\u0436\u0438\u043C GS1 DataMatrix) \u2014 \u043A\u0430\u043C\u0435\u0440\u0430 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430 \u043D\u0435\u043D\u0430\u0434\u0451\u0436\u043D\u043E \u043F\u0435\u0440\u0435\u0434\u0430\u0451\u0442 \u0441\u043B\u0443\u0436\u0435\u0431\u043D\u044B\u0435 \u0441\u0438\u043C\u0432\u043E\u043B\u044B \u043A\u043E\u0434\u0430, \u0442\u0430\u043A\u0438\u0435 \u043A\u043E\u0434\u044B \u043F\u043E\u0442\u043E\u043C \u043E\u0442\u043A\u043B\u043E\u043D\u0438\u0442 Wildberries.</div>\n                <div style=\"display:flex;gap:8px;align-items:stretch;margin-top:6px;\">\n                  <input id=\"m-marking-scan-input\" placeholder=\"\u0421\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 \u043A\u043E\u0434\u044B \u0441\u044E\u0434\u0430 \u043F\u043E\u0434\u0440\u044F\u0434 \u2014 \u043A\u0430\u0436\u0434\u044B\u0439 \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u0441\u044F \u0441\u0442\u0440\u043E\u043A\u043E\u0439 \u043D\u0438\u0436\u0435\" style=\"flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;\"/>\n                </div>\n                <div class=\"field-row2\" style=\"margin-top:6px;\">\n                  <textarea id=\"m-marking-codes-text\" placeholder=\"\u041A\u043E\u0434\u044B \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438, \u043F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443 (\u0441\u044E\u0434\u0430 \u0436\u0435 \u043C\u043E\u0436\u043D\u043E \u0432\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0438\u0437 \u0444\u0430\u0439\u043B\u0430)\" rows=\"3\" style=\"flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;\" oninput=\"updateMarkingScanCount()\"></textarea>\n                </div>\n                <div style=\"font-size:12px;color:var(--muted);margin-top:4px;\" id=\"marking-scan-count\"></div>\n                <button class=\"btn-big btn-blue btn-full\" style=\"margin-top:6px;\" onclick=\"importMarkingCodes(").concat(idx, ")\">\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043A\u043E\u0434\u044B \u0432 \u043F\u0443\u043B</button>\n                <div style=\"display:flex;align-items:center;gap:8px;margin:10px 0 2px;\">\n                  <div style=\"flex:1;height:1px;background:var(--border);\"></div>\n                  <span style=\"font-size:11px;color:var(--muted);\">\u0438\u043B\u0438</span>\n                  <div style=\"flex:1;height:1px;background:var(--border);\"></div>\n                </div>\n                <input type=\"file\" id=\"m-marking-file\" accept=\".xlsx\" style=\"display:none;\" onchange=\"importMarkingCodesFile(").concat(idx, ")\"/>\n                <button type=\"button\" class=\"btn-big btn-back btn-full\" onclick=\"document.getElementById('m-marking-file').click()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z\"/><path d=\"M14 2v6h6\"/><path d=\"M12 18v-6\"/><path d=\"M9 15l3-3 3 3\"/></svg> \u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0444\u0430\u0439\u043B\u043E\u043C Excel (.xlsx)</button>\n                <div style=\"font-size:12px;color:var(--muted);margin-top:4px;\" id=\"marking-file-status\"></div>\n              </div>\n              ") : '', "\n            </div>\n            ").concat(it ? "\n            <div class=\"field\" style=\"border-top:1px solid var(--border);padding-top:12px;margin-top:4px;\">\n              <label>\u041F\u0435\u0447\u0430\u0442\u044C \u044D\u0442\u0438\u043A\u0435\u0442\u043A\u0438 (\u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434 + \u043D\u0430\u0437\u0432\u0430\u043D\u0438\u0435)</label>\n              <div class=\"field-row2\">\n                <input id=\"m-print-copies\" type=\"number\" min=\"1\" max=\"200\" value=\"1\" style=\"max-width:90px;\"/>\n                <button class=\"btn-big btn-blue\" style=\"flex:1;\" onclick=\"printItemLabel(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 9V2h12v7\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"8\"/><path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\"/></svg> \u041D\u0430\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C</button>\n              </div>\n            </div>\n            <div class=\"field\" style=\"border-top:1px solid var(--border);padding-top:12px;margin-top:4px;\">\n              <label>\u041A\u043E\u043C\u043F\u043B\u0435\u043A\u0442 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \u0440\u0430\u0437\u043D\u044B\u0435 \u0444\u0430\u0441\u043E\u0432\u043A\u0438 \u043E\u0434\u043D\u043E\u0433\u043E \u0442\u043E\u0432\u0430\u0440\u0430 \u043D\u0430 WB)</label>\n              <div class=\"field-row2\">\n                <div class=\"field\"><label>\u0421\u043E\u0431\u0440\u0430\u043D \u0438\u0437</label><select id=\"m-kit-base\">").concat(kitBaseOptions, "</select></div>\n                <div class=\"field\"><label>\u0428\u0442\u0443\u043A \u0432 \u043A\u043E\u043C\u043F\u043B\u0435\u043A\u0442\u0435</label><input id=\"m-kit-mult\" type=\"number\" min=\"1\" value=\"").concat(it.kit_multiplier || 1, "\"/></div>\n              </div>\n              ").concat(it.kit_of_item_id ? "\n              <p style=\"font-size:12px;color:var(--muted);margin:6px 0 8px;\">\n                \u041A\u043E\u043C\u043F\u043B\u0435\u043A\u0442 \u0438\u0437 ".concat(it.kit_multiplier, " \u0448\u0442. \u0442\u043E\u0432\u0430\u0440\u0430 \xAB").concat(UI.escHtml(it.kit_of_item_name || ''), "\xBB (").concat(UI.escHtml(it.kit_of_barcode || ''), ")\n              </p>\n              <div class=\"field-row2\">\n                <input id=\"m-assemble-qty\" type=\"number\" min=\"1\" value=\"1\" placeholder=\"\u041A\u043E\u043B-\u0432\u043E \u043A\u043E\u043C\u043F\u043B\u0435\u043A\u0442\u043E\u0432\" style=\"max-width:140px;\"/>\n                <input id=\"m-assemble-loc\" placeholder=\"\u041A\u043E\u0434 \u044F\u0447\u0435\u0439\u043A\u0438\" style=\"max-width:140px;\"/>\n                <button class=\"btn-big btn-green\" style=\"flex:1;\" onclick=\"assembleKit(").concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\"/><path d=\"M3.3 7 12 12l8.7-5M12 22V12\"/></svg> \u0421\u043E\u0431\u0440\u0430\u0442\u044C</button>\n              </div>") : '', "\n            </div>") : '', "\n            <div class=\"btn-row\">\n              ").concat(canEdit ? "<button class=\"btn-big btn-green\" onclick=\"saveItem(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n            ").concat(canEdit && it ? "<button class=\"btn-big btn-red btn-full\" style=\"margin-top:8px;\" onclick=\"deleteItemFromModal(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0442\u043E\u0432\u0430\u0440</button>") : '', "\n          </div>\n        </div>\n      ");
+  markingCodesListOpen = false;
+  if (it) loadMarkingSummary(it.id);
+  if (it) wireMarkingScanInput();
+  if (it) loadPkgMaterials(it.id);
+}
 
-    const user = window.API.getUser();
-    const canEdit = (user && user.role === 'tenant_admin') || (user && user.role === 'supervisor');
-    if (canEdit) document.getElementById('add-btn').style.display = 'block';
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    const UNITS = ['шт','л','кг','м','компл','пара','упак'];
-
-    let clientsList = [];
-    let itemOffset = 0;
-    const PAGE_SIZE = 100;
-    let itemCache = [];
-    const selectedItemIds = new Set();
-
-    function onItemCheck(id, checked) {
-      if (checked) selectedItemIds.add(id); else selectedItemIds.delete(id);
-      updateSelectBar();
-    }
-    function toggleSelectAll(checked) {
-      document.querySelectorAll('.item-cb').forEach(cb => {
-        const id = Number(cb.dataset.id);
-        cb.checked = checked;
-        if (checked) selectedItemIds.add(id); else selectedItemIds.delete(id);
-      });
-      updateSelectBar();
-    }
-    function updateSelectBar() {
-      document.getElementById('selected-count').textContent = selectedItemIds.size;
-      document.getElementById('select-bar').style.display = canEdit ? 'block' : 'none';
-      const allOnPage = itemCache.length > 0 && itemCache.every(it => selectedItemIds.has(it.id));
-      const allCb = document.getElementById('select-all-cb');
-      if (allCb) allCb.checked = allOnPage;
-    }
-
-    function openBulkMarkingModal() {
-      if (!selectedItemIds.size) { UI.notify.err('Отметьте хотя бы один товар'); return; }
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Маркировка "Честный знак" для ${selectedItemIds.size} товар(ов)</div>
-            <div class="field">
-              <label style="display:inline;">Требует маркировки</label>
-              <input type="checkbox" id="bm-required" checked onchange="document.getElementById('bm-mode-wrap').style.display=this.checked?'block':'none'"/>
-            </div>
-            <div id="bm-mode-wrap">
-              <div class="field">
-                <label>Кто маркирует товар</label>
-                <select id="bm-mode">
-                  <option value="print">Мы (ФФ) печатаем код из своего пула</option>
-                  <option value="scan">Клиент уже клеит DataMatrix на производстве — сканируем на приёмке и на упаковке</option>
-                  <option value="scan_packing">Клиент клеит DataMatrix — сканируем ТОЛЬКО на упаковке, без приёмки</option>
-                </select>
-              </div>
-            </div>
-            <p style="font-size:12px;color:var(--muted);margin-top:6px;">
-              Применится сразу ко всем выбранным товарам, текущие настройки перезапишутся.
-              Загруженные ранее коды маркировки (если были) не удаляются.
-            </p>
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="submitBulkMarking()">Применить к ${selectedItemIds.size}</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function submitBulkMarking() {
-      const required = document.getElementById('bm-required').checked;
-      const data = { requires_marking: required };
-      if (required) data.marking_mode = UI.val('#bm-mode') || 'print';
-      try {
-        const res = await window.API.marking.bulkUpdateSettings(Array.from(selectedItemIds), data);
-        UI.notify.ok(`Обновлено товаров: ${res.updated}`);
-        closeModal();
-        selectedItemIds.clear();
-        await loadItems();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deleteSelectedItems() {
-      if (!selectedItemIds.size) { UI.notify.err('Отметьте хотя бы один товар'); return; }
-      if (!UI.confirm(`Удалить выбранные товары (${selectedItemIds.size} шт.)? Товары с остатком пропустятся.`)) return;
-      try {
-        const res = await window.API.items.bulkDelete(Array.from(selectedItemIds));
-        UI.notify.ok(`Удалено: ${res.deleted}${res.deactivated ? `, деактивировано: ${res.deactivated}` : ''}${res.skipped ? `, пропущено (есть остаток): ${res.skipped}` : ''}`);
-        selectedItemIds.clear();
-        await loadItems();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadClients() {
-      try {
-        const res = await window.API.clients.short();
-        clientsList = res.clients || [];
-        UI.populateSelect('#f-client', clientsList, { valueKey:'id', labelKey:'client_name', emptyLabel:'Все клиенты' });
-        document.getElementById('f-client').addEventListener('change', () => loadItems());
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadItems(append=false) {
-      try {
-        if (!append) itemOffset = 0;
-        const params = { limit: PAGE_SIZE, offset: itemOffset };
-        const clientId = UI.val('#f-client'); if (clientId) params.client_id = clientId;
-        const search = UI.val('#f-search'); if (search) params.search = search;
-
-        const res = await window.API.items.list(params);
-        itemCache = append ? itemCache.concat(res.items) : res.items;
-        document.getElementById('item-total').textContent = res.total;
-        document.getElementById('item-count').textContent = itemCache.length;
-
-        const list = document.getElementById('item-list');
-        if (!itemCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z"/><circle cx="15.5" cy="7.5" r="1.4"/></svg></div>Ничего не найдено</div>`;
-          return;
-        }
-        list.innerHTML = itemCache.map((it, idx) => `
-          <div class="list-row item-row" style="display:flex;align-items:center;gap:10px;" onclick="openModal(${idx})">
-            ${canEdit ? `<input type="checkbox" class="item-cb" data-id="${it.id}" onclick="event.stopPropagation(); onItemCheck(${it.id}, this.checked);" ${selectedItemIds.has(it.id) ? 'checked' : ''}/>` : ''}
-            <div class="main" style="flex:1;">
-              <div class="title">${UI.escHtml(it.item_name)}</div>
-              <div class="sub">${[it.vendor_code, it.size ? 'разм. '+it.size : null, it.barcode].filter(Boolean).map(UI.escHtml).join(' · ')} · ${UI.escHtml(it.client_name||'')} ${it.is_active ? '' : '· <span style="color:var(--red)">выключен</span>'}</div>
-            </div>
-            <div class="badge"><span>Ед.</span><div>${UI.escHtml(it.unit)}</div></div>
-          </div>
-        `).join('');
-        updateSelectBar();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function loadMore() { itemOffset += PAGE_SIZE; loadItems(true); }
-
-    UI.onScan('#f-search', (v) => { UI.setVal('#f-search', v); loadItems(); });
-
-    function openModal(idx) {
-      const it = idx !== null ? itemCache[idx] : null;
-      const clientOptions = clientsList.map(c => `<option value="${c.id}" ${it && it.client_id===c.id ? 'selected':''}>${UI.escHtml(c.client_name)}</option>`).join('');
-      const unitOptions = UNITS.map(u => `<option value="${u}" ${it && it.unit===u ? 'selected':''}>${u}</option>`).join('');
-      const kitBaseOptions = it
-        ? ['<option value="">— не комплект —</option>'].concat(
-            itemCache
-              .filter(x => x.id !== it.id && x.client_id === it.client_id)
-              .map(x => `<option value="${x.id}" ${it.kit_of_item_id===x.id ? 'selected':''}>${UI.escHtml(x.item_name)} (${UI.escHtml(x.barcode)})</option>`)
-          ).join('')
-        : '';
-
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${it ? UI.escHtml(it.item_name) : 'Новый товар'}</div>
-            ${!it ? `<div class="field"><label>Клиент</label><select id="m-client">${clientOptions}</select></div>` : ''}
-            <div class="field"><label>Штрихкод</label><input id="m-barcode" value="${it ? UI.escHtml(it.barcode) : ''}" ${it?'disabled':''}/></div>
-            <div class="field"><label>Название</label><input id="m-name" value="${it ? UI.escHtml(it.item_name) : ''}"/></div>
-            <div class="field-row2">
-              <div class="field"><label>Артикул</label><input id="m-vendor" value="${it && it.vendor_code ? UI.escHtml(it.vendor_code):''}"/></div>
-              <div class="field"><label>Артикул WB</label><input id="m-wbvendor" value="${it && it.wb_vendor_code ? UI.escHtml(it.wb_vendor_code):''}"/></div>
-            </div>
-            <div class="field-row2">
-              <div class="field"><label>Бренд</label><input id="m-brand" value="${it && it.brand ? UI.escHtml(it.brand):''}"/></div>
-              <div class="field"><label>Ед. изм.</label><select id="m-unit">${unitOptions}</select></div>
-            </div>
-            <div class="field-row2">
-              <div class="field"><label>Размер</label><input id="m-size" placeholder="128, 42, L..." value="${it && it.size ? UI.escHtml(it.size):''}"/></div>
-              <div class="field"></div>
-            </div>
-            <div class="field-row2">
-              <div class="field"><label>Вес, г</label><input id="m-weight" type="number" value="${it && it.weight_grams!=null ? it.weight_grams:''}"/></div>
-              <div class="field"><label>Объём, л</label><input id="m-volume" type="number" value="${it && it.volume_liters!=null ? it.volume_liters:''}"/></div>
-            </div>
-            <div class="field"><label style="display:inline;">Требует упаковки</label> <input type="checkbox" id="m-needspkg" ${it ? `onchange="document.getElementById('pkg-materials-wrap').style.display=this.checked?'block':'none';"` : ''} ${it && it.needs_packaging ? 'checked':''}/></div>
-            ${it ? `
-            <div class="field" id="pkg-materials-wrap" style="display:${it.needs_packaging ? 'block':'none'};border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
-              <label>Материалы для упаковки (спишутся со склада автоматически при упаковке этого товара, и если у расходника задана цена клиенту — начислится сумма за услугу)</label>
-              <div id="pkg-materials-rows" style="margin-top:8px;"></div>
-              <button type="button" class="btn-sm btn-back" style="margin-top:8px;" onclick="addPkgMaterialRow()">+ Добавить материал</button>
-              <button type="button" class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="savePkgMaterials(${idx})">Сохранить материалы</button>
-            </div>
-            ` : ''}
-            <div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${!it || it.is_active ? 'checked':''}/></div>
-            <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
-              <label style="display:inline;">Требует маркировки "Честный знак"</label> <input type="checkbox" id="m-marking" onchange="document.getElementById('marking-trigger-wrap').style.display=this.checked?'block':'none'" ${it && it.requires_marking ? 'checked':''}/>
-              <div class="field" id="marking-trigger-wrap" style="display:${it && it.requires_marking ? 'block':'none'};margin-top:6px;">
-                <label>Кто маркирует товар</label>
-                <select id="m-marking-mode" onchange="
-                  document.getElementById('marking-print-wrap').style.display=this.value==='print'?'block':'none';
-                  document.getElementById('marking-scan-hint').style.display=this.value==='scan'?'block':'none';
-                  document.getElementById('marking-scan-packing-hint').style.display=this.value==='scan_packing'?'block':'none';
-                  document.getElementById('marking-trigger-select-wrap').style.display=this.value==='print'?'block':'none';
-                ">
-                  <option value="print" ${!it || (it.marking_mode||'print')==='print' ? 'selected':''}>Мы (ФФ) печатаем код из своего пула</option>
-                  <option value="scan" ${it && it.marking_mode==='scan' ? 'selected':''}>Клиент уже клеит DataMatrix на производстве — сканируем на приёмке и на упаковке</option>
-                  <option value="scan_packing" ${it && it.marking_mode==='scan_packing' ? 'selected':''}>Клиент клеит DataMatrix — сканируем ТОЛЬКО на упаковке, без приёмки</option>
-                </select>
-                <div id="marking-trigger-select-wrap" style="display:${it && (it.marking_mode==='scan' || it.marking_mode==='scan_packing') ? 'none':'block'};">
-                  <label style="margin-top:6px;">Когда фиксировать код</label>
-                  <select id="m-marking-trigger">
-                    <option value="packing" ${!it || (it.marking_trigger||'packing')==='packing' ? 'selected':''}>Упаковка (вместе со стикером ВБ)</option>
-                    <option value="receiving" ${it && it.marking_trigger==='receiving' ? 'selected':''}>Приёмка (вместе со штрихкодом товара)</option>
-                  </select>
-                </div>
-                <p id="marking-scan-hint" style="display:${it && it.marking_mode==='scan' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:6px;">
-                  Для этого режима код сканируется на ОБОИХ этапах всегда (выбор "когда фиксировать" здесь не действует):
-                  на приёмке DataMatrix каждой единицы заносится в пул, на упаковке он сверяется с конкретной
-                  единицей и автоматически уходит в WB через API — вручную в кабинете WB вводить не нужно.
-                </p>
-                <p id="marking-scan-packing-hint" style="display:${it && it.marking_mode==='scan_packing' ? 'block':'none'};font-size:12px;color:var(--muted);margin-top:6px;">
-                  Приёмка кизы вообще не спрашивает — код сканируется впервые прямо на упаковке, там же
-                  регистрируется в пул и сразу гасится, привязываясь к штрихкоду товара. Отправка в WB API
-                  зависит от настройки клиента "не отправлять в WB" — если включена, код только копится
-                  для выгрузки в Excel по поставке.
-                </p>
-              </div>
-              ${it ? `
-              <div style="margin-top:10px;font-size:13px;color:var(--muted);" id="marking-summary">Коды: загрузка…</div>
-              <div style="margin-top:4px;">
-                <a href="javascript:void(0)" style="font-size:12px;color:var(--blue);" onclick="toggleMarkingCodesList(${it.id})">Показать коды пула ▾</a>
-              </div>
-              <div id="marking-codes-list" style="display:none;margin-top:6px;max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
-              <div id="marking-print-wrap" style="display:${!it.marking_mode || it.marking_mode==='print' ? 'block':'none'};">
-                <div style="font-size:12px;color:var(--red);margin-bottom:4px;">Только физическим сканером (режим GS1 DataMatrix) — камера телефона ненадёжно передаёт служебные символы кода, такие коды потом отклонит Wildberries.</div>
-                <div style="display:flex;gap:8px;align-items:stretch;margin-top:6px;">
-                  <input id="m-marking-scan-input" placeholder="Сканируйте коды сюда подряд — каждый добавится строкой ниже" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"/>
-                </div>
-                <div class="field-row2" style="margin-top:6px;">
-                  <textarea id="m-marking-codes-text" placeholder="Коды маркировки, по одному на строку (сюда же можно вставить список из файла)" rows="3" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;" oninput="updateMarkingScanCount()"></textarea>
-                </div>
-                <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="marking-scan-count"></div>
-                <button class="btn-big btn-blue btn-full" style="margin-top:6px;" onclick="importMarkingCodes(${idx})">Загрузить коды в пул</button>
-                <div style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;">
-                  <div style="flex:1;height:1px;background:var(--border);"></div>
-                  <span style="font-size:11px;color:var(--muted);">или</span>
-                  <div style="flex:1;height:1px;background:var(--border);"></div>
-                </div>
-                <input type="file" id="m-marking-file" accept=".xlsx" style="display:none;" onchange="importMarkingCodesFile(${idx})"/>
-                <button type="button" class="btn-big btn-back btn-full" onclick="document.getElementById('m-marking-file').click()"><svg class="i" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg> Загрузить файлом Excel (.xlsx)</button>
-                <div style="font-size:12px;color:var(--muted);margin-top:4px;" id="marking-file-status"></div>
-              </div>
-              ` : ''}
-            </div>
-            ${it ? `
-            <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
-              <label>Печать этикетки (штрихкод + название)</label>
-              <div class="field-row2">
-                <input id="m-print-copies" type="number" min="1" max="200" value="1" style="max-width:90px;"/>
-                <button class="btn-big btn-blue" style="flex:1;" onclick="printItemLabel(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/></svg> Напечатать</button>
-              </div>
-            </div>
-            <div class="field" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
-              <label>Комплект (например: разные фасовки одного товара на WB)</label>
-              <div class="field-row2">
-                <div class="field"><label>Собран из</label><select id="m-kit-base">${kitBaseOptions}</select></div>
-                <div class="field"><label>Штук в комплекте</label><input id="m-kit-mult" type="number" min="1" value="${it.kit_multiplier || 1}"/></div>
-              </div>
-              ${it.kit_of_item_id ? `
-              <p style="font-size:12px;color:var(--muted);margin:6px 0 8px;">
-                Комплект из ${it.kit_multiplier} шт. товара «${UI.escHtml(it.kit_of_item_name||'')}» (${UI.escHtml(it.kit_of_barcode||'')})
-              </p>
-              <div class="field-row2">
-                <input id="m-assemble-qty" type="number" min="1" value="1" placeholder="Кол-во комплектов" style="max-width:140px;"/>
-                <input id="m-assemble-loc" placeholder="Код ячейки" style="max-width:140px;"/>
-                <button class="btn-big btn-green" style="flex:1;" onclick="assembleKit(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg> Собрать</button>
-              </div>` : ''}
-            </div>` : ''}
-            <div class="btn-row">
-              ${canEdit ? `<button class="btn-big btn-green" onclick="saveItem(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-            ${canEdit && it ? `<button class="btn-big btn-red btn-full" style="margin-top:8px;" onclick="deleteItemFromModal(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить товар</button>` : ''}
-          </div>
-        </div>
-      `;
-      markingCodesListOpen = false;
-      if (it) loadMarkingSummary(it.id);
-      if (it) wireMarkingScanInput();
-      if (it) loadPkgMaterials(it.id);
-    }
-
-    // ─────────────── Материалы для упаковки ───────────────
-    // "Во что упаковывать" — список расходников (см. модуль "Расходники") с
-    // нормой на 1 шт. товара. Списываются автоматически на упаковке, отсюда
-    // только настройка состава для конкретного товара.
-    let consumablesCache = [];
-    let pkgMaterialsState = [];
-
-    async function loadPkgMaterials(itemId) {
-      const rowsBox = document.getElementById('pkg-materials-rows');
-      if (!rowsBox) return;
-      rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Загрузка…</div>';
-      try {
-        if (!consumablesCache.length) {
-          const cRes = await window.API.consumables.list();
+// ─────────────── Материалы для упаковки ───────────────
+// "Во что упаковывать" — список расходников (см. модуль "Расходники") с
+// нормой на 1 шт. товара. Списываются автоматически на упаковке, отсюда
+// только настройка состава для конкретного товара.
+var consumablesCache = [];
+var pkgMaterialsState = [];
+function loadPkgMaterials(_x) {
+  return _loadPkgMaterials.apply(this, arguments);
+}
+function _loadPkgMaterials() {
+  _loadPkgMaterials = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(itemId) {
+    var rowsBox, cRes, res, _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          rowsBox = document.getElementById('pkg-materials-rows');
+          if (rowsBox) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Загрузка…</div>';
+          _context7.p = 2;
+          if (consumablesCache.length) {
+            _context7.n = 4;
+            break;
+          }
+          _context7.n = 3;
+          return window.API.consumables.list();
+        case 3:
+          cRes = _context7.v;
           consumablesCache = cRes.rows || [];
-        }
-        const res = await window.API.items.packagingMaterials(itemId);
-        pkgMaterialsState = (res.rows || []).map(r => ({ consumable_id: r.consumable_id, qty_per_unit: Number(r.qty_per_unit) }));
-        renderPkgMaterialRows();
-      } catch (e) {
-        rowsBox.innerHTML = `<div style="font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
+        case 4:
+          _context7.n = 5;
+          return window.API.items.packagingMaterials(itemId);
+        case 5:
+          res = _context7.v;
+          pkgMaterialsState = (res.rows || []).map(function (r) {
+            return {
+              consumable_id: r.consumable_id,
+              qty_per_unit: Number(r.qty_per_unit)
+            };
+          });
+          renderPkgMaterialRows();
+          _context7.n = 7;
+          break;
+        case 6:
+          _context7.p = 6;
+          _t5 = _context7.v;
+          rowsBox.innerHTML = "<div style=\"font-size:12px;color:var(--red);\">".concat(UI.escHtml(_t5.message), "</div>");
+        case 7:
+          return _context7.a(2);
       }
-    }
-
-    function renderPkgMaterialRows() {
-      const rowsBox = document.getElementById('pkg-materials-rows');
-      if (!rowsBox) return;
-      if (!consumablesCache.length) {
-        rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Нет расходников в справочнике — сначала заведите их в разделе "Расходники".</div>';
-        return;
+    }, _callee7, null, [[2, 6]]);
+  }));
+  return _loadPkgMaterials.apply(this, arguments);
+}
+function renderPkgMaterialRows() {
+  var rowsBox = document.getElementById('pkg-materials-rows');
+  if (!rowsBox) return;
+  if (!consumablesCache.length) {
+    rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Нет расходников в справочнике — сначала заведите их в разделе "Расходники".</div>';
+    return;
+  }
+  if (!pkgMaterialsState.length) {
+    rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Материалы не привязаны</div>';
+    return;
+  }
+  rowsBox.innerHTML = pkgMaterialsState.map(function (m, i) {
+    var options = consumablesCache.map(function (c) {
+      return "<option value=\"".concat(c.id, "\" ").concat(Number(m.consumable_id) === c.id ? 'selected' : '', ">").concat(UI.escHtml(c.name), " (\u043E\u0441\u0442\u0430\u0442\u043E\u043A: ").concat(c.qty_on_hand, " ").concat(UI.escHtml(c.unit), ")</option>");
+    }).join('');
+    return "\n          <div class=\"field-row2\" style=\"align-items:center;margin-bottom:6px;\">\n            <select onchange=\"pkgMaterialsState[".concat(i, "].consumable_id=Number(this.value)\" style=\"flex:2;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);\">").concat(options, "</select>\n            <input type=\"number\" min=\"0.001\" step=\"0.001\" value=\"").concat(m.qty_per_unit, "\" style=\"flex:1;max-width:90px;\" onchange=\"pkgMaterialsState[").concat(i, "].qty_per_unit=Number(this.value)||1\"/>\n            <button type=\"button\" onclick=\"removePkgMaterialRow(").concat(i, ")\" style=\"border:none;background:none;color:var(--red);font-size:18px;cursor:pointer;\">\u2715</button>\n          </div>");
+  }).join('');
+}
+function addPkgMaterialRow() {
+  if (!consumablesCache.length) {
+    UI.notify.err('Сначала заведите расходники в разделе "Расходники"');
+    return;
+  }
+  pkgMaterialsState.push({
+    consumable_id: consumablesCache[0].id,
+    qty_per_unit: 1
+  });
+  renderPkgMaterialRows();
+}
+function removePkgMaterialRow(i) {
+  pkgMaterialsState.splice(i, 1);
+  renderPkgMaterialRows();
+}
+function savePkgMaterials(_x2) {
+  return _savePkgMaterials.apply(this, arguments);
+} // Раньше коды в пул можно было только вставить текстом (Ctrl+V списка) —
+// при пачке КИЗ, которые физически под рукой (например, приёмка ещё не
+// подключена к "scan"-режиму, а коды на товарах уже есть), приходилось
+// сначала куда-то их всё сканировать, потом копировать сюда. Теперь
+// можно сканировать прямо в это поле одно за другим — каждый скан
+// добавляет строку в textarea ниже (её при этом можно и вручную
+// редактировать/вставлять список как раньше — ничего не отняли).
+function _savePkgMaterials() {
+  _savePkgMaterials = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(idx) {
+    var it, _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          it = itemCache[idx];
+          _context8.p = 1;
+          _context8.n = 2;
+          return window.API.items.setPackagingMaterials(it.id, pkgMaterialsState.filter(function (m) {
+            return m.consumable_id;
+          }));
+        case 2:
+          UI.notify.ok('Материалы упаковки сохранены');
+          _context8.n = 4;
+          break;
+        case 3:
+          _context8.p = 3;
+          _t6 = _context8.v;
+          UI.notify.err(_t6.message);
+        case 4:
+          return _context8.a(2);
       }
-      if (!pkgMaterialsState.length) {
-        rowsBox.innerHTML = '<div style="font-size:12px;color:var(--muted);">Материалы не привязаны</div>';
-        return;
+    }, _callee8, null, [[1, 3]]);
+  }));
+  return _savePkgMaterials.apply(this, arguments);
+}
+function updateMarkingScanCount() {
+  var counter = document.getElementById('marking-scan-count');
+  if (!counter) return;
+  var n = (UI.val('#m-marking-codes-text') || '').split(/\r?\n/).map(function (s) {
+    return s.trim();
+  }).filter(Boolean).length;
+  counter.textContent = n > 0 ? "\u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043D\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443: ".concat(n) : '';
+}
+function wireMarkingScanInput() {
+  updateMarkingScanCount();
+  UI.onScan('#m-marking-scan-input', function (v) {
+    var code = String(v || '').trim();
+    if (!code) return;
+    if (!UI.isValidKizCode(code)) {
+      throw new Error('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix');
+    }
+    if (!UI.hasValidKizStructure(code)) {
+      throw new Error('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
+    }
+    var textarea = document.getElementById('m-marking-codes-text');
+    var existing = textarea.value.split(/\r?\n/).map(function (s) {
+      return s.trim();
+    }).filter(Boolean);
+    if (existing.includes(code)) {
+      UI.notify.warn('Этот код уже в очереди');
+      return;
+    }
+    existing.push(code);
+    textarea.value = existing.join('\n');
+    updateMarkingScanCount();
+  });
+}
+function loadMarkingSummary(_x3) {
+  return _loadMarkingSummary.apply(this, arguments);
+}
+function _loadMarkingSummary() {
+  _loadMarkingSummary = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9(itemId) {
+    var el, res, s, txt, _t7;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          el = document.getElementById('marking-summary');
+          if (el) {
+            _context9.n = 1;
+            break;
+          }
+          return _context9.a(2);
+        case 1:
+          _context9.p = 1;
+          _context9.n = 2;
+          return window.API.marking.summary(itemId);
+        case 2:
+          res = _context9.v;
+          s = res.summary;
+          txt = "\u041A\u043E\u0434\u044B: \u0441\u0432\u043E\u0431\u043E\u0434\u043D\u043E ".concat(s.available, ", \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u043E ").concat(s.used, " (\u0432\u0441\u0435\u0433\u043E ").concat(s.total, ")");
+          if (s.manual_override > 0) txt += " \xB7 \u0431\u0435\u0437 \u041A\u0418\u0417 \u0432\u0440\u0443\u0447\u043D\u0443\u044E: ".concat(s.manual_override);
+          el.textContent = txt;
+          _context9.n = 4;
+          break;
+        case 3:
+          _context9.p = 3;
+          _t7 = _context9.v;
+          el.textContent = 'Модуль маркировки не подключен для этого склада';
+        case 4:
+          return _context9.a(2);
       }
-      rowsBox.innerHTML = pkgMaterialsState.map((m, i) => {
-        const options = consumablesCache.map(c =>
-          `<option value="${c.id}" ${Number(m.consumable_id)===c.id ? 'selected':''}>${UI.escHtml(c.name)} (остаток: ${c.qty_on_hand} ${UI.escHtml(c.unit)})</option>`
-        ).join('');
-        return `
-          <div class="field-row2" style="align-items:center;margin-bottom:6px;">
-            <select onchange="pkgMaterialsState[${i}].consumable_id=Number(this.value)" style="flex:2;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);">${options}</select>
-            <input type="number" min="0.001" step="0.001" value="${m.qty_per_unit}" style="flex:1;max-width:90px;" onchange="pkgMaterialsState[${i}].qty_per_unit=Number(this.value)||1"/>
-            <button type="button" onclick="removePkgMaterialRow(${i})" style="border:none;background:none;color:var(--red);font-size:18px;cursor:pointer;">✕</button>
-          </div>`;
-      }).join('');
-    }
-
-    function addPkgMaterialRow() {
-      if (!consumablesCache.length) { UI.notify.err('Сначала заведите расходники в разделе "Расходники"'); return; }
-      pkgMaterialsState.push({ consumable_id: consumablesCache[0].id, qty_per_unit: 1 });
-      renderPkgMaterialRows();
-    }
-
-    function removePkgMaterialRow(i) {
-      pkgMaterialsState.splice(i, 1);
-      renderPkgMaterialRows();
-    }
-
-    async function savePkgMaterials(idx) {
-      const it = itemCache[idx];
-      try {
-        await window.API.items.setPackagingMaterials(it.id, pkgMaterialsState.filter(m => m.consumable_id));
-        UI.notify.ok('Материалы упаковки сохранены');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // Раньше коды в пул можно было только вставить текстом (Ctrl+V списка) —
-    // при пачке КИЗ, которые физически под рукой (например, приёмка ещё не
-    // подключена к "scan"-режиму, а коды на товарах уже есть), приходилось
-    // сначала куда-то их всё сканировать, потом копировать сюда. Теперь
-    // можно сканировать прямо в это поле одно за другим — каждый скан
-    // добавляет строку в textarea ниже (её при этом можно и вручную
-    // редактировать/вставлять список как раньше — ничего не отняли).
-    function updateMarkingScanCount() {
-      const counter = document.getElementById('marking-scan-count');
-      if (!counter) return;
-      const n = (UI.val('#m-marking-codes-text') || '').split(/\r?\n/).map(s=>s.trim()).filter(Boolean).length;
-      counter.textContent = n > 0 ? `В очереди на загрузку: ${n}` : '';
-    }
-
-    function wireMarkingScanInput() {
-      updateMarkingScanCount();
-      UI.onScan('#m-marking-scan-input', (v) => {
-        const code = String(v || '').trim();
-        if (!code) return;
-        if (!UI.isValidKizCode(code)) {
-          throw new Error('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix');
-        }
-        if (!UI.hasValidKizStructure(code)) {
-          throw new Error('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
-        }
-        const textarea = document.getElementById('m-marking-codes-text');
-        const existing = textarea.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
-        if (existing.includes(code)) { UI.notify.warn('Этот код уже в очереди'); return; }
-        existing.push(code);
-        textarea.value = existing.join('\n');
-        updateMarkingScanCount();
-      });
-    }
-
-    async function loadMarkingSummary(itemId) {
-      const el = document.getElementById('marking-summary');
-      if (!el) return;
-      try {
-        const res = await window.API.marking.summary(itemId);
-        const s = res.summary;
-        let txt = `Коды: свободно ${s.available}, использовано ${s.used} (всего ${s.total})`;
-        if (s.manual_override > 0) txt += ` · без КИЗ вручную: ${s.manual_override}`;
-        el.textContent = txt;
-      } catch (e) {
-        el.textContent = 'Модуль маркировки не подключен для этого склада';
-      }
-    }
-
-    const MARKING_STATUS_PILL = {
-      available: { label: 'Свободен', color: 'var(--green)' },
-      used_sent: { label: 'Использован → отправлен в WB', color: 'var(--blue)' },
-      used_override: { label: 'Использован → ручной обход (не отправлен)', color: 'var(--orange, #e08a2b)' },
-      used_plain: { label: 'Использован', color: 'var(--muted2)' },
-    };
-    function markingCodeStatusKey(c) {
-      if (c.status === 'available') return 'available';
-      if (c.wb_submit_status === 'manual_override') return 'used_override';
-      if (c.wb_submit_status === 'sent') return 'used_sent';
-      return 'used_plain';
-    }
-    let markingCodesListOpen = false;
-    async function toggleMarkingCodesList(itemId) {
-      const box = document.getElementById('marking-codes-list');
-      if (!box) return;
-      markingCodesListOpen = !markingCodesListOpen;
-      box.style.display = markingCodesListOpen ? 'block' : 'none';
-      if (!markingCodesListOpen) return;
-      box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Загрузка…</div>';
-      try {
-        const res = await window.API.marking.listCodes(itemId, { limit: 500 });
-        const rows = res.codes || [];
-        if (!rows.length) {
+    }, _callee9, null, [[1, 3]]);
+  }));
+  return _loadMarkingSummary.apply(this, arguments);
+}
+var MARKING_STATUS_PILL = {
+  available: {
+    label: 'Свободен',
+    color: 'var(--green)'
+  },
+  used_sent: {
+    label: 'Использован → отправлен в WB',
+    color: 'var(--blue)'
+  },
+  used_override: {
+    label: 'Использован → ручной обход (не отправлен)',
+    color: 'var(--orange, #e08a2b)'
+  },
+  used_plain: {
+    label: 'Использован',
+    color: 'var(--muted2)'
+  }
+};
+function markingCodeStatusKey(c) {
+  if (c.status === 'available') return 'available';
+  if (c.wb_submit_status === 'manual_override') return 'used_override';
+  if (c.wb_submit_status === 'sent') return 'used_sent';
+  return 'used_plain';
+}
+var markingCodesListOpen = false;
+function toggleMarkingCodesList(_x4) {
+  return _toggleMarkingCodesList.apply(this, arguments);
+}
+function _toggleMarkingCodesList() {
+  _toggleMarkingCodesList = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0(itemId) {
+    var box, res, rows, _t8;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          box = document.getElementById('marking-codes-list');
+          if (box) {
+            _context0.n = 1;
+            break;
+          }
+          return _context0.a(2);
+        case 1:
+          markingCodesListOpen = !markingCodesListOpen;
+          box.style.display = markingCodesListOpen ? 'block' : 'none';
+          if (markingCodesListOpen) {
+            _context0.n = 2;
+            break;
+          }
+          return _context0.a(2);
+        case 2:
+          box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Загрузка…</div>';
+          _context0.p = 3;
+          _context0.n = 4;
+          return window.API.marking.listCodes(itemId, {
+            limit: 500
+          });
+        case 4:
+          res = _context0.v;
+          rows = res.codes || [];
+          if (rows.length) {
+            _context0.n = 5;
+            break;
+          }
           box.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--muted);">Кодов пока нет</div>';
-          return;
-        }
-        box.innerHTML = rows.map(c => {
-          const p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
-          // Удалить можно только "левый" код, который ещё никуда не ушёл
-          // (available) — и только tenant_admin/supervisor, действие
-          // необратимо (используемые/отправленные в WB коды удалить нельзя,
-          // это уже исторический факт).
-          const delBtn = (canEdit && c.status === 'available')
-            ? `<button title="Удалить код из пула" onclick="deleteMarkingCode(${itemId},${c.id})" style="border:none;background:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px;flex:0 0 auto;">✕</button>`
-            : '';
-          return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;">
-            <span style="width:8px;height:8px;border-radius:50%;background:${p.color};flex:0 0 auto;"></span>
-            <span style="font-family:monospace;flex:1;word-break:break-all;">${UI.escHtml(c.code)}</span>
-            <span style="color:${p.color};white-space:nowrap;">${p.label}</span>
-            ${delBtn}
-          </div>`;
-        }).join('');
-      } catch (e) {
-        box.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
+          return _context0.a(2);
+        case 5:
+          box.innerHTML = rows.map(function (c) {
+            var p = MARKING_STATUS_PILL[markingCodeStatusKey(c)];
+            // Удалить можно только "левый" код, который ещё никуда не ушёл
+            // (available) — и только tenant_admin/supervisor, действие
+            // необратимо (используемые/отправленные в WB коды удалить нельзя,
+            // это уже исторический факт).
+            var delBtn = canEdit && c.status === 'available' ? "<button title=\"\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u043A\u043E\u0434 \u0438\u0437 \u043F\u0443\u043B\u0430\" onclick=\"deleteMarkingCode(".concat(itemId, ",").concat(c.id, ")\" style=\"border:none;background:none;color:var(--red);cursor:pointer;font-size:16px;padding:2px 6px;flex:0 0 auto;\">\u2715</button>") : '';
+            return "<div style=\"display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;\">\n            <span style=\"width:8px;height:8px;border-radius:50%;background:".concat(p.color, ";flex:0 0 auto;\"></span>\n            <span style=\"font-family:monospace;flex:1;word-break:break-all;\">").concat(UI.escHtml(c.code), "</span>\n            <span style=\"color:").concat(p.color, ";white-space:nowrap;\">").concat(p.label, "</span>\n            ").concat(delBtn, "\n          </div>");
+          }).join('');
+          _context0.n = 7;
+          break;
+        case 6:
+          _context0.p = 6;
+          _t8 = _context0.v;
+          box.innerHTML = "<div style=\"padding:10px;font-size:12px;color:var(--red);\">".concat(UI.escHtml(_t8.message), "</div>");
+        case 7:
+          return _context0.a(2);
       }
-    }
-
-    async function deleteMarkingCode(itemId, codeId) {
-      if (!UI.confirm('Удалить этот код из пула? Действие необратимо — если код на самом деле настоящий, его придётся сканировать/вставлять заново.')) return;
-      try {
-        await window.API.marking.deleteCode(itemId, codeId);
-        UI.notify.ok('Код удалён из пула');
-        await toggleMarkingCodesList(itemId); // закрыть
-        await toggleMarkingCodesList(itemId); // и сразу переоткрыть с обновлённым списком
-        await loadMarkingSummary(itemId);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function importMarkingCodes(idx) {
-      const it = itemCache[idx];
-      const text = UI.val('#m-marking-codes-text');
-      if (!text || !text.trim()) { UI.notify.err('Вставьте хотя бы один код'); return; }
-      try {
-        const res = await window.API.marking.importCodes(it.id, text);
-        const notes = [];
-        if (res.duplicates) notes.push(`дублей пропущено: ${res.duplicates}`);
-        if (res.skipped_invalid) notes.push(`не похоже на КИЗ, пропущено: ${res.skipped_invalid}`);
-        UI.notify.ok(`Загружено: ${res.imported} шт.${notes.length ? ` (${notes.join(', ')})` : ''}`);
-        UI.setVal('#m-marking-codes-text', '');
-        updateMarkingScanCount();
-        await loadMarkingSummary(it.id);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function importMarkingCodesFile(idx) {
-      const it = itemCache[idx];
-      const input = document.getElementById('m-marking-file');
-      const file = input && input.files && input.files[0];
-      const status = document.getElementById('marking-file-status');
-      if (!file) return;
-      if (status) status.textContent = `Загружаем ${file.name}…`;
-      try {
-        const res = await window.API.marking.importCodesFile(it.id, file);
-        const notes = [];
-        if (res.duplicates) notes.push(`дублей пропущено: ${res.duplicates}`);
-        if (res.skipped_invalid) notes.push(`не похоже на КИЗ, пропущено: ${res.skipped_invalid}`);
-        UI.notify.ok(`Загружено из файла: ${res.imported} шт.${notes.length ? ` (${notes.join(', ')})` : ''}`);
-        if (status) status.textContent = '';
-        await loadMarkingSummary(it.id);
-      } catch (e) {
-        UI.notify.err(e.message);
-        if (status) status.textContent = '';
-      } finally {
-        input.value = '';
+    }, _callee0, null, [[3, 6]]);
+  }));
+  return _toggleMarkingCodesList.apply(this, arguments);
+}
+function deleteMarkingCode(_x5, _x6) {
+  return _deleteMarkingCode.apply(this, arguments);
+}
+function _deleteMarkingCode() {
+  _deleteMarkingCode = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1(itemId, codeId) {
+    var _t9;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          if (UI.confirm('Удалить этот код из пула? Действие необратимо — если код на самом деле настоящий, его придётся сканировать/вставлять заново.')) {
+            _context1.n = 1;
+            break;
+          }
+          return _context1.a(2);
+        case 1:
+          _context1.p = 1;
+          _context1.n = 2;
+          return window.API.marking.deleteCode(itemId, codeId);
+        case 2:
+          UI.notify.ok('Код удалён из пула');
+          _context1.n = 3;
+          return toggleMarkingCodesList(itemId);
+        case 3:
+          _context1.n = 4;
+          return toggleMarkingCodesList(itemId);
+        case 4:
+          _context1.n = 5;
+          return loadMarkingSummary(itemId);
+        case 5:
+          _context1.n = 7;
+          break;
+        case 6:
+          _context1.p = 6;
+          _t9 = _context1.v;
+          UI.notify.err(_t9.message);
+        case 7:
+          return _context1.a(2);
       }
-    }
-
-    async function printItemLabel(idx) {
-      const it = itemCache[idx];
-      const copies = Math.min(Math.max(Number(UI.val('#m-print-copies')) || 1, 1), 500);
-      try {
-        const res = await window.API.items.printLabel(it.id, copies);
-        UI.notify.ok(`Отправлено на печать: ${res.printed} шт.`);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function assembleKit(idx) {
-      const it = itemCache[idx];
-      const qty = Number(UI.val('#m-assemble-qty'));
-      const locationCode = UI.val('#m-assemble-loc');
-      if (!qty || qty < 1) { UI.notify.err('Укажите количество комплектов'); return; }
-      if (!locationCode) { UI.notify.err('Укажите код ячейки, где стоит базовый товар'); return; }
-      try {
-        const res = await window.API.inventory.assembleKit({
-          client_id: it.client_id,
-          kit_item_id: it.id,
-          qty,
-          location_code: locationCode,
-        });
-        UI.notify.ok(`Собрано: ${res.qtyAssembled} шт. комплекта (списано ${res.baseQtyUsed} шт. базового товара)`);
-        closeModal();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    async function saveItem(idx) {
-      const it = idx !== null ? itemCache[idx] : null;
-      const data = {
-        item_name: UI.val('#m-name'),
-        vendor_code: UI.val('#m-vendor'),
-        wb_vendor_code: UI.val('#m-wbvendor'),
-        brand: UI.val('#m-brand'),
-        unit: UI.val('#m-unit'),
-        size: UI.val('#m-size'),
-        weight_grams: UI.val('#m-weight') || null,
-        volume_liters: UI.val('#m-volume') || null,
-        needs_packaging: document.getElementById('m-needspkg').checked,
-        is_active: document.getElementById('m-active').checked,
-        requires_marking: document.getElementById('m-marking').checked,
-        marking_trigger: UI.val('#m-marking-trigger') || 'packing',
-        marking_mode: UI.val('#m-marking-mode') || 'print',
-      };
-      if (it) {
-        const kitBase = UI.val('#m-kit-base');
-        data.kit_of_item_id = kitBase ? Number(kitBase) : null;
-        data.kit_multiplier = Number(UI.val('#m-kit-mult')) || 1;
+    }, _callee1, null, [[1, 6]]);
+  }));
+  return _deleteMarkingCode.apply(this, arguments);
+}
+function importMarkingCodes(_x7) {
+  return _importMarkingCodes.apply(this, arguments);
+}
+function _importMarkingCodes() {
+  _importMarkingCodes = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10(idx) {
+    var it, text, res, notes, _t0;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          it = itemCache[idx];
+          text = UI.val('#m-marking-codes-text');
+          if (!(!text || !text.trim())) {
+            _context10.n = 1;
+            break;
+          }
+          UI.notify.err('Вставьте хотя бы один код');
+          return _context10.a(2);
+        case 1:
+          _context10.p = 1;
+          _context10.n = 2;
+          return window.API.marking.importCodes(it.id, text);
+        case 2:
+          res = _context10.v;
+          notes = [];
+          if (res.duplicates) notes.push("\u0434\u0443\u0431\u043B\u0435\u0439 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: ".concat(res.duplicates));
+          if (res.skipped_invalid) notes.push("\u043D\u0435 \u043F\u043E\u0445\u043E\u0436\u0435 \u043D\u0430 \u041A\u0418\u0417, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: ".concat(res.skipped_invalid));
+          UI.notify.ok("\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043E: ".concat(res.imported, " \u0448\u0442.").concat(notes.length ? " (".concat(notes.join(', '), ")") : ''));
+          UI.setVal('#m-marking-codes-text', '');
+          updateMarkingScanCount();
+          _context10.n = 3;
+          return loadMarkingSummary(it.id);
+        case 3:
+          _context10.n = 5;
+          break;
+        case 4:
+          _context10.p = 4;
+          _t0 = _context10.v;
+          UI.notify.err(_t0.message);
+        case 5:
+          return _context10.a(2);
       }
-      try {
-        if (it) {
-          await window.API.items.update(it.id, data);
+    }, _callee10, null, [[1, 4]]);
+  }));
+  return _importMarkingCodes.apply(this, arguments);
+}
+function importMarkingCodesFile(_x8) {
+  return _importMarkingCodesFile.apply(this, arguments);
+}
+function _importMarkingCodesFile() {
+  _importMarkingCodesFile = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11(idx) {
+    var it, input, file, status, res, notes, _t1;
+    return _regenerator().w(function (_context11) {
+      while (1) switch (_context11.p = _context11.n) {
+        case 0:
+          it = itemCache[idx];
+          input = document.getElementById('m-marking-file');
+          file = input && input.files && input.files[0];
+          status = document.getElementById('marking-file-status');
+          if (file) {
+            _context11.n = 1;
+            break;
+          }
+          return _context11.a(2);
+        case 1:
+          if (status) status.textContent = "\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043C ".concat(file.name, "\u2026");
+          _context11.p = 2;
+          _context11.n = 3;
+          return window.API.marking.importCodesFile(it.id, file);
+        case 3:
+          res = _context11.v;
+          notes = [];
+          if (res.duplicates) notes.push("\u0434\u0443\u0431\u043B\u0435\u0439 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: ".concat(res.duplicates));
+          if (res.skipped_invalid) notes.push("\u043D\u0435 \u043F\u043E\u0445\u043E\u0436\u0435 \u043D\u0430 \u041A\u0418\u0417, \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: ".concat(res.skipped_invalid));
+          UI.notify.ok("\u0417\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u043E \u0438\u0437 \u0444\u0430\u0439\u043B\u0430: ".concat(res.imported, " \u0448\u0442.").concat(notes.length ? " (".concat(notes.join(', '), ")") : ''));
+          if (status) status.textContent = '';
+          _context11.n = 4;
+          return loadMarkingSummary(it.id);
+        case 4:
+          _context11.n = 6;
+          break;
+        case 5:
+          _context11.p = 5;
+          _t1 = _context11.v;
+          UI.notify.err(_t1.message);
+          if (status) status.textContent = '';
+        case 6:
+          _context11.p = 6;
+          input.value = '';
+          return _context11.f(6);
+        case 7:
+          return _context11.a(2);
+      }
+    }, _callee11, null, [[2, 5, 6, 7]]);
+  }));
+  return _importMarkingCodesFile.apply(this, arguments);
+}
+function printItemLabel(_x9) {
+  return _printItemLabel.apply(this, arguments);
+}
+function _printItemLabel() {
+  _printItemLabel = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12(idx) {
+    var it, copies, res, _t10;
+    return _regenerator().w(function (_context12) {
+      while (1) switch (_context12.p = _context12.n) {
+        case 0:
+          it = itemCache[idx];
+          copies = Math.min(Math.max(Number(UI.val('#m-print-copies')) || 1, 1), 500);
+          _context12.p = 1;
+          _context12.n = 2;
+          return window.API.items.printLabel(it.id, copies);
+        case 2:
+          res = _context12.v;
+          UI.notify.ok("\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E \u043D\u0430 \u043F\u0435\u0447\u0430\u0442\u044C: ".concat(res.printed, " \u0448\u0442."));
+          _context12.n = 4;
+          break;
+        case 3:
+          _context12.p = 3;
+          _t10 = _context12.v;
+          UI.notify.err(_t10.message);
+        case 4:
+          return _context12.a(2);
+      }
+    }, _callee12, null, [[1, 3]]);
+  }));
+  return _printItemLabel.apply(this, arguments);
+}
+function assembleKit(_x0) {
+  return _assembleKit.apply(this, arguments);
+}
+function _assembleKit() {
+  _assembleKit = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee13(idx) {
+    var it, qty, locationCode, res, _t11;
+    return _regenerator().w(function (_context13) {
+      while (1) switch (_context13.p = _context13.n) {
+        case 0:
+          it = itemCache[idx];
+          qty = Number(UI.val('#m-assemble-qty'));
+          locationCode = UI.val('#m-assemble-loc');
+          if (!(!qty || qty < 1)) {
+            _context13.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите количество комплектов');
+          return _context13.a(2);
+        case 1:
+          if (locationCode) {
+            _context13.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите код ячейки, где стоит базовый товар');
+          return _context13.a(2);
+        case 2:
+          _context13.p = 2;
+          _context13.n = 3;
+          return window.API.inventory.assembleKit({
+            client_id: it.client_id,
+            kit_item_id: it.id,
+            qty: qty,
+            location_code: locationCode
+          });
+        case 3:
+          res = _context13.v;
+          UI.notify.ok("\u0421\u043E\u0431\u0440\u0430\u043D\u043E: ".concat(res.qtyAssembled, " \u0448\u0442. \u043A\u043E\u043C\u043F\u043B\u0435\u043A\u0442\u0430 (\u0441\u043F\u0438\u0441\u0430\u043D\u043E ").concat(res.baseQtyUsed, " \u0448\u0442. \u0431\u0430\u0437\u043E\u0432\u043E\u0433\u043E \u0442\u043E\u0432\u0430\u0440\u0430)"));
+          closeModal();
+          _context13.n = 5;
+          break;
+        case 4:
+          _context13.p = 4;
+          _t11 = _context13.v;
+          UI.notify.err(_t11.message);
+        case 5:
+          return _context13.a(2);
+      }
+    }, _callee13, null, [[2, 4]]);
+  }));
+  return _assembleKit.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+function saveItem(_x1) {
+  return _saveItem.apply(this, arguments);
+}
+function _saveItem() {
+  _saveItem = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee14(idx) {
+    var it, data, kitBase, _t12;
+    return _regenerator().w(function (_context14) {
+      while (1) switch (_context14.p = _context14.n) {
+        case 0:
+          it = idx !== null ? itemCache[idx] : null;
+          data = {
+            item_name: UI.val('#m-name'),
+            vendor_code: UI.val('#m-vendor'),
+            wb_vendor_code: UI.val('#m-wbvendor'),
+            brand: UI.val('#m-brand'),
+            unit: UI.val('#m-unit'),
+            size: UI.val('#m-size'),
+            weight_grams: UI.val('#m-weight') || null,
+            volume_liters: UI.val('#m-volume') || null,
+            needs_packaging: document.getElementById('m-needspkg').checked,
+            is_active: document.getElementById('m-active').checked,
+            requires_marking: document.getElementById('m-marking').checked,
+            marking_trigger: UI.val('#m-marking-trigger') || 'packing',
+            marking_mode: UI.val('#m-marking-mode') || 'print'
+          };
+          if (it) {
+            kitBase = UI.val('#m-kit-base');
+            data.kit_of_item_id = kitBase ? Number(kitBase) : null;
+            data.kit_multiplier = Number(UI.val('#m-kit-mult')) || 1;
+          }
+          _context14.p = 1;
+          if (!it) {
+            _context14.n = 3;
+            break;
+          }
+          _context14.n = 2;
+          return window.API.items.update(it.id, data);
+        case 2:
           UI.notify.ok('Товар обновлён');
-        } else {
+          _context14.n = 7;
+          break;
+        case 3:
           data.barcode = UI.val('#m-barcode');
           data.client_id = UI.val('#m-client');
-          if (!data.barcode) { UI.notify.err('Укажите штрихкод'); return; }
-          if (!data.item_name) { UI.notify.err('Укажите название'); return; }
-          await window.API.items.create(data);
+          if (data.barcode) {
+            _context14.n = 4;
+            break;
+          }
+          UI.notify.err('Укажите штрихкод');
+          return _context14.a(2);
+        case 4:
+          if (data.item_name) {
+            _context14.n = 5;
+            break;
+          }
+          UI.notify.err('Укажите название');
+          return _context14.a(2);
+        case 5:
+          _context14.n = 6;
+          return window.API.items.create(data);
+        case 6:
           UI.notify.ok('Товар создан');
-        }
-        closeModal();
-        await loadItems();
-      } catch (e) { UI.notify.err(e.message); }
+        case 7:
+          closeModal();
+          _context14.n = 8;
+          return loadItems();
+        case 8:
+          _context14.n = 10;
+          break;
+        case 9:
+          _context14.p = 9;
+          _t12 = _context14.v;
+          UI.notify.err(_t12.message);
+        case 10:
+          return _context14.a(2);
+      }
+    }, _callee14, null, [[1, 9]]);
+  }));
+  return _saveItem.apply(this, arguments);
+}
+function deleteItemFromModal(_x10) {
+  return _deleteItemFromModal.apply(this, arguments);
+}
+function _deleteItemFromModal() {
+  _deleteItemFromModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee15(idx) {
+    var it, res, _t13;
+    return _regenerator().w(function (_context15) {
+      while (1) switch (_context15.p = _context15.n) {
+        case 0:
+          it = itemCache[idx];
+          if (it) {
+            _context15.n = 1;
+            break;
+          }
+          return _context15.a(2);
+        case 1:
+          if (UI.confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0442\u043E\u0432\u0430\u0440 ".concat(it.item_name || it.barcode, "?"))) {
+            _context15.n = 2;
+            break;
+          }
+          return _context15.a(2);
+        case 2:
+          _context15.p = 2;
+          _context15.n = 3;
+          return window.API.items.delete(it.id);
+        case 3:
+          res = _context15.v;
+          UI.notify.ok(res.mode === 'soft' ? "\u0422\u043E\u0432\u0430\u0440 \xAB".concat(res.item_name || res.barcode, "\xBB \u0434\u0435\u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D (\u0435\u0441\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u2014 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F)") : "\u0422\u043E\u0432\u0430\u0440 \xAB".concat(res.item_name || res.barcode, "\xBB \u0443\u0434\u0430\u043B\u0451\u043D"));
+          closeModal();
+          _context15.n = 4;
+          return loadItems();
+        case 4:
+          _context15.n = 6;
+          break;
+        case 5:
+          _context15.p = 5;
+          _t13 = _context15.v;
+          UI.notify.err(_t13.message);
+        case 6:
+          return _context15.a(2);
+      }
+    }, _callee15, null, [[2, 5]]);
+  }));
+  return _deleteItemFromModal.apply(this, arguments);
+}
+function loadPendingOverrides() {
+  return _loadPendingOverrides.apply(this, arguments);
+}
+function _loadPendingOverrides() {
+  _loadPendingOverrides = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee16() {
+    var res, rows, card, _t14;
+    return _regenerator().w(function (_context16) {
+      while (1) switch (_context16.p = _context16.n) {
+        case 0:
+          _context16.p = 0;
+          _context16.n = 1;
+          return window.API.marking.pendingOverrides({
+            limit: 100
+          });
+        case 1:
+          res = _context16.v;
+          rows = res.rows || [];
+          card = document.getElementById('pending-override-card');
+          if (rows.length) {
+            _context16.n = 2;
+            break;
+          }
+          card.style.display = 'none';
+          return _context16.a(2);
+        case 2:
+          card.style.display = 'block';
+          document.getElementById('pending-override-count').textContent = rows.length;
+          document.getElementById('pending-override-body').innerHTML = rows.map(function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(r.item_name || '—'), "</td>\n            <td style=\"font-family:monospace;\">").concat(UI.escHtml(r.code), "</td>\n            <td>").concat(UI.fmtDateTime(r.used_at), "</td>\n            <td>").concat(UI.escHtml(r.override_by_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.wb_override_reason || '—'), "</td>\n          </tr>\n        ");
+          }).join('');
+          _context16.n = 4;
+          break;
+        case 3:
+          _context16.p = 3;
+          _t14 = _context16.v;
+        case 4:
+          return _context16.a(2);
+      }
+    }, _callee16, null, [[0, 3]]);
+  }));
+  return _loadPendingOverrides.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadClients();
+      case 1:
+        _context.n = 2;
+        return loadItems();
+      case 2:
+        _context.n = 3;
+        return loadPendingOverrides();
+      case 3:
+        return _context.a(2);
     }
-
-    async function deleteItemFromModal(idx) {
-      const it = itemCache[idx];
-      if (!it) return;
-      if (!UI.confirm(`Удалить товар ${it.item_name || it.barcode}?`)) return;
-      try {
-        const res = await window.API.items.delete(it.id);
-        UI.notify.ok(res.mode === 'soft'
-          ? `Товар «${res.item_name || res.barcode}» деактивирован (есть история — полностью удалить нельзя)`
-          : `Товар «${res.item_name || res.barcode}» удалён`);
-        closeModal();
-        await loadItems();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadPendingOverrides() {
-      try {
-        const res = await window.API.marking.pendingOverrides({ limit: 100 });
-        const rows = res.rows || [];
-        const card = document.getElementById('pending-override-card');
-        if (!rows.length) { card.style.display = 'none'; return; }
-        card.style.display = 'block';
-        document.getElementById('pending-override-count').textContent = rows.length;
-        document.getElementById('pending-override-body').innerHTML = rows.map(r => `
-          <tr>
-            <td>${UI.escHtml(r.item_name || '—')}</td>
-            <td style="font-family:monospace;">${UI.escHtml(r.code)}</td>
-            <td>${UI.fmtDateTime(r.used_at)}</td>
-            <td>${UI.escHtml(r.override_by_name || '—')}</td>
-            <td>${UI.escHtml(r.wb_override_reason || '—')}</td>
-          </tr>
-        `).join('');
-      } catch (e) { /* модуль marking может быть не подключён - просто не показываем */ }
-    }
-
-    (async () => { await loadClients(); await loadItems(); await loadPendingOverrides(); })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

@@ -159,380 +159,697 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['picker','supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    let currentTask = null;
-    let waveStatus = null;
-    let pendingBatchBarcode = null; // доработка #6: штрихкод, отсканированный перед вводом количества
-
-    async function logout() {
-      await window.API.auth.logout();
-      window.location.href = '/app/login.html';
-    }
-
-    function updateStepIndicator(scanStep) {
-      const locStep  = document.getElementById('step-loc');
-      const itemStep = document.getElementById('step-item');
-      const scanInput = document.getElementById('scan-input');
-      const scanLabel = document.getElementById('scan-label');
-
-      if (scanStep === 'await_location') {
-        locStep.className  = 'step active';
-        itemStep.className = 'step';
-        scanInput.className = 'scan-input awaiting-location';
-        scanLabel.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg> Отсканируйте ЯЧЕЙКУ';
-        scanInput.placeholder = 'Скан ячейки...';
-      } else {
-        locStep.className  = 'step done';
-        itemStep.className = 'step active';
-        scanInput.className = 'scan-input awaiting-item';
-        // Для промаркированных товаров (Честный знак, режим "клиент маркирует")
-        // можно вместо обычного штрихкода отсканировать сам киз конкретной
-        // единицы — система сама определит по нему товар. Подсказываем это
-        // явно, чтобы сборщик не гадал, что именно сканировать.
-        const marked = currentTask && currentTask.requires_marking && currentTask.marking_mode === 'scan';
-        scanLabel.innerHTML = marked
-          ? '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР или КИЗ'
-          : '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
-        scanInput.placeholder = marked ? 'Скан штрихкода или киза...' : 'Скан товара...';
+  <script>function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['picker', 'supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+var currentTask = null;
+var waveStatus = null;
+var pendingBatchBarcode = null; // доработка #6: штрихкод, отсканированный перед вводом количества
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.n) {
+        case 0:
+          _context3.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context3.a(2);
       }
-    }
+    }, _callee3);
+  }));
+  return _logout.apply(this, arguments);
+}
+function updateStepIndicator(scanStep) {
+  var locStep = document.getElementById('step-loc');
+  var itemStep = document.getElementById('step-item');
+  var scanInput = document.getElementById('scan-input');
+  var scanLabel = document.getElementById('scan-label');
+  if (scanStep === 'await_location') {
+    locStep.className = 'step active';
+    itemStep.className = 'step';
+    scanInput.className = 'scan-input awaiting-location';
+    scanLabel.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg> Отсканируйте ЯЧЕЙКУ';
+    scanInput.placeholder = 'Скан ячейки...';
+  } else {
+    locStep.className = 'step done';
+    itemStep.className = 'step active';
+    scanInput.className = 'scan-input awaiting-item';
+    // Для промаркированных товаров (Честный знак, режим "клиент маркирует")
+    // можно вместо обычного штрихкода отсканировать сам киз конкретной
+    // единицы — система сама определит по нему товар. Подсказываем это
+    // явно, чтобы сборщик не гадал, что именно сканировать.
+    var marked = currentTask && currentTask.requires_marking && currentTask.marking_mode === 'scan';
+    scanLabel.innerHTML = marked ? '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР или КИЗ' : '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Отсканируйте ТОВАР';
+    scanInput.placeholder = marked ? 'Скан штрихкода или киза...' : 'Скан товара...';
+  }
+}
+function renderTask(task) {
+  if (!task) {
+    document.getElementById('task-section').style.display = 'none';
+    return;
+  }
+  document.getElementById('task-section').style.display = 'block';
+  document.getElementById('wave-complete-card').style.display = 'none';
+  document.getElementById('no-wave-card').style.display = 'none';
+  document.getElementById('wave-card').style.display = 'block';
 
-    function renderTask(task) {
-      if (!task) { document.getElementById('task-section').style.display='none'; return; }
-      document.getElementById('task-section').style.display='block';
-      document.getElementById('wave-complete-card').style.display='none';
-      document.getElementById('no-wave-card').style.display='none';
-      document.getElementById('wave-card').style.display='block';
-
-      // Сброс на случай, если предыдущая задача осталась в состоянии "ввод
-      // количества" (доработка #6) — новая/обновлённая задача всегда
-      // стартует с обычного скан-поля.
-      pendingBatchBarcode = null;
-      document.getElementById('qty-section').style.display = 'none';
-      document.getElementById('scan-section-main').style.display = 'block';
-
-      currentTask = task;
-      document.getElementById('task-barcode').textContent = task.barcode || '—';
-      document.getElementById('task-name').textContent    = task.item_name || task.barcode || '—';
-      document.getElementById('task-vendor').textContent  = [task.vendor_code, task.size ? 'разм. '+task.size : null].filter(Boolean).join(' · ');
-      document.getElementById('task-location').textContent= task.location_code || '—';
-      document.getElementById('task-qty').textContent     = task.qty || 0;
-      document.getElementById('shipment-code').textContent= task.shipment_code || '—';
-
-      const preview = document.getElementById('task-preview');
-      if (task.preview_url) { preview.src = task.preview_url; preview.style.display='block'; }
-      else preview.style.display='none';
-
-      updateStepIndicator(task.scan_step || 'await_location');
-      document.getElementById('status-msg').textContent = '';
-      setTimeout(() => document.getElementById('scan-input').focus(), 100);
-    }
-
-    async function loadWaveStatus() {
-      try {
-        const s = await window.API.picking.waveStatus();
-        waveStatus = s;
-        if (s.has_wave) {
-          document.getElementById('no-wave-card').style.display='none';
-          document.getElementById('wave-card').style.display='block';
-          document.getElementById('shipment-code').textContent = s.shipment_code || '—';
-          document.getElementById('wave-progress').textContent = `${s.done||0}/${s.total||0}`;
-          const pct = s.total > 0 ? Math.round((s.done / s.total)*100) : 0;
-          document.getElementById('progress-fill').style.width = pct + '%';
-        } else {
-          document.getElementById('no-wave-card').style.display='block';
-          document.getElementById('wave-card').style.display='none';
-          document.getElementById('task-section').style.display='none';
-          document.getElementById('wave-complete-card').style.display='none';
-        }
-      } catch(e) { UI.notify.err(e.message); }
-    }
-
-    async function takeWave() {
-      try {
-        const res = await window.API.picking.takeWave();
-        if (res.has_wave) {
+  // Сброс на случай, если предыдущая задача осталась в состоянии "ввод
+  // количества" (доработка #6) — новая/обновлённая задача всегда
+  // стартует с обычного скан-поля.
+  pendingBatchBarcode = null;
+  document.getElementById('qty-section').style.display = 'none';
+  document.getElementById('scan-section-main').style.display = 'block';
+  currentTask = task;
+  document.getElementById('task-barcode').textContent = task.barcode || '—';
+  document.getElementById('task-name').textContent = task.item_name || task.barcode || '—';
+  document.getElementById('task-vendor').textContent = [task.vendor_code, task.size ? 'разм. ' + task.size : null].filter(Boolean).join(' · ');
+  document.getElementById('task-location').textContent = task.location_code || '—';
+  document.getElementById('task-qty').textContent = task.qty || 0;
+  document.getElementById('shipment-code').textContent = task.shipment_code || '—';
+  var preview = document.getElementById('task-preview');
+  if (task.preview_url) {
+    preview.src = task.preview_url;
+    preview.style.display = 'block';
+  } else preview.style.display = 'none';
+  updateStepIndicator(task.scan_step || 'await_location');
+  document.getElementById('status-msg').textContent = '';
+  setTimeout(function () {
+    return document.getElementById('scan-input').focus();
+  }, 100);
+}
+function loadWaveStatus() {
+  return _loadWaveStatus.apply(this, arguments);
+}
+function _loadWaveStatus() {
+  _loadWaveStatus = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var s, pct, _t;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.picking.waveStatus();
+        case 1:
+          s = _context4.v;
+          waveStatus = s;
+          if (s.has_wave) {
+            document.getElementById('no-wave-card').style.display = 'none';
+            document.getElementById('wave-card').style.display = 'block';
+            document.getElementById('shipment-code').textContent = s.shipment_code || '—';
+            document.getElementById('wave-progress').textContent = "".concat(s.done || 0, "/").concat(s.total || 0);
+            pct = s.total > 0 ? Math.round(s.done / s.total * 100) : 0;
+            document.getElementById('progress-fill').style.width = pct + '%';
+          } else {
+            document.getElementById('no-wave-card').style.display = 'block';
+            document.getElementById('wave-card').style.display = 'none';
+            document.getElementById('task-section').style.display = 'none';
+            document.getElementById('wave-complete-card').style.display = 'none';
+          }
+          _context4.n = 3;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t = _context4.v;
+          UI.notify.err(_t.message);
+        case 3:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _loadWaveStatus.apply(this, arguments);
+}
+function takeWave() {
+  return _takeWave.apply(this, arguments);
+}
+function _takeWave() {
+  _takeWave = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var res, _t2;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          _context5.n = 1;
+          return window.API.picking.takeWave();
+        case 1:
+          res = _context5.v;
+          if (!res.has_wave) {
+            _context5.n = 3;
+            break;
+          }
           UI.notify.ok('Волна взята!');
-          await loadNextTask();
-        } else {
+          _context5.n = 2;
+          return loadNextTask();
+        case 2:
+          _context5.n = 4;
+          break;
+        case 3:
           UI.notify.warn('Нет доступных волн');
-        }
-        await loadWaveStatus();
-      } catch(e) { UI.notify.err(e.message); }
-    }
-
-    async function loadNextTask() {
-      try {
-        const res = await window.API.picking.next();
-        if (res.task) {
-          renderTask(res.task);
-        } else {
-          currentTask = null;
-          document.getElementById('task-section').style.display='none';
-          document.getElementById('wave-complete-card').style.display='block';
-          UI.notify.ok('Все задачи выполнены! Закройте волну.');
-        }
-      } catch(e) { UI.notify.err(e.message); }
-    }
-
-    async function handleScan(scanned) {
-      if (!currentTask) return;
-      // Сканер иногда шлёт один скан как два быстрых Enter подряд — вторая
-      // попытка стартует раньше, чем пришёл ответ на первую, и бьёт по уже
-      // изменившемуся на сервере scan_step (например, после того как первый
-      // скан сам перевёл задачу в 'await_location' из-за релокации). Пока
-      // предыдущий скан не обработан — игнорируем повторный.
-      if (window.__scanBusy) return;
-      window.__scanBusy = true;
-      const step = currentTask.scan_step || 'await_location';
-      const statusEl = document.getElementById('status-msg');
-
-      try {
-        if (step === 'await_location') {
-          const res = await window.API.picking.scanLocation({
-            picking_task_id:     currentTask.id,
-            scanned_location_code: scanned,
+        case 4:
+          _context5.n = 5;
+          return loadWaveStatus();
+        case 5:
+          _context5.n = 7;
+          break;
+        case 6:
+          _context5.p = 6;
+          _t2 = _context5.v;
+          UI.notify.err(_t2.message);
+        case 7:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 6]]);
+  }));
+  return _takeWave.apply(this, arguments);
+}
+function loadNextTask() {
+  return _loadNextTask.apply(this, arguments);
+}
+function _loadNextTask() {
+  _loadNextTask = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, _t3;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.picking.next();
+        case 1:
+          res = _context6.v;
+          if (res.task) {
+            renderTask(res.task);
+          } else {
+            currentTask = null;
+            document.getElementById('task-section').style.display = 'none';
+            document.getElementById('wave-complete-card').style.display = 'block';
+            UI.notify.ok('Все задачи выполнены! Закройте волну.');
+          }
+          _context6.n = 3;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t3 = _context6.v;
+          UI.notify.err(_t3.message);
+        case 3:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _loadNextTask.apply(this, arguments);
+}
+function handleScan(_x) {
+  return _handleScan.apply(this, arguments);
+} // ===== Доработка #6: сборка "пачкой" по количеству =====
+function _handleScan() {
+  _handleScan = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(scanned) {
+    var step, statusEl, res, _res, viaBadge, _t4;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (currentTask) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          if (!window.__scanBusy) {
+            _context7.n = 2;
+            break;
+          }
+          return _context7.a(2);
+        case 2:
+          window.__scanBusy = true;
+          step = currentTask.scan_step || 'await_location';
+          statusEl = document.getElementById('status-msg');
+          _context7.p = 3;
+          if (!(step === 'await_location')) {
+            _context7.n = 5;
+            break;
+          }
+          _context7.n = 4;
+          return window.API.picking.scanLocation({
+            picking_task_id: currentTask.id,
+            scanned_location_code: scanned
           });
+        case 4:
+          res = _context7.v;
           if (res.result === 'ok') {
             currentTask.scan_step = res.next_step || 'await_item';
-            currentTask.batch_allowed_qty = (res.batch_allowed_qty === undefined) ? null : res.batch_allowed_qty;
-            currentTask.batch_group_need = (res.batch_group_need === undefined) ? null : res.batch_group_need;
+            currentTask.batch_allowed_qty = res.batch_allowed_qty === undefined ? null : res.batch_allowed_qty;
+            currentTask.batch_group_need = res.batch_group_need === undefined ? null : res.batch_group_need;
             updateStepIndicator(currentTask.scan_step);
             statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Ячейка подтверждена';
           } else {
             UI.beep('err');
-            UI.notify.err(`Неверная ячейка! Ожидалась: ${res.expected}`);
-            statusEl.textContent = `Ожидается: ${res.expected}`;
+            UI.notify.err("\u041D\u0435\u0432\u0435\u0440\u043D\u0430\u044F \u044F\u0447\u0435\u0439\u043A\u0430! \u041E\u0436\u0438\u0434\u0430\u043B\u0430\u0441\u044C: ".concat(res.expected));
+            statusEl.textContent = "\u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F: ".concat(res.expected);
           }
-        } else if (step === 'await_item_qty') {
+          _context7.n = 13;
+          break;
+        case 5:
+          if (!(step === 'await_item_qty')) {
+            _context7.n = 6;
+            break;
+          }
           // Доработка #6: барк-скан здесь НЕ уходит на сервер сразу — сначала
           // просим ввести количество, а штрихкод + qty отправляются одним
           // вызовом при подтверждении (см. confirmBatchQty).
           showBatchQtyEntry(scanned);
-        } else {
-          const res = await window.API.picking.scanItem({
+          _context7.n = 13;
+          break;
+        case 6:
+          _context7.n = 7;
+          return window.API.picking.scanItem({
             picking_task_id: currentTask.id,
-            scanned_barcode: scanned,
+            scanned_barcode: scanned
           });
-          if (res.result === 'ok') {
-            // Явно показываем, чем именно засчитали единицу — штрихкодом или
-            // кизом — чтобы сборщик видел, что система распознала скан
-            // правильно, а не просто молча приняла.
-            const viaBadge = res.matched_via === 'kiz'
-              ? '<span style="color:var(--green);font-weight:700;">✓ КИЗ</span>'
-              : '<span style="color:var(--blue);font-weight:700;">✓ Штрихкод</span>';
-            if (res.done) {
-              UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})`);
-              await loadWaveStatus();
-              await loadNextTask();
-            } else {
-              statusEl.innerHTML = `${viaBadge} · Собрано: ${res.qty_picked}/${res.qty_total}`;
-            }
-          } else if (res.result === 'relocated') {
+        case 7:
+          _res = _context7.v;
+          if (!(_res.result === 'ok')) {
+            _context7.n = 12;
+            break;
+          }
+          // Явно показываем, чем именно засчитали единицу — штрихкодом или
+          // кизом — чтобы сборщик видел, что система распознала скан
+          // правильно, а не просто молча приняла.
+          viaBadge = _res.matched_via === 'kiz' ? '<span style="color:var(--green);font-weight:700;">✓ КИЗ</span>' : '<span style="color:var(--blue);font-weight:700;">✓ Штрихкод</span>';
+          if (!_res.done) {
+            _context7.n = 10;
+            break;
+          }
+          UI.notify.ok("<svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u0413\u043E\u0442\u043E\u0432\u043E! (".concat(_res.qty_picked, "/").concat(_res.qty_total, ")"));
+          _context7.n = 8;
+          return loadWaveStatus();
+        case 8:
+          _context7.n = 9;
+          return loadNextTask();
+        case 9:
+          _context7.n = 11;
+          break;
+        case 10:
+          statusEl.innerHTML = "".concat(viaBadge, " \xB7 \u0421\u043E\u0431\u0440\u0430\u043D\u043E: ").concat(_res.qty_picked, "/").concat(_res.qty_total);
+        case 11:
+          _context7.n = 13;
+          break;
+        case 12:
+          if (_res.result === 'relocated') {
             // Ячейка, к которой было привязано задание, оказалась пустой
             // (например, её же забрали параллельно под другой заказ этой же
             // волны) - сервер сам нашёл другую ячейку с реальным остатком и
             // переназначил задание на неё, вместо ошибки "не хватает".
             UI.beep('ok');
-            renderTask({
-              ...currentTask,
-              location_code: res.new_location_code,
+            renderTask(_objectSpread(_objectSpread({}, currentTask), {}, {
+              location_code: _res.new_location_code,
               scan_step: 'await_location',
-              qty_picked: 0,
-            });
-            UI.notify.warn(res.message || `Товар перенесён в ячейку ${res.new_location_code}`);
-            statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
+              qty_picked: 0
+            }));
+            UI.notify.warn(_res.message || "\u0422\u043E\u0432\u0430\u0440 \u043F\u0435\u0440\u0435\u043D\u0435\u0441\u0451\u043D \u0432 \u044F\u0447\u0435\u0439\u043A\u0443 ".concat(_res.new_location_code));
+            statusEl.textContent = "\u0418\u0434\u0438\u0442\u0435 \u0432 \u044F\u0447\u0435\u0439\u043A\u0443: ".concat(_res.new_location_code);
           } else {
             UI.beep('err');
-            UI.notify.err(`Неверный товар! Ожидается: ${res.expected}`);
+            UI.notify.err("\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u0442\u043E\u0432\u0430\u0440! \u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F: ".concat(_res.expected));
           }
-        }
-      } catch(e) {
-        UI.beep('err');
-        UI.notify.err(e.message);
-      } finally {
-        window.__scanBusy = false;
+        case 13:
+          _context7.n = 15;
+          break;
+        case 14:
+          _context7.p = 14;
+          _t4 = _context7.v;
+          UI.beep('err');
+          UI.notify.err(_t4.message);
+        case 15:
+          _context7.p = 15;
+          window.__scanBusy = false;
+          return _context7.f(15);
+        case 16:
+          return _context7.a(2);
       }
+    }, _callee7, null, [[3, 14, 15, 16]]);
+  }));
+  return _handleScan.apply(this, arguments);
+}
+function showBatchQtyEntry(scannedBarcode) {
+  pendingBatchBarcode = scannedBarcode;
+  document.getElementById('scan-section-main').style.display = 'none';
+  document.getElementById('qty-section').style.display = 'block';
+
+  // "Нужно ещё" — это НЕ qty только текущего задания, а группа (это
+  // задание + другие ещё не взятые заказы этой же волны на тот же товар
+  // — см. batch_group_need из ответа scanLocation). Частый случай: этому
+  // заданию самому нужна 1 шт, но рядом ещё 4 таких же заказа из этой же
+  // ячейки — тогда "нужно ещё" должно показать 5, а не 1.
+  var ownRemaining = (currentTask.qty || 0) - (currentTask.qty_picked || 0);
+  var remaining = currentTask.batch_group_need === null || currentTask.batch_group_need === undefined ? ownRemaining : currentTask.batch_group_need;
+  var allowed = currentTask.batch_allowed_qty === null || currentTask.batch_allowed_qty === undefined ? remaining : Math.min(currentTask.batch_allowed_qty, remaining);
+  var qtyInput = document.getElementById('qty-input');
+  qtyInput.value = allowed > 0 ? allowed : '';
+  qtyInput.max = remaining;
+  document.getElementById('qty-hint').textContent = allowed > 0 ? "\u041D\u0443\u0436\u043D\u043E \u0435\u0449\u0451: ".concat(remaining, " \u0448\u0442 (\u0441 \u0443\u0447\u0451\u0442\u043E\u043C \u0434\u0440\u0443\u0433\u0438\u0445 \u0437\u0430\u043A\u0430\u0437\u043E\u0432 \u043D\u0430 \u044D\u0442\u043E\u0442 \u0436\u0435 \u0442\u043E\u0432\u0430\u0440 \u0438\u0437 \u044D\u0442\u043E\u0439 \u0432\u043E\u043B\u043D\u044B). \u0412 \u044D\u0442\u043E\u0439 \u044F\u0447\u0435\u0439\u043A\u0435 \u043F\u043E \u0441\u0438\u0441\u0442\u0435\u043C\u0435 \u0435\u0441\u0442\u044C ").concat(allowed, " \u0448\u0442. \u0415\u0441\u043B\u0438 \u043F\u043E \u0444\u0430\u043A\u0442\u0443 \u043C\u0435\u043D\u044C\u0448\u0435 \u2014 \u0438\u0441\u043F\u0440\u0430\u0432\u044C\u0442\u0435 \u0447\u0438\u0441\u043B\u043E.") : "\u041D\u0443\u0436\u043D\u043E \u0435\u0449\u0451: ".concat(remaining, " \u0448\u0442. \u0415\u0441\u043B\u0438 \u0432 \u044F\u0447\u0435\u0439\u043A\u0435 \u043F\u0443\u0441\u0442\u043E \u2014 \u0432\u0441\u0451 \u0440\u0430\u0432\u043D\u043E \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u0412\u0437\u044F\u0442\u044C\xBB, \u0441\u0438\u0441\u0442\u0435\u043C\u0430 \u0441\u0430\u043C\u0430 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0438\u0442 \u0434\u0440\u0443\u0433\u0443\u044E \u044F\u0447\u0435\u0439\u043A\u0443.");
+  setTimeout(function () {
+    qtyInput.focus();
+    qtyInput.select();
+  }, 100);
+  qtyInput.onkeydown = function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmBatchQty();
     }
-
-    // ===== Доработка #6: сборка "пачкой" по количеству =====
-
-    function showBatchQtyEntry(scannedBarcode) {
-      pendingBatchBarcode = scannedBarcode;
-      document.getElementById('scan-section-main').style.display = 'none';
-      document.getElementById('qty-section').style.display = 'block';
-
-      // "Нужно ещё" — это НЕ qty только текущего задания, а группа (это
-      // задание + другие ещё не взятые заказы этой же волны на тот же товар
-      // — см. batch_group_need из ответа scanLocation). Частый случай: этому
-      // заданию самому нужна 1 шт, но рядом ещё 4 таких же заказа из этой же
-      // ячейки — тогда "нужно ещё" должно показать 5, а не 1.
-      const ownRemaining = (currentTask.qty || 0) - (currentTask.qty_picked || 0);
-      const remaining = (currentTask.batch_group_need === null || currentTask.batch_group_need === undefined)
-        ? ownRemaining : currentTask.batch_group_need;
-      const allowed = (currentTask.batch_allowed_qty === null || currentTask.batch_allowed_qty === undefined)
-        ? remaining : Math.min(currentTask.batch_allowed_qty, remaining);
-
-      const qtyInput = document.getElementById('qty-input');
-      qtyInput.value = allowed > 0 ? allowed : '';
-      qtyInput.max = remaining;
-
-      document.getElementById('qty-hint').textContent = allowed > 0
-        ? `Нужно ещё: ${remaining} шт (с учётом других заказов на этот же товар из этой волны). В этой ячейке по системе есть ${allowed} шт. Если по факту меньше — исправьте число.`
-        : `Нужно ещё: ${remaining} шт. Если в ячейке пусто — всё равно нажмите «Взять», система сама предложит другую ячейку.`;
-
-      setTimeout(() => { qtyInput.focus(); qtyInput.select(); }, 100);
-
-      qtyInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmBatchQty(); } };
-    }
-
-    function cancelBatchQty() {
-      pendingBatchBarcode = null;
-      document.getElementById('qty-section').style.display = 'none';
-      document.getElementById('scan-section-main').style.display = 'block';
-      setTimeout(() => document.getElementById('scan-input').focus(), 100);
-    }
-
-    async function confirmBatchQty() {
-      if (!currentTask || !pendingBatchBarcode) return;
-      const qtyVal = parseInt(document.getElementById('qty-input').value, 10);
-      if (!qtyVal || qtyVal < 1) { UI.notify.err('Укажите количество больше нуля'); return; }
-      if (window.__scanBusy) return;
-      window.__scanBusy = true;
-      const statusEl = document.getElementById('status-msg');
-      const barcode = pendingBatchBarcode;
-
-      try {
-        const res = await window.API.picking.scanItemQty({
-          picking_task_id: currentTask.id,
-          scanned_barcode: barcode,
-          qty: qtyVal,
-        });
-        pendingBatchBarcode = null;
-
-        if (res.result === 'ok' && res.done) {
+  };
+}
+function cancelBatchQty() {
+  pendingBatchBarcode = null;
+  document.getElementById('qty-section').style.display = 'none';
+  document.getElementById('scan-section-main').style.display = 'block';
+  setTimeout(function () {
+    return document.getElementById('scan-input').focus();
+  }, 100);
+}
+function confirmBatchQty() {
+  return _confirmBatchQty.apply(this, arguments);
+}
+function _confirmBatchQty() {
+  _confirmBatchQty = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var qtyVal, statusEl, barcode, res, extraMsg, _t5;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          if (!(!currentTask || !pendingBatchBarcode)) {
+            _context8.n = 1;
+            break;
+          }
+          return _context8.a(2);
+        case 1:
+          qtyVal = parseInt(document.getElementById('qty-input').value, 10);
+          if (!(!qtyVal || qtyVal < 1)) {
+            _context8.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите количество больше нуля');
+          return _context8.a(2);
+        case 2:
+          if (!window.__scanBusy) {
+            _context8.n = 3;
+            break;
+          }
+          return _context8.a(2);
+        case 3:
+          window.__scanBusy = true;
+          statusEl = document.getElementById('status-msg');
+          barcode = pendingBatchBarcode;
+          _context8.p = 4;
+          _context8.n = 5;
+          return window.API.picking.scanItemQty({
+            picking_task_id: currentTask.id,
+            scanned_barcode: barcode,
+            qty: qtyVal
+          });
+        case 5:
+          res = _context8.v;
+          pendingBatchBarcode = null;
+          if (!(res.result === 'ok' && res.done)) {
+            _context8.n = 8;
+            break;
+          }
           UI.beep('ok');
-          const extraMsg = res.extra_completed > 0 ? ` ${res.message || ''}` : '';
-          UI.notify.ok(`<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Готово! (${res.qty_picked}/${res.qty_total})${extraMsg}`);
-          await loadWaveStatus();
-          await loadNextTask();
-        } else if (res.result === 'partial') {
+          extraMsg = res.extra_completed > 0 ? " ".concat(res.message || '') : '';
+          UI.notify.ok("<svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u0413\u043E\u0442\u043E\u0432\u043E! (".concat(res.qty_picked, "/").concat(res.qty_total, ")").concat(extraMsg));
+          _context8.n = 6;
+          return loadWaveStatus();
+        case 6:
+          _context8.n = 7;
+          return loadNextTask();
+        case 7:
+          _context8.n = 14;
+          break;
+        case 8:
+          if (!(res.result === 'partial')) {
+            _context8.n = 9;
+            break;
+          }
           UI.beep('ok');
-          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', qty_picked: res.qty_picked, batch_allowed_qty: null, batch_group_need: null });
+          renderTask(_objectSpread(_objectSpread({}, currentTask), {}, {
+            location_code: res.new_location_code,
+            scan_step: 'await_location',
+            qty_picked: res.qty_picked,
+            batch_allowed_qty: null,
+            batch_group_need: null
+          }));
           UI.notify.warn(res.message);
-          statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
-        } else if (res.result === 'relocated') {
+          statusEl.textContent = "\u0418\u0434\u0438\u0442\u0435 \u0432 \u044F\u0447\u0435\u0439\u043A\u0443: ".concat(res.new_location_code);
+          _context8.n = 14;
+          break;
+        case 9:
+          if (!(res.result === 'relocated')) {
+            _context8.n = 10;
+            break;
+          }
           UI.beep('ok');
-          renderTask({ ...currentTask, location_code: res.new_location_code, scan_step: 'await_location', batch_allowed_qty: null, batch_group_need: null });
-          UI.notify.warn(res.message || `Товар перенесён в ячейку ${res.new_location_code}`);
-          statusEl.textContent = `Идите в ячейку: ${res.new_location_code}`;
-        } else if (res.result === 'shortage') {
+          renderTask(_objectSpread(_objectSpread({}, currentTask), {}, {
+            location_code: res.new_location_code,
+            scan_step: 'await_location',
+            batch_allowed_qty: null,
+            batch_group_need: null
+          }));
+          UI.notify.warn(res.message || "\u0422\u043E\u0432\u0430\u0440 \u043F\u0435\u0440\u0435\u043D\u0435\u0441\u0451\u043D \u0432 \u044F\u0447\u0435\u0439\u043A\u0443 ".concat(res.new_location_code));
+          statusEl.textContent = "\u0418\u0434\u0438\u0442\u0435 \u0432 \u044F\u0447\u0435\u0439\u043A\u0443: ".concat(res.new_location_code);
+          _context8.n = 14;
+          break;
+        case 10:
+          if (!(res.result === 'shortage')) {
+            _context8.n = 13;
+            break;
+          }
           UI.beep('err');
           UI.notify.warn(res.message);
-          await loadWaveStatus();
-          await loadNextTask();
-        } else if (res.result === 'mismatch') {
+          _context8.n = 11;
+          return loadWaveStatus();
+        case 11:
+          _context8.n = 12;
+          return loadNextTask();
+        case 12:
+          _context8.n = 14;
+          break;
+        case 13:
+          if (res.result === 'mismatch') {
+            UI.beep('err');
+            UI.notify.err("\u041D\u0435\u0432\u0435\u0440\u043D\u044B\u0439 \u0442\u043E\u0432\u0430\u0440! \u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F: ".concat(res.expected));
+            document.getElementById('qty-section').style.display = 'none';
+            document.getElementById('scan-section-main').style.display = 'block';
+            setTimeout(function () {
+              return document.getElementById('scan-input').focus();
+            }, 100);
+          } else {
+            UI.beep('err');
+            UI.notify.err('Не удалось обработать. Попробуйте ещё раз.');
+          }
+        case 14:
+          _context8.n = 16;
+          break;
+        case 15:
+          _context8.p = 15;
+          _t5 = _context8.v;
           UI.beep('err');
-          UI.notify.err(`Неверный товар! Ожидается: ${res.expected}`);
-          document.getElementById('qty-section').style.display = 'none';
-          document.getElementById('scan-section-main').style.display = 'block';
-          setTimeout(() => document.getElementById('scan-input').focus(), 100);
-        } else {
-          UI.beep('err');
-          UI.notify.err('Не удалось обработать. Попробуйте ещё раз.');
+          UI.notify.err(_t5.message);
+        case 16:
+          _context8.p = 16;
+          window.__scanBusy = false;
+          return _context8.f(16);
+        case 17:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[4, 15, 16, 17]]);
+  }));
+  return _confirmBatchQty.apply(this, arguments);
+}
+function skipTask() {
+  return _skipTask.apply(this, arguments);
+}
+function _skipTask() {
+  _skipTask = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var res, _t6;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          if (currentTask) {
+            _context9.n = 1;
+            break;
+          }
+          return _context9.a(2);
+        case 1:
+          if (confirm('Пропустить задачу? Будет создана инвентаризация.')) {
+            _context9.n = 2;
+            break;
+          }
+          return _context9.a(2);
+        case 2:
+          _context9.p = 2;
+          _context9.n = 3;
+          return window.API.picking.skip({
+            picking_task_id: currentTask.id,
+            reason: 'not_found'
+          });
+        case 3:
+          res = _context9.v;
+          UI.notify.warn(res.requeued ? 'Задача пропущена — товар нашёлся в другой ячейке, вернёмся к нему в конце волны' : 'Задача пропущена');
+          _context9.n = 4;
+          return loadNextTask();
+        case 4:
+          _context9.n = 5;
+          return loadWaveStatus();
+        case 5:
+          _context9.n = 7;
+          break;
+        case 6:
+          _context9.p = 6;
+          _t6 = _context9.v;
+          UI.notify.err(_t6.message);
+        case 7:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[2, 6]]);
+  }));
+  return _skipTask.apply(this, arguments);
+}
+function closeWave() {
+  if (!(waveStatus && waveStatus.has_wave)) return;
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeWaveModalClose()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C \u0432\u043E\u043B\u043D\u0443 ".concat(UI.escHtml(waveStatus.shipment_code || ''), "</div>\n            <div class=\"field-label\">\u042F\u0447\u0435\u0439\u043A\u0430 (\u041C\u0425), \u043A\u0443\u0434\u0430 \u043F\u043E\u0441\u0442\u0430\u0432\u0438\u043B\u0438 \u043A\u043E\u0440\u043E\u0431</div>\n            <div class=\"scan-row\">\n              <input id=\"close-wave-loc\" class=\"scan-input\" placeholder=\"\u041A\u043E\u0434 \u044F\u0447\u0435\u0439\u043A\u0438\" inputmode=\"none\" autocomplete=\"off\"/>\n              <button type=\"button\" class=\"scan-camera-btn\" onclick=\"UI.scanInto('#close-wave-loc','\u0421\u043A\u0430\u043D \u044F\u0447\u0435\u0439\u043A\u0438 \u041C\u0425')\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z\"/><circle cx=\"12\" cy=\"13\" r=\"4\"/></svg></button>\n            </div>\n            <div class=\"hint\">\u042F\u0447\u0435\u0439\u043A\u0430 \u0434\u043E\u043B\u0436\u043D\u0430 \u0431\u044B\u0442\u044C \u043E\u0442\u043C\u0435\u0447\u0435\u043D\u0430 \u043A\u0430\u043A \u0431\u0443\u0444\u0435\u0440\u043D\u0430\u044F \u0437\u043E\u043D\u0430 (\u041C\u0425) \u0432 \u0441\u043F\u0440\u0430\u0432\u043E\u0447\u043D\u0438\u043A\u0435 \u043C\u0435\u0441\u0442 \u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F \u2014 \u043B\u044E\u0431\u0443\u044E \u0434\u0440\u0443\u0433\u0443\u044E \u044F\u0447\u0435\u0439\u043A\u0443 \u0441\u0438\u0441\u0442\u0435\u043C\u0430 \u043D\u0435 \u043F\u0440\u0438\u043C\u0435\u0442. \u041F\u043E\u0441\u043B\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u044F \u043D\u0430 \u043F\u0440\u0438\u043D\u0442\u0435\u0440 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 \u0443\u0439\u0434\u0451\u0442 \u0432\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u044F\u044F \u043D\u0430\u043A\u043B\u0435\u0439\u043A\u0430 \u0441 \u043A\u043E\u0434\u043E\u043C \u044D\u0442\u043E\u0439 \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0438 \u2014 \u0443\u043F\u0430\u043A\u043E\u0432\u0449\u0438\u043A \u043D\u0430\u0439\u0434\u0451\u0442 \u043A\u043E\u0440\u043E\u0431 \u043F\u043E \u044D\u0442\u043E\u0439 \u044F\u0447\u0435\u0439\u043A\u0435 \u0438 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0435\u0442 \u043D\u0430\u043A\u043B\u0435\u0439\u043A\u0443, \u0447\u0442\u043E\u0431\u044B \u0432\u0437\u044F\u0442\u044C \u0437\u0430\u0434\u0430\u043D\u0438\u0435 \u0432 \u0440\u0430\u0431\u043E\u0442\u0443.</div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"confirmCloseWave()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeWaveModalClose()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+  setTimeout(function () {
+    var _el = document.getElementById('close-wave-loc');
+    if (_el) _el.focus();
+  }, 100);
+  var input = document.getElementById('close-wave-loc');
+  input && input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmCloseWave();
+    }
+  });
+}
+function closeWaveModalClose() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+function confirmCloseWave() {
+  return _confirmCloseWave.apply(this, arguments);
+}
+function _confirmCloseWave() {
+  _confirmCloseWave = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var _cwl, bufLoc, res, _t7;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          _cwl = document.getElementById('close-wave-loc');
+          bufLoc = _cwl ? _cwl.value.trim().toUpperCase() : undefined;
+          if (bufLoc) {
+            _context0.n = 1;
+            break;
+          }
+          UI.notify.err('Отсканируйте или введите ячейку');
+          return _context0.a(2);
+        case 1:
+          _context0.p = 1;
+          _context0.n = 2;
+          return window.API.picking.closeWave({
+            shipment_code: waveStatus.shipment_code,
+            buffer_location_code: bufLoc
+          });
+        case 2:
+          res = _context0.v;
+          closeWaveModalClose();
+          UI.notify.ok(res.printJobCreated ? 'Волна закрыта! Наклейка отправлена на печать.' : 'Волна закрыта! (Печать наклейки не настроена — маршрут pick_list_label не задан в панели принтеров)');
+          currentTask = null;
+          waveStatus = null;
+          _context0.n = 3;
+          return loadWaveStatus();
+        case 3:
+          _context0.n = 5;
+          break;
+        case 4:
+          _context0.p = 4;
+          _t7 = _context0.v;
+          UI.notify.err(_t7.message);
+        case 5:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[1, 4]]);
+  }));
+  return _confirmCloseWave.apply(this, arguments);
+}
+function openCameraScan() {
+  if (!currentTask) {
+    UI.notify.warn('Нет активной задачи');
+    return;
+  }
+  var step = currentTask.scan_step || 'await_location';
+  UI.scanInto('#scan-input', step === 'await_location' ? 'Скан ячейки' : 'Скан товара');
+}
+
+// Сканер
+document.getElementById('scan-input').addEventListener('keydown', /*#__PURE__*/function () {
+  var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(e) {
+    var v;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          if (!(e.key === 'Enter')) {
+            _context.n = 2;
+            break;
+          }
+          v = e.target.value.trim();
+          e.target.value = '';
+          if (!v) {
+            _context.n = 1;
+            break;
+          }
+          UI.beep('ok');
+          _context.n = 1;
+          return handleScan(v);
+        case 1:
+          setTimeout(function () {
+            return e.target.focus();
+          }, 100);
+        case 2:
+          return _context.a(2);
+      }
+    }, _callee);
+  }));
+  return function (_x2) {
+    return _ref.apply(this, arguments);
+  };
+}());
+
+// Инициализация
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+  return _regenerator().w(function (_context2) {
+    while (1) switch (_context2.n) {
+      case 0:
+        _context2.n = 1;
+        return loadWaveStatus();
+      case 1:
+        if (!(waveStatus && waveStatus.has_wave)) {
+          _context2.n = 2;
+          break;
         }
-      } catch(e) {
-        UI.beep('err');
-        UI.notify.err(e.message);
-      } finally {
-        window.__scanBusy = false;
-      }
+        _context2.n = 2;
+        return loadNextTask();
+      case 2:
+        return _context2.a(2);
     }
-
-    async function skipTask() {
-      if (!currentTask) return;
-      if (!confirm('Пропустить задачу? Будет создана инвентаризация.')) return;
-      try {
-        const res = await window.API.picking.skip({ picking_task_id: currentTask.id, reason: 'not_found' });
-        UI.notify.warn(res.requeued
-          ? 'Задача пропущена — товар нашёлся в другой ячейке, вернёмся к нему в конце волны'
-          : 'Задача пропущена');
-        await loadNextTask();
-        await loadWaveStatus();
-      } catch(e) { UI.notify.err(e.message); }
-    }
-
-    function closeWave() {
-      if (!(waveStatus && waveStatus.has_wave)) return;
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeWaveModalClose()">
-          <div class="modal-card">
-            <div class="card-title">Закрыть волну ${UI.escHtml(waveStatus.shipment_code||'')}</div>
-            <div class="field-label">Ячейка (МХ), куда поставили короб</div>
-            <div class="scan-row">
-              <input id="close-wave-loc" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
-              <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#close-wave-loc','Скан ячейки МХ')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-            </div>
-            <div class="hint">Ячейка должна быть отмечена как буферная зона (МХ) в справочнике мест хранения — любую другую ячейку система не примет. После подтверждения на принтер упаковки уйдёт внутренняя наклейка с кодом этой отгрузки — упаковщик найдёт короб по этой ячейке и отсканирует наклейку, чтобы взять задание в работу.</div>
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="confirmCloseWave()"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтвердить</button>
-              <button class="btn-big btn-yellow" onclick="closeWaveModalClose()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-      setTimeout(() => { const _el = document.getElementById('close-wave-loc'); if (_el) _el.focus(); }, 100);
-      const input = document.getElementById('close-wave-loc');
-      input && input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmCloseWave(); } });
-    }
-
-    function closeWaveModalClose() { document.getElementById('modal-root').innerHTML = ''; }
-
-    async function confirmCloseWave() {
-      const _cwl = document.getElementById('close-wave-loc');
-      const bufLoc = _cwl ? _cwl.value.trim().toUpperCase() : undefined;
-      if (!bufLoc) { UI.notify.err('Отсканируйте или введите ячейку'); return; }
-      try {
-        const res = await window.API.picking.closeWave({
-          shipment_code:        waveStatus.shipment_code,
-          buffer_location_code: bufLoc,
-        });
-        closeWaveModalClose();
-        UI.notify.ok(res.printJobCreated
-          ? 'Волна закрыта! Наклейка отправлена на печать.'
-          : 'Волна закрыта! (Печать наклейки не настроена — маршрут pick_list_label не задан в панели принтеров)');
-        currentTask = null;
-        waveStatus  = null;
-        await loadWaveStatus();
-      } catch(e) { UI.notify.err(e.message); }
-    }
-
-    function openCameraScan() {
-      if (!currentTask) { UI.notify.warn('Нет активной задачи'); return; }
-      const step = currentTask.scan_step || 'await_location';
-      UI.scanInto('#scan-input', step === 'await_location' ? 'Скан ячейки' : 'Скан товара');
-    }
-
-    // Сканер
-    document.getElementById('scan-input').addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter') {
-        const v = e.target.value.trim();
-        e.target.value = '';
-        if (v) { UI.beep('ok'); await handleScan(v); }
-        setTimeout(() => e.target.focus(), 100);
-      }
-    });
-
-    // Инициализация
-    (async () => {
-      await loadWaveStatus();
-      if (waveStatus && waveStatus.has_wave) await loadNextTask();
-    })();
-  </script>
+  }, _callee2);
+}))();</script>
 </body>
 </html>

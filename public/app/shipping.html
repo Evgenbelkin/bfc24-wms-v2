@@ -139,402 +139,639 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['shipper','packer','picker','supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    // "Вернуть в сборку" прямо из состава отгрузки — сборщику помогли найти
-    // пропущенный товар, и не нужно отдельно идти в Диспетчерскую искать его
-    // там: кнопка сразу на той же строке. Бэкенд всё равно требует
-    // supervisor/tenant_admin (см. POST /picking/tasks/:id/requeue), но прячем
-    // кнопку и на фронте, чтобы сборщик/упаковщик/отгрузчик её даже не видели.
-    const _cu = window.API.getUser();
-    const _cuRoles = (_cu && _cu.roles && _cu.roles.length) ? _cu.roles : [_cu && _cu.role];
-    const canRequeue = _cuRoles.includes('tenant_admin') || _cuRoles.includes('supervisor');
-
-    let currentStatus = 'ready_to_ship';
-    let shipments = [];
-    let currentShipment = null;
-    let currentLines = [];
-
-    function switchStatus(status) {
-      currentStatus = status;
-      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.status === status));
-      loadBoard();
-    }
-
-    const STATUS_LABELS = {
-      new:'новая', picking:'сборка', ready_to_ship:'готова', shipping:'отгружается',
-      in_transit:'в пути', done:'выполнена', cancelled:'отменена',
-    };
-    const STATUS_PILL = {
-      new:'pill-gray', picking:'pill-blue', ready_to_ship:'pill-green',
-      shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
-    };
-
-    function applyDateFilter() { loadBoard(); }
-    function resetDateFilter() {
-      UI.setVal('#f-shipped-from', '');
-      UI.setVal('#f-shipped-to', '');
-      loadBoard();
-    }
-
-    async function loadBoard() {
-      try {
-        const params = { limit: 100 };
-        if (currentStatus) params.status = currentStatus;
-        const shippedFrom = UI.val('#f-shipped-from');
-        const shippedTo   = UI.val('#f-shipped-to');
-        if (shippedFrom) params.shipped_from = shippedFrom;
-        if (shippedTo)   params.shipped_to   = shippedTo;
-        const res = await window.API.shipping.board(params);
-        shipments = res.shipments || [];
-        const list = document.getElementById('ship-list');
-        if (!shipments.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Нет отгрузок</div>`;
-          return;
-        }
-        list.innerHTML = shipments.map((s, idx) => {
-          // Факт отгрузки: когда и кто — заполняется только после реального
-          // подтверждения (shipping.confirm), для ещё не отгруженных пусто.
-          const shippedLine = s.shipped_at
-            ? `<div class="sub"><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg> ${UI.fmtDateTime(s.shipped_at)}${s.shipper_name ? ' · '+UI.escHtml(s.shipper_name) : ''}</div>`
-            : '';
-          return `
-          <div class="list-row ship-row" onclick="openShipment(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(s.external_id)}</div>
-              <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · сборка ${s.tasks_done||0}/${s.tasks_total||0}</div>
-              ${shippedLine}
-            </div>
-            <span class="pill ${STATUS_PILL[s.status]||'pill-gray'}">${STATUS_LABELS[s.status]||s.status}</span>
-          </div>
-        `;
-        }).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openShipment(idx) {
-      openShipmentByCode(shipments[idx].external_id);
-    }
-
-    // Позволяет открыть детальную карточку отгрузки напрямую по коду — не
-    // только кликом по строке в собственном списке этой страницы, но и
-    // переходом с другого экрана (Диспетчерская, Табло — см. ?code= в URL
-    // ниже), не важно на каком этапе сейчас отгрузка (сборка/упаковка/отгрузка).
-    // Открытие карточки — в два прохода. Отгрузчику почти всегда нужно
-    // ПРОСТО СКАНИРОВАТЬ код поставки, состав его в моменте не интересует —
-    // а полный список позиций (join на items+wb_orders + подзапрос по
-    // движениям на каждую строку) на отгрузках в полсотни позиций ощутимо
-    // тормозил открытие. Поэтому сначала лёгкий /shipping/header (только сам
-    // shipment + план/собрано агрегатом) — карточка и поле скана появляются
-    // почти мгновенно, фокус сразу в скан. Полный состав (/shipping/details)
-    // подтягивается следом, отдельным запросом, не блокируя сканирование.
-    async function openShipmentByCode(code) {
-      try {
-        const res = await window.API.shipping.header(code);
-        currentShipment = res.shipment;
-        currentLines = [];
-        document.getElementById('list-view').style.display = 'none';
-        document.getElementById('detail-view').style.display = 'block';
-        document.getElementById('d-code').textContent = currentShipment.external_id;
-        document.getElementById('d-status').textContent = STATUS_LABELS[currentShipment.status] || currentShipment.status;
-        document.getElementById('d-client').textContent = currentShipment.client_name || '—';
-        const shippedBadge = document.getElementById('d-shipped-badge');
-        if (currentShipment.shipped_at) {
-          shippedBadge.style.display = 'block';
-          document.getElementById('d-shipped').textContent =
-            UI.fmtDateTime(currentShipment.shipped_at) + (currentShipment.shipper_name ? ' · ' + currentShipment.shipper_name : '');
-        } else {
-          shippedBadge.style.display = 'none';
-        }
-        document.getElementById('d-picked').textContent = `${res.totals.picked}/${res.totals.plan}`;
-        document.getElementById('lines-body').innerHTML =
-          `<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px;">Загрузка состава…</td></tr>`;
-        document.getElementById('qr-result').style.display = 'none';
-        document.getElementById('confirm-status').textContent = '';
-        renderWbQrCard();
-        const alreadyShipped = ['in_transit','done'].includes(currentShipment.status);
-        // Если локально уже "Отгружена", но ВБ так и не был уведомлён (старый баг —
-        // deliverSupply вообще не вызывался) — не прячем карточку, а даём
-        // отгрузчику повторно отсканировать код, чтобы попытаться ещё раз.
-        const needsWbRetry = currentShipment.status === 'in_transit' && !currentShipment.wb_delivered_at;
-        document.getElementById('confirm-card').style.display = (alreadyShipped && !needsWbRetry) ? 'none' : 'block';
-        document.getElementById('confirm-hint').textContent = needsWbRetry
-          ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.'
-          : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
-        setTimeout(() => { const _el = document.getElementById('scan-code'); if (_el) _el.focus(); }, 150);
-
-        // Кнопка "Отметить доставленной" — только supervisor/tenant_admin, только
-        // пока отгрузка в 'in_transit'. Для WB-отгрузок это обычно происходит само
-        // (см. Wildberries в справке), для остальных (marketplace='manual') — это
-        // единственный способ закрыть отгрузку, WB API там спросить не у кого.
-        const deliveredCard = document.getElementById('delivered-card');
-        if (canRequeue && currentShipment.status === 'in_transit') {
-          deliveredCard.style.display = 'block';
-          document.getElementById('delivered-hint').textContent = currentShipment.marketplace === 'wb'
-            ? 'Обычно закрывается автоматически, когда WB подтвердит приёмку (см. справку). Если висит долго — можно закрыть вручную.'
-            : 'Эта отгрузка не через Wildberries — подтвердить доставку можно только вручную, автоматической проверки для неё нет.';
-        } else {
-          deliveredCard.style.display = 'none';
-        }
-
-        // "Отменить отгрузку" — доступно из любого статуса, кроме финальных
-        // done/cancelled (там уже либо реально доставлено, либо уже отменена).
-        const cancelCard = document.getElementById('cancel-card');
-        cancelCard.style.display = (canRequeue && !['done','cancelled'].includes(currentShipment.status)) ? 'block' : 'none';
-
-        loadShipmentLines(code);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // Тяжёлая часть — полный состав отгрузки, подгружается после того как
-    // карточка уже открыта и можно сканировать. Если пока грузится успели
-    // открыть другую отгрузку — не подставляем устаревший результат.
-    async function loadShipmentLines(code) {
-      try {
-        const res = await window.API.shipping.details(code);
-        if (!currentShipment || currentShipment.external_id !== code) return;
-        currentLines = res.lines || [];
-        UI.renderTable('#lines-body', currentLines, (l, idx) => `
-          <tr>
-            <td>${UI.escHtml(l.item_name || l.barcode)}</td>
-            <td>${UI.escHtml(l.vendor_code || '—')}</td>
-            <td>${l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—'}</td>
-            <td>${UI.escHtml(l.size || '—')}</td>
-            <td>${UI.fmtQty(l.qty)}</td>
-            <td>${UI.fmtQty(l.qty_picked)}</td>
-            <td>${UI.fmtQty(l.qty_packed)}</td>
-            <td>${l.preview_url ? `<a href="#" onclick="openLinePhoto(${idx});return false;">Открыть</a>` : '—'}</td>
-            <td>${l.wb_sticker ? `<a href="#" onclick="openLineSticker(${idx});return false;">Открыть</a>` : '—'}</td>
-            <td>${
-              l.picking_status === 'skipped'
-                ? (canRequeue
-                    ? `<button class="btn-sm btn-back" onclick="requeueLine(${idx});return false;">↩ Вернуть в сборку</button>`
-                    : `<span class="pill pill-red">пропущено</span>`)
-                : '—'
-            }</td>
-          </tr>
-        `);
-        renderReturnPickedCard(canRequeue ? (res.already_picked || []) : []);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function renderReturnPickedCard(items) {
-      const card = document.getElementById('return-picked-card');
-      if (!items.length) { card.style.display = 'none'; return; }
-      card.style.display = 'block';
-      document.getElementById('return-picked-list').innerHTML = items.map((it, idx) => `
-        <div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;">
-          <div style="font-weight:700;margin-bottom:2px;">${UI.escHtml(it.item_name || it.barcode)}</div>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${[it.barcode, it.size ? 'разм. '+it.size : null].filter(Boolean).map(UI.escHtml).join(' · ')} · нужно вернуть: ${UI.fmtQty(it.qty)}</div>
-          <div style="display:flex;gap:8px;">
-            <input id="rp-loc-${idx}" placeholder="Ячейка (например A1-01)" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;"/>
-            <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#rp-loc-${idx}','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-          </div>
-          <button type="button" class="btn-sm btn-back" style="margin-top:8px;width:100%;" onclick="confirmReturnPicked(${idx})">Вернуть на склад</button>
-        </div>
-      `).join('');
-      window._returnPickedItems = items;
-    }
-
-    async function confirmReturnPicked(idx) {
-      const items = window._returnPickedItems || [];
-      const it = items[idx];
-      if (!it || !currentShipment) return;
-      const locInput = document.getElementById(`rp-loc-${idx}`);
-      const locationCode = ((locInput && locInput.value) || '').trim();
-      if (!locationCode) { UI.notify.err('Укажите ячейку, куда кладёте товар'); return; }
-      try {
-        await window.API.shipping.returnPicked(currentShipment.external_id, it.barcode, it.qty, locationCode);
-        UI.notify.ok(`Возвращено на склад: ${it.item_name || it.barcode} → ${locationCode}`);
-        await openShipmentByCode(currentShipment.external_id);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openLinePhoto(idx) {
-      const l = currentLines[idx];
-      if (!(l && l.preview_url)) return;
-      window.open(l.preview_url, '_blank');
-    }
-
-    async function requeueLine(idx) {
-      const l = currentLines[idx];
-      if (!(l && l.task_id)) { UI.notify.err('Не найден id задания сборки для этой строки'); return; }
-      try {
-        await window.API.picking.requeue(l.task_id);
-        UI.notify.ok(`Возвращено в сборку: ${l.item_name || l.barcode}`);
-        await openShipmentByCode(currentShipment.external_id);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function markDelivered() {
-      if (!currentShipment) return;
-      if (!UI.confirm(`Отметить отгрузку ${currentShipment.external_id} доставленной? Это финальный статус, отменить его будет нельзя.`)) return;
-      try {
-        await window.API.shipping.markDelivered(currentShipment.external_id);
-        UI.notify.ok('Отгрузка отмечена доставленной');
-        await openShipmentByCode(currentShipment.external_id);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function cancelShipment() {
-      if (!currentShipment) return;
-      const reason = prompt(`Отменить отгрузку ${currentShipment.external_id}? Укажите причину (например: "отгружено напрямую через кабинет WB, упаковка была заблокирована"):`);
-      if (reason === null) return; // нажали "Отмена" в самом prompt
-      if (!UI.confirm(`Точно отменить отгрузку ${currentShipment.external_id}? Резервы снимутся, задачи сборки/упаковки отменятся. Действие необратимо.`)) return;
-      try {
-        await window.API.shipping.cancel(currentShipment.external_id, reason);
-        UI.notify.ok('Отгрузка отменена');
-        await openShipmentByCode(currentShipment.external_id);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openLineSticker(idx) {
-      const l = currentLines[idx];
-      if (!(l && l.wb_sticker)) return;
-      const w = window.open('', '_blank');
-      w.document.write(`<title>Стикер ${UI.escHtml(l.barcode)}</title>
-        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
-          <img src="data:image/svg+xml;base64,${l.wb_sticker}" style="max-width:90vw;max-height:80vh;" onload="window.print()"/>
-          ${l.wb_sticker_code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(l.wb_sticker_code)}</div>` : ''}
-        </body>`);
-      w.document.close();
-    }
-
-    function renderWbQrCard() {
-      const card = document.getElementById('wb-qr-card');
-      const box  = document.getElementById('wb-qr-box');
-      const b64  = currentShipment && currentShipment.wb_supply_qr_base64;
-      if (!b64) { card.style.display = 'none'; box.innerHTML = ''; return; }
-      card.style.display = 'block';
-      box.innerHTML = `
-        <div style="color:#0f172a;font-weight:700;margin-bottom:8px;">${UI.escHtml(currentShipment.external_id)}</div>
-        <img src="data:image/svg+xml;base64,${b64}" alt="QR"/>
-      `;
-    }
-
-    function openWbQr() {
-      const b64 = currentShipment && currentShipment.wb_supply_qr_base64;
-      if (!b64) return;
-      const w = window.open('', '_blank');
-      w.document.write(`<title>QR ${currentShipment.external_id}</title>
-        <body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;">
-          <img src="data:image/svg+xml;base64,${b64}" style="max-width:90vw;max-height:90vh;"/>
-        </body>`);
-      w.document.close();
-    }
-
-    function printWbQr() {
-      const b64 = currentShipment && currentShipment.wb_supply_qr_base64;
-      if (!b64) return;
-      const w = window.open('', '_blank');
-      w.document.write(`<title>Печать QR ${currentShipment.external_id}</title>
-        <body style="margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;">
-          <img src="data:image/svg+xml;base64,${b64}" style="max-width:90vw;max-height:90vh;" onload="window.print()"/>
-        </body>`);
-      w.document.close();
-    }
-
-    async function exportMarkingCodes() {
-      if (!currentShipment) return;
-      try {
-        const res = await window.API.marking.exportForShipment(currentShipment.external_id);
-        const rows = res.rows || [];
-        if (!rows.length) { UI.notify.warn('По этой поставке нет кодов "Честный знак"'); return; }
-        const statusLabel = { sent: 'отправлен в WB', export_only: 'ожидает передачи', manual_override: 'проведён без отправки' };
-        const headers = ['Штрихкод','Код маркировки','Товар','Артикул','Размер','Статус','Когда упаковано','Поставка','Стикер ВБ'];
-        const escCsv = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
-        const lines = [headers.map(escCsv).join(';')];
-        for (const r of rows) {
-          lines.push([
-            r.barcode || '',
-            r.code || '',
-            r.item_name || '',
-            r.vendor_code || '',
-            (String(r.size != null ? r.size : '').trim() === '0') ? '' : (r.size || ''),
-            statusLabel[r.wb_submit_status] || r.wb_submit_status || '',
-            r.used_at ? UI.fmtDateTime(r.used_at) : '',
-            currentShipment.external_id || '',
-            r.wb_sticker_code || '',
-          ].map(escCsv).join(';'));
-        }
-        // ВАЖНО: код маркировки может содержать служебный байт-разделитель GS1
-        // (0x1D, невидимый) внутри строки — это часть самого кода, не наша
-        // ошибка форматирования. CSV его не трогает при простом скачивании,
-        // но если файл потом открыть и пересохранить в самом Excel, разделитель
-        // может потеряться — при первом использовании стоит проверить, что
-        // код после импорта в Тотал Марк/Честный знак прошёл целиком.
-        const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Кизы_${currentShipment.external_id}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function backToList() {
-      document.getElementById('detail-view').style.display = 'none';
-      document.getElementById('list-view').style.display = 'block';
-      currentShipment = null;
-      // Убираем ?code= из адреса, чтобы обновление страницы не открывало
-      // ту же деталь заново после того, как явно вернулись к списку.
-      const url = new URL(location.href);
-      if (url.searchParams.has('code')) {
-        url.searchParams.delete('code');
-        history.replaceState(null, '', url.pathname + url.search);
+  <script>function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t.return || t.return(); } finally { if (u) throw o; } } }; }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['shipper', 'packer', 'picker', 'supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+} // "Вернуть в сборку" прямо из состава отгрузки — сборщику помогли найти
+// пропущенный товар, и не нужно отдельно идти в Диспетчерскую искать его
+// там: кнопка сразу на той же строке. Бэкенд всё равно требует
+// supervisor/tenant_admin (см. POST /picking/tasks/:id/requeue), но прячем
+// кнопку и на фронте, чтобы сборщик/упаковщик/отгрузчик её даже не видели.
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+var _cu = window.API.getUser();
+var _cuRoles = _cu && _cu.roles && _cu.roles.length ? _cu.roles : [_cu && _cu.role];
+var canRequeue = _cuRoles.includes('tenant_admin') || _cuRoles.includes('supervisor');
+var currentStatus = 'ready_to_ship';
+var shipments = [];
+var currentShipment = null;
+var currentLines = [];
+function switchStatus(status) {
+  currentStatus = status;
+  document.querySelectorAll('.tab').forEach(function (t) {
+    return t.classList.toggle('active', t.dataset.status === status);
+  });
+  loadBoard();
+}
+var STATUS_LABELS = {
+  new: 'новая',
+  picking: 'сборка',
+  ready_to_ship: 'готова',
+  shipping: 'отгружается',
+  in_transit: 'в пути',
+  done: 'выполнена',
+  cancelled: 'отменена'
+};
+var STATUS_PILL = {
+  new: 'pill-gray',
+  picking: 'pill-blue',
+  ready_to_ship: 'pill-green',
+  shipping: 'pill-yellow',
+  in_transit: 'pill-yellow',
+  done: 'pill-green',
+  cancelled: 'pill-red'
+};
+function applyDateFilter() {
+  loadBoard();
+}
+function resetDateFilter() {
+  UI.setVal('#f-shipped-from', '');
+  UI.setVal('#f-shipped-to', '');
+  loadBoard();
+}
+function loadBoard() {
+  return _loadBoard.apply(this, arguments);
+}
+function _loadBoard() {
+  _loadBoard = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var params, shippedFrom, shippedTo, res, list, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          params = {
+            limit: 100
+          };
+          if (currentStatus) params.status = currentStatus;
+          shippedFrom = UI.val('#f-shipped-from');
+          shippedTo = UI.val('#f-shipped-to');
+          if (shippedFrom) params.shipped_from = shippedFrom;
+          if (shippedTo) params.shipped_to = shippedTo;
+          _context2.n = 1;
+          return window.API.shipping.board(params);
+        case 1:
+          res = _context2.v;
+          shipments = res.shipments || [];
+          list = document.getElementById('ship-list');
+          if (shipments.length) {
+            _context2.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M3 12h4l1.5 3h7L17 12h4\"/><path d=\"M12 3v6M9 6l3 3 3-3\"/></svg></div>\u041D\u0435\u0442 \u043E\u0442\u0433\u0440\u0443\u0437\u043E\u043A</div>";
+          return _context2.a(2);
+        case 2:
+          list.innerHTML = shipments.map(function (s, idx) {
+            // Факт отгрузки: когда и кто — заполняется только после реального
+            // подтверждения (shipping.confirm), для ещё не отгруженных пусто.
+            var shippedLine = s.shipped_at ? "<div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"1\" y=\"7\" width=\"14\" height=\"10\" rx=\"1\"/><path d=\"M15 10h5l3 4v3h-8z\"/><circle cx=\"6\" cy=\"19\" r=\"1.8\"/><circle cx=\"18\" cy=\"19\" r=\"1.8\"/></svg> ".concat(UI.fmtDateTime(s.shipped_at)).concat(s.shipper_name ? ' · ' + UI.escHtml(s.shipper_name) : '', "</div>") : '';
+            return "\n          <div class=\"list-row ship-row\" onclick=\"openShipment(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0431\u043E\u0440\u043A\u0430 ").concat(s.tasks_done || 0, "/").concat(s.tasks_total || 0, "</div>\n              ").concat(shippedLine, "\n            </div>\n            <span class=\"pill ").concat(STATUS_PILL[s.status] || 'pill-gray', "\">").concat(STATUS_LABELS[s.status] || s.status, "</span>\n          </div>\n        ");
+          }).join('');
+          _context2.n = 4;
+          break;
+        case 3:
+          _context2.p = 3;
+          _t = _context2.v;
+          UI.notify.err(_t.message);
+        case 4:
+          return _context2.a(2);
+      }
+    }, _callee2, null, [[0, 3]]);
+  }));
+  return _loadBoard.apply(this, arguments);
+}
+function openShipment(idx) {
+  openShipmentByCode(shipments[idx].external_id);
+}
 
-    async function confirmShipment(scannedCode) {
-      if (!currentShipment) return;
-      const statusEl = document.getElementById('confirm-status');
-      try {
-        const res = await window.API.shipping.confirm({
-          shipment_code: currentShipment.external_id,
-          scanned_code: scannedCode,
-        });
-        UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : `Отгружено! Всего: ${res.totalShipped != null ? res.totalShipped : '—'} шт.`);
-        statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтверждено';
-        if (res.wbDelivered) {
-          statusEl.textContent += ' · ВБ уведомлён';
-        } else if (res.wbDeliverError) {
-          UI.notify.warn('Локально отгружено, но ВБ не подтвердил статус: ' + res.wbDeliverError + '. В кабинете ВБ поставка может ещё висеть «На сборке» — попробуйте отсканировать код ещё раз чуть позже.');
-          statusEl.textContent += ' · <svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> ВБ не подтвердил, повторите скан позже';
-        }
-        if (res.qr_base64) {
-          document.getElementById('qr-result').style.display = 'block';
-          document.getElementById('qr-result').innerHTML = `
-            <div class="qr-box">
-              <div style="color:#0f172a;font-weight:700;margin-bottom:8px;">QR поставки WB</div>
-              <img src="data:image/svg+xml;base64,${res.qr_base64}" alt="QR"/>
-            </div>`;
-          currentShipment.wb_supply_qr_base64 = res.qr_base64;
+// Позволяет открыть детальную карточку отгрузки напрямую по коду — не
+// только кликом по строке в собственном списке этой страницы, но и
+// переходом с другого экрана (Диспетчерская, Табло — см. ?code= в URL
+// ниже), не важно на каком этапе сейчас отгрузка (сборка/упаковка/отгрузка).
+// Открытие карточки — в два прохода. Отгрузчику почти всегда нужно
+// ПРОСТО СКАНИРОВАТЬ код поставки, состав его в моменте не интересует —
+// а полный список позиций (join на items+wb_orders + подзапрос по
+// движениям на каждую строку) на отгрузках в полсотни позиций ощутимо
+// тормозил открытие. Поэтому сначала лёгкий /shipping/header (только сам
+// shipment + план/собрано агрегатом) — карточка и поле скана появляются
+// почти мгновенно, фокус сразу в скан. Полный состав (/shipping/details)
+// подтягивается следом, отдельным запросом, не блокируя сканирование.
+function openShipmentByCode(_x) {
+  return _openShipmentByCode.apply(this, arguments);
+} // Тяжёлая часть — полный состав отгрузки, подгружается после того как
+// карточка уже открыта и можно сканировать. Если пока грузится успели
+// открыть другую отгрузку — не подставляем устаревший результат.
+function _openShipmentByCode() {
+  _openShipmentByCode = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(code) {
+    var res, shippedBadge, alreadyShipped, needsWbRetry, deliveredCard, cancelCard, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.shipping.header(code);
+        case 1:
+          res = _context3.v;
+          currentShipment = res.shipment;
+          currentLines = [];
+          document.getElementById('list-view').style.display = 'none';
+          document.getElementById('detail-view').style.display = 'block';
+          document.getElementById('d-code').textContent = currentShipment.external_id;
+          document.getElementById('d-status').textContent = STATUS_LABELS[currentShipment.status] || currentShipment.status;
+          document.getElementById('d-client').textContent = currentShipment.client_name || '—';
+          shippedBadge = document.getElementById('d-shipped-badge');
+          if (currentShipment.shipped_at) {
+            shippedBadge.style.display = 'block';
+            document.getElementById('d-shipped').textContent = UI.fmtDateTime(currentShipment.shipped_at) + (currentShipment.shipper_name ? ' · ' + currentShipment.shipper_name : '');
+          } else {
+            shippedBadge.style.display = 'none';
+          }
+          document.getElementById('d-picked').textContent = "".concat(res.totals.picked, "/").concat(res.totals.plan);
+          document.getElementById('lines-body').innerHTML = "<tr><td colspan=\"10\" style=\"text-align:center;color:var(--muted);padding:16px;\">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043E\u0441\u0442\u0430\u0432\u0430\u2026</td></tr>";
+          document.getElementById('qr-result').style.display = 'none';
+          document.getElementById('confirm-status').textContent = '';
           renderWbQrCard();
-        }
-        document.getElementById('confirm-card').style.display = 'none';
-        await loadBoard();
-      } catch (e) {
-        UI.notify.err(e.message);
-        statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg> ' + UI.escHtml(e.message);
+          alreadyShipped = ['in_transit', 'done'].includes(currentShipment.status); // Если локально уже "Отгружена", но ВБ так и не был уведомлён (старый баг —
+          // deliverSupply вообще не вызывался) — не прячем карточку, а даём
+          // отгрузчику повторно отсканировать код, чтобы попытаться ещё раз.
+          needsWbRetry = currentShipment.status === 'in_transit' && !currentShipment.wb_delivered_at;
+          document.getElementById('confirm-card').style.display = alreadyShipped && !needsWbRetry ? 'none' : 'block';
+          document.getElementById('confirm-hint').textContent = needsWbRetry ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.' : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
+          setTimeout(function () {
+            var _el = document.getElementById('scan-code');
+            if (_el) _el.focus();
+          }, 150);
+
+          // Кнопка "Отметить доставленной" — только supervisor/tenant_admin, только
+          // пока отгрузка в 'in_transit'. Для WB-отгрузок это обычно происходит само
+          // (см. Wildberries в справке), для остальных (marketplace='manual') — это
+          // единственный способ закрыть отгрузку, WB API там спросить не у кого.
+          deliveredCard = document.getElementById('delivered-card');
+          if (canRequeue && currentShipment.status === 'in_transit') {
+            deliveredCard.style.display = 'block';
+            document.getElementById('delivered-hint').textContent = currentShipment.marketplace === 'wb' ? 'Обычно закрывается автоматически, когда WB подтвердит приёмку (см. справку). Если висит долго — можно закрыть вручную.' : 'Эта отгрузка не через Wildberries — подтвердить доставку можно только вручную, автоматической проверки для неё нет.';
+          } else {
+            deliveredCard.style.display = 'none';
+          }
+
+          // "Отменить отгрузку" — доступно из любого статуса, кроме финальных
+          // done/cancelled (там уже либо реально доставлено, либо уже отменена).
+          cancelCard = document.getElementById('cancel-card');
+          cancelCard.style.display = canRequeue && !['done', 'cancelled'].includes(currentShipment.status) ? 'block' : 'none';
+          loadShipmentLines(code);
+          _context3.n = 3;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t2 = _context3.v;
+          UI.notify.err(_t2.message);
+        case 3:
+          return _context3.a(2);
       }
-    }
-    UI.onScan('#scan-code', confirmShipment);
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _openShipmentByCode.apply(this, arguments);
+}
+function loadShipmentLines(_x2) {
+  return _loadShipmentLines.apply(this, arguments);
+}
+function _loadShipmentLines() {
+  _loadShipmentLines = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(code) {
+    var res, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.shipping.details(code);
+        case 1:
+          res = _context4.v;
+          if (!(!currentShipment || currentShipment.external_id !== code)) {
+            _context4.n = 2;
+            break;
+          }
+          return _context4.a(2);
+        case 2:
+          currentLines = res.lines || [];
+          UI.renderTable('#lines-body', currentLines, function (l, idx) {
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(l.item_name || l.barcode), "</td>\n            <td>").concat(UI.escHtml(l.vendor_code || '—'), "</td>\n            <td>").concat(l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—', "</td>\n            <td>").concat(UI.escHtml(l.size || '—'), "</td>\n            <td>").concat(UI.fmtQty(l.qty), "</td>\n            <td>").concat(UI.fmtQty(l.qty_picked), "</td>\n            <td>").concat(UI.fmtQty(l.qty_packed), "</td>\n            <td>").concat(l.preview_url ? "<a href=\"#\" onclick=\"openLinePhoto(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.wb_sticker ? "<a href=\"#\" onclick=\"openLineSticker(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.picking_status === 'skipped' ? canRequeue ? "<button class=\"btn-sm btn-back\" onclick=\"requeueLine(".concat(idx, ");return false;\">\u21A9 \u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u0441\u0431\u043E\u0440\u043A\u0443</button>") : "<span class=\"pill pill-red\">\u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E</span>" : '—', "</td>\n          </tr>\n        ");
+          });
+          renderReturnPickedCard(canRequeue ? res.already_picked || [] : []);
+          _context4.n = 4;
+          break;
+        case 3:
+          _context4.p = 3;
+          _t3 = _context4.v;
+          UI.notify.err(_t3.message);
+        case 4:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 3]]);
+  }));
+  return _loadShipmentLines.apply(this, arguments);
+}
+function renderReturnPickedCard(items) {
+  var card = document.getElementById('return-picked-card');
+  if (!items.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('return-picked-list').innerHTML = items.map(function (it, idx) {
+    return "\n        <div style=\"border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;\">\n          <div style=\"font-weight:700;margin-bottom:2px;\">".concat(UI.escHtml(it.item_name || it.barcode), "</div>\n          <div style=\"font-size:12px;color:var(--muted);margin-bottom:8px;\">").concat([it.barcode, it.size ? 'разм. ' + it.size : null].filter(Boolean).map(UI.escHtml).join(' · '), " \xB7 \u043D\u0443\u0436\u043D\u043E \u0432\u0435\u0440\u043D\u0443\u0442\u044C: ").concat(UI.fmtQty(it.qty), "</div>\n          <div style=\"display:flex;gap:8px;\">\n            <input id=\"rp-loc-").concat(idx, "\" placeholder=\"\u042F\u0447\u0435\u0439\u043A\u0430 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440 A1-01)\" style=\"flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;\"/>\n            <button type=\"button\" class=\"scan-camera-btn\" onclick=\"UI.scanInto('#rp-loc-").concat(idx, "','\u0421\u043A\u0430\u043D \u044F\u0447\u0435\u0439\u043A\u0438')\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z\"/><circle cx=\"12\" cy=\"13\" r=\"4\"/></svg></button>\n          </div>\n          <button type=\"button\" class=\"btn-sm btn-back\" style=\"margin-top:8px;width:100%;\" onclick=\"confirmReturnPicked(").concat(idx, ")\">\u0412\u0435\u0440\u043D\u0443\u0442\u044C \u043D\u0430 \u0441\u043A\u043B\u0430\u0434</button>\n        </div>\n      ");
+  }).join('');
+  window._returnPickedItems = items;
+}
+function confirmReturnPicked(_x3) {
+  return _confirmReturnPicked.apply(this, arguments);
+}
+function _confirmReturnPicked() {
+  _confirmReturnPicked = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(idx) {
+    var items, it, locInput, locationCode, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          items = window._returnPickedItems || [];
+          it = items[idx];
+          if (!(!it || !currentShipment)) {
+            _context5.n = 1;
+            break;
+          }
+          return _context5.a(2);
+        case 1:
+          locInput = document.getElementById("rp-loc-".concat(idx));
+          locationCode = (locInput && locInput.value || '').trim();
+          if (locationCode) {
+            _context5.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите ячейку, куда кладёте товар');
+          return _context5.a(2);
+        case 2:
+          _context5.p = 2;
+          _context5.n = 3;
+          return window.API.shipping.returnPicked(currentShipment.external_id, it.barcode, it.qty, locationCode);
+        case 3:
+          UI.notify.ok("\u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u043E \u043D\u0430 \u0441\u043A\u043B\u0430\u0434: ".concat(it.item_name || it.barcode, " \u2192 ").concat(locationCode));
+          _context5.n = 4;
+          return openShipmentByCode(currentShipment.external_id);
+        case 4:
+          _context5.n = 6;
+          break;
+        case 5:
+          _context5.p = 5;
+          _t4 = _context5.v;
+          UI.notify.err(_t4.message);
+        case 6:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[2, 5]]);
+  }));
+  return _confirmReturnPicked.apply(this, arguments);
+}
+function openLinePhoto(idx) {
+  var l = currentLines[idx];
+  if (!(l && l.preview_url)) return;
+  window.open(l.preview_url, '_blank');
+}
+function requeueLine(_x4) {
+  return _requeueLine.apply(this, arguments);
+}
+function _requeueLine() {
+  _requeueLine = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(idx) {
+    var l, _t5;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          l = currentLines[idx];
+          if (l && l.task_id) {
+            _context6.n = 1;
+            break;
+          }
+          UI.notify.err('Не найден id задания сборки для этой строки');
+          return _context6.a(2);
+        case 1:
+          _context6.p = 1;
+          _context6.n = 2;
+          return window.API.picking.requeue(l.task_id);
+        case 2:
+          UI.notify.ok("\u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u043E \u0432 \u0441\u0431\u043E\u0440\u043A\u0443: ".concat(l.item_name || l.barcode));
+          _context6.n = 3;
+          return openShipmentByCode(currentShipment.external_id);
+        case 3:
+          _context6.n = 5;
+          break;
+        case 4:
+          _context6.p = 4;
+          _t5 = _context6.v;
+          UI.notify.err(_t5.message);
+        case 5:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[1, 4]]);
+  }));
+  return _requeueLine.apply(this, arguments);
+}
+function markDelivered() {
+  return _markDelivered.apply(this, arguments);
+}
+function _markDelivered() {
+  _markDelivered = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var _t6;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (currentShipment) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          if (UI.confirm("\u041E\u0442\u043C\u0435\u0442\u0438\u0442\u044C \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0443 ".concat(currentShipment.external_id, " \u0434\u043E\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043D\u043E\u0439? \u042D\u0442\u043E \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0442\u0430\u0442\u0443\u0441, \u043E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0435\u0433\u043E \u0431\u0443\u0434\u0435\u0442 \u043D\u0435\u043B\u044C\u0437\u044F."))) {
+            _context7.n = 2;
+            break;
+          }
+          return _context7.a(2);
+        case 2:
+          _context7.p = 2;
+          _context7.n = 3;
+          return window.API.shipping.markDelivered(currentShipment.external_id);
+        case 3:
+          UI.notify.ok('Отгрузка отмечена доставленной');
+          _context7.n = 4;
+          return openShipmentByCode(currentShipment.external_id);
+        case 4:
+          _context7.n = 6;
+          break;
+        case 5:
+          _context7.p = 5;
+          _t6 = _context7.v;
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[2, 5]]);
+  }));
+  return _markDelivered.apply(this, arguments);
+}
+function cancelShipment() {
+  return _cancelShipment.apply(this, arguments);
+}
+function _cancelShipment() {
+  _cancelShipment = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var reason, _t7;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          if (currentShipment) {
+            _context8.n = 1;
+            break;
+          }
+          return _context8.a(2);
+        case 1:
+          reason = prompt("\u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0443 ".concat(currentShipment.external_id, "? \u0423\u043A\u0430\u0436\u0438\u0442\u0435 \u043F\u0440\u0438\u0447\u0438\u043D\u0443 (\u043D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: \"\u043E\u0442\u0433\u0440\u0443\u0436\u0435\u043D\u043E \u043D\u0430\u043F\u0440\u044F\u043C\u0443\u044E \u0447\u0435\u0440\u0435\u0437 \u043A\u0430\u0431\u0438\u043D\u0435\u0442 WB, \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0430 \u0431\u044B\u043B\u0430 \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u043D\u0430\"):"));
+          if (!(reason === null)) {
+            _context8.n = 2;
+            break;
+          }
+          return _context8.a(2);
+        case 2:
+          if (UI.confirm("\u0422\u043E\u0447\u043D\u043E \u043E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0443 ".concat(currentShipment.external_id, "? \u0420\u0435\u0437\u0435\u0440\u0432\u044B \u0441\u043D\u0438\u043C\u0443\u0442\u0441\u044F, \u0437\u0430\u0434\u0430\u0447\u0438 \u0441\u0431\u043E\u0440\u043A\u0438/\u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 \u043E\u0442\u043C\u0435\u043D\u044F\u0442\u0441\u044F. \u0414\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u043D\u0435\u043E\u0431\u0440\u0430\u0442\u0438\u043C\u043E."))) {
+            _context8.n = 3;
+            break;
+          }
+          return _context8.a(2);
+        case 3:
+          _context8.p = 3;
+          _context8.n = 4;
+          return window.API.shipping.cancel(currentShipment.external_id, reason);
+        case 4:
+          UI.notify.ok('Отгрузка отменена');
+          _context8.n = 5;
+          return openShipmentByCode(currentShipment.external_id);
+        case 5:
+          _context8.n = 7;
+          break;
+        case 6:
+          _context8.p = 6;
+          _t7 = _context8.v;
+          UI.notify.err(_t7.message);
+        case 7:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[3, 6]]);
+  }));
+  return _cancelShipment.apply(this, arguments);
+}
+function openLineSticker(idx) {
+  var l = currentLines[idx];
+  if (!(l && l.wb_sticker)) return;
+  var w = window.open('', '_blank');
+  w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(l.barcode), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(l.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(l.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(l.wb_sticker_code), "</div>") : '', "\n        </body>"));
+  w.document.close();
+}
+function renderWbQrCard() {
+  var card = document.getElementById('wb-qr-card');
+  var box = document.getElementById('wb-qr-box');
+  var b64 = currentShipment && currentShipment.wb_supply_qr_base64;
+  if (!b64) {
+    card.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  card.style.display = 'block';
+  box.innerHTML = "\n        <div style=\"color:#0f172a;font-weight:700;margin-bottom:8px;\">".concat(UI.escHtml(currentShipment.external_id), "</div>\n        <img src=\"data:image/svg+xml;base64,").concat(b64, "\" alt=\"QR\"/>\n      ");
+}
+function openWbQr() {
+  var b64 = currentShipment && currentShipment.wb_supply_qr_base64;
+  if (!b64) return;
+  var w = window.open('', '_blank');
+  w.document.write("<title>QR ".concat(currentShipment.external_id, "</title>\n        <body style=\"margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;\">\n          <img src=\"data:image/svg+xml;base64,").concat(b64, "\" style=\"max-width:90vw;max-height:90vh;\"/>\n        </body>"));
+  w.document.close();
+}
+function printWbQr() {
+  var b64 = currentShipment && currentShipment.wb_supply_qr_base64;
+  if (!b64) return;
+  var w = window.open('', '_blank');
+  w.document.write("<title>\u041F\u0435\u0447\u0430\u0442\u044C QR ".concat(currentShipment.external_id, "</title>\n        <body style=\"margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;\">\n          <img src=\"data:image/svg+xml;base64,").concat(b64, "\" style=\"max-width:90vw;max-height:90vh;\" onload=\"window.print()\"/>\n        </body>"));
+  w.document.close();
+}
+function exportMarkingCodes() {
+  return _exportMarkingCodes.apply(this, arguments);
+}
+function _exportMarkingCodes() {
+  _exportMarkingCodes = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var res, rows, statusLabel, headers, escCsv, lines, _iterator, _step, r, blob, url, a, _t8;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          if (currentShipment) {
+            _context9.n = 1;
+            break;
+          }
+          return _context9.a(2);
+        case 1:
+          _context9.p = 1;
+          _context9.n = 2;
+          return window.API.marking.exportForShipment(currentShipment.external_id);
+        case 2:
+          res = _context9.v;
+          rows = res.rows || [];
+          if (rows.length) {
+            _context9.n = 3;
+            break;
+          }
+          UI.notify.warn('По этой поставке нет кодов "Честный знак"');
+          return _context9.a(2);
+        case 3:
+          statusLabel = {
+            sent: 'отправлен в WB',
+            export_only: 'ожидает передачи',
+            manual_override: 'проведён без отправки'
+          };
+          headers = ['Штрихкод', 'Код маркировки', 'Товар', 'Артикул', 'Размер', 'Статус', 'Когда упаковано', 'Поставка', 'Стикер ВБ'];
+          escCsv = function escCsv(v) {
+            return "\"".concat(String(v == null ? '' : v).replace(/"/g, '""'), "\"");
+          };
+          lines = [headers.map(escCsv).join(';')];
+          _iterator = _createForOfIteratorHelper(rows);
+          try {
+            for (_iterator.s(); !(_step = _iterator.n()).done;) {
+              r = _step.value;
+              lines.push([r.barcode || '', r.code || '', r.item_name || '', r.vendor_code || '', String(r.size != null ? r.size : '').trim() === '0' ? '' : r.size || '', statusLabel[r.wb_submit_status] || r.wb_submit_status || '', r.used_at ? UI.fmtDateTime(r.used_at) : '', currentShipment.external_id || '', r.wb_sticker_code || ''].map(escCsv).join(';'));
+            }
+            // ВАЖНО: код маркировки может содержать служебный байт-разделитель GS1
+            // (0x1D, невидимый) внутри строки — это часть самого кода, не наша
+            // ошибка форматирования. CSV его не трогает при простом скачивании,
+            // но если файл потом открыть и пересохранить в самом Excel, разделитель
+            // может потеряться — при первом использовании стоит проверить, что
+            // код после импорта в Тотал Марк/Честный знак прошёл целиком.
+          } catch (err) {
+            _iterator.e(err);
+          } finally {
+            _iterator.f();
+          }
+          blob = new Blob(['﻿' + lines.join('\r\n')], {
+            type: 'text/csv;charset=utf-8;'
+          });
+          url = URL.createObjectURL(blob);
+          a = document.createElement('a');
+          a.href = url;
+          a.download = "\u041A\u0438\u0437\u044B_".concat(currentShipment.external_id, ".csv");
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          _context9.n = 5;
+          break;
+        case 4:
+          _context9.p = 4;
+          _t8 = _context9.v;
+          UI.notify.err(_t8.message);
+        case 5:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[1, 4]]);
+  }));
+  return _exportMarkingCodes.apply(this, arguments);
+}
+function backToList() {
+  document.getElementById('detail-view').style.display = 'none';
+  document.getElementById('list-view').style.display = 'block';
+  currentShipment = null;
+  // Убираем ?code= из адреса, чтобы обновление страницы не открывало
+  // ту же деталь заново после того, как явно вернулись к списку.
+  var url = new URL(location.href);
+  if (url.searchParams.has('code')) {
+    url.searchParams.delete('code');
+    history.replaceState(null, '', url.pathname + url.search);
+  }
+}
+function confirmShipment(_x5) {
+  return _confirmShipment.apply(this, arguments);
+}
+function _confirmShipment() {
+  _confirmShipment = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0(scannedCode) {
+    var statusEl, res, _t9;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          if (currentShipment) {
+            _context0.n = 1;
+            break;
+          }
+          return _context0.a(2);
+        case 1:
+          statusEl = document.getElementById('confirm-status');
+          _context0.p = 2;
+          _context0.n = 3;
+          return window.API.shipping.confirm({
+            shipment_code: currentShipment.external_id,
+            scanned_code: scannedCode
+          });
+        case 3:
+          res = _context0.v;
+          UI.notify.ok(res.alreadyShipped ? 'Уже была отгружена ранее' : "\u041E\u0442\u0433\u0440\u0443\u0436\u0435\u043D\u043E! \u0412\u0441\u0435\u0433\u043E: ".concat(res.totalShipped != null ? res.totalShipped : '—', " \u0448\u0442."));
+          statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> Подтверждено';
+          if (res.wbDelivered) {
+            statusEl.textContent += ' · ВБ уведомлён';
+          } else if (res.wbDeliverError) {
+            UI.notify.warn('Локально отгружено, но ВБ не подтвердил статус: ' + res.wbDeliverError + '. В кабинете ВБ поставка может ещё висеть «На сборке» — попробуйте отсканировать код ещё раз чуть позже.');
+            statusEl.textContent += ' · <svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> ВБ не подтвердил, повторите скан позже';
+          }
+          if (res.qr_base64) {
+            document.getElementById('qr-result').style.display = 'block';
+            document.getElementById('qr-result').innerHTML = "\n            <div class=\"qr-box\">\n              <div style=\"color:#0f172a;font-weight:700;margin-bottom:8px;\">QR \u043F\u043E\u0441\u0442\u0430\u0432\u043A\u0438 WB</div>\n              <img src=\"data:image/svg+xml;base64,".concat(res.qr_base64, "\" alt=\"QR\"/>\n            </div>");
+            currentShipment.wb_supply_qr_base64 = res.qr_base64;
+            renderWbQrCard();
+          }
+          document.getElementById('confirm-card').style.display = 'none';
+          _context0.n = 4;
+          return loadBoard();
+        case 4:
+          _context0.n = 6;
+          break;
+        case 5:
+          _context0.p = 5;
+          _t9 = _context0.v;
+          UI.notify.err(_t9.message);
+          statusEl.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg> ' + UI.escHtml(_t9.message);
+        case 6:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[2, 5]]);
+  }));
+  return _confirmShipment.apply(this, arguments);
+}
+UI.onScan('#scan-code', confirmShipment);
+loadBoard();
 
-    loadBoard();
-
-    // Прямая ссылка на конкретную отгрузку (?code=WB-GI-...) — например с
-    // Диспетчерской, где строку отгрузки теперь можно кликнуть.
-    const deepLinkCode = new URLSearchParams(location.search).get('code');
-    if (deepLinkCode) openShipmentByCode(deepLinkCode);
-  </script>
+// Прямая ссылка на конкретную отгрузку (?code=WB-GI-...) — например с
+// Диспетчерской, где строку отгрузки теперь можно кликнуть.
+var deepLinkCode = new URLSearchParams(location.search).get('code');
+if (deepLinkCode) openShipmentByCode(deepLinkCode);</script>
 </body>
 </html>

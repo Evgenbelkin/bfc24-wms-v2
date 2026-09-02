@@ -183,516 +183,929 @@
   <script src="/shared/chart.umd.min.js"></script>
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-    const user = window.API.getUser();
-    const canEdit = user && user.role === 'tenant_admin';
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('billing-content').style.display = 'none';
-    }
-
-    function switchTab(name) {
-      ['balance','pricelist','charges','invoices','analytics'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name==='balance') loadBalance();
-      if (name==='pricelist') loadPriceList();
-      if (name==='charges') loadCharges();
-      if (name==='invoices') loadInvoices();
-      if (name==='analytics') { initAnalyticsTab(); loadInvoiceAnalytics(); }
-    }
-
-    let clients = [];
-    let priceCache = [], chargeCache = [], invoiceCache = [];
-
-    function currentClientId() { return Number(UI.val('#f-client')) || null; }
-
-    async function loadClients() {
-      try {
-        const res = await window.API.clients.short();
-        clients = res.clients || [];
-        const sel = document.getElementById('f-client');
-        sel.innerHTML = clients.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-        const anSel = document.getElementById('an-client');
-        anSel.innerHTML = '<option value="">Все клиенты</option>' +
-          clients.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-        if (clients.length) { loadBalance(); }
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
+function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
+function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+var user = window.API.getUser();
+var canEdit = user && user.role === 'tenant_admin';
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
-
-    function onClientChange() { switchTab(document.querySelector('.tab.active').dataset.tab); }
-
-    async function loadBalance() {
-      const clientId = currentClientId();
-      const box = document.getElementById('balance-box');
-      if (!clientId) { box.innerHTML = ''; return; }
-      try {
-        const res = await window.API.billing.clientBalance(clientId);
-        const b = res.balance || {};
-        box.innerHTML = `
-          <div class="balance-cell"><div class="num">${Number(b.uninvoiced_total||0).toFixed(2)} ₽</div><div class="lbl">Не выставлено (${b.uninvoiced_count||0})</div></div>
-          <div class="balance-cell"><div class="num" style="color:var(--yellow)">${Number(b.invoiced_unpaid||0).toFixed(2)} ₽</div><div class="lbl">Выставлено, не оплачено</div></div>
-          <div class="balance-cell"><div class="num" style="color:var(--green)">${Number(b.total_paid||0).toFixed(2)} ₽</div><div class="lbl">Оплачено</div></div>
-        `;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('billing-content').style.display = 'none';
+}
+function switchTab(name) {
+  ['balance', 'pricelist', 'charges', 'invoices', 'analytics'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'balance') loadBalance();
+  if (name === 'pricelist') loadPriceList();
+  if (name === 'charges') loadCharges();
+  if (name === 'invoices') loadInvoices();
+  if (name === 'analytics') {
+    initAnalyticsTab();
+    loadInvoiceAnalytics();
+  }
+}
+var clients = [];
+var priceCache = [],
+  chargeCache = [],
+  invoiceCache = [];
+function currentClientId() {
+  return Number(UI.val('#f-client')) || null;
+}
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var res, sel, anSel, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          _context2.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context2.v;
+          clients = res.clients || [];
+          sel = document.getElementById('f-client');
+          sel.innerHTML = clients.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          anSel = document.getElementById('an-client');
+          anSel.innerHTML = '<option value="">Все клиенты</option>' + clients.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          if (clients.length) {
+            loadBalance();
+          }
+          _context2.n = 4;
+          break;
+        case 2:
+          _context2.p = 2;
+          _t = _context2.v;
+          if (!isModuleDisabled(_t)) {
+            _context2.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context2.a(2);
+        case 3:
+          UI.notify.err(_t.message);
+        case 4:
+          return _context2.a(2);
       }
-    }
-
-    // 'materials' — тип начислений за расходники (см. consumables.html), в прайс-лист
-    // его не добавляем: цена там задаётся прямо на карточке расходника, а не здесь
-    // (иначе upsertPrice на бэке отклонит — 'materials' не входит в VALID_TYPES прайса).
-    const SERVICE_TYPES = [
-      ['receiving','Приёмка'], ['storage','Хранение'], ['placement','Размещение'],
-      ['picking','Сборка'], ['packing','Упаковка'], ['shipping','Отгрузка'],
-      ['processing','Обработка'], ['returns','Возврат'], ['subscription','Подписка'],
-    ];
-    const ALL_SERVICE_TYPES = [...SERVICE_TYPES, ['materials','Расходники']];
-    function serviceLabel(t) { const f = ALL_SERVICE_TYPES.find(x=>x[0]===t); return f ? f[1] : t; }
-    // period_date/valid_from и т.п. приходят с бэка как чистая строка 'YYYY-MM-DD'
-    // (см. комментарий про types.setTypeParser в server/src/config/database.js) —
-    // здесь только меняем порядок на привычный DD.MM.YYYY, никакого Date() не создаём,
-    // чтобы не словить сдвиг на часовой пояс браузера.
-    function fmtDate(d) { if (!d) return '—'; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}.${m[2]}.${m[1]}` : d; }
-    // quantity в БД — NUMERIC(14,4), pg отдаёт строкой вида "66.0000" — убираем лишние нули для показа
-    function fmtQty(q) { const n = Number(q); return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(4))); }
-
-    async function loadPriceList() {
-      const clientId = currentClientId();
-      const list = document.getElementById('price-list');
-      if (!clientId) { list.innerHTML = ''; document.getElementById('price-count').textContent = 0; return; }
-      try {
-        const res = await window.API.billing.priceList.list(clientId);
-        priceCache = res.rows || [];
-        document.getElementById('price-count').textContent = priceCache.length;
-        if (!priceCache.length) { list.innerHTML = `<div class="empty-state">Прайс не настроен</div>`; return; }
-        list.innerHTML = priceCache.map((p, idx) => {
-          const isVolume = (p.service_type === 'storage' && p.storage_mode === 'volume')
-            || (p.service_type === 'processing' && p.extra_unit_price != null);
-          return `
-          <div class="list-row price-row" onclick="openPriceModal(${idx})">
-            <div class="main">
-              <div class="title">${serviceLabel(p.service_type)}${isVolume ? ' · по литражу' : ''}</div>
-              <div class="sub">${UI.escHtml(p.description||'')} ${p.min_charge ? `· мин. ${p.min_charge} ₽` : ''}</div>
-            </div>
-            <div class="badge"><span>${isVolume?'1-й л / след.':'Цена'}</span><div>${Number(p.unit_price).toFixed(2)}${isVolume?' / '+Number(p.extra_unit_price||0).toFixed(2):''} ₽</div></div>
-          </div>
-        `; }).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee2, null, [[0, 2]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function onClientChange() {
+  switchTab(document.querySelector('.tab.active').dataset.tab);
+}
+function loadBalance() {
+  return _loadBalance.apply(this, arguments);
+} // 'materials' — тип начислений за расходники (см. consumables.html), в прайс-лист
+// его не добавляем: цена там задаётся прямо на карточке расходника, а не здесь
+// (иначе upsertPrice на бэке отклонит — 'materials' не входит в VALID_TYPES прайса).
+function _loadBalance() {
+  _loadBalance = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var clientId, box, res, b, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          clientId = currentClientId();
+          box = document.getElementById('balance-box');
+          if (clientId) {
+            _context3.n = 1;
+            break;
+          }
+          box.innerHTML = '';
+          return _context3.a(2);
+        case 1:
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.billing.clientBalance(clientId);
+        case 2:
+          res = _context3.v;
+          b = res.balance || {};
+          box.innerHTML = "\n          <div class=\"balance-cell\"><div class=\"num\">".concat(Number(b.uninvoiced_total || 0).toFixed(2), " \u20BD</div><div class=\"lbl\">\u041D\u0435 \u0432\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043E (").concat(b.uninvoiced_count || 0, ")</div></div>\n          <div class=\"balance-cell\"><div class=\"num\" style=\"color:var(--yellow)\">").concat(Number(b.invoiced_unpaid || 0).toFixed(2), " \u20BD</div><div class=\"lbl\">\u0412\u044B\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u043E, \u043D\u0435 \u043E\u043F\u043B\u0430\u0447\u0435\u043D\u043E</div></div>\n          <div class=\"balance-cell\"><div class=\"num\" style=\"color:var(--green)\">").concat(Number(b.total_paid || 0).toFixed(2), " \u20BD</div><div class=\"lbl\">\u041E\u043F\u043B\u0430\u0447\u0435\u043D\u043E</div></div>\n        ");
+          _context3.n = 5;
+          break;
+        case 3:
+          _context3.p = 3;
+          _t2 = _context3.v;
+          if (!isModuleDisabled(_t2)) {
+            _context3.n = 4;
+            break;
+          }
+          showModuleDisabled();
+          return _context3.a(2);
+        case 4:
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context3.a(2);
       }
-    }
-
-    function openPriceModal(idx) {
-      const p = idx !== null ? priceCache[idx] : null;
-      const isStorage = p ? p.service_type === 'storage' : false;
-      const isProcessing = p ? p.service_type === 'processing' : false;
-      const isVolume = p ? p.storage_mode === 'volume' : false;
-      const showExtra = isVolume || isProcessing;
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${p ? serviceLabel(p.service_type) : 'Новая позиция прайса'}</div>
-            <div class="field"><label>Тип услуги</label>
-              <select id="m-type" ${p?'disabled':''} onchange="onServiceTypeChange()">${SERVICE_TYPES.map(([v,l])=>`<option value="${v}" ${p&&p.service_type===v?'selected':''}>${l}</option>`).join('')}</select>
-            </div>
-            <div class="field" id="storage-mode-wrap" style="display:${isStorage?'block':'none'}">
-              <label>Режим тарификации хранения</label>
-              <select id="m-storage-mode" onchange="onStorageModeChange()">
-                <option value="slots" ${!isVolume?'selected':''}>По занятым ячейкам</option>
-                <option value="volume" ${isVolume?'selected':''}>По литражу (как у ВБ) — 1-й литр + доплата за каждый следующий, округление вверх</option>
-              </select>
-            </div>
-            <div class="field"><label>Описание</label><input id="m-desc" value="${p?UI.escHtml(p.description||''):''}"/></div>
-            <div class="field"><label id="m-price-label">${showExtra?'Цена за первый литр, ₽':'Цена за единицу, ₽'}</label><input id="m-price" type="number" step="0.01" value="${p?p.unit_price:''}"/></div>
-            <div class="field" id="extra-price-wrap" style="display:${showExtra?'block':'none'}">
-              <label>Цена за каждый следующий литр, ₽${isProcessing?' (необязательно — если не задано, цена фиксированная за штуку)':''}</label>
-              <input id="m-extra-price" type="number" step="0.01" value="${p&&p.extra_unit_price!=null?p.extra_unit_price:''}"/>
-            </div>
-            <div class="field"><label>Минимальная сумма, ₽ (необязательно)</label><input id="m-min" type="number" step="0.01" value="${p&&p.min_charge?p.min_charge:''}"/></div>
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="savePrice(${idx})">Сохранить</button>
-              ${p ? `<button class="btn-big btn-red" onclick="deletePrice(${p.id})">Удалить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function onServiceTypeChange() {
-      const t = UI.val('#m-type');
-      const isStorage = t === 'storage';
-      const isProcessing = t === 'processing';
-      document.getElementById('storage-mode-wrap').style.display = isStorage ? 'block' : 'none';
-      document.getElementById('extra-price-wrap').style.display = isProcessing ? 'block' : 'none';
-      document.getElementById('m-price-label').textContent = isProcessing ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽';
-      if (isStorage) onStorageModeChange();
-    }
-
-    function onStorageModeChange() {
-      const isStorage = UI.val('#m-type') === 'storage';
-      const isVolume = isStorage && UI.val('#m-storage-mode') === 'volume';
-      document.getElementById('extra-price-wrap').style.display = isVolume ? 'block' : 'none';
-      document.getElementById('m-price-label').textContent = isVolume ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽';
-    }
-
-    async function savePrice(idx) {
-      const clientId = currentClientId();
-      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
-      const p = idx !== null ? priceCache[idx] : null;
-      const serviceType = p ? p.service_type : UI.val('#m-type');
-      const isStorage = serviceType === 'storage';
-      const isProcessing = serviceType === 'processing';
-      const storageMode = isStorage ? UI.val('#m-storage-mode') : 'slots';
-      const useExtra = (isStorage && storageMode === 'volume') || isProcessing;
-      const extraVal = UI.val('#m-extra-price');
-      try {
-        await window.API.billing.priceList.upsert({
-          client_id: clientId,
-          service_type: serviceType,
-          description: UI.val('#m-desc'),
-          unit_price: Number(UI.val('#m-price')) || 0,
-          min_charge: UI.val('#m-min') ? Number(UI.val('#m-min')) : null,
-          storage_mode: storageMode,
-          extra_unit_price: useExtra && extraVal ? (Number(extraVal) || 0) : null,
-        });
-        UI.notify.ok('Сохранено');
-        closeModal();
-        await loadPriceList();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deletePrice(id) {
-      try {
-        await window.API.billing.priceList.delete(id);
-        UI.notify.ok('Удалено');
-        closeModal();
-        await loadPriceList();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    let selectedChargeIds = new Set();
-
-    function initChargeServiceFilter() {
-      const sel = document.getElementById('ch-service');
-      if (sel.options.length > 1) return; // уже заполнено
-      sel.innerHTML = '<option value="">Все услуги</option>' +
-        ALL_SERVICE_TYPES.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
-    }
-
-    async function loadCharges() {
-      initChargeServiceFilter();
-      document.getElementById('ch-select-all').style.display = canEdit ? '' : 'none';
-      const clientId = currentClientId();
-      const body = document.getElementById('charge-body');
-      selectedChargeIds = new Set();
-      updateChargeSelectBar();
-      if (!clientId) { body.innerHTML = ''; return; }
-      try {
-        const params = { client_id: clientId, limit: 300 };
-        const from = UI.val('#ch-from'); if (from) params.date_from = from;
-        const to = UI.val('#ch-to'); if (to) params.date_to = to;
-        const serviceType = UI.val('#ch-service'); if (serviceType) params.service_type = serviceType;
-        const invoiced = UI.val('#ch-invoiced'); if (invoiced) params.is_invoiced = invoiced;
-        const res = await window.API.billing.charges.list(params);
-        chargeCache = res.charges || [];
-        document.getElementById('charge-count').textContent = res.total || chargeCache.length;
-        const total = chargeCache.reduce((s,c)=>s+Number(c.total_amount||0), 0);
-        document.getElementById('charge-total').textContent = total.toFixed(2);
-        if (!chargeCache.length) { body.innerHTML = `<tr><td colspan="7">Начислений нет</td></tr>`; return; }
-        body.innerHTML = chargeCache.map(c => `
-          <tr>
-            <td>${(!c.is_invoiced && canEdit) ? `<input type="checkbox" class="charge-cb" data-id="${c.id}" data-amount="${c.total_amount}" onclick="onChargeCheck(${c.id}, ${c.total_amount}, this.checked)"/>` : ''}</td>
-            <td>${fmtDate(c.period_date)}</td>
-            <td>${serviceLabel(c.service_type)}${c.description?' · '+UI.escHtml(c.description):''}</td>
-            <td>${fmtQty(c.quantity)}</td>
-            <td>${Number(c.unit_price).toFixed(2)}</td>
-            <td>${Number(c.total_amount).toFixed(2)}</td>
-            <td>${c.is_invoiced ? '✓' : '—'}</td>
-          </tr>
-        `).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee3, null, [[1, 3]]);
+  }));
+  return _loadBalance.apply(this, arguments);
+}
+var SERVICE_TYPES = [['receiving', 'Приёмка'], ['storage', 'Хранение'], ['placement', 'Размещение'], ['picking', 'Сборка'], ['packing', 'Упаковка'], ['shipping', 'Отгрузка'], ['processing', 'Обработка'], ['returns', 'Возврат'], ['subscription', 'Подписка']];
+var ALL_SERVICE_TYPES = [].concat(SERVICE_TYPES, [['materials', 'Расходники']]);
+function serviceLabel(t) {
+  var f = ALL_SERVICE_TYPES.find(function (x) {
+    return x[0] === t;
+  });
+  return f ? f[1] : t;
+}
+// period_date/valid_from и т.п. приходят с бэка как чистая строка 'YYYY-MM-DD'
+// (см. комментарий про types.setTypeParser в server/src/config/database.js) —
+// здесь только меняем порядок на привычный DD.MM.YYYY, никакого Date() не создаём,
+// чтобы не словить сдвиг на часовой пояс браузера.
+function fmtDate(d) {
+  if (!d) return '—';
+  var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? "".concat(m[3], ".").concat(m[2], ".").concat(m[1]) : d;
+}
+// quantity в БД — NUMERIC(14,4), pg отдаёт строкой вида "66.0000" — убираем лишние нули для показа
+function fmtQty(q) {
+  var n = Number(q);
+  return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(4)));
+}
+function loadPriceList() {
+  return _loadPriceList.apply(this, arguments);
+}
+function _loadPriceList() {
+  _loadPriceList = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var clientId, list, res, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          clientId = currentClientId();
+          list = document.getElementById('price-list');
+          if (clientId) {
+            _context4.n = 1;
+            break;
+          }
+          list.innerHTML = '';
+          document.getElementById('price-count').textContent = 0;
+          return _context4.a(2);
+        case 1:
+          _context4.p = 1;
+          _context4.n = 2;
+          return window.API.billing.priceList.list(clientId);
+        case 2:
+          res = _context4.v;
+          priceCache = res.rows || [];
+          document.getElementById('price-count').textContent = priceCache.length;
+          if (priceCache.length) {
+            _context4.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\">\u041F\u0440\u0430\u0439\u0441 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D</div>";
+          return _context4.a(2);
+        case 3:
+          list.innerHTML = priceCache.map(function (p, idx) {
+            var isVolume = p.service_type === 'storage' && p.storage_mode === 'volume' || p.service_type === 'processing' && p.extra_unit_price != null;
+            return "\n          <div class=\"list-row price-row\" onclick=\"openPriceModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(serviceLabel(p.service_type)).concat(isVolume ? ' · по литражу' : '', "</div>\n              <div class=\"sub\">").concat(UI.escHtml(p.description || ''), " ").concat(p.min_charge ? "\xB7 \u043C\u0438\u043D. ".concat(p.min_charge, " \u20BD") : '', "</div>\n            </div>\n            <div class=\"badge\"><span>").concat(isVolume ? '1-й л / след.' : 'Цена', "</span><div>").concat(Number(p.unit_price).toFixed(2)).concat(isVolume ? ' / ' + Number(p.extra_unit_price || 0).toFixed(2) : '', " \u20BD</div></div>\n          </div>\n        ");
+          }).join('');
+          _context4.n = 6;
+          break;
+        case 4:
+          _context4.p = 4;
+          _t3 = _context4.v;
+          if (!isModuleDisabled(_t3)) {
+            _context4.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context4.a(2);
+        case 5:
+          UI.notify.err(_t3.message);
+        case 6:
+          return _context4.a(2);
       }
-    }
-
-    function onChargeCheck(id, amount, checked) {
-      if (checked) selectedChargeIds.add(id); else selectedChargeIds.delete(id);
-      updateChargeSelectBar();
-    }
-
-    function toggleSelectAllCharges(checked) {
-      document.querySelectorAll('.charge-cb').forEach(cb => {
-        cb.checked = checked;
-        const id = Number(cb.dataset.id);
-        if (checked) selectedChargeIds.add(id); else selectedChargeIds.delete(id);
-      });
-      updateChargeSelectBar();
-    }
-
-    function updateChargeSelectBar() {
-      const bar = document.getElementById('charge-select-bar');
-      const count = selectedChargeIds.size;
-      bar.style.display = count ? 'block' : 'none';
-      document.getElementById('charge-selected-count').textContent = count;
-      let total = 0;
-      document.querySelectorAll('.charge-cb').forEach(cb => {
-        if (selectedChargeIds.has(Number(cb.dataset.id))) total += Number(cb.dataset.amount);
-      });
-      document.getElementById('charge-selected-total').textContent = total.toFixed(2);
-    }
-
-    async function bulkDeleteSelectedCharges() {
-      if (!selectedChargeIds.size) return;
-      const count = selectedChargeIds.size;
-      const total = document.getElementById('charge-selected-total').textContent;
-      if (!UI.confirm(`Удалить ${count} начислени${count===1?'е':'й'} на сумму ${total} ₽? Отменить будет нельзя.`)) return;
-      try {
-        const res = await window.API.billing.charges.bulkDelete([...selectedChargeIds]);
-        UI.notify.ok(`Удалено: ${res.deleted_count} на сумму ${Number(res.deleted_total).toFixed(2)} ₽`);
-        await loadCharges();
-        await loadBalance();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openManualChargeModal() {
-      const clientId = currentClientId();
-      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Ручное начисление</div>
-            <div class="field"><label>Тип услуги</label>
-              <select id="mc-type">${ALL_SERVICE_TYPES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-            </div>
-            <div class="field"><label>Описание</label><input id="mc-desc"/></div>
-            <div class="field"><label>Количество</label><input id="mc-qty" type="number" step="0.01" value="1"/></div>
-            <div class="field"><label>Цена за единицу, ₽</label><input id="mc-price" type="number" step="0.01" value="0"/></div>
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveManualCharge()">Начислить</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    async function saveManualCharge() {
-      const clientId = currentClientId();
-      try {
-        await window.API.billing.charges.add({
-          client_id: clientId,
-          service_type: UI.val('#mc-type'),
-          description: UI.val('#mc-desc'),
-          quantity: Number(UI.val('#mc-qty')) || 1,
-          unit_price: Number(UI.val('#mc-price')) || 0,
-        });
-        UI.notify.ok('Начислено');
-        closeModal();
-        await loadCharges();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadInvoices() {
-      const clientId = currentClientId();
-      const list = document.getElementById('inv-list');
-      if (!clientId) { list.innerHTML = ''; return; }
-      try {
-        const res = await window.API.billing.invoices.list({ client_id: clientId, limit: 100 });
-        invoiceCache = res.invoices || [];
-        document.getElementById('inv-count').textContent = res.total || invoiceCache.length;
-        if (!invoiceCache.length) { list.innerHTML = `<div class="empty-state">Счетов нет</div>`; return; }
-        list.innerHTML = invoiceCache.map((inv, idx) => `
-          <div class="list-row inv-row" onclick="openInvoiceModal(${idx})">
-            <div class="main">
-              <div class="title">${UI.escHtml(inv.invoice_number)}</div>
-              <div class="sub">${fmtDate(inv.period_from)} — ${fmtDate(inv.period_to)} · <span class="status-pill status-${inv.status}">${inv.status}</span></div>
-            </div>
-            <div class="badge"><span>Сумма</span><div>${Number(inv.total_amount).toFixed(2)} ₽</div></div>
-          </div>
-        `).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee4, null, [[1, 4]]);
+  }));
+  return _loadPriceList.apply(this, arguments);
+}
+function openPriceModal(idx) {
+  var p = idx !== null ? priceCache[idx] : null;
+  var isStorage = p ? p.service_type === 'storage' : false;
+  var isProcessing = p ? p.service_type === 'processing' : false;
+  var isVolume = p ? p.storage_mode === 'volume' : false;
+  var showExtra = isVolume || isProcessing;
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(p ? serviceLabel(p.service_type) : 'Новая позиция прайса', "</div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u0443\u0441\u043B\u0443\u0433\u0438</label>\n              <select id=\"m-type\" ").concat(p ? 'disabled' : '', " onchange=\"onServiceTypeChange()\">").concat(SERVICE_TYPES.map(function (_ref) {
+    var _ref2 = _slicedToArray(_ref, 2),
+      v = _ref2[0],
+      l = _ref2[1];
+    return "<option value=\"".concat(v, "\" ").concat(p && p.service_type === v ? 'selected' : '', ">").concat(l, "</option>");
+  }).join(''), "</select>\n            </div>\n            <div class=\"field\" id=\"storage-mode-wrap\" style=\"display:").concat(isStorage ? 'block' : 'none', "\">\n              <label>\u0420\u0435\u0436\u0438\u043C \u0442\u0430\u0440\u0438\u0444\u0438\u043A\u0430\u0446\u0438\u0438 \u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F</label>\n              <select id=\"m-storage-mode\" onchange=\"onStorageModeChange()\">\n                <option value=\"slots\" ").concat(!isVolume ? 'selected' : '', ">\u041F\u043E \u0437\u0430\u043D\u044F\u0442\u044B\u043C \u044F\u0447\u0435\u0439\u043A\u0430\u043C</option>\n                <option value=\"volume\" ").concat(isVolume ? 'selected' : '', ">\u041F\u043E \u043B\u0438\u0442\u0440\u0430\u0436\u0443 (\u043A\u0430\u043A \u0443 \u0412\u0411) \u2014 1-\u0439 \u043B\u0438\u0442\u0440 + \u0434\u043E\u043F\u043B\u0430\u0442\u0430 \u0437\u0430 \u043A\u0430\u0436\u0434\u044B\u0439 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439, \u043E\u043A\u0440\u0443\u0433\u043B\u0435\u043D\u0438\u0435 \u0432\u0432\u0435\u0440\u0445</option>\n              </select>\n            </div>\n            <div class=\"field\"><label>\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435</label><input id=\"m-desc\" value=\"").concat(p ? UI.escHtml(p.description || '') : '', "\"/></div>\n            <div class=\"field\"><label id=\"m-price-label\">").concat(showExtra ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽', "</label><input id=\"m-price\" type=\"number\" step=\"0.01\" value=\"").concat(p ? p.unit_price : '', "\"/></div>\n            <div class=\"field\" id=\"extra-price-wrap\" style=\"display:").concat(showExtra ? 'block' : 'none', "\">\n              <label>\u0426\u0435\u043D\u0430 \u0437\u0430 \u043A\u0430\u0436\u0434\u044B\u0439 \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0438\u0439 \u043B\u0438\u0442\u0440, \u20BD").concat(isProcessing ? ' (необязательно — если не задано, цена фиксированная за штуку)' : '', "</label>\n              <input id=\"m-extra-price\" type=\"number\" step=\"0.01\" value=\"").concat(p && p.extra_unit_price != null ? p.extra_unit_price : '', "\"/>\n            </div>\n            <div class=\"field\"><label>\u041C\u0438\u043D\u0438\u043C\u0430\u043B\u044C\u043D\u0430\u044F \u0441\u0443\u043C\u043C\u0430, \u20BD (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)</label><input id=\"m-min\" type=\"number\" step=\"0.01\" value=\"").concat(p && p.min_charge ? p.min_charge : '', "\"/></div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"savePrice(").concat(idx, ")\">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              ").concat(p ? "<button class=\"btn-big btn-red\" onclick=\"deletePrice(".concat(p.id, ")\">\u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function onServiceTypeChange() {
+  var t = UI.val('#m-type');
+  var isStorage = t === 'storage';
+  var isProcessing = t === 'processing';
+  document.getElementById('storage-mode-wrap').style.display = isStorage ? 'block' : 'none';
+  document.getElementById('extra-price-wrap').style.display = isProcessing ? 'block' : 'none';
+  document.getElementById('m-price-label').textContent = isProcessing ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽';
+  if (isStorage) onStorageModeChange();
+}
+function onStorageModeChange() {
+  var isStorage = UI.val('#m-type') === 'storage';
+  var isVolume = isStorage && UI.val('#m-storage-mode') === 'volume';
+  document.getElementById('extra-price-wrap').style.display = isVolume ? 'block' : 'none';
+  document.getElementById('m-price-label').textContent = isVolume ? 'Цена за первый литр, ₽' : 'Цена за единицу, ₽';
+}
+function savePrice(_x) {
+  return _savePrice.apply(this, arguments);
+}
+function _savePrice() {
+  _savePrice = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(idx) {
+    var clientId, p, serviceType, isStorage, isProcessing, storageMode, useExtra, extraVal, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          clientId = currentClientId();
+          if (clientId) {
+            _context5.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите клиента');
+          return _context5.a(2);
+        case 1:
+          p = idx !== null ? priceCache[idx] : null;
+          serviceType = p ? p.service_type : UI.val('#m-type');
+          isStorage = serviceType === 'storage';
+          isProcessing = serviceType === 'processing';
+          storageMode = isStorage ? UI.val('#m-storage-mode') : 'slots';
+          useExtra = isStorage && storageMode === 'volume' || isProcessing;
+          extraVal = UI.val('#m-extra-price');
+          _context5.p = 2;
+          _context5.n = 3;
+          return window.API.billing.priceList.upsert({
+            client_id: clientId,
+            service_type: serviceType,
+            description: UI.val('#m-desc'),
+            unit_price: Number(UI.val('#m-price')) || 0,
+            min_charge: UI.val('#m-min') ? Number(UI.val('#m-min')) : null,
+            storage_mode: storageMode,
+            extra_unit_price: useExtra && extraVal ? Number(extraVal) || 0 : null
+          });
+        case 3:
+          UI.notify.ok('Сохранено');
+          closeModal();
+          _context5.n = 4;
+          return loadPriceList();
+        case 4:
+          _context5.n = 6;
+          break;
+        case 5:
+          _context5.p = 5;
+          _t4 = _context5.v;
+          UI.notify.err(_t4.message);
+        case 6:
+          return _context5.a(2);
       }
-    }
+    }, _callee5, null, [[2, 5]]);
+  }));
+  return _savePrice.apply(this, arguments);
+}
+function deletePrice(_x2) {
+  return _deletePrice.apply(this, arguments);
+}
+function _deletePrice() {
+  _deletePrice = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(id) {
+    var _t5;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.billing.priceList.delete(id);
+        case 1:
+          UI.notify.ok('Удалено');
+          closeModal();
+          _context6.n = 2;
+          return loadPriceList();
+        case 2:
+          _context6.n = 4;
+          break;
+        case 3:
+          _context6.p = 3;
+          _t5 = _context6.v;
+          UI.notify.err(_t5.message);
+        case 4:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 3]]);
+  }));
+  return _deletePrice.apply(this, arguments);
+}
+var selectedChargeIds = new Set();
+function initChargeServiceFilter() {
+  var sel = document.getElementById('ch-service');
+  if (sel.options.length > 1) return; // уже заполнено
+  sel.innerHTML = '<option value="">Все услуги</option>' + ALL_SERVICE_TYPES.map(function (_ref3) {
+    var _ref4 = _slicedToArray(_ref3, 2),
+      v = _ref4[0],
+      l = _ref4[1];
+    return "<option value=\"".concat(v, "\">").concat(l, "</option>");
+  }).join('');
+}
+function loadCharges() {
+  return _loadCharges.apply(this, arguments);
+}
+function _loadCharges() {
+  _loadCharges = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var clientId, body, params, from, to, serviceType, invoiced, res, total, _t6;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          initChargeServiceFilter();
+          document.getElementById('ch-select-all').style.display = canEdit ? '' : 'none';
+          clientId = currentClientId();
+          body = document.getElementById('charge-body');
+          selectedChargeIds = new Set();
+          updateChargeSelectBar();
+          if (clientId) {
+            _context7.n = 1;
+            break;
+          }
+          body.innerHTML = '';
+          return _context7.a(2);
+        case 1:
+          _context7.p = 1;
+          params = {
+            client_id: clientId,
+            limit: 300
+          };
+          from = UI.val('#ch-from');
+          if (from) params.date_from = from;
+          to = UI.val('#ch-to');
+          if (to) params.date_to = to;
+          serviceType = UI.val('#ch-service');
+          if (serviceType) params.service_type = serviceType;
+          invoiced = UI.val('#ch-invoiced');
+          if (invoiced) params.is_invoiced = invoiced;
+          _context7.n = 2;
+          return window.API.billing.charges.list(params);
+        case 2:
+          res = _context7.v;
+          chargeCache = res.charges || [];
+          document.getElementById('charge-count').textContent = res.total || chargeCache.length;
+          total = chargeCache.reduce(function (s, c) {
+            return s + Number(c.total_amount || 0);
+          }, 0);
+          document.getElementById('charge-total').textContent = total.toFixed(2);
+          if (chargeCache.length) {
+            _context7.n = 3;
+            break;
+          }
+          body.innerHTML = "<tr><td colspan=\"7\">\u041D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0438\u0439 \u043D\u0435\u0442</td></tr>";
+          return _context7.a(2);
+        case 3:
+          body.innerHTML = chargeCache.map(function (c) {
+            return "\n          <tr>\n            <td>".concat(!c.is_invoiced && canEdit ? "<input type=\"checkbox\" class=\"charge-cb\" data-id=\"".concat(c.id, "\" data-amount=\"").concat(c.total_amount, "\" onclick=\"onChargeCheck(").concat(c.id, ", ").concat(c.total_amount, ", this.checked)\"/>") : '', "</td>\n            <td>").concat(fmtDate(c.period_date), "</td>\n            <td>").concat(serviceLabel(c.service_type)).concat(c.description ? ' · ' + UI.escHtml(c.description) : '', "</td>\n            <td>").concat(fmtQty(c.quantity), "</td>\n            <td>").concat(Number(c.unit_price).toFixed(2), "</td>\n            <td>").concat(Number(c.total_amount).toFixed(2), "</td>\n            <td>").concat(c.is_invoiced ? '✓' : '—', "</td>\n          </tr>\n        ");
+          }).join('');
+          _context7.n = 6;
+          break;
+        case 4:
+          _context7.p = 4;
+          _t6 = _context7.v;
+          if (!isModuleDisabled(_t6)) {
+            _context7.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context7.a(2);
+        case 5:
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[1, 4]]);
+  }));
+  return _loadCharges.apply(this, arguments);
+}
+function onChargeCheck(id, amount, checked) {
+  if (checked) selectedChargeIds.add(id);else selectedChargeIds.delete(id);
+  updateChargeSelectBar();
+}
+function toggleSelectAllCharges(checked) {
+  document.querySelectorAll('.charge-cb').forEach(function (cb) {
+    cb.checked = checked;
+    var id = Number(cb.dataset.id);
+    if (checked) selectedChargeIds.add(id);else selectedChargeIds.delete(id);
+  });
+  updateChargeSelectBar();
+}
+function updateChargeSelectBar() {
+  var bar = document.getElementById('charge-select-bar');
+  var count = selectedChargeIds.size;
+  bar.style.display = count ? 'block' : 'none';
+  document.getElementById('charge-selected-count').textContent = count;
+  var total = 0;
+  document.querySelectorAll('.charge-cb').forEach(function (cb) {
+    if (selectedChargeIds.has(Number(cb.dataset.id))) total += Number(cb.dataset.amount);
+  });
+  document.getElementById('charge-selected-total').textContent = total.toFixed(2);
+}
+function bulkDeleteSelectedCharges() {
+  return _bulkDeleteSelectedCharges.apply(this, arguments);
+}
+function _bulkDeleteSelectedCharges() {
+  _bulkDeleteSelectedCharges = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var count, total, res, _t7;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          if (selectedChargeIds.size) {
+            _context8.n = 1;
+            break;
+          }
+          return _context8.a(2);
+        case 1:
+          count = selectedChargeIds.size;
+          total = document.getElementById('charge-selected-total').textContent;
+          if (UI.confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C ".concat(count, " \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0438").concat(count === 1 ? 'е' : 'й', " \u043D\u0430 \u0441\u0443\u043C\u043C\u0443 ").concat(total, " \u20BD? \u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0431\u0443\u0434\u0435\u0442 \u043D\u0435\u043B\u044C\u0437\u044F."))) {
+            _context8.n = 2;
+            break;
+          }
+          return _context8.a(2);
+        case 2:
+          _context8.p = 2;
+          _context8.n = 3;
+          return window.API.billing.charges.bulkDelete(_toConsumableArray(selectedChargeIds));
+        case 3:
+          res = _context8.v;
+          UI.notify.ok("\u0423\u0434\u0430\u043B\u0435\u043D\u043E: ".concat(res.deleted_count, " \u043D\u0430 \u0441\u0443\u043C\u043C\u0443 ").concat(Number(res.deleted_total).toFixed(2), " \u20BD"));
+          _context8.n = 4;
+          return loadCharges();
+        case 4:
+          _context8.n = 5;
+          return loadBalance();
+        case 5:
+          _context8.n = 7;
+          break;
+        case 6:
+          _context8.p = 6;
+          _t7 = _context8.v;
+          UI.notify.err(_t7.message);
+        case 7:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[2, 6]]);
+  }));
+  return _bulkDeleteSelectedCharges.apply(this, arguments);
+}
+function openManualChargeModal() {
+  var clientId = currentClientId();
+  if (!clientId) {
+    UI.notify.err('Выберите клиента');
+    return;
+  }
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0420\u0443\u0447\u043D\u043E\u0435 \u043D\u0430\u0447\u0438\u0441\u043B\u0435\u043D\u0438\u0435</div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u0443\u0441\u043B\u0443\u0433\u0438</label>\n              <select id=\"mc-type\">".concat(ALL_SERVICE_TYPES.map(function (_ref5) {
+    var _ref6 = _slicedToArray(_ref5, 2),
+      v = _ref6[0],
+      l = _ref6[1];
+    return "<option value=\"".concat(v, "\">").concat(l, "</option>");
+  }).join(''), "</select>\n            </div>\n            <div class=\"field\"><label>\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435</label><input id=\"mc-desc\"/></div>\n            <div class=\"field\"><label>\u041A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E</label><input id=\"mc-qty\" type=\"number\" step=\"0.01\" value=\"1\"/></div>\n            <div class=\"field\"><label>\u0426\u0435\u043D\u0430 \u0437\u0430 \u0435\u0434\u0438\u043D\u0438\u0446\u0443, \u20BD</label><input id=\"mc-price\" type=\"number\" step=\"0.01\" value=\"0\"/></div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"saveManualCharge()\">\u041D\u0430\u0447\u0438\u0441\u043B\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function saveManualCharge() {
+  return _saveManualCharge.apply(this, arguments);
+}
+function _saveManualCharge() {
+  _saveManualCharge = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var clientId, _t8;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          clientId = currentClientId();
+          _context9.p = 1;
+          _context9.n = 2;
+          return window.API.billing.charges.add({
+            client_id: clientId,
+            service_type: UI.val('#mc-type'),
+            description: UI.val('#mc-desc'),
+            quantity: Number(UI.val('#mc-qty')) || 1,
+            unit_price: Number(UI.val('#mc-price')) || 0
+          });
+        case 2:
+          UI.notify.ok('Начислено');
+          closeModal();
+          _context9.n = 3;
+          return loadCharges();
+        case 3:
+          _context9.n = 5;
+          break;
+        case 4:
+          _context9.p = 4;
+          _t8 = _context9.v;
+          UI.notify.err(_t8.message);
+        case 5:
+          return _context9.a(2);
+      }
+    }, _callee9, null, [[1, 4]]);
+  }));
+  return _saveManualCharge.apply(this, arguments);
+}
+function loadInvoices() {
+  return _loadInvoices.apply(this, arguments);
+}
+function _loadInvoices() {
+  _loadInvoices = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var clientId, list, res, _t9;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          clientId = currentClientId();
+          list = document.getElementById('inv-list');
+          if (clientId) {
+            _context0.n = 1;
+            break;
+          }
+          list.innerHTML = '';
+          return _context0.a(2);
+        case 1:
+          _context0.p = 1;
+          _context0.n = 2;
+          return window.API.billing.invoices.list({
+            client_id: clientId,
+            limit: 100
+          });
+        case 2:
+          res = _context0.v;
+          invoiceCache = res.invoices || [];
+          document.getElementById('inv-count').textContent = res.total || invoiceCache.length;
+          if (invoiceCache.length) {
+            _context0.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\">\u0421\u0447\u0435\u0442\u043E\u0432 \u043D\u0435\u0442</div>";
+          return _context0.a(2);
+        case 3:
+          list.innerHTML = invoiceCache.map(function (inv, idx) {
+            return "\n          <div class=\"list-row inv-row\" onclick=\"openInvoiceModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(inv.invoice_number), "</div>\n              <div class=\"sub\">").concat(fmtDate(inv.period_from), " \u2014 ").concat(fmtDate(inv.period_to), " \xB7 <span class=\"status-pill status-").concat(inv.status, "\">").concat(inv.status, "</span></div>\n            </div>\n            <div class=\"badge\"><span>\u0421\u0443\u043C\u043C\u0430</span><div>").concat(Number(inv.total_amount).toFixed(2), " \u20BD</div></div>\n          </div>\n        ");
+          }).join('');
+          _context0.n = 6;
+          break;
+        case 4:
+          _context0.p = 4;
+          _t9 = _context0.v;
+          if (!isModuleDisabled(_t9)) {
+            _context0.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context0.a(2);
+        case 5:
+          UI.notify.err(_t9.message);
+        case 6:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[1, 4]]);
+  }));
+  return _loadInvoices.apply(this, arguments);
+}
+function createInvoice() {
+  return _createInvoice.apply(this, arguments);
+}
+function _createInvoice() {
+  _createInvoice = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
+    var clientId, from, to, res, _t0;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          clientId = currentClientId();
+          if (clientId) {
+            _context1.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите клиента');
+          return _context1.a(2);
+        case 1:
+          from = UI.val('#inv-from'), to = UI.val('#inv-to');
+          if (!(!from || !to)) {
+            _context1.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите период');
+          return _context1.a(2);
+        case 2:
+          _context1.p = 2;
+          _context1.n = 3;
+          return window.API.billing.invoices.create({
+            client_id: clientId,
+            period_from: from,
+            period_to: to
+          });
+        case 3:
+          res = _context1.v;
+          UI.notify.ok("\u0421\u0447\u0451\u0442 ".concat(res.invoice.invoice_number, " \u0441\u043E\u0437\u0434\u0430\u043D \u043D\u0430 ").concat(res.total_amount, " \u20BD"));
+          _context1.n = 4;
+          return loadInvoices();
+        case 4:
+          _context1.n = 6;
+          break;
+        case 5:
+          _context1.p = 5;
+          _t0 = _context1.v;
+          UI.notify.err(_t0.message);
+        case 6:
+          return _context1.a(2);
+      }
+    }, _callee1, null, [[2, 5]]);
+  }));
+  return _createInvoice.apply(this, arguments);
+}
+function openInvoiceModal(_x3) {
+  return _openInvoiceModal.apply(this, arguments);
+}
+function _openInvoiceModal() {
+  _openInvoiceModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10(idx) {
+    var inv, detail, rows, statusButtons, _t1;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          inv = invoiceCache[idx];
+          _context10.p = 1;
+          _context10.n = 2;
+          return window.API.billing.invoices.get(inv.id);
+        case 2:
+          detail = _context10.v;
+          _context10.n = 4;
+          break;
+        case 3:
+          _context10.p = 3;
+          _t1 = _context10.v;
+          UI.notify.err(_t1.message);
+          return _context10.a(2);
+        case 4:
+          rows = detail.charges.map(function (c) {
+            return "<tr><td>".concat(fmtDate(c.period_date), "</td><td>").concat(serviceLabel(c.service_type), "</td><td>").concat(fmtQty(c.quantity), "</td><td>").concat(Number(c.total_amount).toFixed(2), "</td></tr>");
+          }).join('');
+          statusButtons = canEdit ? "\n        <div class=\"btn-row\">\n          ".concat(inv.status === 'draft' ? "<button class=\"btn-big btn-blue\" onclick=\"setInvoiceStatus(".concat(inv.id, ",'sent')\">\u0412\u044B\u0441\u0442\u0430\u0432\u0438\u0442\u044C</button>") : '', "\n          ").concat(inv.status !== 'paid' && inv.status !== 'cancelled' ? "<button class=\"btn-big btn-green\" onclick=\"setInvoiceStatus(".concat(inv.id, ",'paid')\">\u041E\u043F\u043B\u0430\u0447\u0435\u043D</button>") : '', "\n          ").concat(inv.status !== 'paid' && inv.status !== 'cancelled' ? "<button class=\"btn-big btn-red\" onclick=\"setInvoiceStatus(".concat(inv.id, ",'cancelled')\">\u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C</button>") : '', "\n        </div>") : '';
+          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(UI.escHtml(inv.invoice_number), " \u2014 ").concat(Number(inv.total_amount).toFixed(2), " \u20BD</div>\n            <div class=\"table-wrap\">\n              <table><thead><tr><th>\u0414\u0430\u0442\u0430</th><th>\u0423\u0441\u043B\u0443\u0433\u0430</th><th>\u041A\u043E\u043B-\u0432\u043E</th><th>\u0421\u0443\u043C\u043C\u0430</th></tr></thead><tbody>").concat(rows, "</tbody></table>\n            </div>\n            ").concat(statusButtons, "\n            <button class=\"btn-big btn-yellow btn-full\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n          </div>\n        </div>\n      ");
+        case 5:
+          return _context10.a(2);
+      }
+    }, _callee10, null, [[1, 3]]);
+  }));
+  return _openInvoiceModal.apply(this, arguments);
+}
+function setInvoiceStatus(_x4, _x5) {
+  return _setInvoiceStatus.apply(this, arguments);
+}
+function _setInvoiceStatus() {
+  _setInvoiceStatus = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11(id, status) {
+    var _t10;
+    return _regenerator().w(function (_context11) {
+      while (1) switch (_context11.p = _context11.n) {
+        case 0:
+          _context11.p = 0;
+          _context11.n = 1;
+          return window.API.billing.invoices.updateStatus(id, status);
+        case 1:
+          UI.notify.ok('Статус обновлён');
+          closeModal();
+          _context11.n = 2;
+          return loadInvoices();
+        case 2:
+          _context11.n = 4;
+          break;
+        case 3:
+          _context11.p = 3;
+          _t10 = _context11.v;
+          UI.notify.err(_t10.message);
+        case 4:
+          return _context11.a(2);
+      }
+    }, _callee11, null, [[0, 3]]);
+  }));
+  return _setInvoiceStatus.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
 
-    async function createInvoice() {
-      const clientId = currentClientId();
-      if (!clientId) { UI.notify.err('Выберите клиента'); return; }
-      const from = UI.val('#inv-from'), to = UI.val('#inv-to');
-      if (!from || !to) { UI.notify.err('Укажите период'); return; }
-      try {
-        const res = await window.API.billing.invoices.create({ client_id: clientId, period_from: from, period_to: to });
-        UI.notify.ok(`Счёт ${res.invoice.invoice_number} создан на ${res.total_amount} ₽`);
-        await loadInvoices();
-      } catch (e) { UI.notify.err(e.message); }
-    }
+// ============ Аналитика по счетам ============
 
-    async function openInvoiceModal(idx) {
-      const inv = invoiceCache[idx];
-      let detail;
-      try { detail = await window.API.billing.invoices.get(inv.id); } catch (e) { UI.notify.err(e.message); return; }
-      const rows = detail.charges.map(c => `<tr><td>${fmtDate(c.period_date)}</td><td>${serviceLabel(c.service_type)}</td><td>${fmtQty(c.quantity)}</td><td>${Number(c.total_amount).toFixed(2)}</td></tr>`).join('');
-      const statusButtons = canEdit ? `
-        <div class="btn-row">
-          ${inv.status==='draft' ? `<button class="btn-big btn-blue" onclick="setInvoiceStatus(${inv.id},'sent')">Выставить</button>` : ''}
-          ${inv.status!=='paid'&&inv.status!=='cancelled' ? `<button class="btn-big btn-green" onclick="setInvoiceStatus(${inv.id},'paid')">Оплачен</button>` : ''}
-          ${inv.status!=='paid'&&inv.status!=='cancelled' ? `<button class="btn-big btn-red" onclick="setInvoiceStatus(${inv.id},'cancelled')">Отменить</button>` : ''}
-        </div>` : '';
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${UI.escHtml(inv.invoice_number)} — ${Number(inv.total_amount).toFixed(2)} ₽</div>
-            <div class="table-wrap">
-              <table><thead><tr><th>Дата</th><th>Услуга</th><th>Кол-во</th><th>Сумма</th></tr></thead><tbody>${rows}</tbody></table>
-            </div>
-            ${statusButtons}
-            <button class="btn-big btn-yellow btn-full" onclick="closeModal()">Закрыть</button>
-          </div>
-        </div>
-      `;
-    }
-
-    async function setInvoiceStatus(id, status) {
-      try {
-        await window.API.billing.invoices.updateStatus(id, status);
-        UI.notify.ok('Статус обновлён');
-        closeModal();
-        await loadInvoices();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    // ============ Аналитика по счетам ============
-
-    const cs = getComputedStyle(document.documentElement);
-    const PALETTE = [
-      cs.getPropertyValue('--accent').trim()  || '#0284c7',
-      cs.getPropertyValue('--green').trim()   || '#16a34a',
-      cs.getPropertyValue('--yellow').trim()  || '#d97706',
-      cs.getPropertyValue('--muted2').trim()  || '#94a3b8',
-    ];
-    function fmtMoney(n) { return Number(n||0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽'; }
-    function destroyChart(c) { if (c) c.destroy(); return null; }
-
-    let analyticsGranularity = 'day';
-    let analyticsInited = false;
-    let chartInvoices = null, chartInvoicesTotals = null;
-
-    function setAnalyticsGranularity(g) {
-      analyticsGranularity = g;
-      document.querySelectorAll('.tab[data-ag]').forEach(t => t.classList.toggle('active', t.dataset.ag === g));
-      loadInvoiceAnalytics();
-    }
-
-    function initAnalyticsTab() {
-      if (analyticsInited) return;
-      analyticsInited = true;
-      const to = new Date();
-      const from = new Date(); from.setDate(from.getDate() - 29);
-      const iso = (d) => d.toISOString().slice(0, 10);
-      UI.setVal('#an-from', iso(from));
-      UI.setVal('#an-to', iso(to));
-    }
-
-    async function loadInvoiceAnalytics() {
-      const dateFrom = UI.val('#an-from'), dateTo = UI.val('#an-to');
-      if (!dateFrom || !dateTo) return;
-      document.getElementById('inv-analytics-off').style.display = 'none';
-      document.getElementById('inv-by-client-card').style.display = 'none';
-      const clientId = Number(UI.val('#an-client')) || null;
-      const params = { date_from: dateFrom, date_to: dateTo, granularity: analyticsGranularity };
-      if (clientId) params.client_id = clientId;
-      try {
-        const res = await window.API.billing.analytics.invoices(params);
-        document.getElementById('kpi-inv-sent').textContent = fmtMoney(res.sent_total);
-        document.getElementById('kpi-inv-paid').textContent = fmtMoney(res.paid_total);
-        document.getElementById('kpi-inv-outstanding').textContent = fmtMoney(res.outstanding_total);
-        document.getElementById('kpi-inv-uninvoiced').textContent = fmtMoney(res.uninvoiced_total);
-
-        chartInvoicesTotals = destroyChart(chartInvoicesTotals);
-        chartInvoicesTotals = new Chart(document.getElementById('chart-invoices-totals'), {
-          type: 'bar',
-          data: {
-            labels: ['Выставлено', 'Оплачено', 'Непогашено', 'Не выставлено'],
-            datasets: [{
-              data: [res.sent_total, res.paid_total, res.outstanding_total, res.uninvoiced_total],
-              backgroundColor: [PALETTE[0], PALETTE[1], PALETTE[2], PALETTE[3]],
-            }],
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } } },
-        });
-
-        const periods = res.period_grid;
-        chartInvoices = destroyChart(chartInvoices);
-        chartInvoices = new Chart(document.getElementById('chart-invoices'), {
-          type: 'line',
-          data: {
-            labels: periods,
-            datasets: [
-              {
+var cs = getComputedStyle(document.documentElement);
+var PALETTE = [cs.getPropertyValue('--accent').trim() || '#0284c7', cs.getPropertyValue('--green').trim() || '#16a34a', cs.getPropertyValue('--yellow').trim() || '#d97706', cs.getPropertyValue('--muted2').trim() || '#94a3b8'];
+function fmtMoney(n) {
+  return Number(n || 0).toLocaleString('ru-RU', {
+    maximumFractionDigits: 0
+  }) + ' ₽';
+}
+function destroyChart(c) {
+  if (c) c.destroy();
+  return null;
+}
+var analyticsGranularity = 'day';
+var analyticsInited = false;
+var chartInvoices = null,
+  chartInvoicesTotals = null;
+function setAnalyticsGranularity(g) {
+  analyticsGranularity = g;
+  document.querySelectorAll('.tab[data-ag]').forEach(function (t) {
+    return t.classList.toggle('active', t.dataset.ag === g);
+  });
+  loadInvoiceAnalytics();
+}
+function initAnalyticsTab() {
+  if (analyticsInited) return;
+  analyticsInited = true;
+  var to = new Date();
+  var from = new Date();
+  from.setDate(from.getDate() - 29);
+  var iso = function iso(d) {
+    return d.toISOString().slice(0, 10);
+  };
+  UI.setVal('#an-from', iso(from));
+  UI.setVal('#an-to', iso(to));
+}
+function loadInvoiceAnalytics() {
+  return _loadInvoiceAnalytics.apply(this, arguments);
+}
+function _loadInvoiceAnalytics() {
+  _loadInvoiceAnalytics = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12() {
+    var dateFrom, dateTo, clientId, params, res, periods, _t11;
+    return _regenerator().w(function (_context12) {
+      while (1) switch (_context12.p = _context12.n) {
+        case 0:
+          dateFrom = UI.val('#an-from'), dateTo = UI.val('#an-to');
+          if (!(!dateFrom || !dateTo)) {
+            _context12.n = 1;
+            break;
+          }
+          return _context12.a(2);
+        case 1:
+          document.getElementById('inv-analytics-off').style.display = 'none';
+          document.getElementById('inv-by-client-card').style.display = 'none';
+          clientId = Number(UI.val('#an-client')) || null;
+          params = {
+            date_from: dateFrom,
+            date_to: dateTo,
+            granularity: analyticsGranularity
+          };
+          if (clientId) params.client_id = clientId;
+          _context12.p = 2;
+          _context12.n = 3;
+          return window.API.billing.analytics.invoices(params);
+        case 3:
+          res = _context12.v;
+          document.getElementById('kpi-inv-sent').textContent = fmtMoney(res.sent_total);
+          document.getElementById('kpi-inv-paid').textContent = fmtMoney(res.paid_total);
+          document.getElementById('kpi-inv-outstanding').textContent = fmtMoney(res.outstanding_total);
+          document.getElementById('kpi-inv-uninvoiced').textContent = fmtMoney(res.uninvoiced_total);
+          chartInvoicesTotals = destroyChart(chartInvoicesTotals);
+          chartInvoicesTotals = new Chart(document.getElementById('chart-invoices-totals'), {
+            type: 'bar',
+            data: {
+              labels: ['Выставлено', 'Оплачено', 'Непогашено', 'Не выставлено'],
+              datasets: [{
+                data: [res.sent_total, res.paid_total, res.outstanding_total, res.uninvoiced_total],
+                backgroundColor: [PALETTE[0], PALETTE[1], PALETTE[2], PALETTE[3]]
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: false
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+          periods = res.period_grid;
+          chartInvoices = destroyChart(chartInvoices);
+          chartInvoices = new Chart(document.getElementById('chart-invoices'), {
+            type: 'line',
+            data: {
+              labels: periods,
+              datasets: [{
                 label: 'Выставлено',
-                data: periods.map(p => { const r = res.sent_series.find(x => x.period === p); return r ? r.total : 0; }),
-                borderColor: PALETTE[0], backgroundColor: PALETTE[0], tension: 0.25, fill: false,
-              },
-              {
+                data: periods.map(function (p) {
+                  var r = res.sent_series.find(function (x) {
+                    return x.period === p;
+                  });
+                  return r ? r.total : 0;
+                }),
+                borderColor: PALETTE[0],
+                backgroundColor: PALETTE[0],
+                tension: 0.25,
+                fill: false
+              }, {
                 label: 'Оплачено',
-                data: periods.map(p => { const r = res.paid_series.find(x => x.period === p); return r ? r.total : 0; }),
-                borderColor: PALETTE[1], backgroundColor: PALETTE[1], tension: 0.25, fill: false,
-              },
-              {
+                data: periods.map(function (p) {
+                  var r = res.paid_series.find(function (x) {
+                    return x.period === p;
+                  });
+                  return r ? r.total : 0;
+                }),
+                borderColor: PALETTE[1],
+                backgroundColor: PALETTE[1],
+                tension: 0.25,
+                fill: false
+              }, {
                 label: 'Не выставлено',
-                data: periods.map(p => { const r = res.uninvoiced_series.find(x => x.period === p); return r ? r.total : 0; }),
-                borderColor: PALETTE[2], backgroundColor: PALETTE[2], borderDash: [5,3], tension: 0.25, fill: false,
+                data: periods.map(function (p) {
+                  var r = res.uninvoiced_series.find(function (x) {
+                    return x.period === p;
+                  });
+                  return r ? r.total : 0;
+                }),
+                borderColor: PALETTE[2],
+                backgroundColor: PALETTE[2],
+                borderDash: [5, 3],
+                tension: 0.25,
+                fill: false
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: true
+                }
               },
-            ],
-          },
-          options: { responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: { y: { beginAtZero: true } } },
-        });
-
-        if (!clientId && res.by_client.length > 0) {
-          document.getElementById('inv-by-client-card').style.display = 'block';
-          document.getElementById('inv-by-client-list').innerHTML = res.by_client.map(c => `
-            <div class="rank-row">
-              <span class="name">${UI.escHtml(c.client_name)}</span>
-              <span class="amts">
-                <span class="sent">Выст. ${fmtMoney(c.sent_total)}</span>
-                <span class="paid">Опл. ${fmtMoney(c.paid_total)}</span>
-                <span class="out">Долг ${fmtMoney(c.outstanding_total)}</span>
-                <span class="sent">Не выст. ${fmtMoney(c.uninvoiced_total)}</span>
-              </span>
-            </div>
-          `).join('');
-        }
-      } catch (e) {
-        if (isModuleDisabled(e)) { document.getElementById('inv-analytics-off').style.display = 'block'; return; }
-        UI.notify.err(e.message);
+              scales: {
+                y: {
+                  beginAtZero: true
+                }
+              }
+            }
+          });
+          if (!clientId && res.by_client.length > 0) {
+            document.getElementById('inv-by-client-card').style.display = 'block';
+            document.getElementById('inv-by-client-list').innerHTML = res.by_client.map(function (c) {
+              return "\n            <div class=\"rank-row\">\n              <span class=\"name\">".concat(UI.escHtml(c.client_name), "</span>\n              <span class=\"amts\">\n                <span class=\"sent\">\u0412\u044B\u0441\u0442. ").concat(fmtMoney(c.sent_total), "</span>\n                <span class=\"paid\">\u041E\u043F\u043B. ").concat(fmtMoney(c.paid_total), "</span>\n                <span class=\"out\">\u0414\u043E\u043B\u0433 ").concat(fmtMoney(c.outstanding_total), "</span>\n                <span class=\"sent\">\u041D\u0435 \u0432\u044B\u0441\u0442. ").concat(fmtMoney(c.uninvoiced_total), "</span>\n              </span>\n            </div>\n          ");
+            }).join('');
+          }
+          _context12.n = 6;
+          break;
+        case 4:
+          _context12.p = 4;
+          _t11 = _context12.v;
+          if (!isModuleDisabled(_t11)) {
+            _context12.n = 5;
+            break;
+          }
+          document.getElementById('inv-analytics-off').style.display = 'block';
+          return _context12.a(2);
+        case 5:
+          UI.notify.err(_t11.message);
+        case 6:
+          return _context12.a(2);
       }
-    }
-
-    loadClients();
-  </script>
+    }, _callee12, null, [[2, 4]]);
+  }));
+  return _loadInvoiceAnalytics.apply(this, arguments);
+}
+loadClients();</script>
 </body>
 </html>

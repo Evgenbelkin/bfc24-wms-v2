@@ -66,365 +66,568 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin','receiver','picker','inventory_manager'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    const user = window.API.getUser();
-    const canEdit = (user && user.role === 'tenant_admin') || (user && user.role === 'supervisor');
-    if (canEdit) document.getElementById('add-btn').style.display = 'block';
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    const TYPE_LABELS = {
-      rack:'Стеллаж', floor:'Пол', buffer:'Буфер',
-      receiving:'Приёмка', shipping:'Отгрузка', quarantine:'Карантин', virtual:'Виртуальная',
-    };
-
-    let warehouses = [];
-    let locOffset = 0;
-    const PAGE_SIZE = 100;
-    let locCache = [];
-    const selectedIds = new Set();
-
-    function onLocCheck(id, checked) {
-      if (checked) selectedIds.add(id); else selectedIds.delete(id);
-      updateSelectBar();
-    }
-    function toggleSelectAll(checked) {
-      document.querySelectorAll('.loc-cb').forEach(cb => {
-        const id = Number(cb.dataset.id);
-        cb.checked = checked;
-        if (checked) selectedIds.add(id); else selectedIds.delete(id);
-      });
-      updateSelectBar();
-    }
-    function updateSelectBar() {
-      document.getElementById('selected-count').textContent = selectedIds.size;
-      document.getElementById('select-bar').style.display = canEdit ? 'block' : 'none';
-      const allOnPage = locCache.length > 0 && locCache.every(l => selectedIds.has(l.id));
-      document.getElementById('select-all-cb').checked = allOnPage;
-    }
-
-    async function printSelectedLabels() {
-      if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы одну ячейку'); return; }
-      // Открываем окно СРАЗУ, синхронно по клику (см. printStationSticker в
-      // printer-panel.html — та же причина: иначе мобильный браузер молча
-      // блокирует всплывающее окно, если открыть его после await).
-      const w = window.open('', '_blank');
-      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этого сайта'); return; }
-      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Готовим наклейки…</p>');
-      try {
-        const res = await window.API.locations.printLabels(Array.from(selectedIds));
-        const labels = res.labels || [];
-        w.document.open();
-        // Каждая наклейка — отдельная страница размером под термоэтикетку
-        // (58×40мм), а не сетка на A4: раньше это уходило на обычный принтер
-        // листом A4 с несколькими ячейками в ряд, вместо одной наклейки на
-        // ленте термопринтера. В диалоге печати браузера нужно выбрать
-        // термопринтер и масштаб "Реальный размер" (не "Подгонать по странице").
-        w.document.write(`
-          <html><head><title>Наклейки ячеек (${labels.length})</title>
-          <style>
-            @page { size: 58mm 40mm; margin: 0; }
-            html,body{margin:0;padding:0;}
-            body{font-family:sans-serif;}
-            .cell{width:58mm;height:40mm;box-sizing:border-box;padding:2mm;
-                  display:flex;align-items:center;justify-content:center;
-                  page-break-after:always;break-after:page;}
-            .cell:last-child{page-break-after:auto;break-after:auto;}
-            .cell svg{width:100%;height:100%;display:block;}
-          </style></head><body>
-          ${labels.map(l => `<div class="cell">${l.svg}</div>`).join('')}
-          <script>window.onload = () => window.print();<\/script>
-          </body></html>
-        `);
-        w.document.close();
-      } catch (e) {
-        w.document.open();
-        w.document.write(`<p style="font-family:sans-serif;color:red;padding:40px;">${UI.escHtml(e.message)}</p>`);
-        w.document.close();
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin', 'receiver', 'picker', 'inventory_manager'])) {
+  window.location.href = '/app/menu.html';
+}
+var user = window.API.getUser();
+var canEdit = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
+if (canEdit) document.getElementById('add-btn').style.display = 'block';
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-    }
-
-    function openBulkDimensionsModal() {
-      if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы одну ячейку'); return; }
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Задать размеры (${selectedIds.size} ячеек)</div>
-            <div class="field-row3" style="display:flex;gap:8px;">
-              <div class="field" style="flex:1;"><label>Длина, см</label><input id="bd-length" type="number" min="0" step="0.1" oninput="updateBulkDimensionsPreview()"/></div>
-              <div class="field" style="flex:1;"><label>Ширина, см</label><input id="bd-width" type="number" min="0" step="0.1" oninput="updateBulkDimensionsPreview()"/></div>
-              <div class="field" style="flex:1;"><label>Высота, см</label><input id="bd-height" type="number" min="0" step="0.1" oninput="updateBulkDimensionsPreview()"/></div>
-            </div>
-            <p id="bd-preview" style="font-size:13px;color:var(--muted);margin:6px 0 0;"></p>
-            <p style="font-size:12px;color:var(--muted);">Применится ко всем выбранным ячейкам одинаково.</p>
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="submitBulkDimensions()">Применить</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function updateBulkDimensionsPreview() {
-      const el = document.getElementById('bd-preview');
-      if (!el) return;
-      const l = Number(UI.val('#bd-length')) || 0;
-      const w = Number(UI.val('#bd-width')) || 0;
-      const h = Number(UI.val('#bd-height')) || 0;
-      el.textContent = (l > 0 && w > 0 && h > 0) ? `Вместимость: ≈ ${(l*w*h/1000).toFixed(1)} л на ячейку` : '';
-    }
-
-    async function submitBulkDimensions() {
-      const data = {
-        ids: Array.from(selectedIds),
-        length_cm: UI.val('#bd-length') || null,
-        width_cm: UI.val('#bd-width') || null,
-        height_cm: UI.val('#bd-height') || null,
-      };
-      try {
-        const res = await window.API.locations.bulkDimensions(data);
-        UI.notify.ok(`Обновлено ячеек: ${res.updated}`);
-        closeModal();
-        await loadLocations();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function openBulkModal() {
-      const whOptions = warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">Создать ячейки пачкой</div>
-            <div class="field"><label>Склад</label><select id="b-warehouse">${whOptions}</select></div>
-            <div class="field"><label>Зона/стеллаж (буква)</label><input id="b-zone" placeholder="A" maxlength="10" oninput="this.value=this.value.toUpperCase(); updateBulkPreview();"/></div>
-            <div class="field-row2">
-              <div class="field"><label>Ряд от</label><input id="b-row-from" type="number" min="1" value="1" oninput="updateBulkPreview()"/></div>
-              <div class="field"><label>Ряд до</label><input id="b-row-to" type="number" min="1" value="1" oninput="updateBulkPreview()"/></div>
-            </div>
-            <div class="field-row2">
-              <div class="field"><label>Позиция от</label><input id="b-pos-from" type="number" min="1" value="1" oninput="updateBulkPreview()"/></div>
-              <div class="field"><label>Позиция до</label><input id="b-pos-to" type="number" min="1" value="20" oninput="updateBulkPreview()"/></div>
-            </div>
-            <div class="field"><label>Тип ячейки</label><select id="b-type">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${k==='rack'?'selected':''}>${v}</option>`).join('')}</select></div>
-            <div class="field-row3" style="display:flex;gap:8px;">
-              <div class="field" style="flex:1;"><label>Длина, см</label><input id="b-length" type="number" min="0" step="0.1" oninput="updateBulkPreview()"/></div>
-              <div class="field" style="flex:1;"><label>Ширина, см</label><input id="b-width" type="number" min="0" step="0.1" oninput="updateBulkPreview()"/></div>
-              <div class="field" style="flex:1;"><label>Высота, см</label><input id="b-height" type="number" min="0" step="0.1" oninput="updateBulkPreview()"/></div>
-            </div>
-            <p style="font-size:12px;color:var(--muted);margin:0;">Размеры необязательны, но нужны для экрана «Заполняемость ячеек» — применятся ко всем ячейкам этой партии</p>
-            <p id="b-preview" style="font-size:13px;color:var(--muted);margin:6px 0 0;"></p>
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="submitBulkCreate()">Создать</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-      updateBulkPreview();
-    }
-
-    function updateBulkPreview() {
-      const el = document.getElementById('b-preview');
-      if (!el) return;
-      const zone = (UI.val('#b-zone') || '').trim().toUpperCase();
-      const rFrom = Number(UI.val('#b-row-from')) || 0;
-      const rTo = Number(UI.val('#b-row-to')) || 0;
-      const pFrom = Number(UI.val('#b-pos-from')) || 0;
-      const pTo = Number(UI.val('#b-pos-to')) || 0;
-      if (!zone || rFrom < 1 || rTo < rFrom || pFrom < 1 || pTo < pFrom) {
-        el.textContent = 'Заполните диапазоны корректно';
-        return;
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+var TYPE_LABELS = {
+  rack: 'Стеллаж',
+  floor: 'Пол',
+  buffer: 'Буфер',
+  receiving: 'Приёмка',
+  shipping: 'Отгрузка',
+  quarantine: 'Карантин',
+  virtual: 'Виртуальная'
+};
+var warehouses = [];
+var locOffset = 0;
+var PAGE_SIZE = 100;
+var locCache = [];
+var selectedIds = new Set();
+function onLocCheck(id, checked) {
+  if (checked) selectedIds.add(id);else selectedIds.delete(id);
+  updateSelectBar();
+}
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.loc-cb').forEach(function (cb) {
+    var id = Number(cb.dataset.id);
+    cb.checked = checked;
+    if (checked) selectedIds.add(id);else selectedIds.delete(id);
+  });
+  updateSelectBar();
+}
+function updateSelectBar() {
+  document.getElementById('selected-count').textContent = selectedIds.size;
+  document.getElementById('select-bar').style.display = canEdit ? 'block' : 'none';
+  var allOnPage = locCache.length > 0 && locCache.every(function (l) {
+    return selectedIds.has(l.id);
+  });
+  document.getElementById('select-all-cb').checked = allOnPage;
+}
+function printSelectedLabels() {
+  return _printSelectedLabels.apply(this, arguments);
+}
+function _printSelectedLabels() {
+  _printSelectedLabels = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var w, res, labels, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          if (selectedIds.size) {
+            _context3.n = 1;
+            break;
+          }
+          UI.notify.err('Отметьте хотя бы одну ячейку');
+          return _context3.a(2);
+        case 1:
+          // Открываем окно СРАЗУ, синхронно по клику (см. printStationSticker в
+          // printer-panel.html — та же причина: иначе мобильный браузер молча
+          // блокирует всплывающее окно, если открыть его после await).
+          w = window.open('', '_blank');
+          if (w) {
+            _context3.n = 2;
+            break;
+          }
+          UI.notify.err('Браузер заблокировал всплывающее окно — разрешите всплывающие окна для этого сайта');
+          return _context3.a(2);
+        case 2:
+          w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Готовим наклейки…</p>');
+          _context3.p = 3;
+          _context3.n = 4;
+          return window.API.locations.printLabels(Array.from(selectedIds));
+        case 4:
+          res = _context3.v;
+          labels = res.labels || [];
+          w.document.open();
+          // Каждая наклейка — отдельная страница размером под термоэтикетку
+          // (58×40мм), а не сетка на A4: раньше это уходило на обычный принтер
+          // листом A4 с несколькими ячейками в ряд, вместо одной наклейки на
+          // ленте термопринтера. В диалоге печати браузера нужно выбрать
+          // термопринтер и масштаб "Реальный размер" (не "Подгонать по странице").
+          w.document.write("\n          <html><head><title>\u041D\u0430\u043A\u043B\u0435\u0439\u043A\u0438 \u044F\u0447\u0435\u0435\u043A (".concat(labels.length, ")</title>\n          <style>\n            @page { size: 58mm 40mm; margin: 0; }\n            html,body{margin:0;padding:0;}\n            body{font-family:sans-serif;}\n            .cell{width:58mm;height:40mm;box-sizing:border-box;padding:2mm;\n                  display:flex;align-items:center;justify-content:center;\n                  page-break-after:always;break-after:page;}\n            .cell:last-child{page-break-after:auto;break-after:auto;}\n            .cell svg{width:100%;height:100%;display:block;}\n          </style></head><body>\n          ").concat(labels.map(function (l) {
+            return "<div class=\"cell\">".concat(l.svg, "</div>");
+          }).join(''), "\n          <script>window.onload = () => window.print();<\/script>\n          </body></html>\n        "));
+          w.document.close();
+          _context3.n = 6;
+          break;
+        case 5:
+          _context3.p = 5;
+          _t = _context3.v;
+          w.document.open();
+          w.document.write("<p style=\"font-family:sans-serif;color:red;padding:40px;\">".concat(UI.escHtml(_t.message), "</p>"));
+          w.document.close();
+        case 6:
+          return _context3.a(2);
       }
-      const total = (rTo - rFrom + 1) * (pTo - pFrom + 1);
-      const pad = (n) => String(n).padStart(2, '0');
-      const l = Number(UI.val('#b-length')) || 0;
-      const w = Number(UI.val('#b-width')) || 0;
-      const h = Number(UI.val('#b-height')) || 0;
-      const volumeHint = (l > 0 && w > 0 && h > 0) ? `<br>Вместимость каждой ячейки: ≈ ${(l*w*h/1000).toFixed(1)} л` : '';
-      el.innerHTML = `Будет создано (или пропущено, если уже есть): <b>${total}</b> ячеек. ` +
-        `Пример: <code>${zone}-${pad(rFrom)}-${pad(pFrom)}</code> … <code>${zone}-${pad(rTo)}-${pad(pTo)}</code>` + volumeHint +
-        (total > 2000 ? `<br><span style="color:var(--red)">Слишком много за раз (максимум 2000) — уменьшите диапазон.</span>` : '');
-    }
-
-    async function submitBulkCreate() {
-      const data = {
-        warehouse_id: UI.val('#b-warehouse'),
-        zone: UI.val('#b-zone'),
-        row_from: UI.val('#b-row-from'),
-        row_to: UI.val('#b-row-to'),
-        position_from: UI.val('#b-pos-from'),
-        position_to: UI.val('#b-pos-to'),
-        location_type: UI.val('#b-type'),
-        length_cm: UI.val('#b-length') || null,
-        width_cm: UI.val('#b-width') || null,
-        height_cm: UI.val('#b-height') || null,
-      };
-      try {
-        const res = await window.API.locations.bulkCreate(data);
-        UI.notify.ok(`Создано: ${res.created}${res.skipped ? `, уже было: ${res.skipped}` : ''} (всего в диапазоне: ${res.total})`);
-        closeModal();
-        await loadLocations();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadWarehouses() {
-      try {
-        const res = await window.API.warehouses.list();
-        warehouses = res.warehouses || [];
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadLocations(append=false) {
-      try {
-        if (!append) locOffset = 0;
-        const params = { limit: PAGE_SIZE, offset: locOffset };
-        const search = UI.val('#f-search'); if (search) params.search = search;
-        const type = UI.val('#f-type'); if (type) params.location_type = type;
-
-        const res = await window.API.locations.list(params);
-        locCache = append ? locCache.concat(res.locations) : res.locations;
-        document.getElementById('loc-total').textContent = res.total;
-        document.getElementById('loc-count').textContent = locCache.length;
-
-        const list = document.getElementById('loc-list');
-        if (!locCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg></div>Ничего не найдено</div>`;
-          return;
-        }
-        list.innerHTML = locCache.map((l, idx) => `
-          <div class="list-row loc-row" style="display:flex;align-items:center;gap:10px;" onclick="openModal(${idx})">
-            ${canEdit ? `<input type="checkbox" class="loc-cb" data-id="${l.id}" onclick="event.stopPropagation(); onLocCheck(${l.id}, this.checked);" ${selectedIds.has(l.id) ? 'checked' : ''}/>` : ''}
-            <div class="main" style="flex:1;">
-              <div class="title">${UI.escHtml(l.location_code)}</div>
-              <div class="sub">${UI.escHtml(TYPE_LABELS[l.location_type]||l.location_type)} · ${UI.escHtml(l.warehouse_name)} ${l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>'}</div>
-            </div>
-            <div class="badge"><span>На руках</span><div>${UI.fmtQty(l.qty_on_hand)}</div></div>
-          </div>
-        `).join('');
-        updateSelectBar();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function loadMore() { locOffset += PAGE_SIZE; loadLocations(true); }
-
-    function openModal(idx) {
-      const loc = idx !== null ? locCache[idx] : null;
-      const readonly = !canEdit;
-      const whOptions = warehouses.map(w => `<option value="${w.id}" ${loc && loc.warehouse_id===w.id ? 'selected':''}>${UI.escHtml(w.warehouse_name)}</option>`).join('');
-      const typeOptions = Object.entries(TYPE_LABELS).map(([k,v]) => `<option value="${k}" ${loc && loc.location_type===k ? 'selected':''}>${v}</option>`).join('');
-
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${loc ? 'Ячейка '+UI.escHtml(loc.location_code) : 'Новая ячейка'}</div>
-            <div class="field"><label>Код ячейки</label><input id="m-code" value="${loc ? UI.escHtml(loc.location_code) : ''}" ${loc?'disabled':''} placeholder="A-01-02-3"/></div>
-            <div class="field"><label>Склад</label><select id="m-warehouse" ${loc?'disabled':''}>${whOptions}</select></div>
-            <div class="field"><label>Тип</label><select id="m-type">${typeOptions}</select></div>
-            <div class="field"><label>Описание</label><input id="m-desc" value="${loc && loc.description ? UI.escHtml(loc.description) : ''}"/></div>
-            <div class="field"><label>Зона</label><input id="m-zone" value="${loc && loc.zone_code ? UI.escHtml(loc.zone_code) : ''}"/></div>
-            <div class="field-row3" style="display:flex;gap:8px;">
-              <div class="field" style="flex:1;"><label>Длина, см</label><input id="m-length" type="number" min="0" step="0.1" value="${loc && loc.length_cm!=null ? loc.length_cm : ''}" oninput="updateModalVolumePreview()"/></div>
-              <div class="field" style="flex:1;"><label>Ширина, см</label><input id="m-width" type="number" min="0" step="0.1" value="${loc && loc.width_cm!=null ? loc.width_cm : ''}" oninput="updateModalVolumePreview()"/></div>
-              <div class="field" style="flex:1;"><label>Высота, см</label><input id="m-height" type="number" min="0" step="0.1" value="${loc && loc.height_cm!=null ? loc.height_cm : ''}" oninput="updateModalVolumePreview()"/></div>
-            </div>
-            <p id="m-volume-preview" style="font-size:13px;color:var(--muted);margin:2px 0 0;"></p>
-            <div class="field"><label style="display:inline;">Активна</label> <input type="checkbox" id="m-active" ${!loc || loc.is_active ? 'checked':''}/></div>
-            <div class="field"><label style="display:inline;">Ячейка сборки (pick location)</label> <input type="checkbox" id="m-pick" ${!loc || loc.is_pick_location ? 'checked':''}/></div>
-            <div class="btn-row">
-              ${canEdit ? `<button class="btn-big btn-green" onclick="saveLocation(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-            ${canEdit && loc ? `<button class="btn-big btn-red btn-full" style="margin-top:8px;" onclick="deleteLocationFromModal(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить ячейку</button>` : ''}
-          </div>
-        </div>
-      `;
-      updateModalVolumePreview();
-    }
-
-    async function deleteLocationFromModal(idx) {
-      const loc = locCache[idx];
-      if (!loc) return;
-      if (!UI.confirm(`Удалить ячейку ${loc.location_code}?`)) return;
-      try {
-        const res = await window.API.locations.delete(loc.id);
-        UI.notify.ok(res.mode === 'soft'
-          ? `Ячейка ${res.location_code} деактивирована (есть история движений — полностью удалить нельзя)`
-          : `Ячейка ${res.location_code} удалена`);
-        closeModal();
-        await loadLocations();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deleteSelectedLocations() {
-      if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы одну ячейку'); return; }
-      if (!UI.confirm(`Удалить выбранные ячейки (${selectedIds.size} шт.)? Ячейки с товаром пропустятся.`)) return;
-      let deleted = 0, deactivated = 0, skipped = 0;
-      for (const id of Array.from(selectedIds)) {
-        try {
-          const res = await window.API.locations.delete(id);
-          if (res.mode === 'soft') deactivated++; else deleted++;
+    }, _callee3, null, [[3, 5]]);
+  }));
+  return _printSelectedLabels.apply(this, arguments);
+}
+function openBulkDimensionsModal() {
+  if (!selectedIds.size) {
+    UI.notify.err('Отметьте хотя бы одну ячейку');
+    return;
+  }
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0417\u0430\u0434\u0430\u0442\u044C \u0440\u0430\u0437\u043C\u0435\u0440\u044B (".concat(selectedIds.size, " \u044F\u0447\u0435\u0435\u043A)</div>\n            <div class=\"field-row3\" style=\"display:flex;gap:8px;\">\n              <div class=\"field\" style=\"flex:1;\"><label>\u0414\u043B\u0438\u043D\u0430, \u0441\u043C</label><input id=\"bd-length\" type=\"number\" min=\"0\" step=\"0.1\" oninput=\"updateBulkDimensionsPreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0428\u0438\u0440\u0438\u043D\u0430, \u0441\u043C</label><input id=\"bd-width\" type=\"number\" min=\"0\" step=\"0.1\" oninput=\"updateBulkDimensionsPreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0412\u044B\u0441\u043E\u0442\u0430, \u0441\u043C</label><input id=\"bd-height\" type=\"number\" min=\"0\" step=\"0.1\" oninput=\"updateBulkDimensionsPreview()\"/></div>\n            </div>\n            <p id=\"bd-preview\" style=\"font-size:13px;color:var(--muted);margin:6px 0 0;\"></p>\n            <p style=\"font-size:12px;color:var(--muted);\">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u0441\u044F \u043A\u043E \u0432\u0441\u0435\u043C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u043C \u044F\u0447\u0435\u0439\u043A\u0430\u043C \u043E\u0434\u0438\u043D\u0430\u043A\u043E\u0432\u043E.</p>\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"submitBulkDimensions()\">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function updateBulkDimensionsPreview() {
+  var el = document.getElementById('bd-preview');
+  if (!el) return;
+  var l = Number(UI.val('#bd-length')) || 0;
+  var w = Number(UI.val('#bd-width')) || 0;
+  var h = Number(UI.val('#bd-height')) || 0;
+  el.textContent = l > 0 && w > 0 && h > 0 ? "\u0412\u043C\u0435\u0441\u0442\u0438\u043C\u043E\u0441\u0442\u044C: \u2248 ".concat((l * w * h / 1000).toFixed(1), " \u043B \u043D\u0430 \u044F\u0447\u0435\u0439\u043A\u0443") : '';
+}
+function submitBulkDimensions() {
+  return _submitBulkDimensions.apply(this, arguments);
+}
+function _submitBulkDimensions() {
+  _submitBulkDimensions = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var data, res, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          data = {
+            ids: Array.from(selectedIds),
+            length_cm: UI.val('#bd-length') || null,
+            width_cm: UI.val('#bd-width') || null,
+            height_cm: UI.val('#bd-height') || null
+          };
+          _context4.p = 1;
+          _context4.n = 2;
+          return window.API.locations.bulkDimensions(data);
+        case 2:
+          res = _context4.v;
+          UI.notify.ok("\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E \u044F\u0447\u0435\u0435\u043A: ".concat(res.updated));
+          closeModal();
+          _context4.n = 3;
+          return loadLocations();
+        case 3:
+          _context4.n = 5;
+          break;
+        case 4:
+          _context4.p = 4;
+          _t2 = _context4.v;
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[1, 4]]);
+  }));
+  return _submitBulkDimensions.apply(this, arguments);
+}
+function openBulkModal() {
+  var whOptions = warehouses.map(function (w) {
+    return "<option value=\"".concat(w.id, "\">").concat(UI.escHtml(w.warehouse_name), "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u044F\u0447\u0435\u0439\u043A\u0438 \u043F\u0430\u0447\u043A\u043E\u0439</div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434</label><select id=\"b-warehouse\">".concat(whOptions, "</select></div>\n            <div class=\"field\"><label>\u0417\u043E\u043D\u0430/\u0441\u0442\u0435\u043B\u043B\u0430\u0436 (\u0431\u0443\u043A\u0432\u0430)</label><input id=\"b-zone\" placeholder=\"A\" maxlength=\"10\" oninput=\"this.value=this.value.toUpperCase(); updateBulkPreview();\"/></div>\n            <div class=\"field-row2\">\n              <div class=\"field\"><label>\u0420\u044F\u0434 \u043E\u0442</label><input id=\"b-row-from\" type=\"number\" min=\"1\" value=\"1\" oninput=\"updateBulkPreview()\"/></div>\n              <div class=\"field\"><label>\u0420\u044F\u0434 \u0434\u043E</label><input id=\"b-row-to\" type=\"number\" min=\"1\" value=\"1\" oninput=\"updateBulkPreview()\"/></div>\n            </div>\n            <div class=\"field-row2\">\n              <div class=\"field\"><label>\u041F\u043E\u0437\u0438\u0446\u0438\u044F \u043E\u0442</label><input id=\"b-pos-from\" type=\"number\" min=\"1\" value=\"1\" oninput=\"updateBulkPreview()\"/></div>\n              <div class=\"field\"><label>\u041F\u043E\u0437\u0438\u0446\u0438\u044F \u0434\u043E</label><input id=\"b-pos-to\" type=\"number\" min=\"1\" value=\"20\" oninput=\"updateBulkPreview()\"/></div>\n            </div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u044F\u0447\u0435\u0439\u043A\u0438</label><select id=\"b-type\">").concat(Object.entries(TYPE_LABELS).map(function (_ref) {
+    var _ref2 = _slicedToArray(_ref, 2),
+      k = _ref2[0],
+      v = _ref2[1];
+    return "<option value=\"".concat(k, "\" ").concat(k === 'rack' ? 'selected' : '', ">").concat(v, "</option>");
+  }).join(''), "</select></div>\n            <div class=\"field-row3\" style=\"display:flex;gap:8px;\">\n              <div class=\"field\" style=\"flex:1;\"><label>\u0414\u043B\u0438\u043D\u0430, \u0441\u043C</label><input id=\"b-length\" type=\"number\" min=\"0\" step=\"0.1\" oninput=\"updateBulkPreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0428\u0438\u0440\u0438\u043D\u0430, \u0441\u043C</label><input id=\"b-width\" type=\"number\" min=\"0\" step=\"0.1\" oninput=\"updateBulkPreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0412\u044B\u0441\u043E\u0442\u0430, \u0441\u043C</label><input id=\"b-height\" type=\"number\" min=\"0\" step=\"0.1\" oninput=\"updateBulkPreview()\"/></div>\n            </div>\n            <p style=\"font-size:12px;color:var(--muted);margin:0;\">\u0420\u0430\u0437\u043C\u0435\u0440\u044B \u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u044B, \u043D\u043E \u043D\u0443\u0436\u043D\u044B \u0434\u043B\u044F \u044D\u043A\u0440\u0430\u043D\u0430 \xAB\u0417\u0430\u043F\u043E\u043B\u043D\u044F\u0435\u043C\u043E\u0441\u0442\u044C \u044F\u0447\u0435\u0435\u043A\xBB \u2014 \u043F\u0440\u0438\u043C\u0435\u043D\u044F\u0442\u0441\u044F \u043A\u043E \u0432\u0441\u0435\u043C \u044F\u0447\u0435\u0439\u043A\u0430\u043C \u044D\u0442\u043E\u0439 \u043F\u0430\u0440\u0442\u0438\u0438</p>\n            <p id=\"b-preview\" style=\"font-size:13px;color:var(--muted);margin:6px 0 0;\"></p>\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"submitBulkCreate()\">\u0421\u043E\u0437\u0434\u0430\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+  updateBulkPreview();
+}
+function updateBulkPreview() {
+  var el = document.getElementById('b-preview');
+  if (!el) return;
+  var zone = (UI.val('#b-zone') || '').trim().toUpperCase();
+  var rFrom = Number(UI.val('#b-row-from')) || 0;
+  var rTo = Number(UI.val('#b-row-to')) || 0;
+  var pFrom = Number(UI.val('#b-pos-from')) || 0;
+  var pTo = Number(UI.val('#b-pos-to')) || 0;
+  if (!zone || rFrom < 1 || rTo < rFrom || pFrom < 1 || pTo < pFrom) {
+    el.textContent = 'Заполните диапазоны корректно';
+    return;
+  }
+  var total = (rTo - rFrom + 1) * (pTo - pFrom + 1);
+  var pad = function pad(n) {
+    return String(n).padStart(2, '0');
+  };
+  var l = Number(UI.val('#b-length')) || 0;
+  var w = Number(UI.val('#b-width')) || 0;
+  var h = Number(UI.val('#b-height')) || 0;
+  var volumeHint = l > 0 && w > 0 && h > 0 ? "<br>\u0412\u043C\u0435\u0441\u0442\u0438\u043C\u043E\u0441\u0442\u044C \u043A\u0430\u0436\u0434\u043E\u0439 \u044F\u0447\u0435\u0439\u043A\u0438: \u2248 ".concat((l * w * h / 1000).toFixed(1), " \u043B") : '';
+  el.innerHTML = "\u0411\u0443\u0434\u0435\u0442 \u0441\u043E\u0437\u0434\u0430\u043D\u043E (\u0438\u043B\u0438 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E, \u0435\u0441\u043B\u0438 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C): <b>".concat(total, "</b> \u044F\u0447\u0435\u0435\u043A. ") + "\u041F\u0440\u0438\u043C\u0435\u0440: <code>".concat(zone, "-").concat(pad(rFrom), "-").concat(pad(pFrom), "</code> \u2026 <code>").concat(zone, "-").concat(pad(rTo), "-").concat(pad(pTo), "</code>") + volumeHint + (total > 2000 ? "<br><span style=\"color:var(--red)\">\u0421\u043B\u0438\u0448\u043A\u043E\u043C \u043C\u043D\u043E\u0433\u043E \u0437\u0430 \u0440\u0430\u0437 (\u043C\u0430\u043A\u0441\u0438\u043C\u0443\u043C 2000) \u2014 \u0443\u043C\u0435\u043D\u044C\u0448\u0438\u0442\u0435 \u0434\u0438\u0430\u043F\u0430\u0437\u043E\u043D.</span>" : '');
+}
+function submitBulkCreate() {
+  return _submitBulkCreate.apply(this, arguments);
+}
+function _submitBulkCreate() {
+  _submitBulkCreate = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var data, res, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          data = {
+            warehouse_id: UI.val('#b-warehouse'),
+            zone: UI.val('#b-zone'),
+            row_from: UI.val('#b-row-from'),
+            row_to: UI.val('#b-row-to'),
+            position_from: UI.val('#b-pos-from'),
+            position_to: UI.val('#b-pos-to'),
+            location_type: UI.val('#b-type'),
+            length_cm: UI.val('#b-length') || null,
+            width_cm: UI.val('#b-width') || null,
+            height_cm: UI.val('#b-height') || null
+          };
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.locations.bulkCreate(data);
+        case 2:
+          res = _context5.v;
+          UI.notify.ok("\u0421\u043E\u0437\u0434\u0430\u043D\u043E: ".concat(res.created).concat(res.skipped ? ", \u0443\u0436\u0435 \u0431\u044B\u043B\u043E: ".concat(res.skipped) : '', " (\u0432\u0441\u0435\u0433\u043E \u0432 \u0434\u0438\u0430\u043F\u0430\u0437\u043E\u043D\u0435: ").concat(res.total, ")"));
+          closeModal();
+          _context5.n = 3;
+          return loadLocations();
+        case 3:
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 5:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[1, 4]]);
+  }));
+  return _submitBulkCreate.apply(this, arguments);
+}
+function loadWarehouses() {
+  return _loadWarehouses.apply(this, arguments);
+}
+function _loadWarehouses() {
+  _loadWarehouses = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.warehouses.list();
+        case 1:
+          res = _context6.v;
+          warehouses = res.warehouses || [];
+          _context6.n = 3;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t4 = _context6.v;
+          UI.notify.err(_t4.message);
+        case 3:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _loadWarehouses.apply(this, arguments);
+}
+function loadLocations() {
+  return _loadLocations.apply(this, arguments);
+}
+function _loadLocations() {
+  _loadLocations = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var append,
+      params,
+      search,
+      type,
+      res,
+      list,
+      _args7 = arguments,
+      _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          append = _args7.length > 0 && _args7[0] !== undefined ? _args7[0] : false;
+          _context7.p = 1;
+          if (!append) locOffset = 0;
+          params = {
+            limit: PAGE_SIZE,
+            offset: locOffset
+          };
+          search = UI.val('#f-search');
+          if (search) params.search = search;
+          type = UI.val('#f-type');
+          if (type) params.location_type = type;
+          _context7.n = 2;
+          return window.API.locations.list(params);
+        case 2:
+          res = _context7.v;
+          locCache = append ? locCache.concat(res.locations) : res.locations;
+          document.getElementById('loc-total').textContent = res.total;
+          document.getElementById('loc-count').textContent = locCache.length;
+          list = document.getElementById('loc-list');
+          if (locCache.length) {
+            _context7.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"5\" rx=\"1\"/><path d=\"M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9\"/><path d=\"M10 13h4\"/></svg></div>\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E</div>";
+          return _context7.a(2);
+        case 3:
+          list.innerHTML = locCache.map(function (l, idx) {
+            return "\n          <div class=\"list-row loc-row\" style=\"display:flex;align-items:center;gap:10px;\" onclick=\"openModal(".concat(idx, ")\">\n            ").concat(canEdit ? "<input type=\"checkbox\" class=\"loc-cb\" data-id=\"".concat(l.id, "\" onclick=\"event.stopPropagation(); onLocCheck(").concat(l.id, ", this.checked);\" ").concat(selectedIds.has(l.id) ? 'checked' : '', "/>") : '', "\n            <div class=\"main\" style=\"flex:1;\">\n              <div class=\"title\">").concat(UI.escHtml(l.location_code), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(TYPE_LABELS[l.location_type] || l.location_type), " \xB7 ").concat(UI.escHtml(l.warehouse_name), " ").concat(l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>', "</div>\n            </div>\n            <div class=\"badge\"><span>\u041D\u0430 \u0440\u0443\u043A\u0430\u0445</span><div>").concat(UI.fmtQty(l.qty_on_hand), "</div></div>\n          </div>\n        ");
+          }).join('');
+          updateSelectBar();
+          _context7.n = 5;
+          break;
+        case 4:
+          _context7.p = 4;
+          _t5 = _context7.v;
+          UI.notify.err(_t5.message);
+        case 5:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[1, 4]]);
+  }));
+  return _loadLocations.apply(this, arguments);
+}
+function loadMore() {
+  locOffset += PAGE_SIZE;
+  loadLocations(true);
+}
+function openModal(idx) {
+  var loc = idx !== null ? locCache[idx] : null;
+  var readonly = !canEdit;
+  var whOptions = warehouses.map(function (w) {
+    return "<option value=\"".concat(w.id, "\" ").concat(loc && loc.warehouse_id === w.id ? 'selected' : '', ">").concat(UI.escHtml(w.warehouse_name), "</option>");
+  }).join('');
+  var typeOptions = Object.entries(TYPE_LABELS).map(function (_ref3) {
+    var _ref4 = _slicedToArray(_ref3, 2),
+      k = _ref4[0],
+      v = _ref4[1];
+    return "<option value=\"".concat(k, "\" ").concat(loc && loc.location_type === k ? 'selected' : '', ">").concat(v, "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(loc ? 'Ячейка ' + UI.escHtml(loc.location_code) : 'Новая ячейка', "</div>\n            <div class=\"field\"><label>\u041A\u043E\u0434 \u044F\u0447\u0435\u0439\u043A\u0438</label><input id=\"m-code\" value=\"").concat(loc ? UI.escHtml(loc.location_code) : '', "\" ").concat(loc ? 'disabled' : '', " placeholder=\"A-01-02-3\"/></div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434</label><select id=\"m-warehouse\" ").concat(loc ? 'disabled' : '', ">").concat(whOptions, "</select></div>\n            <div class=\"field\"><label>\u0422\u0438\u043F</label><select id=\"m-type\">").concat(typeOptions, "</select></div>\n            <div class=\"field\"><label>\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435</label><input id=\"m-desc\" value=\"").concat(loc && loc.description ? UI.escHtml(loc.description) : '', "\"/></div>\n            <div class=\"field\"><label>\u0417\u043E\u043D\u0430</label><input id=\"m-zone\" value=\"").concat(loc && loc.zone_code ? UI.escHtml(loc.zone_code) : '', "\"/></div>\n            <div class=\"field-row3\" style=\"display:flex;gap:8px;\">\n              <div class=\"field\" style=\"flex:1;\"><label>\u0414\u043B\u0438\u043D\u0430, \u0441\u043C</label><input id=\"m-length\" type=\"number\" min=\"0\" step=\"0.1\" value=\"").concat(loc && loc.length_cm != null ? loc.length_cm : '', "\" oninput=\"updateModalVolumePreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0428\u0438\u0440\u0438\u043D\u0430, \u0441\u043C</label><input id=\"m-width\" type=\"number\" min=\"0\" step=\"0.1\" value=\"").concat(loc && loc.width_cm != null ? loc.width_cm : '', "\" oninput=\"updateModalVolumePreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0412\u044B\u0441\u043E\u0442\u0430, \u0441\u043C</label><input id=\"m-height\" type=\"number\" min=\"0\" step=\"0.1\" value=\"").concat(loc && loc.height_cm != null ? loc.height_cm : '', "\" oninput=\"updateModalVolumePreview()\"/></div>\n            </div>\n            <p id=\"m-volume-preview\" style=\"font-size:13px;color:var(--muted);margin:2px 0 0;\"></p>\n            <div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u043D\u0430</label> <input type=\"checkbox\" id=\"m-active\" ").concat(!loc || loc.is_active ? 'checked' : '', "/></div>\n            <div class=\"field\"><label style=\"display:inline;\">\u042F\u0447\u0435\u0439\u043A\u0430 \u0441\u0431\u043E\u0440\u043A\u0438 (pick location)</label> <input type=\"checkbox\" id=\"m-pick\" ").concat(!loc || loc.is_pick_location ? 'checked' : '', "/></div>\n            <div class=\"btn-row\">\n              ").concat(canEdit ? "<button class=\"btn-big btn-green\" onclick=\"saveLocation(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n            ").concat(canEdit && loc ? "<button class=\"btn-big btn-red btn-full\" style=\"margin-top:8px;\" onclick=\"deleteLocationFromModal(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u0423\u0434\u0430\u043B\u0438\u0442\u044C \u044F\u0447\u0435\u0439\u043A\u0443</button>") : '', "\n          </div>\n        </div>\n      ");
+  updateModalVolumePreview();
+}
+function deleteLocationFromModal(_x) {
+  return _deleteLocationFromModal.apply(this, arguments);
+}
+function _deleteLocationFromModal() {
+  _deleteLocationFromModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(idx) {
+    var loc, res, _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          loc = locCache[idx];
+          if (loc) {
+            _context8.n = 1;
+            break;
+          }
+          return _context8.a(2);
+        case 1:
+          if (UI.confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u044F\u0447\u0435\u0439\u043A\u0443 ".concat(loc.location_code, "?"))) {
+            _context8.n = 2;
+            break;
+          }
+          return _context8.a(2);
+        case 2:
+          _context8.p = 2;
+          _context8.n = 3;
+          return window.API.locations.delete(loc.id);
+        case 3:
+          res = _context8.v;
+          UI.notify.ok(res.mode === 'soft' ? "\u042F\u0447\u0435\u0439\u043A\u0430 ".concat(res.location_code, " \u0434\u0435\u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D\u0430 (\u0435\u0441\u0442\u044C \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u0434\u0432\u0438\u0436\u0435\u043D\u0438\u0439 \u2014 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E \u0443\u0434\u0430\u043B\u0438\u0442\u044C \u043D\u0435\u043B\u044C\u0437\u044F)") : "\u042F\u0447\u0435\u0439\u043A\u0430 ".concat(res.location_code, " \u0443\u0434\u0430\u043B\u0435\u043D\u0430"));
+          closeModal();
+          _context8.n = 4;
+          return loadLocations();
+        case 4:
+          _context8.n = 6;
+          break;
+        case 5:
+          _context8.p = 5;
+          _t6 = _context8.v;
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[2, 5]]);
+  }));
+  return _deleteLocationFromModal.apply(this, arguments);
+}
+function deleteSelectedLocations() {
+  return _deleteSelectedLocations.apply(this, arguments);
+}
+function _deleteSelectedLocations() {
+  _deleteSelectedLocations = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var deleted, deactivated, skipped, _i, _Array$from, id, res, _t7;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          if (selectedIds.size) {
+            _context9.n = 1;
+            break;
+          }
+          UI.notify.err('Отметьте хотя бы одну ячейку');
+          return _context9.a(2);
+        case 1:
+          if (UI.confirm("\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0435 \u044F\u0447\u0435\u0439\u043A\u0438 (".concat(selectedIds.size, " \u0448\u0442.)? \u042F\u0447\u0435\u0439\u043A\u0438 \u0441 \u0442\u043E\u0432\u0430\u0440\u043E\u043C \u043F\u0440\u043E\u043F\u0443\u0441\u0442\u044F\u0442\u0441\u044F."))) {
+            _context9.n = 2;
+            break;
+          }
+          return _context9.a(2);
+        case 2:
+          deleted = 0, deactivated = 0, skipped = 0;
+          _i = 0, _Array$from = Array.from(selectedIds);
+        case 3:
+          if (!(_i < _Array$from.length)) {
+            _context9.n = 8;
+            break;
+          }
+          id = _Array$from[_i];
+          _context9.p = 4;
+          _context9.n = 5;
+          return window.API.locations.delete(id);
+        case 5:
+          res = _context9.v;
+          if (res.mode === 'soft') deactivated++;else deleted++;
           selectedIds.delete(id);
-        } catch (e) { skipped++; }
+          _context9.n = 7;
+          break;
+        case 6:
+          _context9.p = 6;
+          _t7 = _context9.v;
+          skipped++;
+        case 7:
+          _i++;
+          _context9.n = 3;
+          break;
+        case 8:
+          UI.notify.ok("\u0423\u0434\u0430\u043B\u0435\u043D\u043E: ".concat(deleted).concat(deactivated ? ", \u0434\u0435\u0430\u043A\u0442\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D\u043E: ".concat(deactivated) : '').concat(skipped ? ", \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E (\u0435\u0441\u0442\u044C \u0442\u043E\u0432\u0430\u0440/\u043E\u0448\u0438\u0431\u043A\u0430): ".concat(skipped) : ''));
+          _context9.n = 9;
+          return loadLocations();
+        case 9:
+          return _context9.a(2);
       }
-      UI.notify.ok(`Удалено: ${deleted}${deactivated ? `, деактивировано: ${deactivated}` : ''}${skipped ? `, пропущено (есть товар/ошибка): ${skipped}` : ''}`);
-      await loadLocations();
-    }
-
-    function updateModalVolumePreview() {
-      const el = document.getElementById('m-volume-preview');
-      if (!el) return;
-      const l = Number(UI.val('#m-length')) || 0;
-      const w = Number(UI.val('#m-width')) || 0;
-      const h = Number(UI.val('#m-height')) || 0;
-      el.textContent = (l > 0 && w > 0 && h > 0)
-        ? `Вместимость: ≈ ${(l * w * h / 1000).toFixed(1)} л`
-        : '';
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    async function saveLocation(idx) {
-      const loc = idx !== null ? locCache[idx] : null;
-      const data = {
-        location_type: UI.val('#m-type'),
-        description: UI.val('#m-desc'),
-        zone_code: UI.val('#m-zone'),
-        length_cm: UI.val('#m-length') || null,
-        width_cm: UI.val('#m-width') || null,
-        height_cm: UI.val('#m-height') || null,
-        is_active: document.getElementById('m-active').checked,
-        is_pick_location: document.getElementById('m-pick').checked,
-      };
-      try {
-        if (loc) {
-          await window.API.locations.update(loc.id, data);
+    }, _callee9, null, [[4, 6]]);
+  }));
+  return _deleteSelectedLocations.apply(this, arguments);
+}
+function updateModalVolumePreview() {
+  var el = document.getElementById('m-volume-preview');
+  if (!el) return;
+  var l = Number(UI.val('#m-length')) || 0;
+  var w = Number(UI.val('#m-width')) || 0;
+  var h = Number(UI.val('#m-height')) || 0;
+  el.textContent = l > 0 && w > 0 && h > 0 ? "\u0412\u043C\u0435\u0441\u0442\u0438\u043C\u043E\u0441\u0442\u044C: \u2248 ".concat((l * w * h / 1000).toFixed(1), " \u043B") : '';
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+function saveLocation(_x2) {
+  return _saveLocation.apply(this, arguments);
+}
+function _saveLocation() {
+  _saveLocation = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0(idx) {
+    var loc, data, _t8;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          loc = idx !== null ? locCache[idx] : null;
+          data = {
+            location_type: UI.val('#m-type'),
+            description: UI.val('#m-desc'),
+            zone_code: UI.val('#m-zone'),
+            length_cm: UI.val('#m-length') || null,
+            width_cm: UI.val('#m-width') || null,
+            height_cm: UI.val('#m-height') || null,
+            is_active: document.getElementById('m-active').checked,
+            is_pick_location: document.getElementById('m-pick').checked
+          };
+          _context0.p = 1;
+          if (!loc) {
+            _context0.n = 3;
+            break;
+          }
+          _context0.n = 2;
+          return window.API.locations.update(loc.id, data);
+        case 2:
           UI.notify.ok('Ячейка обновлена');
-        } else {
+          _context0.n = 6;
+          break;
+        case 3:
           data.location_code = UI.val('#m-code');
           data.warehouse_id = UI.val('#m-warehouse');
-          if (!data.location_code) { UI.notify.err('Укажите код ячейки'); return; }
-          await window.API.locations.create(data);
+          if (data.location_code) {
+            _context0.n = 4;
+            break;
+          }
+          UI.notify.err('Укажите код ячейки');
+          return _context0.a(2);
+        case 4:
+          _context0.n = 5;
+          return window.API.locations.create(data);
+        case 5:
           UI.notify.ok('Ячейка создана');
-        }
-        closeModal();
-        await loadLocations();
-      } catch (e) { UI.notify.err(e.message); }
+        case 6:
+          closeModal();
+          _context0.n = 7;
+          return loadLocations();
+        case 7:
+          _context0.n = 9;
+          break;
+        case 8:
+          _context0.p = 8;
+          _t8 = _context0.v;
+          UI.notify.err(_t8.message);
+        case 9:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[1, 8]]);
+  }));
+  return _saveLocation.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  var params, searchParam;
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        // Переход с экрана "Заполняемость ячеек" по конкретной ячейке — сразу
+        // подставляем код в поиск, а не заставляем вводить его заново вручную.
+        params = new URLSearchParams(window.location.search);
+        searchParam = params.get('search');
+        if (searchParam) UI.setVal('#f-search', searchParam);
+        _context.n = 1;
+        return loadWarehouses();
+      case 1:
+        _context.n = 2;
+        return loadLocations();
+      case 2:
+        return _context.a(2);
     }
-
-    (async () => {
-      // Переход с экрана "Заполняемость ячеек" по конкретной ячейке — сразу
-      // подставляем код в поиск, а не заставляем вводить его заново вручную.
-      const params = new URLSearchParams(window.location.search);
-      const searchParam = params.get('search');
-      if (searchParam) UI.setVal('#f-search', searchParam);
-      await loadWarehouses(); await loadLocations();
-    })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

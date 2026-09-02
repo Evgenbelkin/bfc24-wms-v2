@@ -1,3 +1,13 @@
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
 /**
  * BFC24 WMS v2 — Shared API Layer
  * Единственный файл для всех запросов к backend.
@@ -6,17 +16,26 @@
 (function (window) {
   'use strict';
 
-  const API_BASE = '/api/v2';
+  var API_BASE = '/api/v2';
 
   // ─────────────── Token Management ───────────────
 
-  const TOKEN_KEY         = 'wms2_token';
-  const REFRESH_TOKEN_KEY = 'wms2_refresh_token';
-  const USER_KEY          = 'wms2_user';
-
-  function getToken()        { return localStorage.getItem(TOKEN_KEY); }
-  function getRefreshToken() { return localStorage.getItem(REFRESH_TOKEN_KEY); }
-  function getUser()         { try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); } catch { return null; } }
+  var TOKEN_KEY = 'wms2_token';
+  var REFRESH_TOKEN_KEY = 'wms2_refresh_token';
+  var USER_KEY = 'wms2_user';
+  function getToken() {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+  function getRefreshToken() {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+  }
+  function getUser() {
+    try {
+      return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    } catch (_unused) {
+      return null;
+    }
+  }
   function saveAuth(token, user, refreshToken) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -27,7 +46,9 @@
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
   }
-  function isLoggedIn() { return !!getToken(); }
+  function isLoggedIn() {
+    return !!getToken();
+  }
 
   // ─────────────── HTTP Core ───────────────
 
@@ -36,580 +57,1413 @@
   // раз молча обновить его через refresh token, и только если это не удалось —
   // разлогиниваем. Конкурентные запросы, словившие 401 одновременно, ждут один
   // и тот же refresh (не долбят /auth/refresh параллельно).
-  let refreshPromise = null;
-
-  async function trySilentRefresh() {
-    const rt = getRefreshToken();
-    if (!rt) return false;
-    if (!refreshPromise) {
-      refreshPromise = (async () => {
-        try {
-          const res = await fetch(`${API_BASE}/auth/refresh`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken: rt }),
-          });
-          if (!res.ok) return false;
-          const json = await res.json().catch(() => null);
-          if (!json || json.ok === false || !json.accessToken) return false;
-          localStorage.setItem(TOKEN_KEY, json.accessToken);
-          if (json.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, json.refreshToken);
-          return true;
-        } catch (_) {
-          return false;
-        } finally {
-          refreshPromise = null;
+  var refreshPromise = null;
+  function trySilentRefresh() {
+    return _trySilentRefresh.apply(this, arguments);
+  }
+  function _trySilentRefresh() {
+    _trySilentRefresh = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+      var rt;
+      return _regenerator().w(function (_context7) {
+        while (1) switch (_context7.n) {
+          case 0:
+            rt = getRefreshToken();
+            if (rt) {
+              _context7.n = 1;
+              break;
+            }
+            return _context7.a(2, false);
+          case 1:
+            if (!refreshPromise) {
+              refreshPromise = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+                var res, json, _t2;
+                return _regenerator().w(function (_context6) {
+                  while (1) switch (_context6.p = _context6.n) {
+                    case 0:
+                      _context6.p = 0;
+                      _context6.n = 1;
+                      return fetch("".concat(API_BASE, "/auth/refresh"), {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                          refreshToken: rt
+                        })
+                      });
+                    case 1:
+                      res = _context6.v;
+                      if (res.ok) {
+                        _context6.n = 2;
+                        break;
+                      }
+                      return _context6.a(2, false);
+                    case 2:
+                      _context6.n = 3;
+                      return res.json().catch(function () {
+                        return null;
+                      });
+                    case 3:
+                      json = _context6.v;
+                      if (!(!json || json.ok === false || !json.accessToken)) {
+                        _context6.n = 4;
+                        break;
+                      }
+                      return _context6.a(2, false);
+                    case 4:
+                      localStorage.setItem(TOKEN_KEY, json.accessToken);
+                      if (json.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, json.refreshToken);
+                      return _context6.a(2, true);
+                    case 5:
+                      _context6.p = 5;
+                      _t2 = _context6.v;
+                      return _context6.a(2, false);
+                    case 6:
+                      _context6.p = 6;
+                      refreshPromise = null;
+                      return _context6.f(6);
+                    case 7:
+                      return _context6.a(2);
+                  }
+                }, _callee6, null, [[0, 5, 6, 7]]);
+              }))();
+            }
+            return _context7.a(2, refreshPromise);
         }
-      })();
-    }
-    return refreshPromise;
+      }, _callee7);
+    }));
+    return _trySilentRefresh.apply(this, arguments);
   }
-
-  async function request(method, path, data = null, opts = {}) {
-    // FormData (загрузка файла) — НЕ JSON.stringify и НЕ выставляем свой
-    // Content-Type: браузер сам проставит multipart/form-data с правильным
-    // boundary, если мы его не трогаем.
-    const isFormData = (typeof FormData !== 'undefined') && data instanceof FormData;
-    const doFetch = () => {
-      const token = getToken();
-      const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const config = { method, headers, ...opts };
-      if (data !== null && method !== 'GET') config.body = isFormData ? data : JSON.stringify(data);
-      const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
-      return fetch(url, config);
-    };
-
-    let res = await doFetch();
-
-    // Access token истёк — пробуем один раз обновить и повторить запрос молча,
-    // прежде чем показывать пользователю экран логина.
-    if (res.status === 401 && !opts.noRedirect) {
-      const refreshed = await trySilentRefresh();
-      if (refreshed) res = await doFetch();
-    }
-
-    // 401 → перенаправить на логин (refresh не удался или недоступен)
-    if (res.status === 401 && !opts.noRedirect) {
-      clearAuth();
-      window.location.href = '/app/login.html';
-      return null;
-    }
-
-    let json;
-    try { json = await res.json(); } catch { json = { ok: false, error: { message: 'Invalid response' } }; }
-
-    // 403 NOT_CHECKED_IN → сотрудник не отметился на складе (см. requireCheckedIn.js) —
-    // ведём на экран скана вместо того, чтобы просто показать ошибку в тосте.
-    if (res.status === 403 && json && json.error && json.error.code === 'NOT_CHECKED_IN' && !opts.noRedirect
-        && window.location.pathname !== '/app/checkin.html') {
-      window.location.href = '/app/checkin.html';
-      return null;
-    }
-
-    if (!res.ok || (json && json.ok) === false) {
-      const msg = (json && json.error && json.error.message) || (json && json.message) || `HTTP ${res.status}`;
-      const err = new Error(msg);
-      err.code    = (json && json.error && json.error.code) || 'API_ERROR';
-      err.status  = res.status;
-      err.details = json && json.error && json.error.details;
-      throw err;
-    }
-
-    return json;
+  function request(_x, _x2) {
+    return _request.apply(this, arguments);
   }
-
-  const get    = (path, params) => {
-    const url = params ? `${path}?${new URLSearchParams(params)}` : path;
+  function _request() {
+    _request = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(method, path) {
+      var data,
+        opts,
+        isFormData,
+        doFetch,
+        res,
+        refreshed,
+        json,
+        msg,
+        err,
+        _args8 = arguments,
+        _t3;
+      return _regenerator().w(function (_context8) {
+        while (1) switch (_context8.p = _context8.n) {
+          case 0:
+            data = _args8.length > 2 && _args8[2] !== undefined ? _args8[2] : null;
+            opts = _args8.length > 3 && _args8[3] !== undefined ? _args8[3] : {};
+            // FormData (загрузка файла) — НЕ JSON.stringify и НЕ выставляем свой
+            // Content-Type: браузер сам проставит multipart/form-data с правильным
+            // boundary, если мы его не трогаем.
+            isFormData = typeof FormData !== 'undefined' && data instanceof FormData;
+            doFetch = function doFetch() {
+              var token = getToken();
+              var headers = isFormData ? {} : {
+                'Content-Type': 'application/json'
+              };
+              if (token) headers['Authorization'] = "Bearer ".concat(token);
+              var config = _objectSpread({
+                method: method,
+                headers: headers
+              }, opts);
+              if (data !== null && method !== 'GET') config.body = isFormData ? data : JSON.stringify(data);
+              var url = path.startsWith('http') ? path : "".concat(API_BASE).concat(path);
+              return fetch(url, config);
+            };
+            _context8.n = 1;
+            return doFetch();
+          case 1:
+            res = _context8.v;
+            if (!(res.status === 401 && !opts.noRedirect)) {
+              _context8.n = 4;
+              break;
+            }
+            _context8.n = 2;
+            return trySilentRefresh();
+          case 2:
+            refreshed = _context8.v;
+            if (!refreshed) {
+              _context8.n = 4;
+              break;
+            }
+            _context8.n = 3;
+            return doFetch();
+          case 3:
+            res = _context8.v;
+          case 4:
+            if (!(res.status === 401 && !opts.noRedirect)) {
+              _context8.n = 5;
+              break;
+            }
+            clearAuth();
+            window.location.href = '/app/login.html';
+            return _context8.a(2, null);
+          case 5:
+            _context8.p = 5;
+            _context8.n = 6;
+            return res.json();
+          case 6:
+            json = _context8.v;
+            _context8.n = 8;
+            break;
+          case 7:
+            _context8.p = 7;
+            _t3 = _context8.v;
+            json = {
+              ok: false,
+              error: {
+                message: 'Invalid response'
+              }
+            };
+          case 8:
+            if (!(res.status === 403 && json && json.error && json.error.code === 'NOT_CHECKED_IN' && !opts.noRedirect && window.location.pathname !== '/app/checkin.html')) {
+              _context8.n = 9;
+              break;
+            }
+            window.location.href = '/app/checkin.html';
+            return _context8.a(2, null);
+          case 9:
+            if (!(!res.ok || (json && json.ok) === false)) {
+              _context8.n = 10;
+              break;
+            }
+            msg = json && json.error && json.error.message || json && json.message || "HTTP ".concat(res.status);
+            err = new Error(msg);
+            err.code = json && json.error && json.error.code || 'API_ERROR';
+            err.status = res.status;
+            err.details = json && json.error && json.error.details;
+            throw err;
+          case 10:
+            return _context8.a(2, json);
+        }
+      }, _callee8, null, [[5, 7]]);
+    }));
+    return _request.apply(this, arguments);
+  }
+  var _get = function get(path, params) {
+    var url = params ? "".concat(path, "?").concat(new URLSearchParams(params)) : path;
     return request('GET', url);
   };
-  const post   = (path, data)   => request('POST',   path, data);
-  const patch  = (path, data)   => request('PATCH',  path, data);
-  const put    = (path, data)   => request('PUT',    path, data);
-  const del    = (path)         => request('DELETE', path);
-  const postFile = (path, formData) => request('POST', path, formData);
+  var post = function post(path, data) {
+    return request('POST', path, data);
+  };
+  var patch = function patch(path, data) {
+    return request('PATCH', path, data);
+  };
+  var put = function put(path, data) {
+    return request('PUT', path, data);
+  };
+  var del = function del(path) {
+    return request('DELETE', path);
+  };
+  var postFile = function postFile(path, formData) {
+    return request('POST', path, formData);
+  };
 
   // ─────────────── Auth ───────────────
 
-  const auth = {
-    async login(username, password) {
-      const res = await request('POST', '/auth/login', { username, password }, { noRedirect: true });
-      if (res) saveAuth(res.accessToken, res.user, res.refreshToken);
-      return res;
+  var auth = {
+    login: function login(username, password) {
+      return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+        var res;
+        return _regenerator().w(function (_context) {
+          while (1) switch (_context.n) {
+            case 0:
+              _context.n = 1;
+              return request('POST', '/auth/login', {
+                username: username,
+                password: password
+              }, {
+                noRedirect: true
+              });
+            case 1:
+              res = _context.v;
+              if (res) saveAuth(res.accessToken, res.user, res.refreshToken);
+              return _context.a(2, res);
+          }
+        }, _callee);
+      }))();
     },
-    async me() { return get('/auth/me'); },
-    async logout(refreshToken) {
-      try { await post('/auth/logout', { refreshToken: refreshToken || getRefreshToken() }); } catch(_) {}
-      clearAuth();
+    me: function me() {
+      return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+        return _regenerator().w(function (_context2) {
+          while (1) switch (_context2.n) {
+            case 0:
+              return _context2.a(2, _get('/auth/me'));
+          }
+        }, _callee2);
+      }))();
     },
-    async changePassword(currentPassword, newPassword) {
-      return post('/auth/change-password', { currentPassword, newPassword });
+    logout: function logout(refreshToken) {
+      return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+        var _t;
+        return _regenerator().w(function (_context3) {
+          while (1) switch (_context3.p = _context3.n) {
+            case 0:
+              _context3.p = 0;
+              _context3.n = 1;
+              return post('/auth/logout', {
+                refreshToken: refreshToken || getRefreshToken()
+              });
+            case 1:
+              _context3.n = 3;
+              break;
+            case 2:
+              _context3.p = 2;
+              _t = _context3.v;
+            case 3:
+              clearAuth();
+            case 4:
+              return _context3.a(2);
+          }
+        }, _callee3, null, [[0, 2]]);
+      }))();
     },
+    changePassword: function changePassword(currentPassword, newPassword) {
+      return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+        return _regenerator().w(function (_context4) {
+          while (1) switch (_context4.n) {
+            case 0:
+              return _context4.a(2, post('/auth/change-password', {
+                currentPassword: currentPassword,
+                newPassword: newPassword
+              }));
+          }
+        }, _callee4);
+      }))();
+    }
   };
 
   // ─────────────── Users ───────────────
 
-  const users = {
-    list:   (params) => get('/users', params),
-    get:    (id)     => get(`/users/${id}`),
-    create: (data)   => post('/users', data),
-    update: (id, d)  => patch(`/users/${id}`, d),
-    delete: (id)     => del(`/users/${id}`),
+  var users = {
+    list: function list(params) {
+      return _get('/users', params);
+    },
+    get: function get(id) {
+      return _get("/users/".concat(id));
+    },
+    create: function create(data) {
+      return post('/users', data);
+    },
+    update: function update(id, d) {
+      return patch("/users/".concat(id), d);
+    },
+    delete: function _delete(id) {
+      return del("/users/".concat(id));
+    }
   };
 
   // ─────────────── Clients ───────────────
 
-  const clients = {
-    list:   (params) => get('/clients', params),
-    short:  ()       => get('/clients/short'),
-    get:    (id)     => get(`/clients/${id}`),
-    create: (data)   => post('/clients', data),
-    update: (id, d)  => patch(`/clients/${id}`, d),
+  var clients = {
+    list: function list(params) {
+      return _get('/clients', params);
+    },
+    short: function short() {
+      return _get('/clients/short');
+    },
+    get: function get(id) {
+      return _get("/clients/".concat(id));
+    },
+    create: function create(data) {
+      return post('/clients', data);
+    },
+    update: function update(id, d) {
+      return patch("/clients/".concat(id), d);
+    }
   };
 
   // ─────────────── Warehouses ───────────────
 
-  const warehouses = {
-    list:   ()       => get('/warehouses'),
-    get:    (id)     => get(`/warehouses/${id}`),
-    create: (data)   => post('/warehouses', data),
-    update: (id, d)  => patch(`/warehouses/${id}`, d),
+  var warehouses = {
+    list: function list() {
+      return _get('/warehouses');
+    },
+    get: function get(id) {
+      return _get("/warehouses/".concat(id));
+    },
+    create: function create(data) {
+      return post('/warehouses', data);
+    },
+    update: function update(id, d) {
+      return patch("/warehouses/".concat(id), d);
+    }
   };
 
   // ─────────────── Items ───────────────
 
-  const items = {
-    list:      (p) => get('/items', p),
-    byBarcode: (b, clientId) => get('/items/by-barcode', { barcode: b, client_id: clientId }),
-    byKiz:     (code, clientId) => get('/items/by-kiz', { code, client_id: clientId }),
-    get:       (id)=> get(`/items/${id}`),
-    create:    (d) => post('/items', d),
-    update:    (id,d)=>patch(`/items/${id}`, d),
-    delete:    (id) => del(`/items/${id}`),
-    bulkDelete:(itemIds) => post('/items/bulk-delete', { item_ids: itemIds }),
-    printLabel:(id,copies=1)=>post(`/items/${id}/print-label`, { copies }),
-    packagingMaterials:      (id)   => get(`/items/${id}/packaging-materials`),
-    setPackagingMaterials:   (id,materials) => put(`/items/${id}/packaging-materials`, { materials }),
+  var items = {
+    list: function list(p) {
+      return _get('/items', p);
+    },
+    byBarcode: function byBarcode(b, clientId) {
+      return _get('/items/by-barcode', {
+        barcode: b,
+        client_id: clientId
+      });
+    },
+    byKiz: function byKiz(code, clientId) {
+      return _get('/items/by-kiz', {
+        code: code,
+        client_id: clientId
+      });
+    },
+    get: function get(id) {
+      return _get("/items/".concat(id));
+    },
+    create: function create(d) {
+      return post('/items', d);
+    },
+    update: function update(id, d) {
+      return patch("/items/".concat(id), d);
+    },
+    delete: function _delete(id) {
+      return del("/items/".concat(id));
+    },
+    bulkDelete: function bulkDelete(itemIds) {
+      return post('/items/bulk-delete', {
+        item_ids: itemIds
+      });
+    },
+    printLabel: function printLabel(id) {
+      var copies = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 1;
+      return post("/items/".concat(id, "/print-label"), {
+        copies: copies
+      });
+    },
+    packagingMaterials: function packagingMaterials(id) {
+      return _get("/items/".concat(id, "/packaging-materials"));
+    },
+    setPackagingMaterials: function setPackagingMaterials(id, materials) {
+      return put("/items/".concat(id, "/packaging-materials"), {
+        materials: materials
+      });
+    }
   };
 
   // ─────────────── Marking (Честный знак) ───────────────
 
-  const marking = {
-    summary:    (itemId)          => get(`/marking/items/${itemId}/codes/summary`),
-    listCodes:  (itemId, p)       => get(`/marking/items/${itemId}/codes`, p),
-    importCodes:(itemId, codesText) => post(`/marking/items/${itemId}/codes/import`, { codes_text: codesText }),
-    importCodesFile: (itemId, file) => { const fd = new FormData(); fd.append('file', file); return postFile(`/marking/items/${itemId}/codes/import-file`, fd); },
-    deleteCode: (itemId, codeId)   => del(`/marking/items/${itemId}/codes/${codeId}`),
-    updateSettings:(itemId, d)    => patch(`/marking/items/${itemId}/settings`, d),
-    bulkUpdateSettings: (itemIds, d) => patch('/marking/items/bulk-settings', { item_ids: itemIds, ...d }),
-    pendingOverrides: (p)          => get('/marking/pending-manual-overrides', p),
-    exportForShipment: (shipmentCode) => get('/marking/export', { shipment_code: shipmentCode }),
-    shippedReport: (p)             => get('/marking/shipped-report', p),
-    codesJournal: (p)              => get('/marking/codes-journal', p),
-    logRejectedCode: (d) => post('/marking/diagnostics/rejected-code', d),
+  var marking = {
+    summary: function summary(itemId) {
+      return _get("/marking/items/".concat(itemId, "/codes/summary"));
+    },
+    listCodes: function listCodes(itemId, p) {
+      return _get("/marking/items/".concat(itemId, "/codes"), p);
+    },
+    importCodes: function importCodes(itemId, codesText) {
+      return post("/marking/items/".concat(itemId, "/codes/import"), {
+        codes_text: codesText
+      });
+    },
+    importCodesFile: function importCodesFile(itemId, file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      return postFile("/marking/items/".concat(itemId, "/codes/import-file"), fd);
+    },
+    deleteCode: function deleteCode(itemId, codeId) {
+      return del("/marking/items/".concat(itemId, "/codes/").concat(codeId));
+    },
+    updateSettings: function updateSettings(itemId, d) {
+      return patch("/marking/items/".concat(itemId, "/settings"), d);
+    },
+    bulkUpdateSettings: function bulkUpdateSettings(itemIds, d) {
+      return patch('/marking/items/bulk-settings', _objectSpread({
+        item_ids: itemIds
+      }, d));
+    },
+    pendingOverrides: function pendingOverrides(p) {
+      return _get('/marking/pending-manual-overrides', p);
+    },
+    exportForShipment: function exportForShipment(shipmentCode) {
+      return _get('/marking/export', {
+        shipment_code: shipmentCode
+      });
+    },
+    shippedReport: function shippedReport(p) {
+      return _get('/marking/shipped-report', p);
+    },
+    codesJournal: function codesJournal(p) {
+      return _get('/marking/codes-journal', p);
+    },
+    logRejectedCode: function logRejectedCode(d) {
+      return post('/marking/diagnostics/rejected-code', d);
+    }
   };
 
   // ─────────────── Locations ───────────────
 
-  const locations = {
-    list:    (p) => get('/locations', p),
-    byCode:  (code, warehouseId) => get('/locations/by-code', { code, warehouse_id: warehouseId }),
-    get:     (id)=> get(`/locations/${id}`),
-    create:  (d) => post('/locations', d),
-    update:  (id,d)=>patch(`/locations/${id}`, d),
-    delete:  (id) => del(`/locations/${id}`),
-    bulkCreate: (d) => post('/locations/bulk', d),
-    printLabels: (locationIds) => post('/locations/labels', { location_ids: locationIds }),
-    bulkDimensions: (d) => patch('/locations/bulk-dimensions', d),
-    fillReport: (p) => get('/locations/fill-report', p),
+  var locations = {
+    list: function list(p) {
+      return _get('/locations', p);
+    },
+    byCode: function byCode(code, warehouseId) {
+      return _get('/locations/by-code', {
+        code: code,
+        warehouse_id: warehouseId
+      });
+    },
+    get: function get(id) {
+      return _get("/locations/".concat(id));
+    },
+    create: function create(d) {
+      return post('/locations', d);
+    },
+    update: function update(id, d) {
+      return patch("/locations/".concat(id), d);
+    },
+    delete: function _delete(id) {
+      return del("/locations/".concat(id));
+    },
+    bulkCreate: function bulkCreate(d) {
+      return post('/locations/bulk', d);
+    },
+    printLabels: function printLabels(locationIds) {
+      return post('/locations/labels', {
+        location_ids: locationIds
+      });
+    },
+    bulkDimensions: function bulkDimensions(d) {
+      return patch('/locations/bulk-dimensions', d);
+    },
+    fillReport: function fillReport(p) {
+      return _get('/locations/fill-report', p);
+    }
   };
 
   // ─────────────── Stock ───────────────
 
-  const stock = {
-    list:       (p) => get('/stock', p),
-    byBarcode:  (b, p) => get('/stock/by-barcode', { barcode: b, ...p }),
-    byLocation: (code, p) => get('/stock/by-location', { location_code: code, ...p }),
-    movements:  (p) => get('/stock/movements', p),
-    adjust:     (d) => post('/stock/adjust', d),
-    move:       (d) => post('/stock/move', d),
+  var stock = {
+    list: function list(p) {
+      return _get('/stock', p);
+    },
+    byBarcode: function byBarcode(b, p) {
+      return _get('/stock/by-barcode', _objectSpread({
+        barcode: b
+      }, p));
+    },
+    byLocation: function byLocation(code, p) {
+      return _get('/stock/by-location', _objectSpread({
+        location_code: code
+      }, p));
+    },
+    movements: function movements(p) {
+      return _get('/stock/movements', p);
+    },
+    adjust: function adjust(d) {
+      return post('/stock/adjust', d);
+    },
+    move: function move(d) {
+      return post('/stock/move', d);
+    }
   };
 
   // ─────────────── Inbound Orders ───────────────
 
-  const inbound = {
-    list:       (p) => get('/inbound', p),
-    byBarcode:  (b) => get('/inbound/by-barcode', { barcode: b }),
-    get:        (id)=> get(`/inbound/${id}`),
-    create:     (d) => post('/inbound', d),
-    confirm:    (id)=> post(`/inbound/${id}/confirm`),
-    cancel:     (id)=> post(`/inbound/${id}/cancel`),
-    closeShort: (id, reason) => post(`/inbound/${id}/close-short`, { reason: reason || undefined }),
-    updateDeliveryInfo: (id, d) => patch(`/inbound/${id}/delivery-info`, d),
-    label:      (id) => get(`/inbound/${id}/label`),
+  var inbound = {
+    list: function list(p) {
+      return _get('/inbound', p);
+    },
+    byBarcode: function byBarcode(b) {
+      return _get('/inbound/by-barcode', {
+        barcode: b
+      });
+    },
+    get: function get(id) {
+      return _get("/inbound/".concat(id));
+    },
+    create: function create(d) {
+      return post('/inbound', d);
+    },
+    confirm: function confirm(id) {
+      return post("/inbound/".concat(id, "/confirm"));
+    },
+    cancel: function cancel(id) {
+      return post("/inbound/".concat(id, "/cancel"));
+    },
+    closeShort: function closeShort(id, reason) {
+      return post("/inbound/".concat(id, "/close-short"), {
+        reason: reason || undefined
+      });
+    },
+    updateDeliveryInfo: function updateDeliveryInfo(id, d) {
+      return patch("/inbound/".concat(id, "/delivery-info"), d);
+    },
+    label: function label(id) {
+      return _get("/inbound/".concat(id, "/label"));
+    }
   };
 
   // ─────────────── Tenant (реквизиты своей компании) ───────────────
 
-  const tenant = {
-    profile:       ()   => get('/tenant/profile'),
-    updateProfile: (d)  => patch('/tenant/profile', d),
+  var tenant = {
+    profile: function profile() {
+      return _get('/tenant/profile');
+    },
+    updateProfile: function updateProfile(d) {
+      return patch('/tenant/profile', d);
+    }
   };
 
   // ─────────────── Acceptance Acts (Акт приёмки товара) ───────────────
 
-  const acts = {
-    list:      (p)      => get('/acts', p),
-    get:       (id)      => get(`/acts/${id}`),
-    create:    (d)       => post('/acts', d),
-    update:    (id, d)   => patch(`/acts/${id}`, d),
-    freeLines: (p)        => get('/acts/free-lines', p),
-    uncovered: (p)        => get('/acts/uncovered', p),
-    share:     (id, shared) => post(`/acts/${id}/share`, { shared }),
+  var acts = {
+    list: function list(p) {
+      return _get('/acts', p);
+    },
+    get: function get(id) {
+      return _get("/acts/".concat(id));
+    },
+    create: function create(d) {
+      return post('/acts', d);
+    },
+    update: function update(id, d) {
+      return patch("/acts/".concat(id), d);
+    },
+    freeLines: function freeLines(p) {
+      return _get('/acts/free-lines', p);
+    },
+    uncovered: function uncovered(p) {
+      return _get('/acts/uncovered', p);
+    },
+    share: function share(id, shared) {
+      return post("/acts/".concat(id, "/share"), {
+        shared: shared
+      });
+    }
   };
 
   // ─────────────── Receiving ───────────────
 
-  const receiving = {
-    accept:          (d) => post('/receiving/accept', d),
-    acceptByInbound: (d) => post('/receiving/accept-by-inbound', d),
-    history:         (p) => get('/receiving/history', p),
+  var receiving = {
+    accept: function accept(d) {
+      return post('/receiving/accept', d);
+    },
+    acceptByInbound: function acceptByInbound(d) {
+      return post('/receiving/accept-by-inbound', d);
+    },
+    history: function history(p) {
+      return _get('/receiving/history', p);
+    }
   };
 
   // ─────────────── Placement ───────────────
 
-  const placement = {
-    pending:        (p) => get('/placement/pending', p),
-    pendingByBarcode: (barcode, p) => get('/placement/pending/barcode', { barcode, ...p }),
-    place:          (d) => post('/placement/place', d),
-    batch:          (d) => post('/placement/batch', d),
-    history:        (p) => get('/placement/history', p),
-    suggest:        (p) => get('/placement/suggest', p),
+  var placement = {
+    pending: function pending(p) {
+      return _get('/placement/pending', p);
+    },
+    pendingByBarcode: function pendingByBarcode(barcode, p) {
+      return _get('/placement/pending/barcode', _objectSpread({
+        barcode: barcode
+      }, p));
+    },
+    place: function place(d) {
+      return post('/placement/place', d);
+    },
+    batch: function batch(d) {
+      return post('/placement/batch', d);
+    },
+    history: function history(p) {
+      return _get('/placement/history', p);
+    },
+    suggest: function suggest(p) {
+      return _get('/placement/suggest', p);
+    }
   };
 
   // ─────────────── Movement ───────────────
 
-  const movement = {
-    move:     (d) => post('/movement/move', d),
-    batch:    (d) => post('/movement/batch', d),
-    history:  (p) => get('/movement/history', p),
-    location: (p) => get('/movement/location', p),
+  var movement = {
+    move: function move(d) {
+      return post('/movement/move', d);
+    },
+    batch: function batch(d) {
+      return post('/movement/batch', d);
+    },
+    history: function history(p) {
+      return _get('/movement/history', p);
+    },
+    location: function location(p) {
+      return _get('/movement/location', p);
+    }
   };
 
   // ─────────────── Inventory ───────────────
 
-  const inventory = {
-    tasks:        (p)      => get('/inventory/tasks', p),
-    task:         (id)     => get(`/inventory/tasks/${id}`),
-    createTask:   (d)      => post('/inventory/tasks', d),
-    createBatch:  (d)      => post('/inventory/tasks/batch', d),
-    createBatchMulti: (d)  => post('/inventory/tasks/batch-multi', d),
-    assign:       (id, d)  => post(`/inventory/tasks/${id}/assign`, d),
-    count:        (id, d)  => post(`/inventory/tasks/${id}/count`, d),
-    close:        (id, d)  => post(`/inventory/tasks/${id}/close`, d),
-    discrepancies:(p)      => get('/inventory/discrepancies', p),
-    assembleKit:  (d)      => post('/inventory/assemble-kit', d),
+  var inventory = {
+    tasks: function tasks(p) {
+      return _get('/inventory/tasks', p);
+    },
+    task: function task(id) {
+      return _get("/inventory/tasks/".concat(id));
+    },
+    createTask: function createTask(d) {
+      return post('/inventory/tasks', d);
+    },
+    createBatch: function createBatch(d) {
+      return post('/inventory/tasks/batch', d);
+    },
+    createBatchMulti: function createBatchMulti(d) {
+      return post('/inventory/tasks/batch-multi', d);
+    },
+    assign: function assign(id, d) {
+      return post("/inventory/tasks/".concat(id, "/assign"), d);
+    },
+    count: function count(id, d) {
+      return post("/inventory/tasks/".concat(id, "/count"), d);
+    },
+    close: function close(id, d) {
+      return post("/inventory/tasks/".concat(id, "/close"), d);
+    },
+    discrepancies: function discrepancies(p) {
+      return _get('/inventory/discrepancies', p);
+    },
+    assembleKit: function assembleKit(d) {
+      return post('/inventory/assemble-kit', d);
+    }
   };
 
   // ─────────────── Picking ───────────────
 
-  const picking = {
-    waves:        (p) => get('/picking/waves', p),
-    waveStatus:   ()  => get('/picking/wave/status'),
-    takeWave:     ()  => post('/picking/wave/take'),
-    closeWave:    (d) => post('/picking/wave/close', d),
-    next:         (p) => get('/picking/next', p),
-    scanLocation: (d) => post('/picking/scan/location', d),
-    scanItem:     (d) => post('/picking/scan/item', d),
-    scanItemQty:  (d) => post('/picking/scan/item-qty', d),
-    skip:         (d) => post('/picking/skip', d),
-    manualWave:   (d) => post('/picking/manual-wave', d),
-    skipped:      (p) => get('/picking/tasks/skipped', p),
-    requeue:      (id) => post(`/picking/tasks/${id}/requeue`),
+  var picking = {
+    waves: function waves(p) {
+      return _get('/picking/waves', p);
+    },
+    waveStatus: function waveStatus() {
+      return _get('/picking/wave/status');
+    },
+    takeWave: function takeWave() {
+      return post('/picking/wave/take');
+    },
+    closeWave: function closeWave(d) {
+      return post('/picking/wave/close', d);
+    },
+    next: function next(p) {
+      return _get('/picking/next', p);
+    },
+    scanLocation: function scanLocation(d) {
+      return post('/picking/scan/location', d);
+    },
+    scanItem: function scanItem(d) {
+      return post('/picking/scan/item', d);
+    },
+    scanItemQty: function scanItemQty(d) {
+      return post('/picking/scan/item-qty', d);
+    },
+    skip: function skip(d) {
+      return post('/picking/skip', d);
+    },
+    manualWave: function manualWave(d) {
+      return post('/picking/manual-wave', d);
+    },
+    skipped: function skipped(p) {
+      return _get('/picking/tasks/skipped', p);
+    },
+    requeue: function requeue(id) {
+      return post("/picking/tasks/".concat(id, "/requeue"));
+    }
   };
 
   // ─────────────── Packing ───────────────
 
-  const packing = {
-    next:    ()  => post('/packing/next'),
-    current: ()  => get('/packing/current'),
-    scanItem:(d) => post('/packing/scan-item', d),
-    confirm: (d) => post('/packing/confirm', d),
-    stickerImage: (wbOrderId) => get(`/packing/sticker-image/${wbOrderId}`),
+  var packing = {
+    next: function next() {
+      return post('/packing/next');
+    },
+    current: function current() {
+      return _get('/packing/current');
+    },
+    scanItem: function scanItem(d) {
+      return post('/packing/scan-item', d);
+    },
+    confirm: function confirm(d) {
+      return post('/packing/confirm', d);
+    },
+    stickerImage: function stickerImage(wbOrderId) {
+      return _get("/packing/sticker-image/".concat(wbOrderId));
+    }
   };
 
   // ─────────────── Shipping ───────────────
 
-  const shipping = {
-    board:   (p) => get('/shipping/board', p),
-    header:  (code) => get('/shipping/header', { shipment_code: code }),
-    details: (code) => get('/shipping/details', { shipment_code: code }),
-    confirm: (d) => post('/shipping/confirm', d),
-    markDelivered: (code) => post('/shipping/mark-delivered', { shipment_code: code }),
-    cancel: (code, reason) => post('/shipping/cancel', { shipment_code: code, reason }),
-    returnPicked: (code, barcode, qty, locationCode) => post('/shipping/return-picked', { shipment_code: code, barcode, qty, location_code: locationCode }),
+  var shipping = {
+    board: function board(p) {
+      return _get('/shipping/board', p);
+    },
+    header: function header(code) {
+      return _get('/shipping/header', {
+        shipment_code: code
+      });
+    },
+    details: function details(code) {
+      return _get('/shipping/details', {
+        shipment_code: code
+      });
+    },
+    confirm: function confirm(d) {
+      return post('/shipping/confirm', d);
+    },
+    markDelivered: function markDelivered(code) {
+      return post('/shipping/mark-delivered', {
+        shipment_code: code
+      });
+    },
+    cancel: function cancel(code, reason) {
+      return post('/shipping/cancel', {
+        shipment_code: code,
+        reason: reason
+      });
+    },
+    returnPicked: function returnPicked(code, barcode, qty, locationCode) {
+      return post('/shipping/return-picked', {
+        shipment_code: code,
+        barcode: barcode,
+        qty: qty,
+        location_code: locationCode
+      });
+    }
   };
 
   // ─────────────── Overview ("Табло") ───────────────
 
-  const overview = {
-    funnel: () => get('/overview/funnel'),
+  var overview = {
+    funnel: function funnel() {
+      return _get('/overview/funnel');
+    }
   };
 
   // ─────────────── WB ───────────────
 
-  const wb = {
+  var wb = {
     accounts: {
-      list:   (p)     => get('/wb/accounts', p),
-      create: (d)     => post('/wb/accounts', d),
-      update: (id, d) => patch(`/wb/accounts/${id}`, d),
+      list: function list(p) {
+        return _get('/wb/accounts', p);
+      },
+      create: function create(d) {
+        return post('/wb/accounts', d);
+      },
+      update: function update(id, d) {
+        return patch("/wb/accounts/".concat(id), d);
+      }
     },
     warehouses: {
-      list:   (accountId)          => get(`/wb/accounts/${accountId}/warehouses`),
-      update: (accountId, whId, d) => patch(`/wb/accounts/${accountId}/warehouses/${whId}`, d),
+      list: function list(accountId) {
+        return _get("/wb/accounts/".concat(accountId, "/warehouses"));
+      },
+      update: function update(accountId, whId, d) {
+        return patch("/wb/accounts/".concat(accountId, "/warehouses/").concat(whId), d);
+      }
     },
-    syncOrders:  (d) => post('/wb/sync-orders', d),
-    syncOrdersAll: () => post('/wb/sync-orders-all', {}),
-    importItems: (d) => post('/wb/import-items', d),
-    generateWave:(d) => post('/wb/generate-wave', d),
-    orders:      (p) => get('/wb/orders', p),
-    wbItems:     (p) => get('/wb/items', p),
-    reconcile:   ()  => get('/wb/reconcile'),
-    tariffs:     ()  => get('/wb/tariffs'),
-    acceptanceCoefficients: () => get('/wb/acceptance-coefficients'),
+    syncOrders: function syncOrders(d) {
+      return post('/wb/sync-orders', d);
+    },
+    syncOrdersAll: function syncOrdersAll() {
+      return post('/wb/sync-orders-all', {});
+    },
+    importItems: function importItems(d) {
+      return post('/wb/import-items', d);
+    },
+    generateWave: function generateWave(d) {
+      return post('/wb/generate-wave', d);
+    },
+    orders: function orders(p) {
+      return _get('/wb/orders', p);
+    },
+    wbItems: function wbItems(p) {
+      return _get('/wb/items', p);
+    },
+    reconcile: function reconcile() {
+      return _get('/wb/reconcile');
+    },
+    tariffs: function tariffs() {
+      return _get('/wb/tariffs');
+    },
+    acceptanceCoefficients: function acceptanceCoefficients() {
+      return _get('/wb/acceptance-coefficients');
+    }
   };
 
   // ─────────────── FBS-аналитика ───────────────
 
-  const fbsAnalytics = {
-    summary:       (p) => get('/fbs-analytics/summary', p),
-    speed:         (p) => get('/fbs-analytics/speed', p),
-    speedByClient: (p) => get('/fbs-analytics/speed-by-client', p),
-    refreshNow:    ()  => post('/fbs-analytics/refresh-now', {}),
-    regionDelivery:        (p) => get('/fbs-analytics/region-delivery', p),
-    regionDeliveryFilters: ()  => get('/fbs-analytics/region-delivery/filters'),
+  var fbsAnalytics = {
+    summary: function summary(p) {
+      return _get('/fbs-analytics/summary', p);
+    },
+    speed: function speed(p) {
+      return _get('/fbs-analytics/speed', p);
+    },
+    speedByClient: function speedByClient(p) {
+      return _get('/fbs-analytics/speed-by-client', p);
+    },
+    refreshNow: function refreshNow() {
+      return post('/fbs-analytics/refresh-now', {});
+    },
+    regionDelivery: function regionDelivery(p) {
+      return _get('/fbs-analytics/region-delivery', p);
+    },
+    regionDeliveryFilters: function regionDeliveryFilters() {
+      return _get('/fbs-analytics/region-delivery/filters');
+    }
   };
 
   // ─────────────── Printing ───────────────
 
-  const printing = {
+  var printing = {
     printers: {
-      list:      ()   => get('/printing/printers'),
-      create:    (d)  => post('/printing/printers', d),
-      update:    (id, d) => patch(`/printing/printers/${id}`, d),
-      issueAgentKey: (id) => post(`/printing/printers/${id}/agent-key`, {}),
-      bulkImport: (printers, issueAgentKeys=true) => post('/printing/printers/bulk-import', { printers, issue_agent_keys: issueAgentKeys }),
+      list: function list() {
+        return _get('/printing/printers');
+      },
+      create: function create(d) {
+        return post('/printing/printers', d);
+      },
+      update: function update(id, d) {
+        return patch("/printing/printers/".concat(id), d);
+      },
+      issueAgentKey: function issueAgentKey(id) {
+        return post("/printing/printers/".concat(id, "/agent-key"), {});
+      },
+      bulkImport: function bulkImport(printers) {
+        var issueAgentKeys = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : true;
+        return post('/printing/printers/bulk-import', {
+          printers: printers,
+          issue_agent_keys: issueAgentKeys
+        });
+      }
     },
     routes: {
-      list:   ()      => get('/printing/routes'),
-      create: (d)     => post('/printing/routes', d),
-      update: (id, d) => patch(`/printing/routes/${id}`, d),
-      delete: (id)    => del(`/printing/routes/${id}`),
+      list: function list() {
+        return _get('/printing/routes');
+      },
+      create: function create(d) {
+        return post('/printing/routes', d);
+      },
+      update: function update(id, d) {
+        return patch("/printing/routes/".concat(id), d);
+      },
+      delete: function _delete(id) {
+        return del("/printing/routes/".concat(id));
+      }
     },
-    jobs:      (p)     => get('/printing/jobs', p),
-    updateJob: (id, d) => patch(`/printing/jobs/${id}`, d),
-    reprint:   (jobId) => post('/printing/jobs/reprint', { job_id: jobId }),
+    jobs: function jobs(p) {
+      return _get('/printing/jobs', p);
+    },
+    updateJob: function updateJob(id, d) {
+      return patch("/printing/jobs/".concat(id), d);
+    },
+    reprint: function reprint(jobId) {
+      return post('/printing/jobs/reprint', {
+        job_id: jobId
+      });
+    }
   };
 
   // ─────────────── Workstations (рабочие места) ───────────────
 
-  const workstations = {
-    list:   ()      => get('/workstations'),
-    create: (d)     => post('/workstations', d),
-    update: (id, d) => patch(`/workstations/${id}`, d),
-    delete: (id)    => del(`/workstations/${id}`),
-    my:     ()      => get('/workstations/my'),
-    select: (station_code) => post('/workstations/select', { station_code }),
-    sticker: (id)   => get(`/workstations/${id}/sticker`),
-    bulkImport: (workstations) => post('/workstations/bulk-import', { workstations }),
+  var workstations = {
+    list: function list() {
+      return _get('/workstations');
+    },
+    create: function create(d) {
+      return post('/workstations', d);
+    },
+    update: function update(id, d) {
+      return patch("/workstations/".concat(id), d);
+    },
+    delete: function _delete(id) {
+      return del("/workstations/".concat(id));
+    },
+    my: function my() {
+      return _get('/workstations/my');
+    },
+    select: function select(station_code) {
+      return post('/workstations/select', {
+        station_code: station_code
+      });
+    },
+    sticker: function sticker(id) {
+      return _get("/workstations/".concat(id, "/sticker"));
+    },
+    bulkImport: function bulkImport(workstations) {
+      return post('/workstations/bulk-import', {
+        workstations: workstations
+      });
+    }
   };
 
   // ─────────────── Checkin (отметка на складе по QR) ───────────────
 
-  const checkin = {
-    token:  ()      => get('/checkin/token'),                 // supervisor/admin — свежий QR для экрана
-    scan:   (token) => post('/checkin/scan', { token }),       // сотрудник — отсканировал код
-    status: ()      => get('/checkin/status'),
+  var checkin = {
+    token: function token() {
+      return _get('/checkin/token');
+    },
+    // supervisor/admin — свежий QR для экрана
+    scan: function scan(token) {
+      return post('/checkin/scan', {
+        token: token
+      });
+    },
+    // сотрудник — отсканировал код
+    status: function status() {
+      return _get('/checkin/status');
+    }
   };
 
   // ─────────────── Billing (биллинг фулфилмента) ───────────────
 
-  const billing = {
+  var billing = {
     priceList: {
-      list:   (clientId) => get('/billing/price-list', clientId ? { client_id: clientId } : undefined),
-      upsert: (d)         => post('/billing/price-list', d),
-      delete: (id)        => del(`/billing/price-list/${id}`),
+      list: function list(clientId) {
+        return _get('/billing/price-list', clientId ? {
+          client_id: clientId
+        } : undefined);
+      },
+      upsert: function upsert(d) {
+        return post('/billing/price-list', d);
+      },
+      delete: function _delete(id) {
+        return del("/billing/price-list/".concat(id));
+      }
     },
     charges: {
-      list: (p) => get('/billing/charges', p),
-      add:  (d) => post('/billing/charges', d),
-      bulkDelete: (chargeIds) => post('/billing/charges/bulk-delete', { charge_ids: chargeIds }),
+      list: function list(p) {
+        return _get('/billing/charges', p);
+      },
+      add: function add(d) {
+        return post('/billing/charges', d);
+      },
+      bulkDelete: function bulkDelete(chargeIds) {
+        return post('/billing/charges/bulk-delete', {
+          charge_ids: chargeIds
+        });
+      }
     },
-    clientBalance: (clientId) => get(`/billing/clients/${clientId}/balance`),
+    clientBalance: function clientBalance(clientId) {
+      return _get("/billing/clients/".concat(clientId, "/balance"));
+    },
     analytics: {
-      revenue:  (p) => get('/billing/analytics/revenue', p),
-      invoices: (p) => get('/billing/analytics/invoices', p),
+      revenue: function revenue(p) {
+        return _get('/billing/analytics/revenue', p);
+      },
+      invoices: function invoices(p) {
+        return _get('/billing/analytics/invoices', p);
+      }
     },
     invoices: {
-      list:         (p)      => get('/billing/invoices', p),
-      get:          (id)     => get(`/billing/invoices/${id}`),
-      create:       (d)      => post('/billing/invoices', d),
-      updateStatus: (id, status, notes) => patch(`/billing/invoices/${id}/status`, { status, notes }),
-    },
+      list: function list(p) {
+        return _get('/billing/invoices', p);
+      },
+      get: function get(id) {
+        return _get("/billing/invoices/".concat(id));
+      },
+      create: function create(d) {
+        return post('/billing/invoices', d);
+      },
+      updateStatus: function updateStatus(id, status, notes) {
+        return patch("/billing/invoices/".concat(id, "/status"), {
+          status: status,
+          notes: notes
+        });
+      }
+    }
   };
 
   // ─────────────── Consumables (расходные материалы) ───────────────
 
-  const consumables = {
-    list:      (all)   => get('/consumables', all ? { all: 'true' } : undefined),
-    upsert:    (d)      => post('/consumables', d),
-    delete:    (id)     => del(`/consumables/${id}`),
-    adjust:    (id, delta, comment, refType) => post(`/consumables/${id}/adjust`, { delta, comment, ref_type: refType }),
-    recordUsage:(id, d) => post(`/consumables/${id}/usage`, d),
-    usageHistory:(p)    => get('/consumables/usage', p),
+  var consumables = {
+    list: function list(all) {
+      return _get('/consumables', all ? {
+        all: 'true'
+      } : undefined);
+    },
+    upsert: function upsert(d) {
+      return post('/consumables', d);
+    },
+    delete: function _delete(id) {
+      return del("/consumables/".concat(id));
+    },
+    adjust: function adjust(id, delta, comment, refType) {
+      return post("/consumables/".concat(id, "/adjust"), {
+        delta: delta,
+        comment: comment,
+        ref_type: refType
+      });
+    },
+    recordUsage: function recordUsage(id, d) {
+      return post("/consumables/".concat(id, "/usage"), d);
+    },
+    usageHistory: function usageHistory(p) {
+      return _get('/consumables/usage', p);
+    }
   };
 
   // ─────────────── Payroll (сдельная ЗП) ───────────────
 
-  const payroll = {
+  var payroll = {
     rates: {
-      list:   ()      => get('/payroll/rates'),
-      upsert: (d)      => post('/payroll/rates', d),
-      delete: (id)     => del(`/payroll/rates/${id}`),
+      list: function list() {
+        return _get('/payroll/rates');
+      },
+      upsert: function upsert(d) {
+        return post('/payroll/rates', d);
+      },
+      delete: function _delete(id) {
+        return del("/payroll/rates/".concat(id));
+      }
     },
-    report: (dateFrom, dateTo, clientId) => get('/payroll/report', clientId ? { date_from: dateFrom, date_to: dateTo, client_id: clientId } : { date_from: dateFrom, date_to: dateTo }),
-    analytics: (p) => get('/payroll/analytics', p),
+    report: function report(dateFrom, dateTo, clientId) {
+      return _get('/payroll/report', clientId ? {
+        date_from: dateFrom,
+        date_to: dateTo,
+        client_id: clientId
+      } : {
+        date_from: dateFrom,
+        date_to: dateTo
+      });
+    },
+    analytics: function analytics(p) {
+      return _get('/payroll/analytics', p);
+    }
   };
 
   // ─────────────── Returns (возвраты) ───────────────
 
-  const returns = {
-    register: (d)   => post('/returns/register', d),
-    history:  (p)   => get('/returns/history', p),
-    summary:  (p)   => get('/returns/summary', p),
-    byClient: (p)   => get('/returns/by-client', p),
-    wbClaims: (p)   => get('/wb/return-claims', p),
+  var returns = {
+    register: function register(d) {
+      return post('/returns/register', d);
+    },
+    history: function history(p) {
+      return _get('/returns/history', p);
+    },
+    summary: function summary(p) {
+      return _get('/returns/summary', p);
+    },
+    byClient: function byClient(p) {
+      return _get('/returns/by-client', p);
+    },
+    wbClaims: function wbClaims(p) {
+      return _get('/wb/return-claims', p);
+    }
   };
 
   // ─────────────── Seller ───────────────
 
-  const seller = {
-    profile:  ()      => get('/seller/profile'),
-    inbound:  {
-      list:    (p)    => get('/seller/inbound', p),
-      get:     (id)   => get(`/seller/inbound/${id}`),
-      create:  (d)    => post('/seller/inbound', d),
-      confirm: (id)   => post(`/seller/inbound/${id}/confirm`),
+  var seller = {
+    profile: function profile() {
+      return _get('/seller/profile');
     },
-    stock:    (p)     => get('/seller/stock', p),
-    orders:   (p)     => get('/seller/orders', p),
-    shipments:(p)     => get('/seller/shipments', p),
-    items:    (p)     => get('/seller/items', p),
-    setItemCostPrice: (itemId, costPrice) => patch(`/seller/items/${itemId}/cost-price`, { cost_price: costPrice }),
-    setItemReorderThreshold: (itemId, data) => patch(`/seller/items/${itemId}/reorder-threshold`, data),
-    markingSummary:      (itemId)           => get(`/seller/items/${itemId}/marking/summary`),
-    markingCodes:        (itemId, p)        => get(`/seller/items/${itemId}/marking/codes`, p),
-    importMarkingCodes:  (itemId, codesText)=> post(`/seller/items/${itemId}/marking/codes/import`, { codes_text: codesText }),
-    updateMarkingSettings:(itemId, d)       => patch(`/seller/items/${itemId}/marking/settings`, d),
-    bulkUpdateMarkingSettings:(itemIds, d)  => patch('/seller/items/marking/bulk-settings', { item_ids: itemIds, ...d }),
-    returns:        (p) => get('/seller/returns', p),
-    returnsSummary: (p) => get('/seller/returns/summary', p),
-    wbReturnClaims: (p) => get('/seller/wb-return-claims', p),
-    analytics:(p)     => get('/seller/analytics/sales', p),
-    fbsAnalyticsSummary: (p) => get('/seller/fbs-analytics/summary', p),
-    fbsAnalyticsSpeed:   (p) => get('/seller/fbs-analytics/speed', p),
-    fbsAnalyticsRegionDelivery:        (p) => get('/seller/fbs-analytics/region-delivery', p),
-    fbsAnalyticsRegionDeliveryFilters: ()  => get('/seller/fbs-analytics/region-delivery/filters'),
-    history:  (p)     => get('/seller/history', p),
-    receivingHistory: (p) => get('/seller/receiving-history', p),
+    inbound: {
+      list: function list(p) {
+        return _get('/seller/inbound', p);
+      },
+      get: function get(id) {
+        return _get("/seller/inbound/".concat(id));
+      },
+      create: function create(d) {
+        return post('/seller/inbound', d);
+      },
+      confirm: function confirm(id) {
+        return post("/seller/inbound/".concat(id, "/confirm"));
+      }
+    },
+    stock: function stock(p) {
+      return _get('/seller/stock', p);
+    },
+    orders: function orders(p) {
+      return _get('/seller/orders', p);
+    },
+    shipments: function shipments(p) {
+      return _get('/seller/shipments', p);
+    },
+    items: function items(p) {
+      return _get('/seller/items', p);
+    },
+    setItemCostPrice: function setItemCostPrice(itemId, costPrice) {
+      return patch("/seller/items/".concat(itemId, "/cost-price"), {
+        cost_price: costPrice
+      });
+    },
+    setItemReorderThreshold: function setItemReorderThreshold(itemId, data) {
+      return patch("/seller/items/".concat(itemId, "/reorder-threshold"), data);
+    },
+    markingSummary: function markingSummary(itemId) {
+      return _get("/seller/items/".concat(itemId, "/marking/summary"));
+    },
+    markingCodes: function markingCodes(itemId, p) {
+      return _get("/seller/items/".concat(itemId, "/marking/codes"), p);
+    },
+    importMarkingCodes: function importMarkingCodes(itemId, codesText) {
+      return post("/seller/items/".concat(itemId, "/marking/codes/import"), {
+        codes_text: codesText
+      });
+    },
+    updateMarkingSettings: function updateMarkingSettings(itemId, d) {
+      return patch("/seller/items/".concat(itemId, "/marking/settings"), d);
+    },
+    bulkUpdateMarkingSettings: function bulkUpdateMarkingSettings(itemIds, d) {
+      return patch('/seller/items/marking/bulk-settings', _objectSpread({
+        item_ids: itemIds
+      }, d));
+    },
+    returns: function returns(p) {
+      return _get('/seller/returns', p);
+    },
+    returnsSummary: function returnsSummary(p) {
+      return _get('/seller/returns/summary', p);
+    },
+    wbReturnClaims: function wbReturnClaims(p) {
+      return _get('/seller/wb-return-claims', p);
+    },
+    analytics: function analytics(p) {
+      return _get('/seller/analytics/sales', p);
+    },
+    fbsAnalyticsSummary: function fbsAnalyticsSummary(p) {
+      return _get('/seller/fbs-analytics/summary', p);
+    },
+    fbsAnalyticsSpeed: function fbsAnalyticsSpeed(p) {
+      return _get('/seller/fbs-analytics/speed', p);
+    },
+    fbsAnalyticsRegionDelivery: function fbsAnalyticsRegionDelivery(p) {
+      return _get('/seller/fbs-analytics/region-delivery', p);
+    },
+    fbsAnalyticsRegionDeliveryFilters: function fbsAnalyticsRegionDeliveryFilters() {
+      return _get('/seller/fbs-analytics/region-delivery/filters');
+    },
+    history: function history(p) {
+      return _get('/seller/history', p);
+    },
+    receivingHistory: function receivingHistory(p) {
+      return _get('/seller/receiving-history', p);
+    },
     acts: {
-      list: (p)  => get('/seller/acts', p),
-      get:  (id) => get(`/seller/acts/${id}`),
+      list: function list(p) {
+        return _get('/seller/acts', p);
+      },
+      get: function get(id) {
+        return _get("/seller/acts/".concat(id));
+      }
     },
-    billing:  (p)     => get('/seller/billing', p),
-    billingBalance:  ()   => get('/seller/billing/balance'),
-    billingInvoices: (p)  => get('/seller/billing/invoices', p),
-    billingInvoice:  (id) => get(`/seller/billing/invoices/${id}`),
+    billing: function billing(p) {
+      return _get('/seller/billing', p);
+    },
+    billingBalance: function billingBalance() {
+      return _get('/seller/billing/balance');
+    },
+    billingInvoices: function billingInvoices(p) {
+      return _get('/seller/billing/invoices', p);
+    },
+    billingInvoice: function billingInvoice(id) {
+      return _get("/seller/billing/invoices/".concat(id));
+    },
     wbWarehouses: {
-      list:        ()          => get('/seller/wb-warehouses'),
-      sync:        ()          => post('/seller/wb-warehouses/sync'),
-      update:      (id, data)  => patch(`/seller/wb-warehouses/${id}`, data),
-      setReserve:  (reservePct)=> patch('/seller/wb-warehouses/settings/reserve', { reserve_pct: reservePct }),
+      list: function list() {
+        return _get('/seller/wb-warehouses');
+      },
+      sync: function sync() {
+        return post('/seller/wb-warehouses/sync');
+      },
+      update: function update(id, data) {
+        return patch("/seller/wb-warehouses/".concat(id), data);
+      },
+      setReserve: function setReserve(reservePct) {
+        return patch('/seller/wb-warehouses/settings/reserve', {
+          reserve_pct: reservePct
+        });
+      }
     },
-    stockByWarehouse: () => get('/seller/stock-by-warehouse'),
+    stockByWarehouse: function stockByWarehouse() {
+      return _get('/seller/stock-by-warehouse');
+    }
   };
 
   // ─────────────── Platform (Owner-admin) ───────────────
 
-  const PLATFORM_TOKEN_KEY = 'wms2_platform_token';
-
-  function getPlatformToken() { return localStorage.getItem(PLATFORM_TOKEN_KEY); }
-  function savePlatformAuth(token) { localStorage.setItem(PLATFORM_TOKEN_KEY, token); }
-  function clearPlatformAuth() { localStorage.removeItem(PLATFORM_TOKEN_KEY); }
-  function isPlatformLoggedIn() { return !!getPlatformToken(); }
-
-  async function platformRequest(method, path, data = null) {
-    const token = getPlatformToken();
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: data ? JSON.stringify(data) : undefined,
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((json && json.error && json.error.message) || `HTTP ${res.status}`);
-    return json;
+  var PLATFORM_TOKEN_KEY = 'wms2_platform_token';
+  function getPlatformToken() {
+    return localStorage.getItem(PLATFORM_TOKEN_KEY);
   }
-
-  const platform = {
-    async login(username, password) {
-      const res = await platformRequest('POST', '/auth/platform/login', { username, password });
-      if (res && res.token) savePlatformAuth(res.token);
-      return res;
+  function savePlatformAuth(token) {
+    localStorage.setItem(PLATFORM_TOKEN_KEY, token);
+  }
+  function clearPlatformAuth() {
+    localStorage.removeItem(PLATFORM_TOKEN_KEY);
+  }
+  function isPlatformLoggedIn() {
+    return !!getPlatformToken();
+  }
+  function platformRequest(_x3, _x4) {
+    return _platformRequest.apply(this, arguments);
+  }
+  function _platformRequest() {
+    _platformRequest = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9(method, path) {
+      var data,
+        token,
+        headers,
+        res,
+        json,
+        _args9 = arguments;
+      return _regenerator().w(function (_context9) {
+        while (1) switch (_context9.n) {
+          case 0:
+            data = _args9.length > 2 && _args9[2] !== undefined ? _args9[2] : null;
+            token = getPlatformToken();
+            headers = {
+              'Content-Type': 'application/json'
+            };
+            if (token) headers['Authorization'] = "Bearer ".concat(token);
+            _context9.n = 1;
+            return fetch("".concat(API_BASE).concat(path), {
+              method: method,
+              headers: headers,
+              body: data ? JSON.stringify(data) : undefined
+            });
+          case 1:
+            res = _context9.v;
+            _context9.n = 2;
+            return res.json().catch(function () {
+              return {};
+            });
+          case 2:
+            json = _context9.v;
+            if (res.ok) {
+              _context9.n = 3;
+              break;
+            }
+            throw new Error(json && json.error && json.error.message || "HTTP ".concat(res.status));
+          case 3:
+            return _context9.a(2, json);
+        }
+      }, _callee9);
+    }));
+    return _platformRequest.apply(this, arguments);
+  }
+  var platform = {
+    login: function login(username, password) {
+      return _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+        var res;
+        return _regenerator().w(function (_context5) {
+          while (1) switch (_context5.n) {
+            case 0:
+              _context5.n = 1;
+              return platformRequest('POST', '/auth/platform/login', {
+                username: username,
+                password: password
+              });
+            case 1:
+              res = _context5.v;
+              if (res && res.token) savePlatformAuth(res.token);
+              return _context5.a(2, res);
+          }
+        }, _callee5);
+      }))();
     },
-    logout() { clearPlatformAuth(); },
+    logout: function logout() {
+      clearPlatformAuth();
+    },
     isLoggedIn: isPlatformLoggedIn,
     // Публичная самостоятельная регистрация — без авторизации, обычный post()
-    register: (data) => post('/platform/register', data),
-    tenants:  {
-      list:        (p) => platformRequest('GET', `/platform/tenants${p ? '?' + new URLSearchParams(p) : ''}`),
-      get:         (id)=> platformRequest('GET', `/platform/tenants/${id}`),
-      create:      (d) => platformRequest('POST', '/platform/tenants', d),
-      update:      (id,d)=> platformRequest('PATCH', `/platform/tenants/${id}`, d),
-      setModule:   (id,d)=>platformRequest('POST', `/platform/tenants/${id}/modules`, d),
-      extend:      (id,d)=>platformRequest('POST', `/platform/tenants/${id}/extend`, d),
-      subscriptions:(id)=>platformRequest('GET', `/platform/tenants/${id}/subscriptions`),
-      impersonate: (id)=> platformRequest('POST', `/platform/tenants/${id}/impersonate`),
+    register: function register(data) {
+      return post('/platform/register', data);
     },
-    plans:   () => platformRequest('GET', '/platform/plans'),
-    modules: () => platformRequest('GET', '/platform/modules'),
-    stats:   () => platformRequest('GET', '/platform/stats'),
+    tenants: {
+      list: function list(p) {
+        return platformRequest('GET', "/platform/tenants".concat(p ? '?' + new URLSearchParams(p) : ''));
+      },
+      get: function get(id) {
+        return platformRequest('GET', "/platform/tenants/".concat(id));
+      },
+      create: function create(d) {
+        return platformRequest('POST', '/platform/tenants', d);
+      },
+      update: function update(id, d) {
+        return platformRequest('PATCH', "/platform/tenants/".concat(id), d);
+      },
+      setModule: function setModule(id, d) {
+        return platformRequest('POST', "/platform/tenants/".concat(id, "/modules"), d);
+      },
+      extend: function extend(id, d) {
+        return platformRequest('POST', "/platform/tenants/".concat(id, "/extend"), d);
+      },
+      subscriptions: function subscriptions(id) {
+        return platformRequest('GET', "/platform/tenants/".concat(id, "/subscriptions"));
+      },
+      impersonate: function impersonate(id) {
+        return platformRequest('POST', "/platform/tenants/".concat(id, "/impersonate"));
+      }
+    },
+    plans: function plans() {
+      return platformRequest('GET', '/platform/plans');
+    },
+    modules: function modules() {
+      return platformRequest('GET', '/platform/modules');
+    },
+    stats: function stats() {
+      return platformRequest('GET', '/platform/stats');
+    },
     wbTariffs: {
-      get:         () => platformRequest('GET', '/platform/wb-tariffs'),
-      setToken:    (api_token) => platformRequest('PUT', '/platform/wb-tariffs/token', { api_token }),
-      refresh:     () => platformRequest('POST', '/platform/wb-tariffs/refresh'),
-    },
+      get: function get() {
+        return platformRequest('GET', '/platform/wb-tariffs');
+      },
+      setToken: function setToken(api_token) {
+        return platformRequest('PUT', '/platform/wb-tariffs/token', {
+          api_token: api_token
+        });
+      },
+      refresh: function refresh() {
+        return platformRequest('POST', '/platform/wb-tariffs/refresh');
+      }
+    }
   };
 
   // ─────────────── Export ───────────────
 
   window.API = {
     // Core
-    get, post, patch, put, del, request,
+    get: _get,
+    post: post,
+    patch: patch,
+    put: put,
+    del: del,
+    request: request,
     // Auth
-    auth, getToken, getUser, saveAuth, clearAuth, isLoggedIn,
+    auth: auth,
+    getToken: getToken,
+    getUser: getUser,
+    saveAuth: saveAuth,
+    clearAuth: clearAuth,
+    isLoggedIn: isLoggedIn,
     // Modules
-    users, clients, warehouses, items, locations,
-    stock, inbound, receiving,
-    placement, movement, inventory,
-    picking, packing, shipping,
-    wb, printing, overview,
-    workstations,
-    checkin,
-    billing, consumables, payroll, marking, returns,
-    seller, platform, tenant, acts,
-    fbsAnalytics,
+    users: users,
+    clients: clients,
+    warehouses: warehouses,
+    items: items,
+    locations: locations,
+    stock: stock,
+    inbound: inbound,
+    receiving: receiving,
+    placement: placement,
+    movement: movement,
+    inventory: inventory,
+    picking: picking,
+    packing: packing,
+    shipping: shipping,
+    wb: wb,
+    printing: printing,
+    overview: overview,
+    workstations: workstations,
+    checkin: checkin,
+    billing: billing,
+    consumables: consumables,
+    payroll: payroll,
+    marking: marking,
+    returns: returns,
+    seller: seller,
+    platform: platform,
+    tenant: tenant,
+    acts: acts,
+    fbsAnalytics: fbsAnalytics
   };
-
 })(window);

@@ -86,281 +86,391 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    const IDLE_THRESHOLD_MS = 10 * 60 * 1000; // 10 минут без прогресса по волне — считаем что сборщик простаивает
-
-    const WAVE_STATUS_LABELS = { open:'ожидает', active:'в работе', ready:'собрана', done:'закрыта' };
-    const SHIP_STATUS_LABELS = {
-      new:'новая', picking:'сборка', ready_to_ship:'готова к отгрузке',
-      shipping:'отгружается', in_transit:'в пути', done:'выполнена', cancelled:'отменена',
-    };
-    const PACKING_STATUS_LABELS = { new:'в очереди на упаковку', in_progress:'упаковывается', done:'упаковано', cancelled:'отменено' };
-    const SHIP_STATUS_PILL = {
-      new:'pill-gray', picking:'pill-blue', ready_to_ship:'pill-green',
-      shipping:'pill-yellow', in_transit:'pill-yellow', done:'pill-green', cancelled:'pill-red',
-    };
-
-    function minutesAgo(dateStr) {
-      if (!dateStr) return null;
-      return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    }
-
-    async function loadWaves() {
-      const [openRes, activeRes, readyRes] = await Promise.all([
-        window.API.picking.waves({ status: 'open', limit: 100 }),
-        window.API.picking.waves({ status: 'active', limit: 100 }),
-        window.API.picking.waves({ status: 'ready', limit: 100 }),
-      ]);
-      // GET /picking/waves отвечает { ok, waves: [...] }
-      return { open: openRes.waves || [], active: activeRes.waves || [], ready: readyRes.waves || [] };
-    }
-
-    function renderWaves({ open, active, ready }) {
-      const list = document.getElementById('waves-list');
-      const rows = [];
-
-      active.forEach(w => {
-        const idleMin = minutesAgo(w.updated_at);
-        const isIdle = idleMin !== null && idleMin >= (IDLE_THRESHOLD_MS/60000);
-        rows.push(`
-          <div class="card wave-card ${isIdle ? 'idle' : 'active'}">
-            <div class="wave-top">
-              <div>
-                <div class="wave-title">${UI.escHtml(w.shipment_code)}</div>
-                <div class="wave-sub">Сборщик: ${UI.escHtml(w.picker_name || '—')} · ${w.done_count||0}/${w.task_count||0} собрано</div>
-              </div>
-              ${isIdle ? `<span class="idle-tag">⏸ простой ${idleMin} мин</span>` : `<span class="pill pill-blue">в работе</span>`}
-            </div>
-            <div class="mini-progress"><div class="mini-progress-fill" style="width:${w.task_count?Math.round(w.done_count/w.task_count*100):0}%"></div></div>
-          </div>
-        `);
-      });
-
-      ready.forEach(w => {
-        rows.push(`
-          <div class="card wave-card ready">
-            <div class="wave-top">
-              <div>
-                <div class="wave-title">${UI.escHtml(w.shipment_code)}</div>
-                <div class="wave-sub">Сборщик: ${UI.escHtml(w.picker_name || '—')} · собрана, ждёт закрытия (короб → ${UI.escHtml(w.buffer_location_code || 'не указано')})</div>
-              </div>
-              <span class="pill pill-green">готова</span>
-            </div>
-          </div>
-        `);
-      });
-
-      if (open.length) {
-        rows.push(`
-          <div class="card wave-card">
-            <div class="wave-top">
-              <div>
-                <div class="wave-title">В очереди на сборку</div>
-                <div class="wave-sub">${open.length} волн(ы) ожидают, когда сборщик возьмёт их в работу</div>
-              </div>
-              <span class="pill pill-gray">${open.length}</span>
-            </div>
-          </div>
-        `);
+  <script>function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+var IDLE_THRESHOLD_MS = 10 * 60 * 1000; // 10 минут без прогресса по волне — считаем что сборщик простаивает
 
-      list.innerHTML = rows.join('') || `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>Нет активных волн сборки</div>`;
-
-      return { activeCount: active.length, idleCount: active.filter(w => { const m = minutesAgo(w.updated_at); return m !== null && m >= IDLE_THRESHOLD_MS/60000; }).length, readyCount: ready.length, openCount: open.length };
-    }
-
-    let allShipments = [];      // кэш последней загрузки, с посчитанными % — фильтр/сортировка работают без рефетча
-    let shipFilter = 'all';
-    let shipSort = 'new_first';
-
-    const STAGE_LABELS = {
-      not_in_wave: 'ещё не в волне', picking: 'на сборке', packing: 'на упаковке',
-      ready: 'готова к отгрузке', shipped: 'в пути / отгружена',
-    };
-
-    function stageOf(pickingPct, packingPct, shippingPct, tasksTotal) {
-      if (!tasksTotal) return 'not_in_wave';
-      if (pickingPct < 100) return 'picking';
-      if (packingPct < 100) return 'packing';
-      if (shippingPct < 100) return 'ready';
-      return 'shipped';
-    }
-
-    // Раньше, чтобы посмотреть детали конкретной зависшей отгрузки (состав,
-    // кто собирал/упаковывал, QR, фото/стикер), приходилось отдельно идти в
-    // модуль "Отгрузка" и искать её там заново. Теперь строка кликабельна и
-    // сразу открывает детальную карточку этой отгрузки (там же виден любой
-    // этап — не только сборка).
-    function openShipmentDetail(code) {
-      location.href = `shipping.html?code=${encodeURIComponent(code)}&from=admin-dashboard`;
-    }
-
-    function setShipFilter(f) {
-      shipFilter = f;
-      document.querySelectorAll('.ship-filter-btn').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
-      renderShipmentsList();
-    }
-
-    function setShipSort(s) {
-      shipSort = s;
-      renderShipmentsList();
-    }
-
-    async function loadShipments() {
-      const res = await window.API.shipping.board({ limit: 500 });
-      const raw = (res.shipments || []).filter(s => !['done','cancelled'].includes(s.status));
-
-      allShipments = raw.map(s => {
-        const qtyPlan = Number(s.qty_plan||0);
-        const packedQty = Math.min(Number(s.total_packed_qty||0), qtyPlan || Number(s.total_packed_qty||0));
-        const pickingPct = s.tasks_total ? Math.round((s.tasks_done||0) / s.tasks_total * 100) : 0;
-        const packingPct = qtyPlan ? Math.round(packedQty / qtyPlan * 100) : 0;
-        const shippingPct = ['in_transit','done'].includes(s.status) ? 100 : 0;
-        return {
-          ...s, pickingPct, packingPct, shippingPct,
-          stage: stageOf(pickingPct, packingPct, shippingPct, s.tasks_total),
-        };
-      });
-
-      return renderShipmentsList();
-    }
-
-    function renderShipmentsList() {
-      const list = document.getElementById('shipments-list');
-
-      let items = shipFilter === 'all' ? allShipments : allShipments.filter(s => s.stage === shipFilter);
-
-      items = items.slice().sort((a, b) => {
-        switch (shipSort) {
-          case 'old_first':    return new Date(a.created_at) - new Date(b.created_at);
-          case 'picking_pct':  return a.pickingPct - b.pickingPct;
-          case 'packing_pct':  return a.packingPct - b.packingPct;
-          case 'shipping_pct': return a.shippingPct - b.shippingPct;
-          case 'new_first':
-          default:             return new Date(b.created_at) - new Date(a.created_at);
-        }
-      });
-
-      if (!allShipments.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M3 12h4l1.5 3h7L17 12h4"/><path d="M12 3v6M9 6l3 3 3-3"/></svg></div>Нет активных отгрузок</div>`;
-      } else if (!items.length) {
-        list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg></div>Ничего не найдено по фильтру «${STAGE_LABELS[shipFilter]||shipFilter}»</div>`;
-      } else {
-        list.innerHTML = items.map(s => {
-          const packingNote = s.packing_status
-            ? `${PACKING_STATUS_LABELS[s.packing_status]||s.packing_status}${s.packer_name ? ' · упаковщик: '+UI.escHtml(s.packer_name) : ''}`
-            : 'ещё не в очереди на упаковку';
-
-          return `
-          <div class="list-row" style="flex-direction:column;align-items:stretch;cursor:pointer;" onclick="openShipmentDetail('${s.external_id}')">
-            <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-              <div>
-                <div class="title">${UI.escHtml(s.external_id)}</div>
-                <div class="sub">${UI.escHtml(s.client_name||'')} · ${UI.escHtml(s.warehouse_name||'')} · строк ${s.tasks_total||0}</div>
-                <div class="sub"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> ${packingNote}</div>
-              </div>
-              <span class="pill ${SHIP_STATUS_PILL[s.status]||'pill-gray'}">${SHIP_STATUS_LABELS[s.status]||s.status}</span>
-            </div>
-            <div class="stage-bars">
-              <div class="stage-bar">
-                <div class="stage-bar-label"><span>Сборка</span><span>${s.pickingPct}%</span></div>
-                <div class="stage-bar-track"><div class="stage-bar-fill picking" style="width:${s.pickingPct}%"></div></div>
-              </div>
-              <div class="stage-bar">
-                <div class="stage-bar-label"><span>Упаковка</span><span>${s.packingPct}%</span></div>
-                <div class="stage-bar-track"><div class="stage-bar-fill packing" style="width:${s.packingPct}%"></div></div>
-              </div>
-              <div class="stage-bar">
-                <div class="stage-bar-label"><span>Отгрузка</span><span>${s.shippingPct}%</span></div>
-                <div class="stage-bar-track"><div class="stage-bar-fill shipping" style="width:${s.shippingPct}%"></div></div>
-              </div>
-            </div>
-          </div>
-        `;
-        }).join('');
+var WAVE_STATUS_LABELS = {
+  open: 'ожидает',
+  active: 'в работе',
+  ready: 'собрана',
+  done: 'закрыта'
+};
+var SHIP_STATUS_LABELS = {
+  new: 'новая',
+  picking: 'сборка',
+  ready_to_ship: 'готова к отгрузке',
+  shipping: 'отгружается',
+  in_transit: 'в пути',
+  done: 'выполнена',
+  cancelled: 'отменена'
+};
+var PACKING_STATUS_LABELS = {
+  new: 'в очереди на упаковку',
+  in_progress: 'упаковывается',
+  done: 'упаковано',
+  cancelled: 'отменено'
+};
+var SHIP_STATUS_PILL = {
+  new: 'pill-gray',
+  picking: 'pill-blue',
+  ready_to_ship: 'pill-green',
+  shipping: 'pill-yellow',
+  in_transit: 'pill-yellow',
+  done: 'pill-green',
+  cancelled: 'pill-red'
+};
+function minutesAgo(dateStr) {
+  if (!dateStr) return null;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+}
+function loadWaves() {
+  return _loadWaves.apply(this, arguments);
+}
+function _loadWaves() {
+  _loadWaves = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var _yield$Promise$all, _yield$Promise$all2, openRes, activeRes, readyRes;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return Promise.all([window.API.picking.waves({
+            status: 'open',
+            limit: 100
+          }), window.API.picking.waves({
+            status: 'active',
+            limit: 100
+          }), window.API.picking.waves({
+            status: 'ready',
+            limit: 100
+          })]);
+        case 1:
+          _yield$Promise$all = _context2.v;
+          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 3);
+          openRes = _yield$Promise$all2[0];
+          activeRes = _yield$Promise$all2[1];
+          readyRes = _yield$Promise$all2[2];
+          return _context2.a(2, {
+            open: openRes.waves || [],
+            active: activeRes.waves || [],
+            ready: readyRes.waves || []
+          });
       }
+    }, _callee2);
+  }));
+  return _loadWaves.apply(this, arguments);
+}
+function renderWaves(_ref) {
+  var open = _ref.open,
+    active = _ref.active,
+    ready = _ref.ready;
+  var list = document.getElementById('waves-list');
+  var rows = [];
+  active.forEach(function (w) {
+    var idleMin = minutesAgo(w.updated_at);
+    var isIdle = idleMin !== null && idleMin >= IDLE_THRESHOLD_MS / 60000;
+    rows.push("\n          <div class=\"card wave-card ".concat(isIdle ? 'idle' : 'active', "\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">").concat(UI.escHtml(w.shipment_code), "</div>\n                <div class=\"wave-sub\">\u0421\u0431\u043E\u0440\u0449\u0438\u043A: ").concat(UI.escHtml(w.picker_name || '—'), " \xB7 ").concat(w.done_count || 0, "/").concat(w.task_count || 0, " \u0441\u043E\u0431\u0440\u0430\u043D\u043E</div>\n              </div>\n              ").concat(isIdle ? "<span class=\"idle-tag\">\u23F8 \u043F\u0440\u043E\u0441\u0442\u043E\u0439 ".concat(idleMin, " \u043C\u0438\u043D</span>") : "<span class=\"pill pill-blue\">\u0432 \u0440\u0430\u0431\u043E\u0442\u0435</span>", "\n            </div>\n            <div class=\"mini-progress\"><div class=\"mini-progress-fill\" style=\"width:").concat(w.task_count ? Math.round(w.done_count / w.task_count * 100) : 0, "%\"></div></div>\n          </div>\n        "));
+  });
+  ready.forEach(function (w) {
+    rows.push("\n          <div class=\"card wave-card ready\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">".concat(UI.escHtml(w.shipment_code), "</div>\n                <div class=\"wave-sub\">\u0421\u0431\u043E\u0440\u0449\u0438\u043A: ").concat(UI.escHtml(w.picker_name || '—'), " \xB7 \u0441\u043E\u0431\u0440\u0430\u043D\u0430, \u0436\u0434\u0451\u0442 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F (\u043A\u043E\u0440\u043E\u0431 \u2192 ").concat(UI.escHtml(w.buffer_location_code || 'не указано'), ")</div>\n              </div>\n              <span class=\"pill pill-green\">\u0433\u043E\u0442\u043E\u0432\u0430</span>\n            </div>\n          </div>\n        "));
+  });
+  if (open.length) {
+    rows.push("\n          <div class=\"card wave-card\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">\u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043D\u0430 \u0441\u0431\u043E\u0440\u043A\u0443</div>\n                <div class=\"wave-sub\">".concat(open.length, " \u0432\u043E\u043B\u043D(\u044B) \u043E\u0436\u0438\u0434\u0430\u044E\u0442, \u043A\u043E\u0433\u0434\u0430 \u0441\u0431\u043E\u0440\u0449\u0438\u043A \u0432\u043E\u0437\u044C\u043C\u0451\u0442 \u0438\u0445 \u0432 \u0440\u0430\u0431\u043E\u0442\u0443</div>\n              </div>\n              <span class=\"pill pill-gray\">").concat(open.length, "</span>\n            </div>\n          </div>\n        "));
+  }
+  list.innerHTML = rows.join('') || "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 3\"/></svg></div>\u041D\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445 \u0432\u043E\u043B\u043D \u0441\u0431\u043E\u0440\u043A\u0438</div>";
+  return {
+    activeCount: active.length,
+    idleCount: active.filter(function (w) {
+      var m = minutesAgo(w.updated_at);
+      return m !== null && m >= IDLE_THRESHOLD_MS / 60000;
+    }).length,
+    readyCount: ready.length,
+    openCount: open.length
+  };
+}
+var allShipments = []; // кэш последней загрузки, с посчитанными % — фильтр/сортировка работают без рефетча
+var shipFilter = 'all';
+var shipSort = 'new_first';
+var STAGE_LABELS = {
+  not_in_wave: 'ещё не в волне',
+  picking: 'на сборке',
+  packing: 'на упаковке',
+  ready: 'готова к отгрузке',
+  shipped: 'в пути / отгружена'
+};
+function stageOf(pickingPct, packingPct, shippingPct, tasksTotal) {
+  if (!tasksTotal) return 'not_in_wave';
+  if (pickingPct < 100) return 'picking';
+  if (packingPct < 100) return 'packing';
+  if (shippingPct < 100) return 'ready';
+  return 'shipped';
+}
 
-      return { total: allShipments.length, readyToShip: allShipments.filter(s=>s.status==='ready_to_ship').length };
-    }
-
-    function renderKpis({ activeCount, idleCount, readyCount, openCount }, shipStats) {
-      const kpis = [
-        { num: activeCount, label:'Волн в работе', cls:'' },
-        { num: idleCount,   label:'Простаивают >10 мин', cls: idleCount>0 ? 'danger':'ok' },
-        { num: readyCount,  label:'Собраны, ждут упаковки', cls: readyCount>0 ? 'warn':'' },
-        { num: shipStats.readyToShip, label:'Готовы к отгрузке', cls: shipStats.readyToShip>0 ? 'ok':'' },
-      ];
-      document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
-        <div class="kpi ${k.cls}"><div class="num">${k.num}</div><div class="label">${k.label}</div></div>
-      `).join('');
-    }
-
-    // ---------- Пропущенные при сборке позиции ----------
-    // Skip навсегда переводит задание в 'skipped' и создаёт задание инвентаризации
-    // на его ячейку, но никак не связывает их обратно: даже когда остаток на
-    // ячейке подтверждён/добавлен инвентаризацией, само задание сборки само по
-    // себе не оживает. Тут супервайзер вручную возвращает его в очередь сборки —
-    // сборщику эта кнопка недоступна (страница целиком под supervisor/tenant_admin).
-    async function loadSkipped() {
-      try {
-        const res = await window.API.picking.skipped({ limit: 100 });
-        renderSkipped(res.rows || []);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function renderSkipped(rows) {
-      const box = document.getElementById('skipped-list');
-      if (!rows.length) {
-        box.innerHTML = `<div class="empty-state" style="padding:16px;"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>Нет пропущенных позиций</div>`;
-        return;
+// Раньше, чтобы посмотреть детали конкретной зависшей отгрузки (состав,
+// кто собирал/упаковывал, QR, фото/стикер), приходилось отдельно идти в
+// модуль "Отгрузка" и искать её там заново. Теперь строка кликабельна и
+// сразу открывает детальную карточку этой отгрузки (там же виден любой
+// этап — не только сборка).
+function openShipmentDetail(code) {
+  location.href = "shipping.html?code=".concat(encodeURIComponent(code), "&from=admin-dashboard");
+}
+function setShipFilter(f) {
+  shipFilter = f;
+  document.querySelectorAll('.ship-filter-btn').forEach(function (b) {
+    return b.classList.toggle('active', b.dataset.filter === f);
+  });
+  renderShipmentsList();
+}
+function setShipSort(s) {
+  shipSort = s;
+  renderShipmentsList();
+}
+function loadShipments() {
+  return _loadShipments.apply(this, arguments);
+}
+function _loadShipments() {
+  _loadShipments = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, raw;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.n) {
+        case 0:
+          _context3.n = 1;
+          return window.API.shipping.board({
+            limit: 500
+          });
+        case 1:
+          res = _context3.v;
+          raw = (res.shipments || []).filter(function (s) {
+            return !['done', 'cancelled'].includes(s.status);
+          });
+          allShipments = raw.map(function (s) {
+            var qtyPlan = Number(s.qty_plan || 0);
+            var packedQty = Math.min(Number(s.total_packed_qty || 0), qtyPlan || Number(s.total_packed_qty || 0));
+            var pickingPct = s.tasks_total ? Math.round((s.tasks_done || 0) / s.tasks_total * 100) : 0;
+            var packingPct = qtyPlan ? Math.round(packedQty / qtyPlan * 100) : 0;
+            var shippingPct = ['in_transit', 'done'].includes(s.status) ? 100 : 0;
+            return _objectSpread(_objectSpread({}, s), {}, {
+              pickingPct: pickingPct,
+              packingPct: packingPct,
+              shippingPct: shippingPct,
+              stage: stageOf(pickingPct, packingPct, shippingPct, s.tasks_total)
+            });
+          });
+          return _context3.a(2, renderShipmentsList());
       }
-      box.innerHTML = rows.map(r => {
-        const hasStock = Number(r.qty_available_now) > 0;
-        return `
-        <div class="list-row" style="flex-direction:column;align-items:stretch;">
-          <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-            <div>
-              <div class="title">${UI.escHtml(r.item_name || r.barcode)}</div>
-              <div class="sub">${UI.escHtml(r.shipment_code||'—')} · ячейка ${UI.escHtml(r.location_code||'—')} · нужно ${UI.fmtQty(r.qty)}</div>
-              <div class="sub">Пропустил: ${UI.escHtml(r.picker_name||'—')} · ${UI.fmtDateTime(r.finished_at)}</div>
-            </div>
-            <span class="pill ${hasStock ? 'pill-green' : 'pill-red'}">${hasStock ? 'на ячейке: '+UI.fmtQty(r.qty_available_now) : 'на ячейке пусто'}</span>
-          </div>
-          <button class="btn-sm btn-back" style="align-self:flex-end;margin-top:8px;" onclick="requeueTask(${r.id})">↩ Вернуть в сборку</button>
-        </div>
-      `;
-      }).join('');
+    }, _callee3);
+  }));
+  return _loadShipments.apply(this, arguments);
+}
+function renderShipmentsList() {
+  var list = document.getElementById('shipments-list');
+  var items = shipFilter === 'all' ? allShipments : allShipments.filter(function (s) {
+    return s.stage === shipFilter;
+  });
+  items = items.slice().sort(function (a, b) {
+    switch (shipSort) {
+      case 'old_first':
+        return new Date(a.created_at) - new Date(b.created_at);
+      case 'picking_pct':
+        return a.pickingPct - b.pickingPct;
+      case 'packing_pct':
+        return a.packingPct - b.packingPct;
+      case 'shipping_pct':
+        return a.shippingPct - b.shippingPct;
+      case 'new_first':
+      default:
+        return new Date(b.created_at) - new Date(a.created_at);
     }
+  });
+  if (!allShipments.length) {
+    list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M3 12h4l1.5 3h7L17 12h4\"/><path d=\"M12 3v6M9 6l3 3 3-3\"/></svg></div>\u041D\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445 \u043E\u0442\u0433\u0440\u0443\u0437\u043E\u043A</div>";
+  } else if (!items.length) {
+    list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><circle cx=\"10.5\" cy=\"10.5\" r=\"6.5\"/><path d=\"M20 20l-4.6-4.6\"/></svg></div>\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u043F\u043E \u0444\u0438\u043B\u044C\u0442\u0440\u0443 \xAB".concat(STAGE_LABELS[shipFilter] || shipFilter, "\xBB</div>");
+  } else {
+    list.innerHTML = items.map(function (s) {
+      var packingNote = s.packing_status ? "".concat(PACKING_STATUS_LABELS[s.packing_status] || s.packing_status).concat(s.packer_name ? ' · упаковщик: ' + UI.escHtml(s.packer_name) : '') : 'ещё не в очереди на упаковку';
+      return "\n          <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;cursor:pointer;\" onclick=\"openShipmentDetail('".concat(s.external_id, "')\">\n            <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n              <div>\n                <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0442\u0440\u043E\u043A ").concat(s.tasks_total || 0, "</div>\n                <div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> ").concat(packingNote, "</div>\n              </div>\n              <span class=\"pill ").concat(SHIP_STATUS_PILL[s.status] || 'pill-gray', "\">").concat(SHIP_STATUS_LABELS[s.status] || s.status, "</span>\n            </div>\n            <div class=\"stage-bars\">\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0421\u0431\u043E\u0440\u043A\u0430</span><span>").concat(s.pickingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill picking\" style=\"width:").concat(s.pickingPct, "%\"></div></div>\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430</span><span>").concat(s.packingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill packing\" style=\"width:").concat(s.packingPct, "%\"></div></div>\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u041E\u0442\u0433\u0440\u0443\u0437\u043A\u0430</span><span>").concat(s.shippingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill shipping\" style=\"width:").concat(s.shippingPct, "%\"></div></div>\n              </div>\n            </div>\n          </div>\n        ");
+    }).join('');
+  }
+  return {
+    total: allShipments.length,
+    readyToShip: allShipments.filter(function (s) {
+      return s.status === 'ready_to_ship';
+    }).length
+  };
+}
+function renderKpis(_ref2, shipStats) {
+  var activeCount = _ref2.activeCount,
+    idleCount = _ref2.idleCount,
+    readyCount = _ref2.readyCount,
+    openCount = _ref2.openCount;
+  var kpis = [{
+    num: activeCount,
+    label: 'Волн в работе',
+    cls: ''
+  }, {
+    num: idleCount,
+    label: 'Простаивают >10 мин',
+    cls: idleCount > 0 ? 'danger' : 'ok'
+  }, {
+    num: readyCount,
+    label: 'Собраны, ждут упаковки',
+    cls: readyCount > 0 ? 'warn' : ''
+  }, {
+    num: shipStats.readyToShip,
+    label: 'Готовы к отгрузке',
+    cls: shipStats.readyToShip > 0 ? 'ok' : ''
+  }];
+  document.getElementById('kpi-grid').innerHTML = kpis.map(function (k) {
+    return "\n        <div class=\"kpi ".concat(k.cls, "\"><div class=\"num\">").concat(k.num, "</div><div class=\"label\">").concat(k.label, "</div></div>\n      ");
+  }).join('');
+}
 
-    async function requeueTask(id) {
-      try {
-        await window.API.picking.requeue(id);
-        UI.notify.ok('Задание возвращено в сборку');
-        loadSkipped();
-        loadAll();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadAll() {
-      try {
-        const [waveStats, shipStats] = await Promise.all([
-          loadWaves().then(renderWaves),
-          loadShipments(),
-          loadSkipped(),
-        ]);
-        renderKpis(waveStats, shipStats);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    loadAll();
-    setInterval(loadAll, 15000);
-  </script>
+// ---------- Пропущенные при сборке позиции ----------
+// Skip навсегда переводит задание в 'skipped' и создаёт задание инвентаризации
+// на его ячейку, но никак не связывает их обратно: даже когда остаток на
+// ячейке подтверждён/добавлен инвентаризацией, само задание сборки само по
+// себе не оживает. Тут супервайзер вручную возвращает его в очередь сборки —
+// сборщику эта кнопка недоступна (страница целиком под supervisor/tenant_admin).
+function loadSkipped() {
+  return _loadSkipped.apply(this, arguments);
+}
+function _loadSkipped() {
+  _loadSkipped = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, _t;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.picking.skipped({
+            limit: 100
+          });
+        case 1:
+          res = _context4.v;
+          renderSkipped(res.rows || []);
+          _context4.n = 3;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t = _context4.v;
+          UI.notify.err(_t.message);
+        case 3:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _loadSkipped.apply(this, arguments);
+}
+function renderSkipped(rows) {
+  var box = document.getElementById('skipped-list');
+  if (!rows.length) {
+    box.innerHTML = "<div class=\"empty-state\" style=\"padding:16px;\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg></div>\u041D\u0435\u0442 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043D\u044B\u0445 \u043F\u043E\u0437\u0438\u0446\u0438\u0439</div>";
+    return;
+  }
+  box.innerHTML = rows.map(function (r) {
+    var hasStock = Number(r.qty_available_now) > 0;
+    return "\n        <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;\">\n          <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n            <div>\n              <div class=\"title\">".concat(UI.escHtml(r.item_name || r.barcode), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(r.shipment_code || '—'), " \xB7 \u044F\u0447\u0435\u0439\u043A\u0430 ").concat(UI.escHtml(r.location_code || '—'), " \xB7 \u043D\u0443\u0436\u043D\u043E ").concat(UI.fmtQty(r.qty), "</div>\n              <div class=\"sub\">\u041F\u0440\u043E\u043F\u0443\u0441\u0442\u0438\u043B: ").concat(UI.escHtml(r.picker_name || '—'), " \xB7 ").concat(UI.fmtDateTime(r.finished_at), "</div>\n            </div>\n            <span class=\"pill ").concat(hasStock ? 'pill-green' : 'pill-red', "\">").concat(hasStock ? 'на ячейке: ' + UI.fmtQty(r.qty_available_now) : 'на ячейке пусто', "</span>\n          </div>\n          <button class=\"btn-sm btn-back\" style=\"align-self:flex-end;margin-top:8px;\" onclick=\"requeueTask(").concat(r.id, ")\">\u21A9 \u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u0441\u0431\u043E\u0440\u043A\u0443</button>\n        </div>\n      ");
+  }).join('');
+}
+function requeueTask(_x) {
+  return _requeueTask.apply(this, arguments);
+}
+function _requeueTask() {
+  _requeueTask = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(id) {
+    var _t2;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          _context5.n = 1;
+          return window.API.picking.requeue(id);
+        case 1:
+          UI.notify.ok('Задание возвращено в сборку');
+          loadSkipped();
+          loadAll();
+          _context5.n = 3;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t2 = _context5.v;
+          UI.notify.err(_t2.message);
+        case 3:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _requeueTask.apply(this, arguments);
+}
+function loadAll() {
+  return _loadAll.apply(this, arguments);
+}
+function _loadAll() {
+  _loadAll = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var _yield$Promise$all3, _yield$Promise$all4, waveStats, shipStats, _t3;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return Promise.all([loadWaves().then(renderWaves), loadShipments(), loadSkipped()]);
+        case 1:
+          _yield$Promise$all3 = _context6.v;
+          _yield$Promise$all4 = _slicedToArray(_yield$Promise$all3, 2);
+          waveStats = _yield$Promise$all4[0];
+          shipStats = _yield$Promise$all4[1];
+          renderKpis(waveStats, shipStats);
+          _context6.n = 3;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t3 = _context6.v;
+          UI.notify.err(_t3.message);
+        case 3:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _loadAll.apply(this, arguments);
+}
+loadAll();
+setInterval(loadAll, 15000);</script>
 </body>
 </html>

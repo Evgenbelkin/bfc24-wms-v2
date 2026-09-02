@@ -186,792 +186,1400 @@
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
   <script src="/shared/act-print.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['receiver','supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    // ---------- Клиент (обязателен — товар всегда принадлежит конкретному клиенту) ----------
-    const LAST_CLIENT_KEY = 'wms2_last_client_id';
-    async function loadClients() {
-      const sel = document.getElementById('client-select');
-      try {
-        const res = await window.API.clients.short();
-        const list = res.clients || [];
-        if (!list.length) {
-          sel.innerHTML = `<option value="">Нет клиентов — сначала заведите клиента в админке</option>`;
-          return;
-        }
-        sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-        const saved = localStorage.getItem(LAST_CLIENT_KEY);
-        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
-        sel.dataset.prevValue = sel.value || '';
-        // Смена клиента здесь означает "предыдущий клиент закончен на этом
-        // рабочем месте" - если по нему остался непокрытый актом товар, это
-        // тот самый случай, когда приёмщик может забыть сформировать акт
-        // (см. tryLeave/openFreeActModal). Поэтому смену тоже гейтуем: если
-        // по прошлому клиенту есть непокрытая приёмка, откатываем select
-        // назад и предлагаем сначала сформировать акт - сама смена клиента
-        // произойдёт уже ПОСЛЕ сохранения акта (window.__pendingLeaveAction).
-        sel.addEventListener('change', async () => {
-          const prevValue = sel.dataset.prevValue;
-          const newValue = sel.value;
-          const applySwitch = () => {
-            sel.dataset.prevValue = newValue;
-            localStorage.setItem(LAST_CLIENT_KEY, newValue);
-            // Клиента могли сменить уже ПОСЛЕ скана штрихкода товара (или список
-            // клиентов догрузился только сейчас) - перечитываем метаданные маркировки,
-            // не теряя уже отсканированные коды DataMatrix.
-            if (UI.val('#free-barcode')) refreshFreeMarkingItemMeta();
-          };
-          if (!prevValue || prevValue === newValue) { applySwitch(); return; }
-          const blocked = await checkUncovered(Number(prevValue));
-          if (blocked) {
-            sel.value = prevValue;
-            UI.notify.err('У предыдущего клиента есть принятый товар без акта приёмки — сначала сформируйте акт');
-            window.__pendingLeaveAction = applySwitch;
-            openFreeActModal(Number(prevValue));
-            return;
+  <script>function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['receiver', 'supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+} // ---------- Клиент (обязателен — товар всегда принадлежит конкретному клиенту) ----------
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.n) {
+        case 0:
+          _context3.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context3.a(2);
+      }
+    }, _callee3);
+  }));
+  return _logout.apply(this, arguments);
+}
+var LAST_CLIENT_KEY = 'wms2_last_client_id';
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var sel, res, list, saved, _t2;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          sel = document.getElementById('client-select');
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.clients.short();
+        case 2:
+          res = _context5.v;
+          list = res.clients || [];
+          if (list.length) {
+            _context5.n = 3;
+            break;
           }
-          applySwitch();
-        });
-      } catch (e) {
-        sel.innerHTML = `<option value="">Ошибка загрузки клиентов</option>`;
-        UI.notify.err(e.message);
+          sel.innerHTML = "<option value=\"\">\u041D\u0435\u0442 \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u0432 \u2014 \u0441\u043D\u0430\u0447\u0430\u043B\u0430 \u0437\u0430\u0432\u0435\u0434\u0438\u0442\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u0432 \u0430\u0434\u043C\u0438\u043D\u043A\u0435</option>";
+          return _context5.a(2);
+        case 3:
+          sel.innerHTML = list.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          saved = localStorage.getItem(LAST_CLIENT_KEY);
+          if (saved && list.some(function (c) {
+            return String(c.id) === saved;
+          })) sel.value = saved;
+          sel.dataset.prevValue = sel.value || '';
+          // Смена клиента здесь означает "предыдущий клиент закончен на этом
+          // рабочем месте" - если по нему остался непокрытый актом товар, это
+          // тот самый случай, когда приёмщик может забыть сформировать акт
+          // (см. tryLeave/openFreeActModal). Поэтому смену тоже гейтуем: если
+          // по прошлому клиенту есть непокрытая приёмка, откатываем select
+          // назад и предлагаем сначала сформировать акт - сама смена клиента
+          // произойдёт уже ПОСЛЕ сохранения акта (window.__pendingLeaveAction).
+          sel.addEventListener('change', /*#__PURE__*/_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+            var prevValue, newValue, applySwitch, blocked;
+            return _regenerator().w(function (_context4) {
+              while (1) switch (_context4.n) {
+                case 0:
+                  prevValue = sel.dataset.prevValue;
+                  newValue = sel.value;
+                  applySwitch = function applySwitch() {
+                    sel.dataset.prevValue = newValue;
+                    localStorage.setItem(LAST_CLIENT_KEY, newValue);
+                    // Клиента могли сменить уже ПОСЛЕ скана штрихкода товара (или список
+                    // клиентов догрузился только сейчас) - перечитываем метаданные маркировки,
+                    // не теряя уже отсканированные коды DataMatrix.
+                    if (UI.val('#free-barcode')) refreshFreeMarkingItemMeta();
+                  };
+                  if (!(!prevValue || prevValue === newValue)) {
+                    _context4.n = 1;
+                    break;
+                  }
+                  applySwitch();
+                  return _context4.a(2);
+                case 1:
+                  _context4.n = 2;
+                  return checkUncovered(Number(prevValue));
+                case 2:
+                  blocked = _context4.v;
+                  if (!blocked) {
+                    _context4.n = 3;
+                    break;
+                  }
+                  sel.value = prevValue;
+                  UI.notify.err('У предыдущего клиента есть принятый товар без акта приёмки — сначала сформируйте акт');
+                  window.__pendingLeaveAction = applySwitch;
+                  openFreeActModal(Number(prevValue));
+                  return _context4.a(2);
+                case 3:
+                  applySwitch();
+                case 4:
+                  return _context4.a(2);
+              }
+            }, _callee4);
+          })));
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t2 = _context5.v;
+          sel.innerHTML = "<option value=\"\">\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u0432</option>";
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context5.a(2);
       }
-    }
-    function getClientId() {
-      const v = UI.val('#client-select');
-      if (!v) { UI.notify.err('Выберите клиента вверху страницы'); return null; }
-      return Number(v);
-    }
-    loadClients();
+    }, _callee5, null, [[1, 4]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function getClientId() {
+  var v = UI.val('#client-select');
+  if (!v) {
+    UI.notify.err('Выберите клиента вверху страницы');
+    return null;
+  }
+  return Number(v);
+}
+loadClients();
 
-    // ---------- Гейт "нельзя выйти из модуля / сменить клиента без акта" ----------
-    async function checkUncovered(clientId) {
-      if (!clientId) return false;
-      try {
-        const res = await window.API.acts.uncovered({ client_id: clientId, any: 1 });
-        return !!res.uncovered;
-      } catch (e) { return false; } // не блокируем переход, если сам чек не смог сходить в API
-    }
-    async function checkUncoveredOrder(inboundOrderId, clientId) {
-      if (!inboundOrderId || !clientId) return false;
-      try {
-        const res = await window.API.acts.uncovered({ client_id: clientId, inbound_order_id: inboundOrderId });
-        return !!res.uncovered;
-      } catch (e) { return false; }
-    }
-    // actionFn выполнится сразу, если по текущему клиенту всё покрыто актом,
-    // иначе откроет форму акта и выполнит actionFn ПОСЛЕ его сохранения
-    // (см. window.__pendingLeaveAction в saveAndPrintFreeAct/closeFreeActModal).
-    async function tryLeave(actionFn) {
-      const clientId = Number(UI.val('#client-select')) || null;
-      if (!clientId) { actionFn(); return; }
-      const blocked = await checkUncovered(clientId);
-      if (!blocked) { actionFn(); return; }
-      UI.notify.err('Есть принятый товар без сформированного акта приёмки — сначала сформируйте акт');
-      window.__pendingLeaveAction = actionFn;
-      openFreeActModal(clientId);
-    }
+// ---------- Гейт "нельзя выйти из модуля / сменить клиента без акта" ----------
+function checkUncovered(_x) {
+  return _checkUncovered.apply(this, arguments);
+}
+function _checkUncovered() {
+  _checkUncovered = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(clientId) {
+    var res, _t3;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          if (clientId) {
+            _context6.n = 1;
+            break;
+          }
+          return _context6.a(2, false);
+        case 1:
+          _context6.p = 1;
+          _context6.n = 2;
+          return window.API.acts.uncovered({
+            client_id: clientId,
+            any: 1
+          });
+        case 2:
+          res = _context6.v;
+          return _context6.a(2, !!res.uncovered);
+        case 3:
+          _context6.p = 3;
+          _t3 = _context6.v;
+          return _context6.a(2, false);
+      }
+    }, _callee6, null, [[1, 3]]);
+  }));
+  return _checkUncovered.apply(this, arguments);
+}
+function checkUncoveredOrder(_x2, _x3) {
+  return _checkUncoveredOrder.apply(this, arguments);
+} // actionFn выполнится сразу, если по текущему клиенту всё покрыто актом,
+// иначе откроет форму акта и выполнит actionFn ПОСЛЕ его сохранения
+// (см. window.__pendingLeaveAction в saveAndPrintFreeAct/closeFreeActModal).
+function _checkUncoveredOrder() {
+  _checkUncoveredOrder = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(inboundOrderId, clientId) {
+    var res, _t4;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (!(!inboundOrderId || !clientId)) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2, false);
+        case 1:
+          _context7.p = 1;
+          _context7.n = 2;
+          return window.API.acts.uncovered({
+            client_id: clientId,
+            inbound_order_id: inboundOrderId
+          });
+        case 2:
+          res = _context7.v;
+          return _context7.a(2, !!res.uncovered);
+        case 3:
+          _context7.p = 3;
+          _t4 = _context7.v;
+          return _context7.a(2, false);
+      }
+    }, _callee7, null, [[1, 3]]);
+  }));
+  return _checkUncoveredOrder.apply(this, arguments);
+}
+function tryLeave(_x4) {
+  return _tryLeave.apply(this, arguments);
+}
+function _tryLeave() {
+  _tryLeave = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(actionFn) {
+    var clientId, blocked;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.n) {
+        case 0:
+          clientId = Number(UI.val('#client-select')) || null;
+          if (clientId) {
+            _context8.n = 1;
+            break;
+          }
+          actionFn();
+          return _context8.a(2);
+        case 1:
+          _context8.n = 2;
+          return checkUncovered(clientId);
+        case 2:
+          blocked = _context8.v;
+          if (blocked) {
+            _context8.n = 3;
+            break;
+          }
+          actionFn();
+          return _context8.a(2);
+        case 3:
+          UI.notify.err('Есть принятый товар без сформированного акта приёмки — сначала сформируйте акт');
+          window.__pendingLeaveAction = actionFn;
+          openFreeActModal(clientId);
+        case 4:
+          return _context8.a(2);
+      }
+    }, _callee8);
+  }));
+  return _tryLeave.apply(this, arguments);
+}
+function switchTab(name) {
+  ['free', 'inbound', 'history'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'history') loadHistory();
+}
 
-    function switchTab(name) {
-      ['free','inbound','history'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'history') loadHistory();
-    }
-
-    // ---------- Свободная приёмка ----------
-    let freeQty = 1;
-    let freeMarkingItem = null;   // { requires_marking, marking_trigger, marking_mode } — по текущему штрихкоду
-    let freeDmCodes = [];
-
-    function freeNeedsDataMatrix() {
-      // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на приёмке
-      // (независимо от marking_trigger — тот применяется только к печати).
-      return !!(freeMarkingItem && freeMarkingItem.requires_marking &&
-        freeMarkingItem.marking_mode === 'scan');
-    }
-
-    function renderFreeDmCard() {
-      const card = document.getElementById('free-dm-card');
-      if (!freeNeedsDataMatrix()) { card.style.display = 'none'; return; }
-      card.style.display = 'block';
-      document.getElementById('free-dm-need').textContent = freeQty;
-      document.getElementById('free-dm-count').textContent = freeDmCodes.length;
-      document.getElementById('free-dm-list').innerHTML = freeDmCodes.map((c, i) =>
-        `<li>${UI.escHtml(c)} <a href="#" onclick="removeFreeDmCode(${i});return false;" style="color:var(--red);">убрать</a></li>`
-      ).join('');
-    }
-    function removeFreeDmCode(i) { freeDmCodes.splice(i, 1); renderFreeDmCard(); }
-
-    async function lookupFreeMarkingItem() {
-      // Новый скан штрихкода товара - это точно другой товар (или тот же заново),
-      // поэтому список уже отсканированных кодов DataMatrix обнуляем.
-      freeDmCodes = [];
-      await refreshFreeMarkingItemMeta();
-    }
-    // Перечитать метаданные товара (marking_mode и т.п.) БЕЗ сброса уже
-    // отсканированных кодов - используется для перепроверки прямо перед
-    // отправкой (см. submitFree), чтобы не терять то, что уже отсканировано.
-    async function refreshFreeMarkingItemMeta() {
-      const barcode = UI.val('#free-barcode');
-      const clientId = Number(UI.val('#client-select')) || null;
-      freeMarkingItem = null;
-      if (barcode && clientId) {
-        try {
-          const res = await window.API.items.byBarcode(barcode, clientId);
+// ---------- Свободная приёмка ----------
+var freeQty = 1;
+var freeMarkingItem = null; // { requires_marking, marking_trigger, marking_mode } — по текущему штрихкоду
+var freeDmCodes = [];
+function freeNeedsDataMatrix() {
+  // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на приёмке
+  // (независимо от marking_trigger — тот применяется только к печати).
+  return !!(freeMarkingItem && freeMarkingItem.requires_marking && freeMarkingItem.marking_mode === 'scan');
+}
+function renderFreeDmCard() {
+  var card = document.getElementById('free-dm-card');
+  if (!freeNeedsDataMatrix()) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('free-dm-need').textContent = freeQty;
+  document.getElementById('free-dm-count').textContent = freeDmCodes.length;
+  document.getElementById('free-dm-list').innerHTML = freeDmCodes.map(function (c, i) {
+    return "<li>".concat(UI.escHtml(c), " <a href=\"#\" onclick=\"removeFreeDmCode(").concat(i, ");return false;\" style=\"color:var(--red);\">\u0443\u0431\u0440\u0430\u0442\u044C</a></li>");
+  }).join('');
+}
+function removeFreeDmCode(i) {
+  freeDmCodes.splice(i, 1);
+  renderFreeDmCard();
+}
+function lookupFreeMarkingItem() {
+  return _lookupFreeMarkingItem.apply(this, arguments);
+} // Перечитать метаданные товара (marking_mode и т.п.) БЕЗ сброса уже
+// отсканированных кодов - используется для перепроверки прямо перед
+// отправкой (см. submitFree), чтобы не терять то, что уже отсканировано.
+function _lookupFreeMarkingItem() {
+  _lookupFreeMarkingItem = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.n) {
+        case 0:
+          // Новый скан штрихкода товара - это точно другой товар (или тот же заново),
+          // поэтому список уже отсканированных кодов DataMatrix обнуляем.
+          freeDmCodes = [];
+          _context9.n = 1;
+          return refreshFreeMarkingItemMeta();
+        case 1:
+          return _context9.a(2);
+      }
+    }, _callee9);
+  }));
+  return _lookupFreeMarkingItem.apply(this, arguments);
+}
+function refreshFreeMarkingItemMeta() {
+  return _refreshFreeMarkingItemMeta.apply(this, arguments);
+}
+function _refreshFreeMarkingItemMeta() {
+  _refreshFreeMarkingItemMeta = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var barcode, clientId, res, _t5;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          barcode = UI.val('#free-barcode');
+          clientId = Number(UI.val('#client-select')) || null;
+          freeMarkingItem = null;
+          if (!(barcode && clientId)) {
+            _context0.n = 4;
+            break;
+          }
+          _context0.p = 1;
+          _context0.n = 2;
+          return window.API.items.byBarcode(barcode, clientId);
+        case 2:
+          res = _context0.v;
           freeMarkingItem = res.item || null;
-        } catch (e) { /* товар ещё не заведён - не блокируем, обычная приёмка резолвит его сама */ }
+          _context0.n = 4;
+          break;
+        case 3:
+          _context0.p = 3;
+          _t5 = _context0.v;
+        case 4:
+          renderFreeDmCard();
+        case 5:
+          return _context0.a(2);
       }
-      renderFreeDmCard();
-    }
-
-    function stepQty(delta) {
-      freeQty = Math.max(1, freeQty + delta);
-      document.getElementById('free-qty-val').value = freeQty;
-      if (freeDmCodes.length > freeQty) freeDmCodes = freeDmCodes.slice(0, freeQty);
-      renderFreeDmCard();
-    }
-    function setQty(val) {
-      freeQty = Math.max(1, Math.round(Number(val)) || 1);
-      document.getElementById('free-qty-val').value = freeQty;
-      if (freeDmCodes.length > freeQty) freeDmCodes = freeDmCodes.slice(0, freeQty);
-      renderFreeDmCard();
-    }
-
-    UI.onScan('#free-dm-input', (v) => {
-      const code = String(v || '').trim();
-      if (!code) return;
-      if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
-      if (!UI.hasValidKizStructure(code)) {
-        UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
-        window.API.marking.logRejectedCode({ item_id: (freeMarkingItem && freeMarkingItem.id) || null, code, reason: 'broken_structure', source: 'receiving_free' }).catch(() => {});
-        return;
-      }
-      if (freeDmCodes.length >= freeQty) { UI.notify.err(`Уже отсканировано ${freeQty} код(ов) — этого достаточно`); return; }
-      if (freeDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
-      freeDmCodes.push(code);
-      renderFreeDmCard();
-      // Набрали нужное количество кодов — не заставляем ещё и на кнопку жать,
-      // сразу оприходуем (важно при приёмке пачками, чтобы не переключаться руками).
-      if (freeDmCodes.length === freeQty) submitFree();
-    });
-
-    async function submitFree() {
-      const barcode  = UI.val('#free-barcode');
-      const location = UI.val('#free-location');
-      const comment  = UI.val('#free-comment');
-      const statusEl = document.getElementById('free-status');
-      if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
-      if (!location) { UI.notify.err('Сначала отсканируйте ячейку'); document.getElementById('free-location').focus(); return; }
-      const clientId = getClientId();
-      if (!clientId) return;
-      // Перепроверяем маркировку прямо перед отправкой (не полагаемся на скан-колбэк
-      // выше — если товар был отсканирован раньше, чем прогрузился список клиентов,
-      // или клиент сменился после скана штрихкода, старые данные могли быть неверными).
-      // Коды, уже отсканированные оператором, при этом не теряются.
-      await refreshFreeMarkingItemMeta();
-      if (freeNeedsDataMatrix() && freeDmCodes.length !== freeQty) {
-        UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${freeQty}, отсканировано ${freeDmCodes.length})`);
-        { const _e1 = document.getElementById('free-dm-card'); if (_e1) _e1.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-        { const _e2 = document.getElementById('free-dm-input'); if (_e2) _e2.focus(); }
-        return;
-      }
-      try {
-        const res = await window.API.receiving.accept({
-          barcode, location_code: location, qty: freeQty, comment: comment || undefined,
-          client_id: clientId,
-          data_matrix_codes: freeNeedsDataMatrix() ? freeDmCodes : undefined,
-        });
-        UI.notify.ok(`Принято: ${barcode} × ${freeQty} → ${location}`);
-        statusEl.textContent = `Остаток в ячейке: ${(res.balance && res.balance.qty_on_hand != null) ? res.balance.qty_on_hand : '—'}`;
-        // Ячейку НЕ сбрасываем — по задаче склада принимают весь товар в одну
-        // ячейку подряд, меняют её только явно кнопкой "Сменить ячейку".
-        UI.setVal('#free-barcode',''); UI.setVal('#free-comment','');
-        freeQty = 1; document.getElementById('free-qty-val').value = 1;
-        freeMarkingItem = null; freeDmCodes = []; renderFreeDmCard();
-        document.getElementById('free-barcode').focus();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Ячейка приёмки: сканируется ОДИН раз, дальше не сбрасывается,
-    // меняется только явной кнопкой "Сменить ячейку" ----------
-    function lockFreeLocation() {
-      const input = document.getElementById('free-location');
-      input.readOnly = true;
-      document.getElementById('free-change-location-btn').style.display = 'inline-block';
-      document.getElementById('free-location-note').textContent = 'Ячейка зафиксирована — сканируйте товар. Чтобы сменить ячейку, нажмите кнопку ниже.';
-    }
-    function changeFreeLocation() {
-      const input = document.getElementById('free-location');
-      input.readOnly = false;
-      UI.setVal('#free-location', '');
-      document.getElementById('free-change-location-btn').style.display = 'none';
-      document.getElementById('free-location-note').textContent = 'Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.';
-      input.focus();
-    }
-
-    // UI.onScan() чистит поле сразу после Enter (рассчитано на "скан -> тут же обработали",
-    // как в сборке) — а здесь значение должно остаться видимым в поле до кнопки "Оприходовать".
-    // Поэтому в колбэке явно возвращаем значение обратно в поле. Штрихкод/код ячейки
-    // дополнительно чистим от ЛЮБЫХ пробелов (не только по краям) - иногда сканер
-    // или гонка фокуса на странице добавляет лишний пробел внутри значения, из-за
-    // чего товар/ячейка потом "не находятся" при в общем-то верном штрихкоде.
-    function stripWs(v) { return String(v || '').replace(/\s+/g, ''); }
-
-    // Подсказка ячейки (доработка от 01.09.2026, та же логика что и в
-    // "Размещении" — см. placement.html/placement.service.js): раньше товар
-    // при приёмке клали куда придётся, из-за чего один и тот же товар со
-    // временем оказывался раскидан по дальним друг от друга ячейкам, а потом
-    // это же аукалось "зигзагом" при сборке. Если товар отсканировали ДО того
-    // как зафиксировали ячейку — подсказываем (не принуждаем) актуальную
-    // ячейку под этот товар и подставляем её в поле; сотрудник может
-    // подтвердить сканом этого же кода или отсканировать любой другой.
-    async function suggestFreeLocation(itemId, qty) {
-      const clientId = Number(UI.val('#client-select')) || null;
-      if (!itemId || !clientId) return;
-      try {
-        const res = await window.API.placement.suggest({ item_id: itemId, client_id: clientId, qty });
-        if (!res.suggestion) return;
-        UI.setVal('#free-location', res.suggestion.location_code);
-        document.getElementById('free-location-note').textContent =
-          `Подсказка: обычно этот товар кладут в ${res.suggestion.location_code} (можно отсканировать эту ячейку либо любую другую).`;
-      } catch (e) { /* подсказка необязательна - не блокируем приёмку из-за её ошибки */ }
-    }
-
-    UI.onScan('#free-barcode', async (v) => {
-      const code = stripWs(v);
-      UI.setVal('#free-barcode', code);
-      const location = UI.val('#free-location');
-      // Ждём метаданные маркировки ПЕРЕД тем как решать куда вести фокус дальше -
-      // иначе freeNeedsDataMatrix() мог бы сработать по ещё не загруженным данным.
-      await lookupFreeMarkingItem();
-      if (!location) {
-        if (freeMarkingItem && freeMarkingItem.id) await suggestFreeLocation(freeMarkingItem.id, freeQty);
-        if (!UI.val('#free-location')) {
+    }, _callee0, null, [[1, 3]]);
+  }));
+  return _refreshFreeMarkingItemMeta.apply(this, arguments);
+}
+function stepQty(delta) {
+  freeQty = Math.max(1, freeQty + delta);
+  document.getElementById('free-qty-val').value = freeQty;
+  if (freeDmCodes.length > freeQty) freeDmCodes = freeDmCodes.slice(0, freeQty);
+  renderFreeDmCard();
+}
+function setQty(val) {
+  freeQty = Math.max(1, Math.round(Number(val)) || 1);
+  document.getElementById('free-qty-val').value = freeQty;
+  if (freeDmCodes.length > freeQty) freeDmCodes = freeDmCodes.slice(0, freeQty);
+  renderFreeDmCard();
+}
+UI.onScan('#free-dm-input', function (v) {
+  var code = String(v || '').trim();
+  if (!code) return;
+  if (!UI.isValidKizCode(code)) {
+    UI.beep('err');
+    UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки');
+    return;
+  }
+  if (!UI.hasValidKizStructure(code)) {
+    UI.beep('err');
+    UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
+    window.API.marking.logRejectedCode({
+      item_id: freeMarkingItem && freeMarkingItem.id || null,
+      code: code,
+      reason: 'broken_structure',
+      source: 'receiving_free'
+    }).catch(function () {});
+    return;
+  }
+  if (freeDmCodes.length >= freeQty) {
+    UI.notify.err("\u0423\u0436\u0435 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u043E ".concat(freeQty, " \u043A\u043E\u0434(\u043E\u0432) \u2014 \u044D\u0442\u043E\u0433\u043E \u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E"));
+    return;
+  }
+  if (freeDmCodes.includes(code)) {
+    UI.notify.err('Этот код уже отсканирован в текущей приёмке');
+    return;
+  }
+  freeDmCodes.push(code);
+  renderFreeDmCard();
+  // Набрали нужное количество кодов — не заставляем ещё и на кнопку жать,
+  // сразу оприходуем (важно при приёмке пачками, чтобы не переключаться руками).
+  if (freeDmCodes.length === freeQty) submitFree();
+});
+function submitFree() {
+  return _submitFree.apply(this, arguments);
+} // ---------- Ячейка приёмки: сканируется ОДИН раз, дальше не сбрасывается,
+// меняется только явной кнопкой "Сменить ячейку" ----------
+function _submitFree() {
+  _submitFree = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
+    var barcode, location, comment, statusEl, clientId, _e1, _e2, res, _t6;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          barcode = UI.val('#free-barcode');
+          location = UI.val('#free-location');
+          comment = UI.val('#free-comment');
+          statusEl = document.getElementById('free-status');
+          if (barcode) {
+            _context1.n = 1;
+            break;
+          }
+          UI.notify.err('Отсканируйте товар');
+          return _context1.a(2);
+        case 1:
+          if (location) {
+            _context1.n = 2;
+            break;
+          }
           UI.notify.err('Сначала отсканируйте ячейку');
           document.getElementById('free-location').focus();
-          return;
-        }
-        // Подсказка подставила ячейку, но НЕ зафиксировала её (readOnly не
-        // включён) - оставляем фокус на ячейке, чтобы сотрудник явно
-        // подтвердил (или сменил) её сканом, прежде чем товар уйдёт в submitFree.
-        document.getElementById('free-location').focus();
-        return;
+          return _context1.a(2);
+        case 2:
+          clientId = getClientId();
+          if (clientId) {
+            _context1.n = 3;
+            break;
+          }
+          return _context1.a(2);
+        case 3:
+          _context1.n = 4;
+          return refreshFreeMarkingItemMeta();
+        case 4:
+          if (!(freeNeedsDataMatrix() && freeDmCodes.length !== freeQty)) {
+            _context1.n = 5;
+            break;
+          }
+          UI.notify.err("\u0422\u043E\u0432\u0430\u0440 \u043F\u0440\u043E\u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u0430\u043D \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C (\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A) \u2014 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 \u043A\u043E\u0434 \u0441 \u043A\u0430\u0436\u0434\u043E\u0439 \u0435\u0434\u0438\u043D\u0438\u0446\u044B (\u043D\u0443\u0436\u043D\u043E ".concat(freeQty, ", \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u043E ").concat(freeDmCodes.length, ")"));
+          _e1 = document.getElementById('free-dm-card');
+          if (_e1) _e1.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          });
+          _e2 = document.getElementById('free-dm-input');
+          if (_e2) _e2.focus();
+          return _context1.a(2);
+        case 5:
+          _context1.p = 5;
+          _context1.n = 6;
+          return window.API.receiving.accept({
+            barcode: barcode,
+            location_code: location,
+            qty: freeQty,
+            comment: comment || undefined,
+            client_id: clientId,
+            data_matrix_codes: freeNeedsDataMatrix() ? freeDmCodes : undefined
+          });
+        case 6:
+          res = _context1.v;
+          UI.notify.ok("\u041F\u0440\u0438\u043D\u044F\u0442\u043E: ".concat(barcode, " \xD7 ").concat(freeQty, " \u2192 ").concat(location));
+          statusEl.textContent = "\u041E\u0441\u0442\u0430\u0442\u043E\u043A \u0432 \u044F\u0447\u0435\u0439\u043A\u0435: ".concat(res.balance && res.balance.qty_on_hand != null ? res.balance.qty_on_hand : '—');
+          // Ячейку НЕ сбрасываем — по задаче склада принимают весь товар в одну
+          // ячейку подряд, меняют её только явно кнопкой "Сменить ячейку".
+          UI.setVal('#free-barcode', '');
+          UI.setVal('#free-comment', '');
+          freeQty = 1;
+          document.getElementById('free-qty-val').value = 1;
+          freeMarkingItem = null;
+          freeDmCodes = [];
+          renderFreeDmCard();
+          document.getElementById('free-barcode').focus();
+          _context1.n = 8;
+          break;
+        case 7:
+          _context1.p = 7;
+          _t6 = _context1.v;
+          UI.notify.err(_t6.message);
+        case 8:
+          return _context1.a(2);
       }
-      if (freeNeedsDataMatrix()) {
-        { const _e3 = document.getElementById('free-dm-input'); if (_e3) _e3.focus(); }
-      } else {
-        submitFree();
+    }, _callee1, null, [[5, 7]]);
+  }));
+  return _submitFree.apply(this, arguments);
+}
+function lockFreeLocation() {
+  var input = document.getElementById('free-location');
+  input.readOnly = true;
+  document.getElementById('free-change-location-btn').style.display = 'inline-block';
+  document.getElementById('free-location-note').textContent = 'Ячейка зафиксирована — сканируйте товар. Чтобы сменить ячейку, нажмите кнопку ниже.';
+}
+function changeFreeLocation() {
+  var input = document.getElementById('free-location');
+  input.readOnly = false;
+  UI.setVal('#free-location', '');
+  document.getElementById('free-change-location-btn').style.display = 'none';
+  document.getElementById('free-location-note').textContent = 'Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.';
+  input.focus();
+}
+
+// UI.onScan() чистит поле сразу после Enter (рассчитано на "скан -> тут же обработали",
+// как в сборке) — а здесь значение должно остаться видимым в поле до кнопки "Оприходовать".
+// Поэтому в колбэке явно возвращаем значение обратно в поле. Штрихкод/код ячейки
+// дополнительно чистим от ЛЮБЫХ пробелов (не только по краям) - иногда сканер
+// или гонка фокуса на странице добавляет лишний пробел внутри значения, из-за
+// чего товар/ячейка потом "не находятся" при в общем-то верном штрихкоде.
+function stripWs(v) {
+  return String(v || '').replace(/\s+/g, '');
+}
+
+// Подсказка ячейки (доработка от 01.09.2026, та же логика что и в
+// "Размещении" — см. placement.html/placement.service.js): раньше товар
+// при приёмке клали куда придётся, из-за чего один и тот же товар со
+// временем оказывался раскидан по дальним друг от друга ячейкам, а потом
+// это же аукалось "зигзагом" при сборке. Если товар отсканировали ДО того
+// как зафиксировали ячейку — подсказываем (не принуждаем) актуальную
+// ячейку под этот товар и подставляем её в поле; сотрудник может
+// подтвердить сканом этого же кода или отсканировать любой другой.
+function suggestFreeLocation(_x5, _x6) {
+  return _suggestFreeLocation.apply(this, arguments);
+}
+function _suggestFreeLocation() {
+  _suggestFreeLocation = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10(itemId, qty) {
+    var clientId, res, _t7;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          clientId = Number(UI.val('#client-select')) || null;
+          if (!(!itemId || !clientId)) {
+            _context10.n = 1;
+            break;
+          }
+          return _context10.a(2);
+        case 1:
+          _context10.p = 1;
+          _context10.n = 2;
+          return window.API.placement.suggest({
+            item_id: itemId,
+            client_id: clientId,
+            qty: qty
+          });
+        case 2:
+          res = _context10.v;
+          if (res.suggestion) {
+            _context10.n = 3;
+            break;
+          }
+          return _context10.a(2);
+        case 3:
+          UI.setVal('#free-location', res.suggestion.location_code);
+          document.getElementById('free-location-note').textContent = "\u041F\u043E\u0434\u0441\u043A\u0430\u0437\u043A\u0430: \u043E\u0431\u044B\u0447\u043D\u043E \u044D\u0442\u043E\u0442 \u0442\u043E\u0432\u0430\u0440 \u043A\u043B\u0430\u0434\u0443\u0442 \u0432 ".concat(res.suggestion.location_code, " (\u043C\u043E\u0436\u043D\u043E \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u044D\u0442\u0443 \u044F\u0447\u0435\u0439\u043A\u0443 \u043B\u0438\u0431\u043E \u043B\u044E\u0431\u0443\u044E \u0434\u0440\u0443\u0433\u0443\u044E).");
+          _context10.n = 5;
+          break;
+        case 4:
+          _context10.p = 4;
+          _t7 = _context10.v;
+        case 5:
+          return _context10.a(2);
       }
-    });
-    UI.onScan('#free-location', (v) => {
-      UI.setVal('#free-location', stripWs(v));
-      lockFreeLocation();
-      // Если товар уже был отсканирован ДО ячейки (см. suggestFreeLocation
-      // выше — подсказка подставила ячейку, но ждала явного подтверждения) —
-      // штрихкод уже стоит в поле и ждёт отправки, продолжаем сразу, а не
-      // заставляем сканировать товар второй раз.
-      if (UI.val('#free-barcode')) {
-        if (freeNeedsDataMatrix()) { const _e4 = document.getElementById('free-dm-input'); if (_e4) _e4.focus(); }
-        else submitFree();
-      } else {
-        document.getElementById('free-barcode').focus();
+    }, _callee10, null, [[1, 4]]);
+  }));
+  return _suggestFreeLocation.apply(this, arguments);
+}
+UI.onScan('#free-barcode', /*#__PURE__*/function () {
+  var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(v) {
+    var code, location, _e3;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          code = stripWs(v);
+          UI.setVal('#free-barcode', code);
+          location = UI.val('#free-location'); // Ждём метаданные маркировки ПЕРЕД тем как решать куда вести фокус дальше -
+          // иначе freeNeedsDataMatrix() мог бы сработать по ещё не загруженным данным.
+          _context.n = 1;
+          return lookupFreeMarkingItem();
+        case 1:
+          if (location) {
+            _context.n = 4;
+            break;
+          }
+          if (!(freeMarkingItem && freeMarkingItem.id)) {
+            _context.n = 2;
+            break;
+          }
+          _context.n = 2;
+          return suggestFreeLocation(freeMarkingItem.id, freeQty);
+        case 2:
+          if (UI.val('#free-location')) {
+            _context.n = 3;
+            break;
+          }
+          UI.notify.err('Сначала отсканируйте ячейку');
+          document.getElementById('free-location').focus();
+          return _context.a(2);
+        case 3:
+          // Подсказка подставила ячейку, но НЕ зафиксировала её (readOnly не
+          // включён) - оставляем фокус на ячейке, чтобы сотрудник явно
+          // подтвердил (или сменил) её сканом, прежде чем товар уйдёт в submitFree.
+          document.getElementById('free-location').focus();
+          return _context.a(2);
+        case 4:
+          if (freeNeedsDataMatrix()) {
+            {
+              _e3 = document.getElementById('free-dm-input');
+              if (_e3) _e3.focus();
+            }
+          } else {
+            submitFree();
+          }
+        case 5:
+          return _context.a(2);
       }
-    });
+    }, _callee);
+  }));
+  return function (_x7) {
+    return _ref.apply(this, arguments);
+  };
+}());
+UI.onScan('#free-location', function (v) {
+  UI.setVal('#free-location', stripWs(v));
+  lockFreeLocation();
+  // Если товар уже был отсканирован ДО ячейки (см. suggestFreeLocation
+  // выше — подсказка подставила ячейку, но ждала явного подтверждения) —
+  // штрихкод уже стоит в поле и ждёт отправки, продолжаем сразу, а не
+  // заставляем сканировать товар второй раз.
+  if (UI.val('#free-barcode')) {
+    if (freeNeedsDataMatrix()) {
+      var _e4 = document.getElementById('free-dm-input');
+      if (_e4) _e4.focus();
+    } else submitFree();
+  } else {
+    document.getElementById('free-barcode').focus();
+  }
+});
 
-    // ---------- Акт приёмки товара (без заявки) ----------
-    let freeActLines = []; // [{item_id, barcode, item_name, qty_received, qty_damaged, notes}]
+// ---------- Акт приёмки товара (без заявки) ----------
+var freeActLines = []; // [{item_id, barcode, item_name, qty_received, qty_damaged, notes}]
 
-    function todayStr() { return new Date().toISOString().slice(0, 10); }
-
-    async function openFreeActModal(clientIdOverride) {
-      const clientId = clientIdOverride || getClientId();
-      if (!clientId) return;
-      // По умолчанию период - "сегодня", НО если по клиенту уже накопился
-      // непокрытый хвост за прошлые дни (приёмщик забыл сформировать акт
-      // раньше), подставляем самую раннюю непокрытую дату - иначе форма
-      // покажет только сегодняшние позиции, оператор сохранит акт "за
-      // сегодня", а старый хвост так и останется непокрытым: гейт при
-      // следующей попытке сменить клиента/выйти снова заблокирует, и выглядит
-      // это так, будто акт "не сохранился", хотя он просто не за тот период.
-      let dateFrom = todayStr();
-      const dateTo = todayStr();
-      try {
-        const uncoveredRes = await window.API.acts.uncovered({ client_id: clientId, any: 1 });
-        if (uncoveredRes.earliest_date) dateFrom = uncoveredRes.earliest_date;
-      } catch (e) { /* не блокируем открытие формы - просто останется "сегодня" */ }
-      let client = null, tenant = null;
-      try {
-        const [clientRes, tenantRes, freeLinesRes] = await Promise.all([
-          window.API.clients.get(clientId),
-          window.API.tenant.profile(),
-          window.API.acts.freeLines({ client_id: clientId, date_from: dateFrom, date_to: dateTo }),
-        ]);
-        client = clientRes.client;
-        tenant = tenantRes.profile;
-        freeActLines = (freeLinesRes.lines || []).map(l => ({
-          item_id: l.item_id, barcode: l.barcode, item_name: l.item_name,
-          qty_received: l.qty_received, qty_damaged: 0, notes: '',
-        }));
-      } catch (e) { UI.notify.err(e.message); return; }
-
-      window.__actClient = client;
-      window.__actTenant = tenant;
-      window.__actClientId = clientId;
-      window.__actDateFrom = dateFrom;
-      window.__actDateTo = dateTo;
-      renderFreeActModal();
-    }
-
-    async function refreshFreeActLines() {
-      const dateFrom = UI.val('#fact-date-from') || todayStr();
-      const dateTo = UI.val('#fact-date-to') || todayStr();
-      window.__actDateFrom = dateFrom;
-      window.__actDateTo = dateTo;
-      try {
-        const res = await window.API.acts.freeLines({ client_id: window.__actClientId, date_from: dateFrom, date_to: dateTo });
-        freeActLines = (res.lines || []).map(l => ({
-          item_id: l.item_id, barcode: l.barcode, item_name: l.item_name,
-          qty_received: l.qty_received, qty_damaged: 0, notes: '',
-        }));
-        renderFreeActModal();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function addManualActLine() {
-      const barcode = UI.val('#fact-add-barcode');
-      const qty = Number(UI.val('#fact-add-qty')) || 1;
-      if (!barcode) { UI.notify.err('Укажите штрихкод'); return; }
-      try {
-        const res = await window.API.items.byBarcode(barcode, window.__actClientId);
-        const item = res.item;
-        if (!item) { UI.notify.err('Товар не найден в каталоге клиента'); return; }
-        freeActLines.push({ item_id: item.id, barcode, item_name: item.item_name || barcode, qty_received: qty, qty_damaged: 0, notes: '' });
-        renderFreeActModal();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function removeActLine(idx) {
-      freeActLines.splice(idx, 1);
-      renderFreeActModal();
-    }
-
-    function collectFreeActLinesFromForm() {
-      return freeActLines.map((l, i) => ({
-        item_id: l.item_id || null,
-        barcode: l.barcode,
-        item_name: l.item_name,
-        qty_received: UI.val(`#fact-line-qty-${i}`) || 0,
-        qty_damaged: UI.val(`#fact-line-dmg-${i}`) || 0,
-        notes: UI.val(`#fact-line-note-${i}`),
-      }));
-    }
-
-    function renderFreeActModal() {
-      const client = window.__actClient, tenant = window.__actTenant;
-      const missingClientReq = !client.legal_name || !client.inn;
-      const missingTenantReq = !tenant.legal_name || !tenant.inn;
-
-      const linesRows = freeActLines.map((l, i) => `
-        <tr>
-          <td>${i + 1}. ${UI.escHtml(l.item_name || l.barcode)}</td>
-          <td><input type="number" min="0" id="fact-line-qty-${i}" value="${Number(l.qty_received || 0)}"/></td>
-          <td><input type="number" min="0" id="fact-line-dmg-${i}" value="${Number(l.qty_damaged || 0)}"/></td>
-          <td><input type="text" id="fact-line-note-${i}" value="${UI.escHtml(l.notes || '')}" placeholder="без замечаний"/></td>
-          <td><a href="#" onclick="removeActLine(${i});return false;" style="color:var(--red);">убрать</a></td>
-        </tr>
-      `).join('');
-
-      document.getElementById('act-modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeFreeActModal()">
-          <div class="modal-card">
-            <div class="card-title">Акт приёмки товара — без заявки</div>
-
-            ${missingClientReq ? `<div class="act-warn">У клиента «${UI.escHtml(client.client_name)}» не заполнены юр. реквизиты (наименование/ИНН). Можно сформировать акт и без них, но лучше <a href="/app/clients.html" target="_blank">заполнить</a>.</div>` : ''}
-            ${missingTenantReq ? `<div class="act-warn">У вашей компании не заполнены юр. реквизиты. Можно сформировать акт и без них, но лучше <a href="/app/company-profile.html" target="_blank">заполнить</a>.</div>` : ''}
-
-            <div class="act-2col">
-              <div class="field"><label>Период приёмки (для подбора позиций)</label>
-                <div style="display:flex;gap:6px;">
-                  <input type="date" id="fact-date-from" value="${window.__actDateFrom}" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:8px;color:var(--text);"/>
-                  <input type="date" id="fact-date-to" value="${window.__actDateTo}" style="flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:8px;color:var(--text);"/>
-                </div>
-              </div>
-              <div class="field" style="display:flex;align-items:flex-end;">
-                <button class="btn-sm" style="width:100%;" onclick="refreshFreeActLines()">↻ Обновить список позиций</button>
-              </div>
-            </div>
-
-            <div class="act-2col">
-              <div class="field"><label>Город</label><input id="fact-city" value=""/></div>
-              <div class="field"><label>Поставщик/отправитель</label><input id="fact-supplier" value="${UI.escHtml(client.client_name || '')}"/></div>
-            </div>
-            <div class="act-2col">
-              <div class="field"><label>ФИО водителя</label><input id="fact-driver-name" value=""/></div>
-              <div class="field"><label>Марка машины</label><input id="fact-vehicle-make" value=""/></div>
-            </div>
-            <div class="act-2col">
-              <div class="field"><label>Кол-во грузовых мест (коробов)</label><input type="number" min="0" id="fact-boxes" value=""/></div>
-              <div class="field"><label>Кол-во паллет</label><input type="number" min="0" id="fact-pallets" value=""/></div>
-            </div>
-            <div class="act-2col">
-              <div class="field"><label>Вес, кг</label><input type="number" min="0" step="0.1" id="fact-weight" value=""/></div>
-              <div class="field"><label>Перевозчик</label><input id="fact-carrier" value=""/></div>
-            </div>
-            <div class="field"><label>Товарная накладная / УПД №</label><input id="fact-source-doc" value="" placeholder="УПД № ___ от ___"/></div>
-
-            <div class="field">
-              <label>Внешнее состояние упаковки и Товара</label>
-              <div style="display:flex;gap:16px;margin-top:6px;">
-                <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="radio" name="fact-pkg-ok" id="fact-pkg-ok-yes" checked/> без замечаний</label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:14px;"><input type="radio" name="fact-pkg-ok" id="fact-pkg-ok-no"/> с замечаниями</label>
-              </div>
-            </div>
-            <div class="field"><label>Текст замечаний</label><textarea id="fact-remarks" rows="2"></textarea></div>
-
-            <div class="card-title" style="margin-top:14px;font-size:14px;">Перечень и состояние товара</div>
-            <div class="mode-note">Позиции подтянуты из свободной приёмки за выбранный период. Можно поправить количество или добавить позицию вручную.</div>
-            <div class="table-wrap">
-              <table class="act-lines-table">
-                <thead><tr><th>Наименование</th><th>Кол-во</th><th>Повреждено</th><th>Примечание</th><th></th></tr></thead>
-                <tbody>${linesRows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет позиций за период — добавьте вручную ниже</td></tr>'}</tbody>
-              </table>
-            </div>
-            <div class="act-2col" style="margin-top:8px;">
-              <div class="field"><label>Штрихкод товара</label><input id="fact-add-barcode" placeholder="Штрихкод"/></div>
-              <div class="field"><label>Кол-во</label><input type="number" min="1" id="fact-add-qty" value="1"/></div>
-            </div>
-            <button class="btn-sm" onclick="addManualActLine()">+ Добавить позицию</button>
-
-            <div class="act-2col" style="margin-top:12px;">
-              <div class="field"><label>ФИО — Сдал (Заказчик)</label><input id="fact-client-signer" value=""/></div>
-              <div class="field"><label>ФИО — Принял (Исполнитель)</label><input id="fact-operator-signer" value=""/></div>
-            </div>
-
-            <div class="btn-row" style="margin-top:14px;">
-              <button class="btn-big btn-green" onclick="saveAndPrintFreeAct()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Сохранить и напечатать</button>
-              <button class="btn-big btn-yellow" onclick="closeFreeActModal()">Отмена</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function closeFreeActModal() {
-      document.getElementById('act-modal-root').innerHTML = '';
-      // Отмена модалки - отменяем и то действие (уход/смена клиента), ради
-      // которого она была открыта гейтом ниже.
-      window.__pendingLeaveAction = null;
-    }
-
-    async function saveAndPrintFreeAct() {
-      const lines = collectFreeActLinesFromForm().filter(l => Number(l.qty_received) > 0);
-      if (!lines.length) { UI.notify.err('Добавьте хотя бы одну позицию с количеством больше 0'); return; }
-
-      // Открываем окно печати СИНХРОННО - до await, иначе мобильные браузеры
-      // блокируют popup (см. тот же приём в inbound-orders.html).
-      const win = window.open('', '_blank');
-      if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим акт...</p>');
-
-      const act = {
-        act_city: UI.val('#fact-city'),
-        act_supplier: UI.val('#fact-supplier'),
-        act_boxes_count: UI.val('#fact-boxes'),
-        act_pallets_count: UI.val('#fact-pallets'),
-        act_weight_kg: UI.val('#fact-weight'),
-        act_carrier: UI.val('#fact-carrier'),
-        act_source_doc: UI.val('#fact-source-doc'),
-        act_packaging_ok: document.getElementById('fact-pkg-ok-no').checked ? false : true,
-        act_remarks: UI.val('#fact-remarks'),
-        act_client_signer: UI.val('#fact-client-signer'),
-        act_operator_signer: UI.val('#fact-operator-signer'),
-        driver_name: UI.val('#fact-driver-name'),
-        vehicle_make: UI.val('#fact-vehicle-make'),
-      };
-
-      try {
-        const res = await window.API.acts.create({
-          client_id: window.__actClientId, inbound_order_id: null, act, lines,
-          date_from: window.__actDateFrom, date_to: window.__actDateTo,
-        });
-        // Акт УЖЕ сохранён на сервере в этой точке (запрос выше отработал
-        // успешно) - дальше только печать, её судьба (открылось окно или
-        // браузер заблокировал popup) не должна влиять на то, что акт
-        // считается сформированным и отложенный переход (меню/выход/смена
-        // клиента) должен продолжиться. Забираем pending ДО closeFreeActModal() -
-        // она сама обнуляет __pendingLeaveAction (это нужно для кнопки
-        // "Отмена"), иначе тут он терялся бы до того, как мы успевали его
-        // вызвать - ровно тот баг, что видел пользователь на стейджинге.
-        const pending = window.__pendingLeaveAction;
-        if (!win) {
-          UI.notify.err('Акт сохранён, но окно печати браузер заблокировал — разрешите всплывающие окна и распечатайте акт из списка "Акты приёмки"');
-        } else {
-          ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
-        }
-        closeFreeActModal();
-        UI.notify.ok('Акт сохранён');
-        if (pending) pending();
-      } catch (e) {
-        if (win) win.close();
-        UI.notify.err(e.message);
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function openFreeActModal(_x8) {
+  return _openFreeActModal.apply(this, arguments);
+}
+function _openFreeActModal() {
+  _openFreeActModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11(clientIdOverride) {
+    var clientId, dateFrom, dateTo, uncoveredRes, client, tenant, _yield$Promise$all, _yield$Promise$all2, clientRes, tenantRes, freeLinesRes, _t8, _t9;
+    return _regenerator().w(function (_context11) {
+      while (1) switch (_context11.p = _context11.n) {
+        case 0:
+          clientId = clientIdOverride || getClientId();
+          if (clientId) {
+            _context11.n = 1;
+            break;
+          }
+          return _context11.a(2);
+        case 1:
+          // По умолчанию период - "сегодня", НО если по клиенту уже накопился
+          // непокрытый хвост за прошлые дни (приёмщик забыл сформировать акт
+          // раньше), подставляем самую раннюю непокрытую дату - иначе форма
+          // покажет только сегодняшние позиции, оператор сохранит акт "за
+          // сегодня", а старый хвост так и останется непокрытым: гейт при
+          // следующей попытке сменить клиента/выйти снова заблокирует, и выглядит
+          // это так, будто акт "не сохранился", хотя он просто не за тот период.
+          dateFrom = todayStr();
+          dateTo = todayStr();
+          _context11.p = 2;
+          _context11.n = 3;
+          return window.API.acts.uncovered({
+            client_id: clientId,
+            any: 1
+          });
+        case 3:
+          uncoveredRes = _context11.v;
+          if (uncoveredRes.earliest_date) dateFrom = uncoveredRes.earliest_date;
+          _context11.n = 5;
+          break;
+        case 4:
+          _context11.p = 4;
+          _t8 = _context11.v;
+        case 5:
+          client = null, tenant = null;
+          _context11.p = 6;
+          _context11.n = 7;
+          return Promise.all([window.API.clients.get(clientId), window.API.tenant.profile(), window.API.acts.freeLines({
+            client_id: clientId,
+            date_from: dateFrom,
+            date_to: dateTo
+          })]);
+        case 7:
+          _yield$Promise$all = _context11.v;
+          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 3);
+          clientRes = _yield$Promise$all2[0];
+          tenantRes = _yield$Promise$all2[1];
+          freeLinesRes = _yield$Promise$all2[2];
+          client = clientRes.client;
+          tenant = tenantRes.profile;
+          freeActLines = (freeLinesRes.lines || []).map(function (l) {
+            return {
+              item_id: l.item_id,
+              barcode: l.barcode,
+              item_name: l.item_name,
+              qty_received: l.qty_received,
+              qty_damaged: 0,
+              notes: ''
+            };
+          });
+          _context11.n = 9;
+          break;
+        case 8:
+          _context11.p = 8;
+          _t9 = _context11.v;
+          UI.notify.err(_t9.message);
+          return _context11.a(2);
+        case 9:
+          window.__actClient = client;
+          window.__actTenant = tenant;
+          window.__actClientId = clientId;
+          window.__actDateFrom = dateFrom;
+          window.__actDateTo = dateTo;
+          renderFreeActModal();
+        case 10:
+          return _context11.a(2);
       }
-    }
-
-    // ---------- По заявке ----------
-    let currentOrder = null;
-
-    const INB_STATUS_LABELS = {
-      draft:'черновик', confirmed:'отправлена складу', scheduled:'назначена дата приёмки',
-      in_progress:'приёмка началась', completed:'принята', partial:'принята частично (закрыта)', cancelled:'отменена',
+    }, _callee11, null, [[6, 8], [2, 4]]);
+  }));
+  return _openFreeActModal.apply(this, arguments);
+}
+function refreshFreeActLines() {
+  return _refreshFreeActLines.apply(this, arguments);
+}
+function _refreshFreeActLines() {
+  _refreshFreeActLines = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12() {
+    var dateFrom, dateTo, res, _t0;
+    return _regenerator().w(function (_context12) {
+      while (1) switch (_context12.p = _context12.n) {
+        case 0:
+          dateFrom = UI.val('#fact-date-from') || todayStr();
+          dateTo = UI.val('#fact-date-to') || todayStr();
+          window.__actDateFrom = dateFrom;
+          window.__actDateTo = dateTo;
+          _context12.p = 1;
+          _context12.n = 2;
+          return window.API.acts.freeLines({
+            client_id: window.__actClientId,
+            date_from: dateFrom,
+            date_to: dateTo
+          });
+        case 2:
+          res = _context12.v;
+          freeActLines = (res.lines || []).map(function (l) {
+            return {
+              item_id: l.item_id,
+              barcode: l.barcode,
+              item_name: l.item_name,
+              qty_received: l.qty_received,
+              qty_damaged: 0,
+              notes: ''
+            };
+          });
+          renderFreeActModal();
+          _context12.n = 4;
+          break;
+        case 3:
+          _context12.p = 3;
+          _t0 = _context12.v;
+          UI.notify.err(_t0.message);
+        case 4:
+          return _context12.a(2);
+      }
+    }, _callee12, null, [[1, 3]]);
+  }));
+  return _refreshFreeActLines.apply(this, arguments);
+}
+function addManualActLine() {
+  return _addManualActLine.apply(this, arguments);
+}
+function _addManualActLine() {
+  _addManualActLine = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee13() {
+    var barcode, qty, res, item, _t1;
+    return _regenerator().w(function (_context13) {
+      while (1) switch (_context13.p = _context13.n) {
+        case 0:
+          barcode = UI.val('#fact-add-barcode');
+          qty = Number(UI.val('#fact-add-qty')) || 1;
+          if (barcode) {
+            _context13.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите штрихкод');
+          return _context13.a(2);
+        case 1:
+          _context13.p = 1;
+          _context13.n = 2;
+          return window.API.items.byBarcode(barcode, window.__actClientId);
+        case 2:
+          res = _context13.v;
+          item = res.item;
+          if (item) {
+            _context13.n = 3;
+            break;
+          }
+          UI.notify.err('Товар не найден в каталоге клиента');
+          return _context13.a(2);
+        case 3:
+          freeActLines.push({
+            item_id: item.id,
+            barcode: barcode,
+            item_name: item.item_name || barcode,
+            qty_received: qty,
+            qty_damaged: 0,
+            notes: ''
+          });
+          renderFreeActModal();
+          _context13.n = 5;
+          break;
+        case 4:
+          _context13.p = 4;
+          _t1 = _context13.v;
+          UI.notify.err(_t1.message);
+        case 5:
+          return _context13.a(2);
+      }
+    }, _callee13, null, [[1, 4]]);
+  }));
+  return _addManualActLine.apply(this, arguments);
+}
+function removeActLine(idx) {
+  freeActLines.splice(idx, 1);
+  renderFreeActModal();
+}
+function collectFreeActLinesFromForm() {
+  return freeActLines.map(function (l, i) {
+    return {
+      item_id: l.item_id || null,
+      barcode: l.barcode,
+      item_name: l.item_name,
+      qty_received: UI.val("#fact-line-qty-".concat(i)) || 0,
+      qty_damaged: UI.val("#fact-line-dmg-".concat(i)) || 0,
+      notes: UI.val("#fact-line-note-".concat(i))
     };
-    // Заявку можно закрыть "как есть", пока она не в терминальном статусе -
-    // терминальные (completed/partial/cancelled) уже финал, там кнопке делать нечего.
-    const INB_TERMINAL_STATUSES = ['completed', 'partial', 'cancelled'];
-
-    async function loadOrderByBarcode(barcode) {
-      try {
-        const res = await window.API.inbound.byBarcode(barcode);
-        currentOrder = res.order;
-        document.getElementById('inbound-order-card').style.display = 'block';
-        document.getElementById('inb-order-code').textContent = currentOrder.order_number || currentOrder.id;
-        document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status || '—';
-        document.getElementById('inb-order-lines-count').textContent = (res.lines||[]).length;
-        const deliveryInfo = document.getElementById('inb-delivery-info');
-        if (currentOrder.driver_name || currentOrder.vehicle_make) {
-          deliveryInfo.style.display = 'block';
-          deliveryInfo.textContent = ['Водитель: ' + (currentOrder.driver_name || '—'), 'Машина: ' + (currentOrder.vehicle_make || '—')].join(' · ');
-        } else {
-          deliveryInfo.style.display = 'none';
-        }
-        document.getElementById('inb-close-short-btn').style.display =
-          INB_TERMINAL_STATUSES.includes(currentOrder.status) ? 'none' : 'inline-block';
-        UI.renderTable('#inb-lines-body', res.lines, (l) => `
-          <tr><td>${UI.escHtml(l.item_name_master || l.item_name || '—')}<div style="color:var(--muted);font-size:11px;">${[l.vendor_code, l.size ? 'разм. '+l.size : null].filter(Boolean).map(UI.escHtml).join(' · ')}</div></td><td>${UI.escHtml(l.barcode)}</td><td>${UI.fmtQty(l.qty_expected)}</td><td>${UI.fmtQty(l.qty_received||0)}</td></tr>
-        `);
-      } catch (e) {
-        UI.notify.err(e.message);
-        document.getElementById('inbound-order-card').style.display = 'none';
+  });
+}
+function renderFreeActModal() {
+  var client = window.__actClient,
+    tenant = window.__actTenant;
+  var missingClientReq = !client.legal_name || !client.inn;
+  var missingTenantReq = !tenant.legal_name || !tenant.inn;
+  var linesRows = freeActLines.map(function (l, i) {
+    return "\n        <tr>\n          <td>".concat(i + 1, ". ").concat(UI.escHtml(l.item_name || l.barcode), "</td>\n          <td><input type=\"number\" min=\"0\" id=\"fact-line-qty-").concat(i, "\" value=\"").concat(Number(l.qty_received || 0), "\"/></td>\n          <td><input type=\"number\" min=\"0\" id=\"fact-line-dmg-").concat(i, "\" value=\"").concat(Number(l.qty_damaged || 0), "\"/></td>\n          <td><input type=\"text\" id=\"fact-line-note-").concat(i, "\" value=\"").concat(UI.escHtml(l.notes || ''), "\" placeholder=\"\u0431\u0435\u0437 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0439\"/></td>\n          <td><a href=\"#\" onclick=\"removeActLine(").concat(i, ");return false;\" style=\"color:var(--red);\">\u0443\u0431\u0440\u0430\u0442\u044C</a></td>\n        </tr>\n      ");
+  }).join('');
+  document.getElementById('act-modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeFreeActModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">\u0410\u043A\u0442 \u043F\u0440\u0438\u0451\u043C\u043A\u0438 \u0442\u043E\u0432\u0430\u0440\u0430 \u2014 \u0431\u0435\u0437 \u0437\u0430\u044F\u0432\u043A\u0438</div>\n\n            ".concat(missingClientReq ? "<div class=\"act-warn\">\u0423 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \xAB".concat(UI.escHtml(client.client_name), "\xBB \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u044B \u044E\u0440. \u0440\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B (\u043D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435/\u0418\u041D\u041D). \u041C\u043E\u0436\u043D\u043E \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0430\u043A\u0442 \u0438 \u0431\u0435\u0437 \u043D\u0438\u0445, \u043D\u043E \u043B\u0443\u0447\u0448\u0435 <a href=\"/app/clients.html\" target=\"_blank\">\u0437\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C</a>.</div>") : '', "\n            ").concat(missingTenantReq ? "<div class=\"act-warn\">\u0423 \u0432\u0430\u0448\u0435\u0439 \u043A\u043E\u043C\u043F\u0430\u043D\u0438\u0438 \u043D\u0435 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D\u044B \u044E\u0440. \u0440\u0435\u043A\u0432\u0438\u0437\u0438\u0442\u044B. \u041C\u043E\u0436\u043D\u043E \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0430\u043A\u0442 \u0438 \u0431\u0435\u0437 \u043D\u0438\u0445, \u043D\u043E \u043B\u0443\u0447\u0448\u0435 <a href=\"/app/company-profile.html\" target=\"_blank\">\u0437\u0430\u043F\u043E\u043B\u043D\u0438\u0442\u044C</a>.</div>" : '', "\n\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u041F\u0435\u0440\u0438\u043E\u0434 \u043F\u0440\u0438\u0451\u043C\u043A\u0438 (\u0434\u043B\u044F \u043F\u043E\u0434\u0431\u043E\u0440\u0430 \u043F\u043E\u0437\u0438\u0446\u0438\u0439)</label>\n                <div style=\"display:flex;gap:6px;\">\n                  <input type=\"date\" id=\"fact-date-from\" value=\"").concat(window.__actDateFrom, "\" style=\"flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:8px;color:var(--text);\"/>\n                  <input type=\"date\" id=\"fact-date-to\" value=\"").concat(window.__actDateTo, "\" style=\"flex:1;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:8px;color:var(--text);\"/>\n                </div>\n              </div>\n              <div class=\"field\" style=\"display:flex;align-items:flex-end;\">\n                <button class=\"btn-sm\" style=\"width:100%;\" onclick=\"refreshFreeActLines()\">\u21BB \u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u043F\u043E\u0437\u0438\u0446\u0438\u0439</button>\n              </div>\n            </div>\n\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u0413\u043E\u0440\u043E\u0434</label><input id=\"fact-city\" value=\"\"/></div>\n              <div class=\"field\"><label>\u041F\u043E\u0441\u0442\u0430\u0432\u0449\u0438\u043A/\u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u0435\u043B\u044C</label><input id=\"fact-supplier\" value=\"").concat(UI.escHtml(client.client_name || ''), "\"/></div>\n            </div>\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u0424\u0418\u041E \u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044F</label><input id=\"fact-driver-name\" value=\"\"/></div>\n              <div class=\"field\"><label>\u041C\u0430\u0440\u043A\u0430 \u043C\u0430\u0448\u0438\u043D\u044B</label><input id=\"fact-vehicle-make\" value=\"\"/></div>\n            </div>\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u041A\u043E\u043B-\u0432\u043E \u0433\u0440\u0443\u0437\u043E\u0432\u044B\u0445 \u043C\u0435\u0441\u0442 (\u043A\u043E\u0440\u043E\u0431\u043E\u0432)</label><input type=\"number\" min=\"0\" id=\"fact-boxes\" value=\"\"/></div>\n              <div class=\"field\"><label>\u041A\u043E\u043B-\u0432\u043E \u043F\u0430\u043B\u043B\u0435\u0442</label><input type=\"number\" min=\"0\" id=\"fact-pallets\" value=\"\"/></div>\n            </div>\n            <div class=\"act-2col\">\n              <div class=\"field\"><label>\u0412\u0435\u0441, \u043A\u0433</label><input type=\"number\" min=\"0\" step=\"0.1\" id=\"fact-weight\" value=\"\"/></div>\n              <div class=\"field\"><label>\u041F\u0435\u0440\u0435\u0432\u043E\u0437\u0447\u0438\u043A</label><input id=\"fact-carrier\" value=\"\"/></div>\n            </div>\n            <div class=\"field\"><label>\u0422\u043E\u0432\u0430\u0440\u043D\u0430\u044F \u043D\u0430\u043A\u043B\u0430\u0434\u043D\u0430\u044F / \u0423\u041F\u0414 \u2116</label><input id=\"fact-source-doc\" value=\"\" placeholder=\"\u0423\u041F\u0414 \u2116 ___ \u043E\u0442 ___\"/></div>\n\n            <div class=\"field\">\n              <label>\u0412\u043D\u0435\u0448\u043D\u0435\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438 \u0438 \u0422\u043E\u0432\u0430\u0440\u0430</label>\n              <div style=\"display:flex;gap:16px;margin-top:6px;\">\n                <label style=\"display:flex;align-items:center;gap:6px;font-size:14px;\"><input type=\"radio\" name=\"fact-pkg-ok\" id=\"fact-pkg-ok-yes\" checked/> \u0431\u0435\u0437 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0439</label>\n                <label style=\"display:flex;align-items:center;gap:6px;font-size:14px;\"><input type=\"radio\" name=\"fact-pkg-ok\" id=\"fact-pkg-ok-no\"/> \u0441 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u044F\u043C\u0438</label>\n              </div>\n            </div>\n            <div class=\"field\"><label>\u0422\u0435\u043A\u0441\u0442 \u0437\u0430\u043C\u0435\u0447\u0430\u043D\u0438\u0439</label><textarea id=\"fact-remarks\" rows=\"2\"></textarea></div>\n\n            <div class=\"card-title\" style=\"margin-top:14px;font-size:14px;\">\u041F\u0435\u0440\u0435\u0447\u0435\u043D\u044C \u0438 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0442\u043E\u0432\u0430\u0440\u0430</div>\n            <div class=\"mode-note\">\u041F\u043E\u0437\u0438\u0446\u0438\u0438 \u043F\u043E\u0434\u0442\u044F\u043D\u0443\u0442\u044B \u0438\u0437 \u0441\u0432\u043E\u0431\u043E\u0434\u043D\u043E\u0439 \u043F\u0440\u0438\u0451\u043C\u043A\u0438 \u0437\u0430 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u044B\u0439 \u043F\u0435\u0440\u0438\u043E\u0434. \u041C\u043E\u0436\u043D\u043E \u043F\u043E\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0438\u043B\u0438 \u0434\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043F\u043E\u0437\u0438\u0446\u0438\u044E \u0432\u0440\u0443\u0447\u043D\u0443\u044E.</div>\n            <div class=\"table-wrap\">\n              <table class=\"act-lines-table\">\n                <thead><tr><th>\u041D\u0430\u0438\u043C\u0435\u043D\u043E\u0432\u0430\u043D\u0438\u0435</th><th>\u041A\u043E\u043B-\u0432\u043E</th><th>\u041F\u043E\u0432\u0440\u0435\u0436\u0434\u0435\u043D\u043E</th><th>\u041F\u0440\u0438\u043C\u0435\u0447\u0430\u043D\u0438\u0435</th><th></th></tr></thead>\n                <tbody>").concat(linesRows || '<tr><td colspan="5" style="text-align:center;color:var(--muted);">Нет позиций за период — добавьте вручную ниже</td></tr>', "</tbody>\n              </table>\n            </div>\n            <div class=\"act-2col\" style=\"margin-top:8px;\">\n              <div class=\"field\"><label>\u0428\u0442\u0440\u0438\u0445\u043A\u043E\u0434 \u0442\u043E\u0432\u0430\u0440\u0430</label><input id=\"fact-add-barcode\" placeholder=\"\u0428\u0442\u0440\u0438\u0445\u043A\u043E\u0434\"/></div>\n              <div class=\"field\"><label>\u041A\u043E\u043B-\u0432\u043E</label><input type=\"number\" min=\"1\" id=\"fact-add-qty\" value=\"1\"/></div>\n            </div>\n            <button class=\"btn-sm\" onclick=\"addManualActLine()\">+ \u0414\u043E\u0431\u0430\u0432\u0438\u0442\u044C \u043F\u043E\u0437\u0438\u0446\u0438\u044E</button>\n\n            <div class=\"act-2col\" style=\"margin-top:12px;\">\n              <div class=\"field\"><label>\u0424\u0418\u041E \u2014 \u0421\u0434\u0430\u043B (\u0417\u0430\u043A\u0430\u0437\u0447\u0438\u043A)</label><input id=\"fact-client-signer\" value=\"\"/></div>\n              <div class=\"field\"><label>\u0424\u0418\u041E \u2014 \u041F\u0440\u0438\u043D\u044F\u043B (\u0418\u0441\u043F\u043E\u043B\u043D\u0438\u0442\u0435\u043B\u044C)</label><input id=\"fact-operator-signer\" value=\"\"/></div>\n            </div>\n\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <button class=\"btn-big btn-green\" onclick=\"saveAndPrintFreeAct()\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 9V2h12v7\"/><path d=\"M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2\"/><rect x=\"6\" y=\"14\" width=\"12\" height=\"8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0438 \u043D\u0430\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeFreeActModal()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function closeFreeActModal() {
+  document.getElementById('act-modal-root').innerHTML = '';
+  // Отмена модалки - отменяем и то действие (уход/смена клиента), ради
+  // которого она была открыта гейтом ниже.
+  window.__pendingLeaveAction = null;
+}
+function saveAndPrintFreeAct() {
+  return _saveAndPrintFreeAct.apply(this, arguments);
+} // ---------- По заявке ----------
+function _saveAndPrintFreeAct() {
+  _saveAndPrintFreeAct = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee14() {
+    var lines, win, act, res, pending, _t10;
+    return _regenerator().w(function (_context14) {
+      while (1) switch (_context14.p = _context14.n) {
+        case 0:
+          lines = collectFreeActLinesFromForm().filter(function (l) {
+            return Number(l.qty_received) > 0;
+          });
+          if (lines.length) {
+            _context14.n = 1;
+            break;
+          }
+          UI.notify.err('Добавьте хотя бы одну позицию с количеством больше 0');
+          return _context14.a(2);
+        case 1:
+          // Открываем окно печати СИНХРОННО - до await, иначе мобильные браузеры
+          // блокируют popup (см. тот же приём в inbound-orders.html).
+          win = window.open('', '_blank');
+          if (win) win.document.write('<p style="font-family:sans-serif;padding:20px;">Готовим акт...</p>');
+          act = {
+            act_city: UI.val('#fact-city'),
+            act_supplier: UI.val('#fact-supplier'),
+            act_boxes_count: UI.val('#fact-boxes'),
+            act_pallets_count: UI.val('#fact-pallets'),
+            act_weight_kg: UI.val('#fact-weight'),
+            act_carrier: UI.val('#fact-carrier'),
+            act_source_doc: UI.val('#fact-source-doc'),
+            act_packaging_ok: document.getElementById('fact-pkg-ok-no').checked ? false : true,
+            act_remarks: UI.val('#fact-remarks'),
+            act_client_signer: UI.val('#fact-client-signer'),
+            act_operator_signer: UI.val('#fact-operator-signer'),
+            driver_name: UI.val('#fact-driver-name'),
+            vehicle_make: UI.val('#fact-vehicle-make')
+          };
+          _context14.p = 2;
+          _context14.n = 3;
+          return window.API.acts.create({
+            client_id: window.__actClientId,
+            inbound_order_id: null,
+            act: act,
+            lines: lines,
+            date_from: window.__actDateFrom,
+            date_to: window.__actDateTo
+          });
+        case 3:
+          res = _context14.v;
+          // Акт УЖЕ сохранён на сервере в этой точке (запрос выше отработал
+          // успешно) - дальше только печать, её судьба (открылось окно или
+          // браузер заблокировал popup) не должна влиять на то, что акт
+          // считается сформированным и отложенный переход (меню/выход/смена
+          // клиента) должен продолжиться. Забираем pending ДО closeFreeActModal() -
+          // она сама обнуляет __pendingLeaveAction (это нужно для кнопки
+          // "Отмена"), иначе тут он терялся бы до того, как мы успевали его
+          // вызвать - ровно тот баг, что видел пользователь на стейджинге.
+          pending = window.__pendingLeaveAction;
+          if (!win) {
+            UI.notify.err('Акт сохранён, но окно печати браузер заблокировал — разрешите всплывающие окна и распечатайте акт из списка "Акты приёмки"');
+          } else {
+            ActPrint.printInto(win, res.act, window.__actClient, window.__actTenant, res.lines);
+          }
+          closeFreeActModal();
+          UI.notify.ok('Акт сохранён');
+          if (pending) pending();
+          _context14.n = 5;
+          break;
+        case 4:
+          _context14.p = 4;
+          _t10 = _context14.v;
+          if (win) win.close();
+          UI.notify.err(_t10.message);
+        case 5:
+          return _context14.a(2);
       }
-    }
-    UI.onScan('#inb-order-barcode', (v) => {
-      UI.setVal('#inb-order-barcode', v);
-      loadOrderByBarcode(v).then(() => {
-        // Новая заявка - сбрасываем зафиксированную ячейку с прошлой заявки,
-        // если она была, и ведём фокус на ячейку (сканируется первой).
-        changeInbLocation();
-      });
-    });
-
-    async function closeInboundOrderShort() {
-      if (!currentOrder) return;
-      const blocked = await checkUncoveredOrder(currentOrder.id, currentOrder.client_id);
-      if (blocked) {
-        UI.notify.err('По этой заявке есть принятый товар без акта приёмки — сформируйте акт на странице "Заявки на поставку", прежде чем закрывать заявку');
-        return;
+    }, _callee14, null, [[2, 4]]);
+  }));
+  return _saveAndPrintFreeAct.apply(this, arguments);
+}
+var currentOrder = null;
+var INB_STATUS_LABELS = {
+  draft: 'черновик',
+  confirmed: 'отправлена складу',
+  scheduled: 'назначена дата приёмки',
+  in_progress: 'приёмка началась',
+  completed: 'принята',
+  partial: 'принята частично (закрыта)',
+  cancelled: 'отменена'
+};
+// Заявку можно закрыть "как есть", пока она не в терминальном статусе -
+// терминальные (completed/partial/cancelled) уже финал, там кнопке делать нечего.
+var INB_TERMINAL_STATUSES = ['completed', 'partial', 'cancelled'];
+function loadOrderByBarcode(_x9) {
+  return _loadOrderByBarcode.apply(this, arguments);
+}
+function _loadOrderByBarcode() {
+  _loadOrderByBarcode = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee15(barcode) {
+    var res, deliveryInfo, _t11;
+    return _regenerator().w(function (_context15) {
+      while (1) switch (_context15.p = _context15.n) {
+        case 0:
+          _context15.p = 0;
+          _context15.n = 1;
+          return window.API.inbound.byBarcode(barcode);
+        case 1:
+          res = _context15.v;
+          currentOrder = res.order;
+          document.getElementById('inbound-order-card').style.display = 'block';
+          document.getElementById('inb-order-code').textContent = currentOrder.order_number || currentOrder.id;
+          document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status || '—';
+          document.getElementById('inb-order-lines-count').textContent = (res.lines || []).length;
+          deliveryInfo = document.getElementById('inb-delivery-info');
+          if (currentOrder.driver_name || currentOrder.vehicle_make) {
+            deliveryInfo.style.display = 'block';
+            deliveryInfo.textContent = ['Водитель: ' + (currentOrder.driver_name || '—'), 'Машина: ' + (currentOrder.vehicle_make || '—')].join(' · ');
+          } else {
+            deliveryInfo.style.display = 'none';
+          }
+          document.getElementById('inb-close-short-btn').style.display = INB_TERMINAL_STATUSES.includes(currentOrder.status) ? 'none' : 'inline-block';
+          UI.renderTable('#inb-lines-body', res.lines, function (l) {
+            return "\n          <tr><td>".concat(UI.escHtml(l.item_name_master || l.item_name || '—'), "<div style=\"color:var(--muted);font-size:11px;\">").concat([l.vendor_code, l.size ? 'разм. ' + l.size : null].filter(Boolean).map(UI.escHtml).join(' · '), "</div></td><td>").concat(UI.escHtml(l.barcode), "</td><td>").concat(UI.fmtQty(l.qty_expected), "</td><td>").concat(UI.fmtQty(l.qty_received || 0), "</td></tr>\n        ");
+          });
+          _context15.n = 3;
+          break;
+        case 2:
+          _context15.p = 2;
+          _t11 = _context15.v;
+          UI.notify.err(_t11.message);
+          document.getElementById('inbound-order-card').style.display = 'none';
+        case 3:
+          return _context15.a(2);
       }
-      const reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
-      if (reason === null) return; // отмена диалога
-      if (!UI.confirm(`Закрыть заявку ${currentOrder.order_number || currentOrder.id} как есть? Уже принятый товар останется на складе, заявка станет финальной.`)) return;
-      try {
-        const res = await window.API.inbound.closeShort(currentOrder.id, reason);
-        currentOrder = res.order;
-        UI.notify.ok('Заявка закрыта');
-        document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status;
-        document.getElementById('inb-close-short-btn').style.display = 'none';
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    let inbQty = 1;
-    let inbMarkingItem = null;
-    let inbDmCodes = [];
-
-    function inbNeedsDataMatrix() {
-      // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на приёмке
-      // (независимо от marking_trigger — тот применяется только к печати).
-      return !!(inbMarkingItem && inbMarkingItem.requires_marking &&
-        inbMarkingItem.marking_mode === 'scan');
-    }
-    function renderInbDmCard() {
-      const card = document.getElementById('inb-dm-card');
-      if (!inbNeedsDataMatrix()) { card.style.display = 'none'; return; }
-      card.style.display = 'block';
-      document.getElementById('inb-dm-need').textContent = inbQty;
-      document.getElementById('inb-dm-count').textContent = inbDmCodes.length;
-      document.getElementById('inb-dm-list').innerHTML = inbDmCodes.map((c, i) =>
-        `<li>${UI.escHtml(c)} <a href="#" onclick="removeInbDmCode(${i});return false;" style="color:var(--red);">убрать</a></li>`
-      ).join('');
-    }
-    function removeInbDmCode(i) { inbDmCodes.splice(i, 1); renderInbDmCard(); }
-
-    async function lookupInbMarkingItem() {
-      inbDmCodes = [];
-      await refreshInbMarkingItemMeta();
-    }
-    // Аналог refreshFreeMarkingItemMeta() для вкладки "По заявке" - перечитать
-    // метаданные товара без сброса уже отсканированных кодов DataMatrix.
-    async function refreshInbMarkingItemMeta() {
-      const barcode = UI.val('#inb-barcode');
-      inbMarkingItem = null;
-      if (barcode && currentOrder) {
-        try {
-          const res = await window.API.items.byBarcode(barcode, currentOrder.client_id);
+    }, _callee15, null, [[0, 2]]);
+  }));
+  return _loadOrderByBarcode.apply(this, arguments);
+}
+UI.onScan('#inb-order-barcode', function (v) {
+  UI.setVal('#inb-order-barcode', v);
+  loadOrderByBarcode(v).then(function () {
+    // Новая заявка - сбрасываем зафиксированную ячейку с прошлой заявки,
+    // если она была, и ведём фокус на ячейку (сканируется первой).
+    changeInbLocation();
+  });
+});
+function closeInboundOrderShort() {
+  return _closeInboundOrderShort.apply(this, arguments);
+}
+function _closeInboundOrderShort() {
+  _closeInboundOrderShort = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee16() {
+    var blocked, reason, res, _t12;
+    return _regenerator().w(function (_context16) {
+      while (1) switch (_context16.p = _context16.n) {
+        case 0:
+          if (currentOrder) {
+            _context16.n = 1;
+            break;
+          }
+          return _context16.a(2);
+        case 1:
+          _context16.n = 2;
+          return checkUncoveredOrder(currentOrder.id, currentOrder.client_id);
+        case 2:
+          blocked = _context16.v;
+          if (!blocked) {
+            _context16.n = 3;
+            break;
+          }
+          UI.notify.err('По этой заявке есть принятый товар без акта приёмки — сформируйте акт на странице "Заявки на поставку", прежде чем закрывать заявку');
+          return _context16.a(2);
+        case 3:
+          reason = prompt('Причина (необязательно) — например: "поставщик привёз 8 из 10, остальное не довезёт":', '');
+          if (!(reason === null)) {
+            _context16.n = 4;
+            break;
+          }
+          return _context16.a(2);
+        case 4:
+          if (UI.confirm("\u0417\u0430\u043A\u0440\u044B\u0442\u044C \u0437\u0430\u044F\u0432\u043A\u0443 ".concat(currentOrder.order_number || currentOrder.id, " \u043A\u0430\u043A \u0435\u0441\u0442\u044C? \u0423\u0436\u0435 \u043F\u0440\u0438\u043D\u044F\u0442\u044B\u0439 \u0442\u043E\u0432\u0430\u0440 \u043E\u0441\u0442\u0430\u043D\u0435\u0442\u0441\u044F \u043D\u0430 \u0441\u043A\u043B\u0430\u0434\u0435, \u0437\u0430\u044F\u0432\u043A\u0430 \u0441\u0442\u0430\u043D\u0435\u0442 \u0444\u0438\u043D\u0430\u043B\u044C\u043D\u043E\u0439."))) {
+            _context16.n = 5;
+            break;
+          }
+          return _context16.a(2);
+        case 5:
+          _context16.p = 5;
+          _context16.n = 6;
+          return window.API.inbound.closeShort(currentOrder.id, reason);
+        case 6:
+          res = _context16.v;
+          currentOrder = res.order;
+          UI.notify.ok('Заявка закрыта');
+          document.getElementById('inb-order-status').textContent = INB_STATUS_LABELS[currentOrder.status] || currentOrder.status;
+          document.getElementById('inb-close-short-btn').style.display = 'none';
+          _context16.n = 8;
+          break;
+        case 7:
+          _context16.p = 7;
+          _t12 = _context16.v;
+          UI.notify.err(_t12.message);
+        case 8:
+          return _context16.a(2);
+      }
+    }, _callee16, null, [[5, 7]]);
+  }));
+  return _closeInboundOrderShort.apply(this, arguments);
+}
+var inbQty = 1;
+var inbMarkingItem = null;
+var inbDmCodes = [];
+function inbNeedsDataMatrix() {
+  // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на приёмке
+  // (независимо от marking_trigger — тот применяется только к печати).
+  return !!(inbMarkingItem && inbMarkingItem.requires_marking && inbMarkingItem.marking_mode === 'scan');
+}
+function renderInbDmCard() {
+  var card = document.getElementById('inb-dm-card');
+  if (!inbNeedsDataMatrix()) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  document.getElementById('inb-dm-need').textContent = inbQty;
+  document.getElementById('inb-dm-count').textContent = inbDmCodes.length;
+  document.getElementById('inb-dm-list').innerHTML = inbDmCodes.map(function (c, i) {
+    return "<li>".concat(UI.escHtml(c), " <a href=\"#\" onclick=\"removeInbDmCode(").concat(i, ");return false;\" style=\"color:var(--red);\">\u0443\u0431\u0440\u0430\u0442\u044C</a></li>");
+  }).join('');
+}
+function removeInbDmCode(i) {
+  inbDmCodes.splice(i, 1);
+  renderInbDmCard();
+}
+function lookupInbMarkingItem() {
+  return _lookupInbMarkingItem.apply(this, arguments);
+} // Аналог refreshFreeMarkingItemMeta() для вкладки "По заявке" - перечитать
+// метаданные товара без сброса уже отсканированных кодов DataMatrix.
+function _lookupInbMarkingItem() {
+  _lookupInbMarkingItem = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee17() {
+    return _regenerator().w(function (_context17) {
+      while (1) switch (_context17.n) {
+        case 0:
+          inbDmCodes = [];
+          _context17.n = 1;
+          return refreshInbMarkingItemMeta();
+        case 1:
+          return _context17.a(2);
+      }
+    }, _callee17);
+  }));
+  return _lookupInbMarkingItem.apply(this, arguments);
+}
+function refreshInbMarkingItemMeta() {
+  return _refreshInbMarkingItemMeta.apply(this, arguments);
+}
+function _refreshInbMarkingItemMeta() {
+  _refreshInbMarkingItemMeta = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee18() {
+    var barcode, res, _t13;
+    return _regenerator().w(function (_context18) {
+      while (1) switch (_context18.p = _context18.n) {
+        case 0:
+          barcode = UI.val('#inb-barcode');
+          inbMarkingItem = null;
+          if (!(barcode && currentOrder)) {
+            _context18.n = 4;
+            break;
+          }
+          _context18.p = 1;
+          _context18.n = 2;
+          return window.API.items.byBarcode(barcode, currentOrder.client_id);
+        case 2:
+          res = _context18.v;
           inbMarkingItem = res.item || null;
-        } catch (e) { /* не блокируем - строка заявки сама провалидирует штрихкод */ }
+          _context18.n = 4;
+          break;
+        case 3:
+          _context18.p = 3;
+          _t13 = _context18.v;
+        case 4:
+          renderInbDmCard();
+        case 5:
+          return _context18.a(2);
       }
-      renderInbDmCard();
-    }
+    }, _callee18, null, [[1, 3]]);
+  }));
+  return _refreshInbMarkingItemMeta.apply(this, arguments);
+}
+function stepQtyInbound(delta) {
+  inbQty = Math.max(1, inbQty + delta);
+  document.getElementById('inb-qty-val').value = inbQty;
+  if (inbDmCodes.length > inbQty) inbDmCodes = inbDmCodes.slice(0, inbQty);
+  renderInbDmCard();
+}
+function setQtyInbound(val) {
+  inbQty = Math.max(1, Math.round(Number(val)) || 1);
+  document.getElementById('inb-qty-val').value = inbQty;
+  if (inbDmCodes.length > inbQty) inbDmCodes = inbDmCodes.slice(0, inbQty);
+  renderInbDmCard();
+}
 
-    function stepQtyInbound(delta) {
-      inbQty = Math.max(1, inbQty + delta);
-      document.getElementById('inb-qty-val').value = inbQty;
-      if (inbDmCodes.length > inbQty) inbDmCodes = inbDmCodes.slice(0, inbQty);
-      renderInbDmCard();
-    }
-    function setQtyInbound(val) {
-      inbQty = Math.max(1, Math.round(Number(val)) || 1);
-      document.getElementById('inb-qty-val').value = inbQty;
-      if (inbDmCodes.length > inbQty) inbDmCodes = inbDmCodes.slice(0, inbQty);
-      renderInbDmCard();
-    }
-
-    // ---------- Ячейка приёмки (по заявке): та же логика, что и в свободной
-    // приёмке — сканируется один раз, дальше не сбрасывается ----------
-    function lockInbLocation() {
-      const input = document.getElementById('inb-location');
-      input.readOnly = true;
-      document.getElementById('inb-change-location-btn').style.display = 'inline-block';
-    }
-    function changeInbLocation() {
-      const input = document.getElementById('inb-location');
-      input.readOnly = false;
-      UI.setVal('#inb-location', '');
-      document.getElementById('inb-change-location-btn').style.display = 'none';
-      input.focus();
-    }
-
-    UI.onScan('#inb-dm-input', (v) => {
-      const code = String(v || '').trim();
-      if (!code) return;
-      if (!UI.isValidKizCode(code)) { UI.beep('err'); UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки'); return; }
-      if (!UI.hasValidKizStructure(code)) {
-        UI.beep('err'); UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
-        window.API.marking.logRejectedCode({ item_id: (inbMarkingItem && inbMarkingItem.id) || null, code, reason: 'broken_structure', source: 'receiving_inbound' }).catch(() => {});
-        return;
-      }
-      if (inbDmCodes.length >= inbQty) { UI.notify.err(`Уже отсканировано ${inbQty} код(ов) — этого достаточно`); return; }
-      if (inbDmCodes.includes(code)) { UI.notify.err('Этот код уже отсканирован в текущей приёмке'); return; }
-      inbDmCodes.push(code);
-      renderInbDmCard();
-      if (inbDmCodes.length === inbQty) submitInbound();
-    });
-
-    async function submitInbound() {
-      if (!currentOrder) { UI.notify.err('Сначала отсканируйте заявку'); return; }
-      const barcode  = UI.val('#inb-barcode');
-      const location = UI.val('#inb-location');
-      if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
-      if (!location) { UI.notify.err('Сначала отсканируйте ячейку'); document.getElementById('inb-location').focus(); return; }
-      await refreshInbMarkingItemMeta();
-      if (inbNeedsDataMatrix() && inbDmCodes.length !== inbQty) {
-        UI.notify.err(`Товар промаркирован клиентом (Честный знак) — отсканируйте код с каждой единицы (нужно ${inbQty}, отсканировано ${inbDmCodes.length})`);
-        { const _e5 = document.getElementById('inb-dm-card'); if (_e5) _e5.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-        { const _e6 = document.getElementById('inb-dm-input'); if (_e6) _e6.focus(); }
-        return;
-      }
-      try {
-        // client_id берём из самой заявки (currentOrder.client_id), а не из верхнего селектора —
-        // заявка однозначно привязана к клиенту, так надёжнее чем полагаться что оператор
-        // не забудет переключить клиента наверху перед сканированием.
-        // currentOrder.barcode — это и есть штрихкод ЗАЯВКИ (по нему её искали) - раньше тут
-        // был запасной currentOrder.order_code, которого не существует в ответе API (реальное
-        // поле order_number), из-за чего запасной вариант никогда бы не сработал.
-        await window.API.receiving.acceptByInbound({
-          inbound_order_barcode: UI.val('#inb-order-barcode') || currentOrder.barcode,
-          barcode, location_code: location, qty: inbQty,
-          client_id: currentOrder.client_id,
-          data_matrix_codes: inbNeedsDataMatrix() ? inbDmCodes : undefined,
-        });
-        UI.notify.ok(`Принято: ${barcode} × ${inbQty}`);
-        // Ячейку НЕ сбрасываем - как и в свободной приёмке, следующий товар по
-        // умолчанию идёт в ту же ячейку, пока не нажали "Сменить ячейку".
-        UI.setVal('#inb-barcode','');
-        inbQty = 1; document.getElementById('inb-qty-val').value = 1;
-        inbMarkingItem = null; inbDmCodes = []; renderInbDmCard();
-        // Обновляем карточку заявки (План/Принято по строкам, статус, видимость
-        // кнопки "Закрыть как есть") - без этого оператор не видел прогресс приёмки
-        // до перезагрузки страницы.
-        await loadOrderByBarcode(currentOrder.barcode);
-        document.getElementById('inb-barcode').focus();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-    UI.onScan('#inb-barcode', async (v) => {
-      const code = stripWs(v);
-      UI.setVal('#inb-barcode', code);
-      const location = UI.val('#inb-location');
-      await lookupInbMarkingItem();
-      if (!location) {
-        // Та же подсказка, что и в свободной приёмке (см. suggestFreeLocation) —
-        // client_id тут берём из заявки, а не из верхнего селектора.
-        if (inbMarkingItem && inbMarkingItem.id && currentOrder && currentOrder.client_id) {
-          try {
-            const res = await window.API.placement.suggest({ item_id: inbMarkingItem.id, client_id: currentOrder.client_id, qty: inbQty });
-            if (res.suggestion) UI.setVal('#inb-location', res.suggestion.location_code);
-          } catch (e) { /* подсказка необязательна */ }
-        }
-        if (!UI.val('#inb-location')) {
+// ---------- Ячейка приёмки (по заявке): та же логика, что и в свободной
+// приёмке — сканируется один раз, дальше не сбрасывается ----------
+function lockInbLocation() {
+  var input = document.getElementById('inb-location');
+  input.readOnly = true;
+  document.getElementById('inb-change-location-btn').style.display = 'inline-block';
+}
+function changeInbLocation() {
+  var input = document.getElementById('inb-location');
+  input.readOnly = false;
+  UI.setVal('#inb-location', '');
+  document.getElementById('inb-change-location-btn').style.display = 'none';
+  input.focus();
+}
+UI.onScan('#inb-dm-input', function (v) {
+  var code = String(v || '').trim();
+  if (!code) return;
+  if (!UI.isValidKizCode(code)) {
+    UI.beep('err');
+    UI.notify.err('Похоже, это обычный штрихкод товара, а не код "Честный знак" — отсканируйте код DataMatrix с этикетки маркировки');
+    return;
+  }
+  if (!UI.hasValidKizStructure(code)) {
+    UI.beep('err');
+    UI.notify.err('Код повреждён (потерян служебный разделитель) — пересканируйте физическим сканером, не камерой телефона');
+    window.API.marking.logRejectedCode({
+      item_id: inbMarkingItem && inbMarkingItem.id || null,
+      code: code,
+      reason: 'broken_structure',
+      source: 'receiving_inbound'
+    }).catch(function () {});
+    return;
+  }
+  if (inbDmCodes.length >= inbQty) {
+    UI.notify.err("\u0423\u0436\u0435 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u043E ".concat(inbQty, " \u043A\u043E\u0434(\u043E\u0432) \u2014 \u044D\u0442\u043E\u0433\u043E \u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E"));
+    return;
+  }
+  if (inbDmCodes.includes(code)) {
+    UI.notify.err('Этот код уже отсканирован в текущей приёмке');
+    return;
+  }
+  inbDmCodes.push(code);
+  renderInbDmCard();
+  if (inbDmCodes.length === inbQty) submitInbound();
+});
+function submitInbound() {
+  return _submitInbound.apply(this, arguments);
+}
+function _submitInbound() {
+  _submitInbound = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee19() {
+    var barcode, location, _e5, _e6, _t14;
+    return _regenerator().w(function (_context19) {
+      while (1) switch (_context19.p = _context19.n) {
+        case 0:
+          if (currentOrder) {
+            _context19.n = 1;
+            break;
+          }
+          UI.notify.err('Сначала отсканируйте заявку');
+          return _context19.a(2);
+        case 1:
+          barcode = UI.val('#inb-barcode');
+          location = UI.val('#inb-location');
+          if (barcode) {
+            _context19.n = 2;
+            break;
+          }
+          UI.notify.err('Отсканируйте товар');
+          return _context19.a(2);
+        case 2:
+          if (location) {
+            _context19.n = 3;
+            break;
+          }
           UI.notify.err('Сначала отсканируйте ячейку');
           document.getElementById('inb-location').focus();
-          return;
-        }
-        document.getElementById('inb-location').focus();
-        return;
+          return _context19.a(2);
+        case 3:
+          _context19.n = 4;
+          return refreshInbMarkingItemMeta();
+        case 4:
+          if (!(inbNeedsDataMatrix() && inbDmCodes.length !== inbQty)) {
+            _context19.n = 5;
+            break;
+          }
+          UI.notify.err("\u0422\u043E\u0432\u0430\u0440 \u043F\u0440\u043E\u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u0430\u043D \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u043C (\u0427\u0435\u0441\u0442\u043D\u044B\u0439 \u0437\u043D\u0430\u043A) \u2014 \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u0443\u0439\u0442\u0435 \u043A\u043E\u0434 \u0441 \u043A\u0430\u0436\u0434\u043E\u0439 \u0435\u0434\u0438\u043D\u0438\u0446\u044B (\u043D\u0443\u0436\u043D\u043E ".concat(inbQty, ", \u043E\u0442\u0441\u043A\u0430\u043D\u0438\u0440\u043E\u0432\u0430\u043D\u043E ").concat(inbDmCodes.length, ")"));
+          _e5 = document.getElementById('inb-dm-card');
+          if (_e5) _e5.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          });
+          _e6 = document.getElementById('inb-dm-input');
+          if (_e6) _e6.focus();
+          return _context19.a(2);
+        case 5:
+          _context19.p = 5;
+          _context19.n = 6;
+          return window.API.receiving.acceptByInbound({
+            inbound_order_barcode: UI.val('#inb-order-barcode') || currentOrder.barcode,
+            barcode: barcode,
+            location_code: location,
+            qty: inbQty,
+            client_id: currentOrder.client_id,
+            data_matrix_codes: inbNeedsDataMatrix() ? inbDmCodes : undefined
+          });
+        case 6:
+          UI.notify.ok("\u041F\u0440\u0438\u043D\u044F\u0442\u043E: ".concat(barcode, " \xD7 ").concat(inbQty));
+          // Ячейку НЕ сбрасываем - как и в свободной приёмке, следующий товар по
+          // умолчанию идёт в ту же ячейку, пока не нажали "Сменить ячейку".
+          UI.setVal('#inb-barcode', '');
+          inbQty = 1;
+          document.getElementById('inb-qty-val').value = 1;
+          inbMarkingItem = null;
+          inbDmCodes = [];
+          renderInbDmCard();
+          // Обновляем карточку заявки (План/Принято по строкам, статус, видимость
+          // кнопки "Закрыть как есть") - без этого оператор не видел прогресс приёмки
+          // до перезагрузки страницы.
+          _context19.n = 7;
+          return loadOrderByBarcode(currentOrder.barcode);
+        case 7:
+          document.getElementById('inb-barcode').focus();
+          _context19.n = 9;
+          break;
+        case 8:
+          _context19.p = 8;
+          _t14 = _context19.v;
+          UI.notify.err(_t14.message);
+        case 9:
+          return _context19.a(2);
       }
-      if (inbNeedsDataMatrix()) {
-        { const _e7 = document.getElementById('inb-dm-input'); if (_e7) _e7.focus(); }
-      } else {
-        submitInbound();
+    }, _callee19, null, [[5, 8]]);
+  }));
+  return _submitInbound.apply(this, arguments);
+}
+UI.onScan('#inb-barcode', /*#__PURE__*/function () {
+  var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(v) {
+    var code, location, res, _e7, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          code = stripWs(v);
+          UI.setVal('#inb-barcode', code);
+          location = UI.val('#inb-location');
+          _context2.n = 1;
+          return lookupInbMarkingItem();
+        case 1:
+          if (location) {
+            _context2.n = 7;
+            break;
+          }
+          if (!(inbMarkingItem && inbMarkingItem.id && currentOrder && currentOrder.client_id)) {
+            _context2.n = 5;
+            break;
+          }
+          _context2.p = 2;
+          _context2.n = 3;
+          return window.API.placement.suggest({
+            item_id: inbMarkingItem.id,
+            client_id: currentOrder.client_id,
+            qty: inbQty
+          });
+        case 3:
+          res = _context2.v;
+          if (res.suggestion) UI.setVal('#inb-location', res.suggestion.location_code);
+          _context2.n = 5;
+          break;
+        case 4:
+          _context2.p = 4;
+          _t = _context2.v;
+        case 5:
+          if (UI.val('#inb-location')) {
+            _context2.n = 6;
+            break;
+          }
+          UI.notify.err('Сначала отсканируйте ячейку');
+          document.getElementById('inb-location').focus();
+          return _context2.a(2);
+        case 6:
+          document.getElementById('inb-location').focus();
+          return _context2.a(2);
+        case 7:
+          if (inbNeedsDataMatrix()) {
+            {
+              _e7 = document.getElementById('inb-dm-input');
+              if (_e7) _e7.focus();
+            }
+          } else {
+            submitInbound();
+          }
+        case 8:
+          return _context2.a(2);
       }
-    });
-    UI.onScan('#inb-location', (v) => {
-      UI.setVal('#inb-location', stripWs(v));
-      lockInbLocation();
-      // См. аналогичный комментарий в свободной приёмке — если товар уже был
-      // отсканирован до ячейки (подсказка ждала подтверждения), продолжаем
-      // сразу, не заставляя сканировать товар второй раз.
-      if (UI.val('#inb-barcode')) {
-        if (inbNeedsDataMatrix()) { const _e8 = document.getElementById('inb-dm-input'); if (_e8) _e8.focus(); }
-        else submitInbound();
-      } else {
-        document.getElementById('inb-barcode').focus();
-      }
-    });
+    }, _callee2, null, [[2, 4]]);
+  }));
+  return function (_x0) {
+    return _ref2.apply(this, arguments);
+  };
+}());
+UI.onScan('#inb-location', function (v) {
+  UI.setVal('#inb-location', stripWs(v));
+  lockInbLocation();
+  // См. аналогичный комментарий в свободной приёмке — если товар уже был
+  // отсканирован до ячейки (подсказка ждала подтверждения), продолжаем
+  // сразу, не заставляя сканировать товар второй раз.
+  if (UI.val('#inb-barcode')) {
+    if (inbNeedsDataMatrix()) {
+      var _e8 = document.getElementById('inb-dm-input');
+      if (_e8) _e8.focus();
+    } else submitInbound();
+  } else {
+    document.getElementById('inb-barcode').focus();
+  }
+});
 
-    // ---------- История ----------
-    async function loadHistory() {
-      try {
-        const res = await window.API.receiving.history({ limit: 100 });
-        UI.renderTable('#history-body', res.rows, (r) => `
-          <tr>
-            <td>${UI.fmtDateTime(r.completed_at || r.created_at)}</td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
-            <td>${UI.fmtQty(r.qty_received)}</td>
-            <td>${UI.escHtml(r.location_code || '—')}</td>
-            <td>${UI.escHtml(r.receiver_name || '—')}</td>
-          </tr>
-        `);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // Стартуем с фокуса на ячейке — новый порядок сканирования: ячейка один раз,
-    // потом товар подряд (см. lockFreeLocation/changeFreeLocation).
-    document.getElementById('free-location').focus();
-  </script>
+// ---------- История ----------
+function loadHistory() {
+  return _loadHistory.apply(this, arguments);
+} // Стартуем с фокуса на ячейке — новый порядок сканирования: ячейка один раз,
+// потом товар подряд (см. lockFreeLocation/changeFreeLocation).
+function _loadHistory() {
+  _loadHistory = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee20() {
+    var res, _t15;
+    return _regenerator().w(function (_context20) {
+      while (1) switch (_context20.p = _context20.n) {
+        case 0:
+          _context20.p = 0;
+          _context20.n = 1;
+          return window.API.receiving.history({
+            limit: 100
+          });
+        case 1:
+          res = _context20.v;
+          UI.renderTable('#history-body', res.rows, function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.completed_at || r.created_at), "</td>\n            <td>").concat(UI.escHtml(r.item_name || r.barcode), "</td>\n            <td>").concat(UI.fmtQty(r.qty_received), "</td>\n            <td>").concat(UI.escHtml(r.location_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.receiver_name || '—'), "</td>\n          </tr>\n        ");
+          });
+          _context20.n = 3;
+          break;
+        case 2:
+          _context20.p = 2;
+          _t15 = _context20.v;
+          UI.notify.err(_t15.message);
+        case 3:
+          return _context20.a(2);
+      }
+    }, _callee20, null, [[0, 2]]);
+  }));
+  return _loadHistory.apply(this, arguments);
+}
+document.getElementById('free-location').focus();</script>
 </body>
 </html>

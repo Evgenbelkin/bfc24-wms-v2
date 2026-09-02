@@ -77,184 +77,358 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('content').style.display = 'none';
-    }
-
-    function switchTab(name) {
-      ['rates','report'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name==='rates') loadRates();
-      if (name==='report' && document.getElementById('rep-client').options.length <= 1) loadClientsForReport();
-    }
-
-    const ROLES = [
-      ['receiver','Приёмщик'], ['picker','Сборщик'], ['packer','Упаковщик'],
-      ['shipper','Отгрузчик'], ['inventory_manager','Инвентаризация'],
-    ];
-    const MOVEMENT_TYPES = [
-      ['receiving','Приёмка'], ['placement','Размещение'], ['picking','Сборка'],
-      ['packing','Упаковка'], ['shipping','Отгрузка'],
-    ];
-    function roleLabel(r) { const f = ROLES.find(x=>x[0]===r); return f ? f[1] : r; }
-    function mtLabel(m) { const f = MOVEMENT_TYPES.find(x=>x[0]===m); return f ? f[1] : m; }
-
-    let rateCache = [], employeeCache = [];
-
-    async function loadRates() {
-      try {
-        const res = await window.API.payroll.rates.list();
-        rateCache = res.rows || [];
-        document.getElementById('rate-count').textContent = rateCache.length;
-        const list = document.getElementById('rate-list');
-        if (!rateCache.length) { list.innerHTML = `<div class="empty-state">Ставки не настроены</div>`; return; }
-        list.innerHTML = rateCache.map((r, idx) => `
-          <div class="list-row r-row" onclick="openRateModal(${idx})">
-            <div class="main">
-              <div class="title">${r.employee_id ? UI.escHtml(r.employee_name||('сотрудник #'+r.employee_id)) : roleLabel(r.role)}</div>
-              <div class="sub">${mtLabel(r.movement_type)}</div>
-            </div>
-            <div class="badge"><span>Ставка</span><div>${Number(r.rate).toFixed(2)} ₽</div></div>
-          </div>
-        `).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t.return && (u = t.return(), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
+function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
-
-    async function loadEmployees() {
-      if (employeeCache.length) return employeeCache;
-      try {
-        const res = await window.API.users.list({});
-        employeeCache = (res.users || []).filter(u => ['receiver','picker','packer','shipper','inventory_manager'].includes(u.role));
-      } catch (e) { employeeCache = []; }
-      return employeeCache;
-    }
-
-    async function openRateModal(idx) {
-      const r = idx !== null ? rateCache[idx] : null;
-      await loadEmployees();
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${r ? 'Изменить ставку' : 'Новая ставка'}</div>
-            ${!r ? `
-            <div class="field"><label>Тип</label>
-              <select id="m-target-type" onchange="onTargetTypeChange()">
-                <option value="role">На роль</option>
-                <option value="employee">На конкретного сотрудника (override)</option>
-              </select>
-            </div>
-            <div class="field" id="m-role-wrap"><label>Роль</label>
-              <select id="m-role">${ROLES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-            </div>
-            <div class="field" id="m-emp-wrap" style="display:none"><label>Сотрудник</label>
-              <select id="m-employee">${employeeCache.map(u=>`<option value="${u.id}">${UI.escHtml(u.full_name||u.username)} (${roleLabel(u.role)})</option>`).join('')}</select>
-            </div>
-            <div class="field"><label>Тип операции</label>
-              <select id="m-movement">${MOVEMENT_TYPES.map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select>
-            </div>
-            ` : `
-            <div class="field"><label>${r.employee_id ? 'Сотрудник' : 'Роль'}</label><input value="${r.employee_id ? UI.escHtml(r.employee_name||''): roleLabel(r.role)}" disabled/></div>
-            <div class="field"><label>Тип операции</label><input value="${mtLabel(r.movement_type)}" disabled/></div>
-            `}
-            <div class="field"><label>Ставка за единицу, ₽</label><input id="m-rate" type="number" step="0.01" value="${r?r.rate:''}"/></div>
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveRate(${idx})">Сохранить</button>
-              ${r ? `<button class="btn-big btn-red" onclick="deleteRate(${r.id})">Удалить</button>` : ''}
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function onTargetTypeChange() {
-      const isEmployee = UI.val('#m-target-type') === 'employee';
-      document.getElementById('m-role-wrap').style.display = isEmployee ? 'none' : 'block';
-      document.getElementById('m-emp-wrap').style.display = isEmployee ? 'block' : 'none';
-    }
-
-    async function saveRate(idx) {
-      const r = idx !== null ? rateCache[idx] : null;
-      try {
-        const payload = { rate: Number(UI.val('#m-rate')) || 0 };
-        if (r) {
-          payload.movement_type = r.movement_type;
-          if (r.employee_id) payload.employee_id = r.employee_id; else payload.role = r.role;
-        } else {
-          payload.movement_type = UI.val('#m-movement');
-          if (UI.val('#m-target-type') === 'employee') payload.employee_id = Number(UI.val('#m-employee'));
-          else payload.role = UI.val('#m-role');
-        }
-        await window.API.payroll.rates.upsert(payload);
-        UI.notify.ok('Сохранено');
-        closeModal();
-        await loadRates();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function deleteRate(id) {
-      try {
-        await window.API.payroll.rates.delete(id);
-        UI.notify.ok('Удалено');
-        closeModal();
-        await loadRates();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadClientsForReport() {
-      try {
-        const res = await window.API.clients.short();
-        const sel = document.getElementById('rep-client');
-        sel.innerHTML = '<option value="">Все клиенты</option>' +
-          (res.clients || []).map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-      } catch (e) { /* фильтр необязателен, не критично */ }
-    }
-
-    async function loadReport() {
-      const from = UI.val('#rep-from'), to = UI.val('#rep-to');
-      const clientId = UI.val('#rep-client') || null;
-      if (!from || !to) { UI.notify.err('Укажите период'); return; }
-      try {
-        const res = await window.API.payroll.report(from, to, clientId);
-        const list = document.getElementById('report-list');
-        if (!res.employees.length) { list.innerHTML = `<div class="empty-state">Нет данных за период</div>`; document.getElementById('report-total').textContent=''; return; }
-        list.innerHTML = res.employees.map((e, idx) => `
-          <div class="emp-card" id="emp-card-${idx}">
-            <div class="emp-head" onclick="toggleEmpCard(${idx})"><span><span class="arrow">▶</span>${UI.escHtml(e.fullName||'')} (${roleLabel(e.role)})</span><span>${e.total.toFixed(2)} ₽</span></div>
-            <div class="emp-detail">
-              ${e.breakdown.map(b => `<div class="emp-line"><span>${mtLabel(b.movementType)} · ${b.units} ед. × ${b.rate.toFixed(2)}₽</span><span>${b.amount.toFixed(2)} ₽</span></div>`).join('')}
-            </div>
-          </div>
-        `).join('');
-        document.getElementById('report-total').textContent = `Итого: ${res.grand_total.toFixed(2)} ₽`;
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('content').style.display = 'none';
+}
+function switchTab(name) {
+  ['rates', 'report'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'rates') loadRates();
+  if (name === 'report' && document.getElementById('rep-client').options.length <= 1) loadClientsForReport();
+}
+var ROLES = [['receiver', 'Приёмщик'], ['picker', 'Сборщик'], ['packer', 'Упаковщик'], ['shipper', 'Отгрузчик'], ['inventory_manager', 'Инвентаризация']];
+var MOVEMENT_TYPES = [['receiving', 'Приёмка'], ['placement', 'Размещение'], ['picking', 'Сборка'], ['packing', 'Упаковка'], ['shipping', 'Отгрузка']];
+function roleLabel(r) {
+  var f = ROLES.find(function (x) {
+    return x[0] === r;
+  });
+  return f ? f[1] : r;
+}
+function mtLabel(m) {
+  var f = MOVEMENT_TYPES.find(function (x) {
+    return x[0] === m;
+  });
+  return f ? f[1] : m;
+}
+var rateCache = [],
+  employeeCache = [];
+function loadRates() {
+  return _loadRates.apply(this, arguments);
+}
+function _loadRates() {
+  _loadRates = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var res, list, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          _context2.p = 0;
+          _context2.n = 1;
+          return window.API.payroll.rates.list();
+        case 1:
+          res = _context2.v;
+          rateCache = res.rows || [];
+          document.getElementById('rate-count').textContent = rateCache.length;
+          list = document.getElementById('rate-list');
+          if (rateCache.length) {
+            _context2.n = 2;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\">\u0421\u0442\u0430\u0432\u043A\u0438 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D\u044B</div>";
+          return _context2.a(2);
+        case 2:
+          list.innerHTML = rateCache.map(function (r, idx) {
+            return "\n          <div class=\"list-row r-row\" onclick=\"openRateModal(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(r.employee_id ? UI.escHtml(r.employee_name || 'сотрудник #' + r.employee_id) : roleLabel(r.role), "</div>\n              <div class=\"sub\">").concat(mtLabel(r.movement_type), "</div>\n            </div>\n            <div class=\"badge\"><span>\u0421\u0442\u0430\u0432\u043A\u0430</span><div>").concat(Number(r.rate).toFixed(2), " \u20BD</div></div>\n          </div>\n        ");
+          }).join('');
+          _context2.n = 5;
+          break;
+        case 3:
+          _context2.p = 3;
+          _t = _context2.v;
+          if (!isModuleDisabled(_t)) {
+            _context2.n = 4;
+            break;
+          }
+          showModuleDisabled();
+          return _context2.a(2);
+        case 4:
+          UI.notify.err(_t.message);
+        case 5:
+          return _context2.a(2);
       }
-    }
-
-    function toggleEmpCard(idx) {
-      document.getElementById(`emp-card-${idx}`).classList.toggle('open');
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    loadRates();
-  </script>
+    }, _callee2, null, [[0, 3]]);
+  }));
+  return _loadRates.apply(this, arguments);
+}
+function loadEmployees() {
+  return _loadEmployees.apply(this, arguments);
+}
+function _loadEmployees() {
+  _loadEmployees = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          if (!employeeCache.length) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2, employeeCache);
+        case 1:
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.users.list({});
+        case 2:
+          res = _context3.v;
+          employeeCache = (res.users || []).filter(function (u) {
+            return ['receiver', 'picker', 'packer', 'shipper', 'inventory_manager'].includes(u.role);
+          });
+          _context3.n = 4;
+          break;
+        case 3:
+          _context3.p = 3;
+          _t2 = _context3.v;
+          employeeCache = [];
+        case 4:
+          return _context3.a(2, employeeCache);
+      }
+    }, _callee3, null, [[1, 3]]);
+  }));
+  return _loadEmployees.apply(this, arguments);
+}
+function openRateModal(_x) {
+  return _openRateModal.apply(this, arguments);
+}
+function _openRateModal() {
+  _openRateModal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(idx) {
+    var r;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.n) {
+        case 0:
+          r = idx !== null ? rateCache[idx] : null;
+          _context4.n = 1;
+          return loadEmployees();
+        case 1:
+          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(r ? 'Изменить ставку' : 'Новая ставка', "</div>\n            ").concat(!r ? "\n            <div class=\"field\"><label>\u0422\u0438\u043F</label>\n              <select id=\"m-target-type\" onchange=\"onTargetTypeChange()\">\n                <option value=\"role\">\u041D\u0430 \u0440\u043E\u043B\u044C</option>\n                <option value=\"employee\">\u041D\u0430 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0433\u043E \u0441\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A\u0430 (override)</option>\n              </select>\n            </div>\n            <div class=\"field\" id=\"m-role-wrap\"><label>\u0420\u043E\u043B\u044C</label>\n              <select id=\"m-role\">".concat(ROLES.map(function (_ref) {
+            var _ref2 = _slicedToArray(_ref, 2),
+              v = _ref2[0],
+              l = _ref2[1];
+            return "<option value=\"".concat(v, "\">").concat(l, "</option>");
+          }).join(''), "</select>\n            </div>\n            <div class=\"field\" id=\"m-emp-wrap\" style=\"display:none\"><label>\u0421\u043E\u0442\u0440\u0443\u0434\u043D\u0438\u043A</label>\n              <select id=\"m-employee\">").concat(employeeCache.map(function (u) {
+            return "<option value=\"".concat(u.id, "\">").concat(UI.escHtml(u.full_name || u.username), " (").concat(roleLabel(u.role), ")</option>");
+          }).join(''), "</select>\n            </div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u0438</label>\n              <select id=\"m-movement\">").concat(MOVEMENT_TYPES.map(function (_ref3) {
+            var _ref4 = _slicedToArray(_ref3, 2),
+              v = _ref4[0],
+              l = _ref4[1];
+            return "<option value=\"".concat(v, "\">").concat(l, "</option>");
+          }).join(''), "</select>\n            </div>\n            ") : "\n            <div class=\"field\"><label>".concat(r.employee_id ? 'Сотрудник' : 'Роль', "</label><input value=\"").concat(r.employee_id ? UI.escHtml(r.employee_name || '') : roleLabel(r.role), "\" disabled/></div>\n            <div class=\"field\"><label>\u0422\u0438\u043F \u043E\u043F\u0435\u0440\u0430\u0446\u0438\u0438</label><input value=\"").concat(mtLabel(r.movement_type), "\" disabled/></div>\n            "), "\n            <div class=\"field\"><label>\u0421\u0442\u0430\u0432\u043A\u0430 \u0437\u0430 \u0435\u0434\u0438\u043D\u0438\u0446\u0443, \u20BD</label><input id=\"m-rate\" type=\"number\" step=\"0.01\" value=\"").concat(r ? r.rate : '', "\"/></div>\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"saveRate(").concat(idx, ")\">\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              ").concat(r ? "<button class=\"btn-big btn-red\" onclick=\"deleteRate(".concat(r.id, ")\">\u0423\u0434\u0430\u043B\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+        case 2:
+          return _context4.a(2);
+      }
+    }, _callee4);
+  }));
+  return _openRateModal.apply(this, arguments);
+}
+function onTargetTypeChange() {
+  var isEmployee = UI.val('#m-target-type') === 'employee';
+  document.getElementById('m-role-wrap').style.display = isEmployee ? 'none' : 'block';
+  document.getElementById('m-emp-wrap').style.display = isEmployee ? 'block' : 'none';
+}
+function saveRate(_x2) {
+  return _saveRate.apply(this, arguments);
+}
+function _saveRate() {
+  _saveRate = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(idx) {
+    var r, payload, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          r = idx !== null ? rateCache[idx] : null;
+          _context5.p = 1;
+          payload = {
+            rate: Number(UI.val('#m-rate')) || 0
+          };
+          if (r) {
+            payload.movement_type = r.movement_type;
+            if (r.employee_id) payload.employee_id = r.employee_id;else payload.role = r.role;
+          } else {
+            payload.movement_type = UI.val('#m-movement');
+            if (UI.val('#m-target-type') === 'employee') payload.employee_id = Number(UI.val('#m-employee'));else payload.role = UI.val('#m-role');
+          }
+          _context5.n = 2;
+          return window.API.payroll.rates.upsert(payload);
+        case 2:
+          UI.notify.ok('Сохранено');
+          closeModal();
+          _context5.n = 3;
+          return loadRates();
+        case 3:
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 5:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[1, 4]]);
+  }));
+  return _saveRate.apply(this, arguments);
+}
+function deleteRate(_x3) {
+  return _deleteRate.apply(this, arguments);
+}
+function _deleteRate() {
+  _deleteRate = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(id) {
+    var _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.payroll.rates.delete(id);
+        case 1:
+          UI.notify.ok('Удалено');
+          closeModal();
+          _context6.n = 2;
+          return loadRates();
+        case 2:
+          _context6.n = 4;
+          break;
+        case 3:
+          _context6.p = 3;
+          _t4 = _context6.v;
+          UI.notify.err(_t4.message);
+        case 4:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 3]]);
+  }));
+  return _deleteRate.apply(this, arguments);
+}
+function loadClientsForReport() {
+  return _loadClientsForReport.apply(this, arguments);
+}
+function _loadClientsForReport() {
+  _loadClientsForReport = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var res, sel, _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          _context7.p = 0;
+          _context7.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context7.v;
+          sel = document.getElementById('rep-client');
+          sel.innerHTML = '<option value="">Все клиенты</option>' + (res.clients || []).map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          _context7.n = 3;
+          break;
+        case 2:
+          _context7.p = 2;
+          _t5 = _context7.v;
+        case 3:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[0, 2]]);
+  }));
+  return _loadClientsForReport.apply(this, arguments);
+}
+function loadReport() {
+  return _loadReport.apply(this, arguments);
+}
+function _loadReport() {
+  _loadReport = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var from, to, clientId, res, list, _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          from = UI.val('#rep-from'), to = UI.val('#rep-to');
+          clientId = UI.val('#rep-client') || null;
+          if (!(!from || !to)) {
+            _context8.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите период');
+          return _context8.a(2);
+        case 1:
+          _context8.p = 1;
+          _context8.n = 2;
+          return window.API.payroll.report(from, to, clientId);
+        case 2:
+          res = _context8.v;
+          list = document.getElementById('report-list');
+          if (res.employees.length) {
+            _context8.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\">\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0437\u0430 \u043F\u0435\u0440\u0438\u043E\u0434</div>";
+          document.getElementById('report-total').textContent = '';
+          return _context8.a(2);
+        case 3:
+          list.innerHTML = res.employees.map(function (e, idx) {
+            return "\n          <div class=\"emp-card\" id=\"emp-card-".concat(idx, "\">\n            <div class=\"emp-head\" onclick=\"toggleEmpCard(").concat(idx, ")\"><span><span class=\"arrow\">\u25B6</span>").concat(UI.escHtml(e.fullName || ''), " (").concat(roleLabel(e.role), ")</span><span>").concat(e.total.toFixed(2), " \u20BD</span></div>\n            <div class=\"emp-detail\">\n              ").concat(e.breakdown.map(function (b) {
+              return "<div class=\"emp-line\"><span>".concat(mtLabel(b.movementType), " \xB7 ").concat(b.units, " \u0435\u0434. \xD7 ").concat(b.rate.toFixed(2), "\u20BD</span><span>").concat(b.amount.toFixed(2), " \u20BD</span></div>");
+            }).join(''), "\n            </div>\n          </div>\n        ");
+          }).join('');
+          document.getElementById('report-total').textContent = "\u0418\u0442\u043E\u0433\u043E: ".concat(res.grand_total.toFixed(2), " \u20BD");
+          _context8.n = 6;
+          break;
+        case 4:
+          _context8.p = 4;
+          _t6 = _context8.v;
+          if (!isModuleDisabled(_t6)) {
+            _context8.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context8.a(2);
+        case 5:
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[1, 4]]);
+  }));
+  return _loadReport.apply(this, arguments);
+}
+function toggleEmpCard(idx) {
+  document.getElementById("emp-card-".concat(idx)).classList.toggle('open');
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+loadRates();</script>
 </body>
 </html>

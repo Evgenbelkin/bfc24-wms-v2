@@ -152,416 +152,747 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function isModuleDisabled(e) { return e && e.code === 'MODULE_DISABLED'; }
-    function showModuleDisabled() {
-      document.getElementById('module-disabled').style.display = 'block';
-      document.getElementById('wb-content').style.display = 'none';
-    }
-
-    function switchTab(name) {
-      ['accounts','catalog','orders','reconcile'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'orders' && !ordersLoaded) loadOrders();
-    }
-
-    const STATUS_LABELS = { new:'Новый', confirm:'В поставке', complete:'Завершён', cancel:'Отменён', external:'Забрано в ЛК WB' };
-    const STATUS_PILL_CLASS = { new:'pill-blue', confirm:'pill-yellow', complete:'pill-green', cancel:'pill-red', external:'pill-gray' };
-
-    let clientsList = [];
-    let accountsList = [];
-
-    async function loadClients() {
-      try {
-        const res = await window.API.clients.short();
-        clientsList = res.clients || [];
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadAccounts() {
-      try {
-        const res = await window.API.wb.accounts.list();
-        accountsList = res.accounts || [];
-        document.getElementById('acc-count').textContent = accountsList.length;
-
-        const list = document.getElementById('acc-list');
-        if (!accountsList.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></div>Аккаунтов пока нет</div>`;
-        } else {
-          list.innerHTML = accountsList.map((a, idx) => `
-            <div class="list-row acc-row" onclick="openAccModal(${idx})">
-              <div class="main">
-                <div class="title">${UI.escHtml(a.account_name)}</div>
-                <div class="sub">${UI.escHtml(a.client_name)} ${a.supplier_id ? '· supplier '+UI.escHtml(a.supplier_id) : ''} ${a.has_token ? '' : '· <span style=\"color:var(--red)\">нет токена</span>'} ${a.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>'}</div>
-              </div>
-              <div class="badge"><span>WB</span><div>${a.has_token ? '<svg class="i" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="M11.5 11.5 20 3"/><path d="M16 7l3 3"/><path d="M19 4l3 3"/></svg>' : '—'}</div></div>
-            </div>
-          `).join('');
-        }
-
-        UI.populateSelect('#cat-account', accountsList, { valueKey:'id', labelKey:'account_name', emptyLabel:'— Выберите аккаунт —' });
-        UI.populateSelect('#ord-account', accountsList, { valueKey:'id', labelKey:'account_name', emptyLabel:'— Выберите аккаунт —' });
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-    }
-
-    function openAccModal(idx) {
-      const a = idx !== null ? accountsList[idx] : null;
-      const clientOptions = clientsList.map(c => `<option value="${c.id}" ${a && a.client_id===c.id ? 'selected':''}>${UI.escHtml(c.client_name)}</option>`).join('');
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
-          <div class="modal-card">
-            <div class="card-title">${a ? UI.escHtml(a.account_name) : 'Новый аккаунт WB'}</div>
-            ${!a ? `<div class="field"><label>Клиент</label><select id="m-client">${clientOptions}</select></div>` : ''}
-            <div class="field"><label>Название аккаунта</label><input id="m-name" value="${a ? UI.escHtml(a.account_name) : ''}" placeholder="Напр. Основной ЛК"/></div>
-            <div class="field"><label>Код (опционально)</label><input id="m-code" value="${a && a.account_code ? UI.escHtml(a.account_code):''}"/></div>
-            <div class="field"><label>Supplier ID (опционально)</label><input id="m-supplier" value="${a && a.supplier_id ? UI.escHtml(a.supplier_id):''}"/></div>
-            <div class="field">
-              <label>API-токен (чтение и запись) ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
-              <input id="m-token" type="password" placeholder="${a && a.has_token ? 'Токен уже сохранён' : 'Вставьте токен из ЛК WB'}"/>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
-                Токен создаётся в ЛК WB: Профиль → Настройки → Доступ к API → «Создать новый токен».
-                Категории — отметьте <b>«Контент»</b> и <b>«Маркетплейс»</b>. Галочку «Только чтение» <b>не ставить</b> —
-                нужен полный доступ (чтение и запись), иначе не сработает синхронизация заказов, печать стикеров и распределение остатков по складам.
-              </div>
-            </div>
-            <div class="field">
-              <label>API-токен для статистики (только чтение, опционально) ${a ? '(оставьте пустым, чтобы не менять)' : ''}</label>
-              <input id="m-token-stats" type="password" placeholder="${a && a.has_token_stats ? 'Токен уже сохранён' : 'Не обязательно — заполните, если нужно «Время доставки»'}"/>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
-                WB не даёт смешивать в одном токене права на запись (Контент/Маркетплейс) и категорию
-                «Статистика» без того, чтобы весь токен стал read-only. Поэтому если нужен отчёт
-                «Время доставки», попросите клиента создать <b>второй</b> токен отдельно, отметив только
-                категорию <b>«Статистика»</b>, и поставить галочку <b>«Только чтение»</b>. Если это поле
-                пустое — используется основной токен выше (сработает, только если в нём тоже отмечена
-                категория «Статистика»).
-              </div>
-            </div>
-            ${a ? `<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ${a.is_active ? 'checked':''}/></div>` : ''}
-            ${a ? `
-            <div class="field">
-              <label style="display:inline;">Отправлять остатки в WB</label>
-              <input type="checkbox" id="m-stock-sync" ${a.stock_sync_disabled ? '' : 'checked'}/>
-              <div style="font-size:12px;color:var(--muted);margin-top:4px;">
-                Если выключить — WMS перестанет автоматически раскидывать остатки по складам WB для
-                этого аккаунта (ни по расписанию, ни при приёмке/инвентаризации). Удобно на время тестов,
-                когда клиент сам управляет остатками в кабинете WB.
-              </div>
-            </div>
-            ` : ''}
-            ${a ? `
-            <div class="field">
-              <label>Склады WB — какие обрабатывать в волнах сборки</label>
-              <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">
-                Если у клиента несколько складов WB в разных городах (каждый — свой фулфилмент),
-                отметьте только те, что физически собираете вы. Остальные не попадут в «Сформировать волну».
-              </div>
-              <div id="m-warehouses">Загрузка…</div>
-            </div>
-            ` : ''}
-            <div class="btn-row">
-              <button class="btn-big btn-green" onclick="saveAccount(${idx})"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
-      if (a) loadAccountWarehouses(a.id);
-    }
-
-    async function loadAccountWarehouses(accountId) {
-      const box = document.getElementById('m-warehouses');
-      if (!box) return;
-      try {
-        const res = await window.API.wb.warehouses.list(accountId);
-        const whs = (res.warehouses || []).filter(w => w.is_active);
-        if (!whs.length) {
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+function isModuleDisabled(e) {
+  return e && e.code === 'MODULE_DISABLED';
+}
+function showModuleDisabled() {
+  document.getElementById('module-disabled').style.display = 'block';
+  document.getElementById('wb-content').style.display = 'none';
+}
+function switchTab(name) {
+  ['accounts', 'catalog', 'orders', 'reconcile'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'orders' && !ordersLoaded) loadOrders();
+}
+var STATUS_LABELS = {
+  new: 'Новый',
+  confirm: 'В поставке',
+  complete: 'Завершён',
+  cancel: 'Отменён',
+  external: 'Забрано в ЛК WB'
+};
+var STATUS_PILL_CLASS = {
+  new: 'pill-blue',
+  confirm: 'pill-yellow',
+  complete: 'pill-green',
+  cancel: 'pill-red',
+  external: 'pill-gray'
+};
+var clientsList = [];
+var accountsList = [];
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var res, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          _context3.p = 0;
+          _context3.n = 1;
+          return window.API.clients.short();
+        case 1:
+          res = _context3.v;
+          clientsList = res.clients || [];
+          _context3.n = 3;
+          break;
+        case 2:
+          _context3.p = 2;
+          _t = _context3.v;
+          UI.notify.err(_t.message);
+        case 3:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[0, 2]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function loadAccounts() {
+  return _loadAccounts.apply(this, arguments);
+}
+function _loadAccounts() {
+  _loadAccounts = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, list, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.wb.accounts.list();
+        case 1:
+          res = _context4.v;
+          accountsList = res.accounts || [];
+          document.getElementById('acc-count').textContent = accountsList.length;
+          list = document.getElementById('acc-list');
+          if (!accountsList.length) {
+            list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z\"/><path d=\"M9 8V6a3 3 0 0 1 6 0v2\"/></svg></div>\u0410\u043A\u043A\u0430\u0443\u043D\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</div>";
+          } else {
+            list.innerHTML = accountsList.map(function (a, idx) {
+              return "\n            <div class=\"list-row acc-row\" onclick=\"openAccModal(".concat(idx, ")\">\n              <div class=\"main\">\n                <div class=\"title\">").concat(UI.escHtml(a.account_name), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(a.client_name), " ").concat(a.supplier_id ? '· supplier ' + UI.escHtml(a.supplier_id) : '', " ").concat(a.has_token ? '' : '· <span style=\"color:var(--red)\">нет токена</span>', " ").concat(a.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>', "</div>\n              </div>\n              <div class=\"badge\"><span>WB</span><div>").concat(a.has_token ? '<svg class="i" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="M11.5 11.5 20 3"/><path d="M16 7l3 3"/><path d="M19 4l3 3"/></svg>' : '—', "</div></div>\n            </div>\n          ");
+            }).join('');
+          }
+          UI.populateSelect('#cat-account', accountsList, {
+            valueKey: 'id',
+            labelKey: 'account_name',
+            emptyLabel: '— Выберите аккаунт —'
+          });
+          UI.populateSelect('#ord-account', accountsList, {
+            valueKey: 'id',
+            labelKey: 'account_name',
+            emptyLabel: '— Выберите аккаунт —'
+          });
+          _context4.n = 4;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t2 = _context4.v;
+          if (!isModuleDisabled(_t2)) {
+            _context4.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context4.a(2);
+        case 3:
+          UI.notify.err(_t2.message);
+        case 4:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _loadAccounts.apply(this, arguments);
+}
+function openAccModal(idx) {
+  var a = idx !== null ? accountsList[idx] : null;
+  var clientOptions = clientsList.map(function (c) {
+    return "<option value=\"".concat(c.id, "\" ").concat(a && a.client_id === c.id ? 'selected' : '', ">").concat(UI.escHtml(c.client_name), "</option>");
+  }).join('');
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(a ? UI.escHtml(a.account_name) : 'Новый аккаунт WB', "</div>\n            ").concat(!a ? "<div class=\"field\"><label>\u041A\u043B\u0438\u0435\u043D\u0442</label><select id=\"m-client\">".concat(clientOptions, "</select></div>") : '', "\n            <div class=\"field\"><label>\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430</label><input id=\"m-name\" value=\"").concat(a ? UI.escHtml(a.account_name) : '', "\" placeholder=\"\u041D\u0430\u043F\u0440. \u041E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u041B\u041A\"/></div>\n            <div class=\"field\"><label>\u041A\u043E\u0434 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label><input id=\"m-code\" value=\"").concat(a && a.account_code ? UI.escHtml(a.account_code) : '', "\"/></div>\n            <div class=\"field\"><label>Supplier ID (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label><input id=\"m-supplier\" value=\"").concat(a && a.supplier_id ? UI.escHtml(a.supplier_id) : '', "\"/></div>\n            <div class=\"field\">\n              <label>API-\u0442\u043E\u043A\u0435\u043D (\u0447\u0442\u0435\u043D\u0438\u0435 \u0438 \u0437\u0430\u043F\u0438\u0441\u044C) ").concat(a ? '(оставьте пустым, чтобы не менять)' : '', "</label>\n              <input id=\"m-token\" type=\"password\" placeholder=\"").concat(a && a.has_token ? 'Токен уже сохранён' : 'Вставьте токен из ЛК WB', "\"/>\n              <div style=\"font-size:12px;color:var(--muted);margin-top:4px;\">\n                \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0437\u0434\u0430\u0451\u0442\u0441\u044F \u0432 \u041B\u041A WB: \u041F\u0440\u043E\u0444\u0438\u043B\u044C \u2192 \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u2192 \u0414\u043E\u0441\u0442\u0443\u043F \u043A API \u2192 \xAB\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043D\u043E\u0432\u044B\u0439 \u0442\u043E\u043A\u0435\u043D\xBB.\n                \u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438 \u2014 \u043E\u0442\u043C\u0435\u0442\u044C\u0442\u0435 <b>\xAB\u041A\u043E\u043D\u0442\u0435\u043D\u0442\xBB</b> \u0438 <b>\xAB\u041C\u0430\u0440\u043A\u0435\u0442\u043F\u043B\u0435\u0439\u0441\xBB</b>. \u0413\u0430\u043B\u043E\u0447\u043A\u0443 \xAB\u0422\u043E\u043B\u044C\u043A\u043E \u0447\u0442\u0435\u043D\u0438\u0435\xBB <b>\u043D\u0435 \u0441\u0442\u0430\u0432\u0438\u0442\u044C</b> \u2014\n                \u043D\u0443\u0436\u0435\u043D \u043F\u043E\u043B\u043D\u044B\u0439 \u0434\u043E\u0441\u0442\u0443\u043F (\u0447\u0442\u0435\u043D\u0438\u0435 \u0438 \u0437\u0430\u043F\u0438\u0441\u044C), \u0438\u043D\u0430\u0447\u0435 \u043D\u0435 \u0441\u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0437\u0430\u043A\u0430\u0437\u043E\u0432, \u043F\u0435\u0447\u0430\u0442\u044C \u0441\u0442\u0438\u043A\u0435\u0440\u043E\u0432 \u0438 \u0440\u0430\u0441\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u0438\u0435 \u043E\u0441\u0442\u0430\u0442\u043A\u043E\u0432 \u043F\u043E \u0441\u043A\u043B\u0430\u0434\u0430\u043C.\n              </div>\n            </div>\n            <div class=\"field\">\n              <label>API-\u0442\u043E\u043A\u0435\u043D \u0434\u043B\u044F \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0438 (\u0442\u043E\u043B\u044C\u043A\u043E \u0447\u0442\u0435\u043D\u0438\u0435, \u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E) ").concat(a ? '(оставьте пустым, чтобы не менять)' : '', "</label>\n              <input id=\"m-token-stats\" type=\"password\" placeholder=\"").concat(a && a.has_token_stats ? 'Токен уже сохранён' : 'Не обязательно — заполните, если нужно «Время доставки»', "\"/>\n              <div style=\"font-size:12px;color:var(--muted);margin-top:4px;\">\n                WB \u043D\u0435 \u0434\u0430\u0451\u0442 \u0441\u043C\u0435\u0448\u0438\u0432\u0430\u0442\u044C \u0432 \u043E\u0434\u043D\u043E\u043C \u0442\u043E\u043A\u0435\u043D\u0435 \u043F\u0440\u0430\u0432\u0430 \u043D\u0430 \u0437\u0430\u043F\u0438\u0441\u044C (\u041A\u043E\u043D\u0442\u0435\u043D\u0442/\u041C\u0430\u0440\u043A\u0435\u0442\u043F\u043B\u0435\u0439\u0441) \u0438 \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044E\n                \xAB\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430\xBB \u0431\u0435\u0437 \u0442\u043E\u0433\u043E, \u0447\u0442\u043E\u0431\u044B \u0432\u0435\u0441\u044C \u0442\u043E\u043A\u0435\u043D \u0441\u0442\u0430\u043B read-only. \u041F\u043E\u044D\u0442\u043E\u043C\u0443 \u0435\u0441\u043B\u0438 \u043D\u0443\u0436\u0435\u043D \u043E\u0442\u0447\u0451\u0442\n                \xAB\u0412\u0440\u0435\u043C\u044F \u0434\u043E\u0441\u0442\u0430\u0432\u043A\u0438\xBB, \u043F\u043E\u043F\u0440\u043E\u0441\u0438\u0442\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u0441\u043E\u0437\u0434\u0430\u0442\u044C <b>\u0432\u0442\u043E\u0440\u043E\u0439</b> \u0442\u043E\u043A\u0435\u043D \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E, \u043E\u0442\u043C\u0435\u0442\u0438\u0432 \u0442\u043E\u043B\u044C\u043A\u043E\n                \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044E <b>\xAB\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430\xBB</b>, \u0438 \u043F\u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0433\u0430\u043B\u043E\u0447\u043A\u0443 <b>\xAB\u0422\u043E\u043B\u044C\u043A\u043E \u0447\u0442\u0435\u043D\u0438\u0435\xBB</b>. \u0415\u0441\u043B\u0438 \u044D\u0442\u043E \u043F\u043E\u043B\u0435\n                \u043F\u0443\u0441\u0442\u043E\u0435 \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u043E\u0441\u043D\u043E\u0432\u043D\u043E\u0439 \u0442\u043E\u043A\u0435\u043D \u0432\u044B\u0448\u0435 (\u0441\u0440\u0430\u0431\u043E\u0442\u0430\u0435\u0442, \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0438 \u0432 \u043D\u0451\u043C \u0442\u043E\u0436\u0435 \u043E\u0442\u043C\u0435\u0447\u0435\u043D\u0430\n                \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u044F \xAB\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430\xBB).\n              </div>\n            </div>\n            ").concat(a ? "<div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u0435\u043D</label> <input type=\"checkbox\" id=\"m-active\" ".concat(a.is_active ? 'checked' : '', "/></div>") : '', "\n            ").concat(a ? "\n            <div class=\"field\">\n              <label style=\"display:inline;\">\u041E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0442\u044C \u043E\u0441\u0442\u0430\u0442\u043A\u0438 \u0432 WB</label>\n              <input type=\"checkbox\" id=\"m-stock-sync\" ".concat(a.stock_sync_disabled ? '' : 'checked', "/>\n              <div style=\"font-size:12px;color:var(--muted);margin-top:4px;\">\n                \u0415\u0441\u043B\u0438 \u0432\u044B\u043A\u043B\u044E\u0447\u0438\u0442\u044C \u2014 WMS \u043F\u0435\u0440\u0435\u0441\u0442\u0430\u043D\u0435\u0442 \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u0440\u0430\u0441\u043A\u0438\u0434\u044B\u0432\u0430\u0442\u044C \u043E\u0441\u0442\u0430\u0442\u043A\u0438 \u043F\u043E \u0441\u043A\u043B\u0430\u0434\u0430\u043C WB \u0434\u043B\u044F\n                \u044D\u0442\u043E\u0433\u043E \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430 (\u043D\u0438 \u043F\u043E \u0440\u0430\u0441\u043F\u0438\u0441\u0430\u043D\u0438\u044E, \u043D\u0438 \u043F\u0440\u0438 \u043F\u0440\u0438\u0451\u043C\u043A\u0435/\u0438\u043D\u0432\u0435\u043D\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438). \u0423\u0434\u043E\u0431\u043D\u043E \u043D\u0430 \u0432\u0440\u0435\u043C\u044F \u0442\u0435\u0441\u0442\u043E\u0432,\n                \u043A\u043E\u0433\u0434\u0430 \u043A\u043B\u0438\u0435\u043D\u0442 \u0441\u0430\u043C \u0443\u043F\u0440\u0430\u0432\u043B\u044F\u0435\u0442 \u043E\u0441\u0442\u0430\u0442\u043A\u0430\u043C\u0438 \u0432 \u043A\u0430\u0431\u0438\u043D\u0435\u0442\u0435 WB.\n              </div>\n            </div>\n            ") : '', "\n            ").concat(a ? "\n            <div class=\"field\">\n              <label>\u0421\u043A\u043B\u0430\u0434\u044B WB \u2014 \u043A\u0430\u043A\u0438\u0435 \u043E\u0431\u0440\u0430\u0431\u0430\u0442\u044B\u0432\u0430\u0442\u044C \u0432 \u0432\u043E\u043B\u043D\u0430\u0445 \u0441\u0431\u043E\u0440\u043A\u0438</label>\n              <div style=\"font-size:12px;color:var(--muted);margin-bottom:6px;\">\n                \u0415\u0441\u043B\u0438 \u0443 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0441\u043A\u043B\u0430\u0434\u043E\u0432 WB \u0432 \u0440\u0430\u0437\u043D\u044B\u0445 \u0433\u043E\u0440\u043E\u0434\u0430\u0445 (\u043A\u0430\u0436\u0434\u044B\u0439 \u2014 \u0441\u0432\u043E\u0439 \u0444\u0443\u043B\u0444\u0438\u043B\u043C\u0435\u043D\u0442),\n                \u043E\u0442\u043C\u0435\u0442\u044C\u0442\u0435 \u0442\u043E\u043B\u044C\u043A\u043E \u0442\u0435, \u0447\u0442\u043E \u0444\u0438\u0437\u0438\u0447\u0435\u0441\u043A\u0438 \u0441\u043E\u0431\u0438\u0440\u0430\u0435\u0442\u0435 \u0432\u044B. \u041E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u043D\u0435 \u043F\u043E\u043F\u0430\u0434\u0443\u0442 \u0432 \xAB\u0421\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0432\u043E\u043B\u043D\u0443\xBB.\n              </div>\n              <div id=\"m-warehouses\">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026</div>\n            </div>\n            " : '', "\n            <div class=\"btn-row\">\n              <button class=\"btn-big btn-green\" onclick=\"saveAccount(").concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+  if (a) loadAccountWarehouses(a.id);
+}
+function loadAccountWarehouses(_x) {
+  return _loadAccountWarehouses.apply(this, arguments);
+}
+function _loadAccountWarehouses() {
+  _loadAccountWarehouses = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(accountId) {
+    var box, res, whs, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          box = document.getElementById('m-warehouses');
+          if (box) {
+            _context5.n = 1;
+            break;
+          }
+          return _context5.a(2);
+        case 1:
+          _context5.p = 1;
+          _context5.n = 2;
+          return window.API.wb.warehouses.list(accountId);
+        case 2:
+          res = _context5.v;
+          whs = (res.warehouses || []).filter(function (w) {
+            return w.is_active;
+          });
+          if (whs.length) {
+            _context5.n = 3;
+            break;
+          }
           box.innerHTML = '<div style="font-size:12px;color:var(--muted);">Складов не найдено — синхронизируются автоматически при следующем «Сформировать волну».</div>';
-          return;
-        }
-        box.innerHTML = whs.map(w => `
-          <div class="wh-pick-row">
-            <input type="checkbox" id="wh-pick-${w.id}" ${w.is_enabled_for_picking ? 'checked' : ''}
-                   onchange="toggleWarehousePicking(${accountId}, ${w.id}, this.checked)"/>
-            <label for="wh-pick-${w.id}" class="wh-pick-name">${UI.escHtml(w.warehouse_name || w.warehouse_code)}</label>
-          </div>
-        `).join('');
-      } catch (e) {
-        box.innerHTML = `<div style="font-size:12px;color:var(--red);">${UI.escHtml(e.message)}</div>`;
+          return _context5.a(2);
+        case 3:
+          box.innerHTML = whs.map(function (w) {
+            return "\n          <div class=\"wh-pick-row\">\n            <input type=\"checkbox\" id=\"wh-pick-".concat(w.id, "\" ").concat(w.is_enabled_for_picking ? 'checked' : '', "\n                   onchange=\"toggleWarehousePicking(").concat(accountId, ", ").concat(w.id, ", this.checked)\"/>\n            <label for=\"wh-pick-").concat(w.id, "\" class=\"wh-pick-name\">").concat(UI.escHtml(w.warehouse_name || w.warehouse_code), "</label>\n          </div>\n        ");
+          }).join('');
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t3 = _context5.v;
+          box.innerHTML = "<div style=\"font-size:12px;color:var(--red);\">".concat(UI.escHtml(_t3.message), "</div>");
+        case 5:
+          return _context5.a(2);
       }
-    }
-
-    async function toggleWarehousePicking(accountId, whId, checked) {
-      try {
-        await window.API.wb.warehouses.update(accountId, whId, { is_enabled_for_picking: checked });
-        UI.notify.ok(checked ? 'Склад включён в сборку' : 'Склад исключён из сборки');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    async function saveAccount(idx) {
-      const a = idx !== null ? accountsList[idx] : null;
-      const data = { account_name: UI.val('#m-name'), account_code: UI.val('#m-code'), supplier_id: UI.val('#m-supplier') };
-      const token = UI.val('#m-token');
-      if (token) data.api_token = token;
-      const tokenStats = UI.val('#m-token-stats');
-      if (tokenStats) data.api_token_stats = tokenStats;
-      try {
-        if (a) {
+    }, _callee5, null, [[1, 4]]);
+  }));
+  return _loadAccountWarehouses.apply(this, arguments);
+}
+function toggleWarehousePicking(_x2, _x3, _x4) {
+  return _toggleWarehousePicking.apply(this, arguments);
+}
+function _toggleWarehousePicking() {
+  _toggleWarehousePicking = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(accountId, whId, checked) {
+    var _t4;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.wb.warehouses.update(accountId, whId, {
+            is_enabled_for_picking: checked
+          });
+        case 1:
+          UI.notify.ok(checked ? 'Склад включён в сборку' : 'Склад исключён из сборки');
+          _context6.n = 3;
+          break;
+        case 2:
+          _context6.p = 2;
+          _t4 = _context6.v;
+          UI.notify.err(_t4.message);
+        case 3:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[0, 2]]);
+  }));
+  return _toggleWarehousePicking.apply(this, arguments);
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+function saveAccount(_x5) {
+  return _saveAccount.apply(this, arguments);
+} // ---------- Каталог ----------
+function _saveAccount() {
+  _saveAccount = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(idx) {
+    var a, data, token, tokenStats, _t5;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          a = idx !== null ? accountsList[idx] : null;
+          data = {
+            account_name: UI.val('#m-name'),
+            account_code: UI.val('#m-code'),
+            supplier_id: UI.val('#m-supplier')
+          };
+          token = UI.val('#m-token');
+          if (token) data.api_token = token;
+          tokenStats = UI.val('#m-token-stats');
+          if (tokenStats) data.api_token_stats = tokenStats;
+          _context7.p = 1;
+          if (!a) {
+            _context7.n = 3;
+            break;
+          }
           data.is_active = document.getElementById('m-active').checked;
           data.stock_sync_disabled = !document.getElementById('m-stock-sync').checked;
-          await window.API.wb.accounts.update(a.id, data);
+          _context7.n = 2;
+          return window.API.wb.accounts.update(a.id, data);
+        case 2:
           UI.notify.ok('Аккаунт обновлён');
-        } else {
+          _context7.n = 7;
+          break;
+        case 3:
           data.client_id = UI.val('#m-client');
-          if (!data.account_name) { UI.notify.err('Укажите название аккаунта'); return; }
-          if (!token) { UI.notify.err('Укажите API-токен WB'); return; }
-          await window.API.wb.accounts.create(data);
+          if (data.account_name) {
+            _context7.n = 4;
+            break;
+          }
+          UI.notify.err('Укажите название аккаунта');
+          return _context7.a(2);
+        case 4:
+          if (token) {
+            _context7.n = 5;
+            break;
+          }
+          UI.notify.err('Укажите API-токен WB');
+          return _context7.a(2);
+        case 5:
+          _context7.n = 6;
+          return window.API.wb.accounts.create(data);
+        case 6:
           UI.notify.ok('Аккаунт создан');
-        }
-        closeModal();
-        await loadAccounts();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // ---------- Каталог ----------
-    let catOffset = 0;
-    const CAT_PAGE = 50;
-    let catCache = [];
-
-    async function importItems() {
-      const accountId = UI.val('#cat-account');
-      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
-      try {
-        UI.notify.info('Импортируем карточки из WB, это может занять время...');
-        const res = await window.API.wb.importItems({ account_id: accountId });
-        document.getElementById('import-result').innerHTML = `
-          <div class="result-box">Получено карточек: <strong>${res.fetched_cards}</strong> · сохранено товаров: <strong>${res.saved_items}</strong> · штрихкодов: <strong>${res.saved_barcodes}</strong> · заполнен объём у: <strong>${res.filled_volume||0}</strong></div>
-        `;
-        UI.notify.ok('Импорт завершён');
-        catOffset = 0;
-        await loadCatalog();
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
+        case 7:
+          closeModal();
+          _context7.n = 8;
+          return loadAccounts();
+        case 8:
+          _context7.n = 10;
+          break;
+        case 9:
+          _context7.p = 9;
+          _t5 = _context7.v;
+          UI.notify.err(_t5.message);
+        case 10:
+          return _context7.a(2);
       }
-    }
-
-    async function loadCatalog(append=false) {
-      const accountId = UI.val('#cat-account');
-      if (!accountId) return;
-      try {
-        if (!append) catOffset = 0;
-        const res = await window.API.wb.wbItems({ account_id: accountId, limit: CAT_PAGE, offset: catOffset });
-        catCache = append ? catCache.concat(res.items) : res.items;
-        document.getElementById('cat-total').textContent = res.total;
-        document.getElementById('cat-count').textContent = catCache.length;
-
-        const list = document.getElementById('cat-list');
-        if (!catCache.length) {
-          list.innerHTML = `<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z"/><circle cx="15.5" cy="7.5" r="1.4"/></svg></div>Каталог пуст — нажмите «Импортировать карточки»</div>`;
-          return;
-        }
-        list.innerHTML = catCache.map(it => `
-          <div class="list-row item-row">
-            <img class="catalog-thumb" src="${it.preview_url||''}" onerror="this.style.visibility='hidden'"/>
-            <div class="main">
-              <div class="title">${UI.escHtml(it.title || it.vendor_code || ('nm '+it.nm_id))}</div>
-              <div class="sub">nmID ${it.nm_id} · ${UI.escHtml(it.vendor_code||'—')} · ${UI.escHtml(it.brand||'')} · штрихкодов: ${it.barcode_count}</div>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
-      }
-    }
-    function loadCatalogMore() { catOffset += CAT_PAGE; loadCatalog(true); }
-    document.getElementById('cat-account').addEventListener('change', () => loadCatalog());
-
-    // ---------- Заказы ----------
-    let ordersLoaded = false;
-
-    async function syncOrders() {
-      const accountId = UI.val('#ord-account');
-      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
-      try {
-        UI.notify.info('Синхронизируем заказы с WB...');
-        const res = await window.API.wb.syncOrders({ account_id: accountId });
-        document.getElementById('sync-result').innerHTML = `<div class="result-box">Получено заказов: <strong>${res.fetched}</strong> · сохранено/обновлено: <strong>${res.saved}</strong></div>`;
-        UI.notify.ok('Синхронизация завершена');
-        await loadOrders();
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
-      }
-    }
-
-    async function syncOrdersAll() {
-      if (!UI.confirm('Синхронизировать заказы по всем магазинам (всем WB-аккаунтам)?')) return;
-      try {
-        UI.notify.info('Синхронизируем все магазины с WB...');
-        const res = await window.API.wb.syncOrdersAll();
-        const rows = (res.accounts||[]).map(a =>
-          `<div class="loc-row"><span>${UI.escHtml(a.account_name||('#'+a.account_id))}</span><span>${a.ok ? `+${a.saved}/${a.fetched}` : '<svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> '+UI.escHtml(a.error||'ошибка')}</span></div>`
-        ).join('');
-        document.getElementById('sync-all-result').innerHTML = `
-          <div class="result-box">Итого получено: <strong>${res.total_fetched}</strong> · сохранено/обновлено: <strong>${res.total_saved}</strong></div>
-          <div class="locations-box" style="margin-top:6px;">${rows || '<div style="color:var(--muted);font-size:13px;">Нет активных WB-аккаунтов</div>'}</div>
-        `;
-        UI.notify.ok('Синхронизация всех магазинов завершена');
-        await loadOrders();
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
-      }
-    }
-
-    async function generateWave() {
-      const accountId = UI.val('#ord-account');
-      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
-      if (!UI.confirm('Сформировать волну на сборку из заказов без поставки?')) return;
-      try {
-        UI.notify.info('Создаём поставку в WB и волну на сборку...');
-        const limit = Number(UI.val('#wave-limit')) || 50;
-        const res = await window.API.wb.generateWave({ account_id: accountId, limit });
-        if (!res.supplies || !res.supplies.length) {
-          document.getElementById('wave-result').innerHTML = `<div class="result-box">${UI.escHtml(res.message || 'Нет заказов без поставки')}</div>`;
-          return;
-        }
-        const droppedWarning = res.dropped_total
-          ? `<div class="result-box" style="border-color:var(--amber);margin-top:8px;">
-               <svg class="i" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-               ${res.dropped_total} заказ(ов) исключено из волны — их уже забрали вручную в кабинете WB
-               (статус «Забрано в ЛК WB» в списке заказов).
-             </div>`
-          : '';
-        document.getElementById('wave-result').innerHTML = `
-          <div class="result-box">
-            Создано поставок: <strong>${res.created_supplies}</strong><br/>
-            ${res.supplies.map(s => `${UI.escHtml(s.shipment_code)} — заказов: <strong>${s.orders_count}</strong>, задач на сборку: <strong>${s.tasks_inserted}</strong>, стикеров: <strong>${s.stickers_saved}</strong>`).join('<br/>')}
-            <br/>Волна появится в «Диспетчерской» и на экране «Сборка».
-          </div>
-          ${droppedWarning}
-        `;
-        UI.notify.ok(res.dropped_total ? `Волна сформирована (${res.dropped_total} заказ(ов) исключено)` : 'Волна сформирована');
-        await loadOrders();
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
-      }
-    }
-
-    async function loadOrders() {
-      try {
-        ordersLoaded = true;
-        const params = { limit: 300 };
-        const accountId = UI.val('#ord-account'); if (accountId) params.account_id = accountId;
-        const status = UI.val('#f-status'); if (status) params.status = status;
-        const period = UI.val('#f-period');
-        if (period) {
-          const d = new Date(); d.setDate(d.getDate() - Number(period));
-          params.date_from = d.toISOString().slice(0, 10);
-        }
-        const res = await window.API.wb.orders(params);
-        document.getElementById('ord-count').textContent = res.count;
-        UI.renderTable('#ord-body', res.orders, (o) => `
-          <tr>
-            <td>${UI.escHtml(o.article || o.wb_order_id)}</td>
-            <td>${UI.escHtml(o.barcode||'—')}</td>
-            <td>${UI.escHtml(o.warehouse_name||'—')}</td>
-            <td><span class="pill ${STATUS_PILL_CLASS[o.status]||'pill-blue'}">${STATUS_LABELS[o.status] || UI.escHtml(o.status||'—')}</span></td>
-            <td>${o.wb_supply_id ? `<span class="pill pill-green">${UI.escHtml(o.wb_supply_id)}</span>` : '—'}</td>
-            <td>${UI.fmtDateTime(o.created_at)}</td>
-          </tr>
-        `);
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        UI.notify.err(e.message);
-      }
-    }
-    document.getElementById('ord-account').addEventListener('change', () => loadOrders());
-
-    // ---------- Сверка остатков ----------
-    async function reconcileStock() {
-      const btn = document.getElementById('reconcile-btn');
-      const box = document.getElementById('reconcile-result');
-      btn.disabled = true;
-      box.innerHTML = `<div class="result-box">Спрашиваем у WB, это может занять минуту-другую...</div>`;
-      try {
-        const res = await window.API.wb.reconcile();
-        const when = UI.fmtDateTime(res.checked_at);
-        if (!res.accounts || !res.accounts.length) {
-          box.innerHTML = `<div class="result-box">Нет активных WB-аккаунтов с токеном для проверки.</div>`;
-          return;
-        }
-        const blocks = res.accounts.map(a => {
-          if (a.skipped === 'no_warehouses') {
-            return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>Нет складов WB — пропущено.</div>`;
+    }, _callee7, null, [[1, 9]]);
+  }));
+  return _saveAccount.apply(this, arguments);
+}
+var catOffset = 0;
+var CAT_PAGE = 50;
+var catCache = [];
+function importItems() {
+  return _importItems.apply(this, arguments);
+}
+function _importItems() {
+  _importItems = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8() {
+    var accountId, res, _t6;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          accountId = UI.val('#cat-account');
+          if (accountId) {
+            _context8.n = 1;
+            break;
           }
-          if (a.skipped === 'no_barcodes') {
-            return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>Нет зарегистрированных штрихкодов — пропущено.</div>`;
+          UI.notify.err('Выберите аккаунт');
+          return _context8.a(2);
+        case 1:
+          _context8.p = 1;
+          UI.notify.info('Импортируем карточки из WB, это может занять время...');
+          _context8.n = 2;
+          return window.API.wb.importItems({
+            account_id: accountId
+          });
+        case 2:
+          res = _context8.v;
+          document.getElementById('import-result').innerHTML = "\n          <div class=\"result-box\">\u041F\u043E\u043B\u0443\u0447\u0435\u043D\u043E \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A: <strong>".concat(res.fetched_cards, "</strong> \xB7 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \u0442\u043E\u0432\u0430\u0440\u043E\u0432: <strong>").concat(res.saved_items, "</strong> \xB7 \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u043E\u0432: <strong>").concat(res.saved_barcodes, "</strong> \xB7 \u0437\u0430\u043F\u043E\u043B\u043D\u0435\u043D \u043E\u0431\u044A\u0451\u043C \u0443: <strong>").concat(res.filled_volume || 0, "</strong></div>\n        ");
+          UI.notify.ok('Импорт завершён');
+          catOffset = 0;
+          _context8.n = 3;
+          return loadCatalog();
+        case 3:
+          _context8.n = 6;
+          break;
+        case 4:
+          _context8.p = 4;
+          _t6 = _context8.v;
+          if (!isModuleDisabled(_t6)) {
+            _context8.n = 5;
+            break;
           }
-          const errBlock = (a.errors && a.errors.length)
-            ? `<div style="color:var(--red);font-size:12px;margin-top:4px;">Ошибки запроса: ${a.errors.map(UI.escHtml).join('; ')}</div>` : '';
-          if (!a.mismatches.length) {
-            return `<div class="result-box"><strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)}<br/>
-              <span style="color:var(--green);">✓ OK, WB совпадает с ожидаемым (с учётом открытых заказов и резерва), расхождений нет.</span>${errBlock}</div>`;
+          showModuleDisabled();
+          return _context8.a(2);
+        case 5:
+          UI.notify.err(_t6.message);
+        case 6:
+          return _context8.a(2);
+      }
+    }, _callee8, null, [[1, 4]]);
+  }));
+  return _importItems.apply(this, arguments);
+}
+function loadCatalog() {
+  return _loadCatalog.apply(this, arguments);
+}
+function _loadCatalog() {
+  _loadCatalog = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var append,
+      accountId,
+      res,
+      list,
+      _args9 = arguments,
+      _t7;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.p = _context9.n) {
+        case 0:
+          append = _args9.length > 0 && _args9[0] !== undefined ? _args9[0] : false;
+          accountId = UI.val('#cat-account');
+          if (accountId) {
+            _context9.n = 1;
+            break;
           }
-          // Сравниваем WB не с сырым остатком WMS, а с "ожидаемым" - тем, что
-          // реально должно быть отправлено (физический остаток минус открытые
-          // заказы минус резерв, та же формула, что и в самом пуше). Поэтому
-          // легитимно придержанные единицы (под открытыми заказами/резервом)
-          // сюда уже НЕ попадают - если строка показана, это настоящее
-          // расхождение между тем, что мы посчитали, и тем, что видно у WB.
-          const rows = a.mismatches.map(m => {
-            const isOversell = m.diff > 0;
-            const label = isOversell ? `риск оверселла, +${m.diff}` : `не ушло в WB, ${m.diff}`;
-            const color = isOversell ? 'var(--red)' : '#c07a00';
-            return `
-            <div class="loc-row">
-              <span>${UI.escHtml(m.name)}<br/><span style="color:var(--muted);font-size:12px;">${UI.escHtml(m.barcode)}</span></span>
-              <span style="color:${color};white-space:nowrap;">
-                WB ${m.wb_qty} / Ожидается ${m.expected_qty} (${label})
-                <div style="color:var(--muted);font-size:11px;font-weight:normal;">физ. ${m.wms_qty}, заказов ${m.open_orders}, резерв ${m.reserve_pct}%</div>
-              </span>
-            </div>
-          `;
+          return _context9.a(2);
+        case 1:
+          _context9.p = 1;
+          if (!append) catOffset = 0;
+          _context9.n = 2;
+          return window.API.wb.wbItems({
+            account_id: accountId,
+            limit: CAT_PAGE,
+            offset: catOffset
+          });
+        case 2:
+          res = _context9.v;
+          catCache = append ? catCache.concat(res.items) : res.items;
+          document.getElementById('cat-total').textContent = res.total;
+          document.getElementById('cat-count').textContent = catCache.length;
+          list = document.getElementById('cat-list');
+          if (catCache.length) {
+            _context9.n = 3;
+            break;
+          }
+          list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M20 12.4 12.6 20a2 2 0 0 1-2.8 0l-6.8-6.8a2 2 0 0 1 0-2.8L10.6 3H20v9.4z\"/><circle cx=\"15.5\" cy=\"7.5\" r=\"1.4\"/></svg></div>\u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u043F\u0443\u0441\u0442 \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \xAB\u0418\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438\xBB</div>";
+          return _context9.a(2);
+        case 3:
+          list.innerHTML = catCache.map(function (it) {
+            return "\n          <div class=\"list-row item-row\">\n            <img class=\"catalog-thumb\" src=\"".concat(it.preview_url || '', "\" onerror=\"this.style.visibility='hidden'\"/>\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(it.title || it.vendor_code || 'nm ' + it.nm_id), "</div>\n              <div class=\"sub\">nmID ").concat(it.nm_id, " \xB7 ").concat(UI.escHtml(it.vendor_code || '—'), " \xB7 ").concat(UI.escHtml(it.brand || ''), " \xB7 \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u043E\u0432: ").concat(it.barcode_count, "</div>\n            </div>\n          </div>\n        ");
           }).join('');
-          return `<div class="result-box">
-            <strong>${UI.escHtml(a.account_name)}</strong> · ${UI.escHtml(a.client_name)} ·
-            <span style="color:var(--red);">расхождений: ${a.mismatches.length}</span>${errBlock}
-            <div class="locations-box" style="margin-top:6px;">${rows}</div>
-          </div>`;
-        }).join('');
-        box.innerHTML = `
-          <div class="result-box">Проверено: ${when} · всего расхождений (в любую сторону): <strong style="${res.total_mismatches ? 'color:var(--red);' : 'color:var(--green);'}">${res.total_mismatches}</strong></div>
-          ${blocks}
-        `;
-        if (res.total_mismatches) UI.notify.err(`Найдено расхождений: ${res.total_mismatches}`);
-        else UI.notify.ok('Всё чисто, расхождений нет');
-      } catch (e) {
-        if (isModuleDisabled(e)) { showModuleDisabled(); return; }
-        box.innerHTML = `<div class="result-box" style="color:var(--red);">${UI.escHtml(e.message)}</div>`;
-        UI.notify.err(e.message);
-      } finally {
-        btn.disabled = false;
+          _context9.n = 6;
+          break;
+        case 4:
+          _context9.p = 4;
+          _t7 = _context9.v;
+          if (!isModuleDisabled(_t7)) {
+            _context9.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context9.a(2);
+        case 5:
+          UI.notify.err(_t7.message);
+        case 6:
+          return _context9.a(2);
       }
-    }
+    }, _callee9, null, [[1, 4]]);
+  }));
+  return _loadCatalog.apply(this, arguments);
+}
+function loadCatalogMore() {
+  catOffset += CAT_PAGE;
+  loadCatalog(true);
+}
+document.getElementById('cat-account').addEventListener('change', function () {
+  return loadCatalog();
+});
 
-    (async () => { await loadClients(); await loadAccounts(); })();
-  </script>
+// ---------- Заказы ----------
+var ordersLoaded = false;
+function syncOrders() {
+  return _syncOrders.apply(this, arguments);
+}
+function _syncOrders() {
+  _syncOrders = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0() {
+    var accountId, res, _t8;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          accountId = UI.val('#ord-account');
+          if (accountId) {
+            _context0.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите аккаунт');
+          return _context0.a(2);
+        case 1:
+          _context0.p = 1;
+          UI.notify.info('Синхронизируем заказы с WB...');
+          _context0.n = 2;
+          return window.API.wb.syncOrders({
+            account_id: accountId
+          });
+        case 2:
+          res = _context0.v;
+          document.getElementById('sync-result').innerHTML = "<div class=\"result-box\">\u041F\u043E\u043B\u0443\u0447\u0435\u043D\u043E \u0437\u0430\u043A\u0430\u0437\u043E\u0432: <strong>".concat(res.fetched, "</strong> \xB7 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E/\u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E: <strong>").concat(res.saved, "</strong></div>");
+          UI.notify.ok('Синхронизация завершена');
+          _context0.n = 3;
+          return loadOrders();
+        case 3:
+          _context0.n = 6;
+          break;
+        case 4:
+          _context0.p = 4;
+          _t8 = _context0.v;
+          if (!isModuleDisabled(_t8)) {
+            _context0.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context0.a(2);
+        case 5:
+          UI.notify.err(_t8.message);
+        case 6:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[1, 4]]);
+  }));
+  return _syncOrders.apply(this, arguments);
+}
+function syncOrdersAll() {
+  return _syncOrdersAll.apply(this, arguments);
+}
+function _syncOrdersAll() {
+  _syncOrdersAll = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee1() {
+    var res, rows, _t9;
+    return _regenerator().w(function (_context1) {
+      while (1) switch (_context1.p = _context1.n) {
+        case 0:
+          if (UI.confirm('Синхронизировать заказы по всем магазинам (всем WB-аккаунтам)?')) {
+            _context1.n = 1;
+            break;
+          }
+          return _context1.a(2);
+        case 1:
+          _context1.p = 1;
+          UI.notify.info('Синхронизируем все магазины с WB...');
+          _context1.n = 2;
+          return window.API.wb.syncOrdersAll();
+        case 2:
+          res = _context1.v;
+          rows = (res.accounts || []).map(function (a) {
+            return "<div class=\"loc-row\"><span>".concat(UI.escHtml(a.account_name || '#' + a.account_id), "</span><span>").concat(a.ok ? "+".concat(a.saved, "/").concat(a.fetched) : '<svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> ' + UI.escHtml(a.error || 'ошибка'), "</span></div>");
+          }).join('');
+          document.getElementById('sync-all-result').innerHTML = "\n          <div class=\"result-box\">\u0418\u0442\u043E\u0433\u043E \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u043E: <strong>".concat(res.total_fetched, "</strong> \xB7 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E/\u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E: <strong>").concat(res.total_saved, "</strong></div>\n          <div class=\"locations-box\" style=\"margin-top:6px;\">").concat(rows || '<div style="color:var(--muted);font-size:13px;">Нет активных WB-аккаунтов</div>', "</div>\n        ");
+          UI.notify.ok('Синхронизация всех магазинов завершена');
+          _context1.n = 3;
+          return loadOrders();
+        case 3:
+          _context1.n = 6;
+          break;
+        case 4:
+          _context1.p = 4;
+          _t9 = _context1.v;
+          if (!isModuleDisabled(_t9)) {
+            _context1.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context1.a(2);
+        case 5:
+          UI.notify.err(_t9.message);
+        case 6:
+          return _context1.a(2);
+      }
+    }, _callee1, null, [[1, 4]]);
+  }));
+  return _syncOrdersAll.apply(this, arguments);
+}
+function generateWave() {
+  return _generateWave.apply(this, arguments);
+}
+function _generateWave() {
+  _generateWave = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee10() {
+    var accountId, limit, res, droppedWarning, _t0;
+    return _regenerator().w(function (_context10) {
+      while (1) switch (_context10.p = _context10.n) {
+        case 0:
+          accountId = UI.val('#ord-account');
+          if (accountId) {
+            _context10.n = 1;
+            break;
+          }
+          UI.notify.err('Выберите аккаунт');
+          return _context10.a(2);
+        case 1:
+          if (UI.confirm('Сформировать волну на сборку из заказов без поставки?')) {
+            _context10.n = 2;
+            break;
+          }
+          return _context10.a(2);
+        case 2:
+          _context10.p = 2;
+          UI.notify.info('Создаём поставку в WB и волну на сборку...');
+          limit = Number(UI.val('#wave-limit')) || 50;
+          _context10.n = 3;
+          return window.API.wb.generateWave({
+            account_id: accountId,
+            limit: limit
+          });
+        case 3:
+          res = _context10.v;
+          if (!(!res.supplies || !res.supplies.length)) {
+            _context10.n = 4;
+            break;
+          }
+          document.getElementById('wave-result').innerHTML = "<div class=\"result-box\">".concat(UI.escHtml(res.message || 'Нет заказов без поставки'), "</div>");
+          return _context10.a(2);
+        case 4:
+          droppedWarning = res.dropped_total ? "<div class=\"result-box\" style=\"border-color:var(--amber);margin-top:8px;\">\n               <svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg>\n               ".concat(res.dropped_total, " \u0437\u0430\u043A\u0430\u0437(\u043E\u0432) \u0438\u0441\u043A\u043B\u044E\u0447\u0435\u043D\u043E \u0438\u0437 \u0432\u043E\u043B\u043D\u044B \u2014 \u0438\u0445 \u0443\u0436\u0435 \u0437\u0430\u0431\u0440\u0430\u043B\u0438 \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u0432 \u043A\u0430\u0431\u0438\u043D\u0435\u0442\u0435 WB\n               (\u0441\u0442\u0430\u0442\u0443\u0441 \xAB\u0417\u0430\u0431\u0440\u0430\u043D\u043E \u0432 \u041B\u041A WB\xBB \u0432 \u0441\u043F\u0438\u0441\u043A\u0435 \u0437\u0430\u043A\u0430\u0437\u043E\u0432).\n             </div>") : '';
+          document.getElementById('wave-result').innerHTML = "\n          <div class=\"result-box\">\n            \u0421\u043E\u0437\u0434\u0430\u043D\u043E \u043F\u043E\u0441\u0442\u0430\u0432\u043E\u043A: <strong>".concat(res.created_supplies, "</strong><br/>\n            ").concat(res.supplies.map(function (s) {
+            return "".concat(UI.escHtml(s.shipment_code), " \u2014 \u0437\u0430\u043A\u0430\u0437\u043E\u0432: <strong>").concat(s.orders_count, "</strong>, \u0437\u0430\u0434\u0430\u0447 \u043D\u0430 \u0441\u0431\u043E\u0440\u043A\u0443: <strong>").concat(s.tasks_inserted, "</strong>, \u0441\u0442\u0438\u043A\u0435\u0440\u043E\u0432: <strong>").concat(s.stickers_saved, "</strong>");
+          }).join('<br/>'), "\n            <br/>\u0412\u043E\u043B\u043D\u0430 \u043F\u043E\u044F\u0432\u0438\u0442\u0441\u044F \u0432 \xAB\u0414\u0438\u0441\u043F\u0435\u0442\u0447\u0435\u0440\u0441\u043A\u043E\u0439\xBB \u0438 \u043D\u0430 \u044D\u043A\u0440\u0430\u043D\u0435 \xAB\u0421\u0431\u043E\u0440\u043A\u0430\xBB.\n          </div>\n          ").concat(droppedWarning, "\n        ");
+          UI.notify.ok(res.dropped_total ? "\u0412\u043E\u043B\u043D\u0430 \u0441\u0444\u043E\u0440\u043C\u0438\u0440\u043E\u0432\u0430\u043D\u0430 (".concat(res.dropped_total, " \u0437\u0430\u043A\u0430\u0437(\u043E\u0432) \u0438\u0441\u043A\u043B\u044E\u0447\u0435\u043D\u043E)") : 'Волна сформирована');
+          _context10.n = 5;
+          return loadOrders();
+        case 5:
+          _context10.n = 8;
+          break;
+        case 6:
+          _context10.p = 6;
+          _t0 = _context10.v;
+          if (!isModuleDisabled(_t0)) {
+            _context10.n = 7;
+            break;
+          }
+          showModuleDisabled();
+          return _context10.a(2);
+        case 7:
+          UI.notify.err(_t0.message);
+        case 8:
+          return _context10.a(2);
+      }
+    }, _callee10, null, [[2, 6]]);
+  }));
+  return _generateWave.apply(this, arguments);
+}
+function loadOrders() {
+  return _loadOrders.apply(this, arguments);
+}
+function _loadOrders() {
+  _loadOrders = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11() {
+    var params, accountId, status, period, d, res, _t1;
+    return _regenerator().w(function (_context11) {
+      while (1) switch (_context11.p = _context11.n) {
+        case 0:
+          _context11.p = 0;
+          ordersLoaded = true;
+          params = {
+            limit: 300
+          };
+          accountId = UI.val('#ord-account');
+          if (accountId) params.account_id = accountId;
+          status = UI.val('#f-status');
+          if (status) params.status = status;
+          period = UI.val('#f-period');
+          if (period) {
+            d = new Date();
+            d.setDate(d.getDate() - Number(period));
+            params.date_from = d.toISOString().slice(0, 10);
+          }
+          _context11.n = 1;
+          return window.API.wb.orders(params);
+        case 1:
+          res = _context11.v;
+          document.getElementById('ord-count').textContent = res.count;
+          UI.renderTable('#ord-body', res.orders, function (o) {
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(o.article || o.wb_order_id), "</td>\n            <td>").concat(UI.escHtml(o.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(o.warehouse_name || '—'), "</td>\n            <td><span class=\"pill ").concat(STATUS_PILL_CLASS[o.status] || 'pill-blue', "\">").concat(STATUS_LABELS[o.status] || UI.escHtml(o.status || '—'), "</span></td>\n            <td>").concat(o.wb_supply_id ? "<span class=\"pill pill-green\">".concat(UI.escHtml(o.wb_supply_id), "</span>") : '—', "</td>\n            <td>").concat(UI.fmtDateTime(o.created_at), "</td>\n          </tr>\n        ");
+          });
+          _context11.n = 4;
+          break;
+        case 2:
+          _context11.p = 2;
+          _t1 = _context11.v;
+          if (!isModuleDisabled(_t1)) {
+            _context11.n = 3;
+            break;
+          }
+          showModuleDisabled();
+          return _context11.a(2);
+        case 3:
+          UI.notify.err(_t1.message);
+        case 4:
+          return _context11.a(2);
+      }
+    }, _callee11, null, [[0, 2]]);
+  }));
+  return _loadOrders.apply(this, arguments);
+}
+document.getElementById('ord-account').addEventListener('change', function () {
+  return loadOrders();
+});
+
+// ---------- Сверка остатков ----------
+function reconcileStock() {
+  return _reconcileStock.apply(this, arguments);
+}
+function _reconcileStock() {
+  _reconcileStock = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee12() {
+    var btn, box, res, when, blocks, _t10;
+    return _regenerator().w(function (_context12) {
+      while (1) switch (_context12.p = _context12.n) {
+        case 0:
+          btn = document.getElementById('reconcile-btn');
+          box = document.getElementById('reconcile-result');
+          btn.disabled = true;
+          box.innerHTML = "<div class=\"result-box\">\u0421\u043F\u0440\u0430\u0448\u0438\u0432\u0430\u0435\u043C \u0443 WB, \u044D\u0442\u043E \u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u043D\u044F\u0442\u044C \u043C\u0438\u043D\u0443\u0442\u0443-\u0434\u0440\u0443\u0433\u0443\u044E...</div>";
+          _context12.p = 1;
+          _context12.n = 2;
+          return window.API.wb.reconcile();
+        case 2:
+          res = _context12.v;
+          when = UI.fmtDateTime(res.checked_at);
+          if (!(!res.accounts || !res.accounts.length)) {
+            _context12.n = 3;
+            break;
+          }
+          box.innerHTML = "<div class=\"result-box\">\u041D\u0435\u0442 \u0430\u043A\u0442\u0438\u0432\u043D\u044B\u0445 WB-\u0430\u043A\u043A\u0430\u0443\u043D\u0442\u043E\u0432 \u0441 \u0442\u043E\u043A\u0435\u043D\u043E\u043C \u0434\u043B\u044F \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438.</div>";
+          return _context12.a(2);
+        case 3:
+          blocks = res.accounts.map(function (a) {
+            if (a.skipped === 'no_warehouses') {
+              return "<div class=\"result-box\"><strong>".concat(UI.escHtml(a.account_name), "</strong> \xB7 ").concat(UI.escHtml(a.client_name), "<br/>\u041D\u0435\u0442 \u0441\u043A\u043B\u0430\u0434\u043E\u0432 WB \u2014 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E.</div>");
+            }
+            if (a.skipped === 'no_barcodes') {
+              return "<div class=\"result-box\"><strong>".concat(UI.escHtml(a.account_name), "</strong> \xB7 ").concat(UI.escHtml(a.client_name), "<br/>\u041D\u0435\u0442 \u0437\u0430\u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u043D\u044B\u0445 \u0448\u0442\u0440\u0438\u0445\u043A\u043E\u0434\u043E\u0432 \u2014 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E.</div>");
+            }
+            var errBlock = a.errors && a.errors.length ? "<div style=\"color:var(--red);font-size:12px;margin-top:4px;\">\u041E\u0448\u0438\u0431\u043A\u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0430: ".concat(a.errors.map(UI.escHtml).join('; '), "</div>") : '';
+            if (!a.mismatches.length) {
+              return "<div class=\"result-box\"><strong>".concat(UI.escHtml(a.account_name), "</strong> \xB7 ").concat(UI.escHtml(a.client_name), "<br/>\n              <span style=\"color:var(--green);\">\u2713 OK, WB \u0441\u043E\u0432\u043F\u0430\u0434\u0430\u0435\u0442 \u0441 \u043E\u0436\u0438\u0434\u0430\u0435\u043C\u044B\u043C (\u0441 \u0443\u0447\u0451\u0442\u043E\u043C \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u0437\u0430\u043A\u0430\u0437\u043E\u0432 \u0438 \u0440\u0435\u0437\u0435\u0440\u0432\u0430), \u0440\u0430\u0441\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0439 \u043D\u0435\u0442.</span>").concat(errBlock, "</div>");
+            }
+            // Сравниваем WB не с сырым остатком WMS, а с "ожидаемым" - тем, что
+            // реально должно быть отправлено (физический остаток минус открытые
+            // заказы минус резерв, та же формула, что и в самом пуше). Поэтому
+            // легитимно придержанные единицы (под открытыми заказами/резервом)
+            // сюда уже НЕ попадают - если строка показана, это настоящее
+            // расхождение между тем, что мы посчитали, и тем, что видно у WB.
+            var rows = a.mismatches.map(function (m) {
+              var isOversell = m.diff > 0;
+              var label = isOversell ? "\u0440\u0438\u0441\u043A \u043E\u0432\u0435\u0440\u0441\u0435\u043B\u043B\u0430, +".concat(m.diff) : "\u043D\u0435 \u0443\u0448\u043B\u043E \u0432 WB, ".concat(m.diff);
+              var color = isOversell ? 'var(--red)' : '#c07a00';
+              return "\n            <div class=\"loc-row\">\n              <span>".concat(UI.escHtml(m.name), "<br/><span style=\"color:var(--muted);font-size:12px;\">").concat(UI.escHtml(m.barcode), "</span></span>\n              <span style=\"color:").concat(color, ";white-space:nowrap;\">\n                WB ").concat(m.wb_qty, " / \u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F ").concat(m.expected_qty, " (").concat(label, ")\n                <div style=\"color:var(--muted);font-size:11px;font-weight:normal;\">\u0444\u0438\u0437. ").concat(m.wms_qty, ", \u0437\u0430\u043A\u0430\u0437\u043E\u0432 ").concat(m.open_orders, ", \u0440\u0435\u0437\u0435\u0440\u0432 ").concat(m.reserve_pct, "%</div>\n              </span>\n            </div>\n          ");
+            }).join('');
+            return "<div class=\"result-box\">\n            <strong>".concat(UI.escHtml(a.account_name), "</strong> \xB7 ").concat(UI.escHtml(a.client_name), " \xB7\n            <span style=\"color:var(--red);\">\u0440\u0430\u0441\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0439: ").concat(a.mismatches.length, "</span>").concat(errBlock, "\n            <div class=\"locations-box\" style=\"margin-top:6px;\">").concat(rows, "</div>\n          </div>");
+          }).join('');
+          box.innerHTML = "\n          <div class=\"result-box\">\u041F\u0440\u043E\u0432\u0435\u0440\u0435\u043D\u043E: ".concat(when, " \xB7 \u0432\u0441\u0435\u0433\u043E \u0440\u0430\u0441\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0439 (\u0432 \u043B\u044E\u0431\u0443\u044E \u0441\u0442\u043E\u0440\u043E\u043D\u0443): <strong style=\"").concat(res.total_mismatches ? 'color:var(--red);' : 'color:var(--green);', "\">").concat(res.total_mismatches, "</strong></div>\n          ").concat(blocks, "\n        ");
+          if (res.total_mismatches) UI.notify.err("\u041D\u0430\u0439\u0434\u0435\u043D\u043E \u0440\u0430\u0441\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0439: ".concat(res.total_mismatches));else UI.notify.ok('Всё чисто, расхождений нет');
+          _context12.n = 6;
+          break;
+        case 4:
+          _context12.p = 4;
+          _t10 = _context12.v;
+          if (!isModuleDisabled(_t10)) {
+            _context12.n = 5;
+            break;
+          }
+          showModuleDisabled();
+          return _context12.a(2);
+        case 5:
+          box.innerHTML = "<div class=\"result-box\" style=\"color:var(--red);\">".concat(UI.escHtml(_t10.message), "</div>");
+          UI.notify.err(_t10.message);
+        case 6:
+          _context12.p = 6;
+          btn.disabled = false;
+          return _context12.f(6);
+        case 7:
+          return _context12.a(2);
+      }
+    }, _callee12, null, [[1, 4, 6, 7]]);
+  }));
+  return _reconcileStock.apply(this, arguments);
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadClients();
+      case 1:
+        _context.n = 2;
+        return loadAccounts();
+      case 2:
+        return _context.a(2);
+    }
+  }, _callee);
+}))();</script>
 </body>
 </html>

@@ -89,137 +89,298 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['inventory_manager','supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    function switchTab(name) {
-      ['move','history'].forEach(t => {
-        document.getElementById('tab-'+t).style.display = (t===name) ? 'block' : 'none';
-        document.querySelector(`.tab[data-tab="${t}"]`).classList.toggle('active', t===name);
-      });
-      if (name === 'history') loadHistory();
-    }
-
-    const LAST_CLIENT_KEY = 'wms2_last_client_id';
-    async function loadClients() {
-      const sel = document.getElementById('client-select');
-      try {
-        const res = await window.API.clients.short();
-        const list = res.clients || [];
-        if (!list.length) { sel.innerHTML = `<option value="">Нет клиентов</option>`; return; }
-        sel.innerHTML = list.map(c => `<option value="${c.id}">${UI.escHtml(c.client_name)}</option>`).join('');
-        const saved = localStorage.getItem(LAST_CLIENT_KEY);
-        if (saved && list.some(c => String(c.id) === saved)) sel.value = saved;
-        sel.addEventListener('change', () => localStorage.setItem(LAST_CLIENT_KEY, sel.value));
-      } catch (e) { sel.innerHTML = `<option value="">Ошибка</option>`; UI.notify.err(e.message); }
-    }
-    function getClientId() {
-      const v = UI.val('#client-select');
-      if (!v) { UI.notify.err('Выберите клиента вверху страницы'); return null; }
-      return Number(v);
-    }
-
-    let fromContentRows = [];
-    let qty = 1;
-    function stepQty(delta) { qty = Math.max(1, qty + delta); document.getElementById('qty-val').value = qty; }
-    function setQty(val) { qty = Math.max(1, Math.round(Number(val)) || 1); document.getElementById('qty-val').value = qty; }
-
-    async function loadFromContent(locationCode) {
-      const clientId = getClientId();
-      if (!clientId) return;
-      try {
-        const res = await window.API.movement.location({ location_code: locationCode, client_id: clientId });
-        fromContentRows = res.rows || [];
-        const box = document.getElementById('from-content');
-        if (!fromContentRows.length) {
-          box.innerHTML = `<div class="refresh-note">Ячейка пуста (для этого клиента)</div>`;
-          return;
-        }
-        box.innerHTML = `<div class="card-title" style="margin-top:8px;">Содержимое ячейки — нажмите чтобы выбрать товар</div>` +
-          fromContentRows.map(r => `
-            <div class="list-row content-row" onclick="pickBarcode('${UI.escHtml(r.barcode)}')">
-              <div class="main">
-                <div class="title">${UI.escHtml(r.item_name || r.barcode)}</div>
-                <div class="sub">${UI.escHtml(r.barcode)}</div>
-              </div>
-              <div class="badge"><span>Доступно</span><div>${UI.fmtQty(r.qty_available)}</div></div>
-            </div>
-          `).join('');
-      } catch (e) {
-        document.getElementById('from-content').innerHTML = '';
-        UI.beep('err');
-        UI.notify.err(e.message);
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['inventory_manager', 'supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          _context.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context.a(2);
       }
-    }
-    UI.onScan('#from-location', (v) => { UI.setVal('#from-location', v); loadFromContent(v); });
-
-    function pickBarcode(barcode) {
-      UI.setVal('#move-barcode', barcode);
-      checkBarcodeAvailability(barcode);
-      document.getElementById('to-location').focus();
-    }
-
-    function checkBarcodeAvailability(barcode) {
-      const row = fromContentRows.find(r => r.barcode === barcode);
-      const note = document.getElementById('barcode-note');
-      if (row) {
-        note.textContent = `Доступно в этой ячейке: ${row.qty_available}`;
-        qty = 1; document.getElementById('qty-val').value = qty;
-      } else {
-        note.textContent = '';
-        UI.beep('err');
-        UI.notify.err('Этого товара нет в отсканированной ячейке-источнике');
+    }, _callee);
+  }));
+  return _logout.apply(this, arguments);
+}
+function switchTab(name) {
+  ['move', 'history'].forEach(function (t) {
+    document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+    document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
+  });
+  if (name === 'history') loadHistory();
+}
+var LAST_CLIENT_KEY = 'wms2_last_client_id';
+function loadClients() {
+  return _loadClients.apply(this, arguments);
+}
+function _loadClients() {
+  _loadClients = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var sel, res, list, saved, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          sel = document.getElementById('client-select');
+          _context2.p = 1;
+          _context2.n = 2;
+          return window.API.clients.short();
+        case 2:
+          res = _context2.v;
+          list = res.clients || [];
+          if (list.length) {
+            _context2.n = 3;
+            break;
+          }
+          sel.innerHTML = "<option value=\"\">\u041D\u0435\u0442 \u043A\u043B\u0438\u0435\u043D\u0442\u043E\u0432</option>";
+          return _context2.a(2);
+        case 3:
+          sel.innerHTML = list.map(function (c) {
+            return "<option value=\"".concat(c.id, "\">").concat(UI.escHtml(c.client_name), "</option>");
+          }).join('');
+          saved = localStorage.getItem(LAST_CLIENT_KEY);
+          if (saved && list.some(function (c) {
+            return String(c.id) === saved;
+          })) sel.value = saved;
+          sel.addEventListener('change', function () {
+            return localStorage.setItem(LAST_CLIENT_KEY, sel.value);
+          });
+          _context2.n = 5;
+          break;
+        case 4:
+          _context2.p = 4;
+          _t = _context2.v;
+          sel.innerHTML = "<option value=\"\">\u041E\u0448\u0438\u0431\u043A\u0430</option>";
+          UI.notify.err(_t.message);
+        case 5:
+          return _context2.a(2);
       }
-    }
-    UI.onScan('#move-barcode', (v) => { UI.setVal('#move-barcode', v); checkBarcodeAvailability(v); document.getElementById('to-location').focus(); });
-    UI.onScan('#to-location', (v) => UI.setVal('#to-location', v));
-
-    async function submitMove() {
-      const clientId = getClientId();
-      if (!clientId) return;
-      const fromLoc = UI.val('#from-location');
-      const toLoc   = UI.val('#to-location');
-      const barcode = UI.val('#move-barcode');
-      if (!fromLoc)  { UI.notify.err('Отсканируйте ячейку-источник'); return; }
-      if (!barcode)  { UI.notify.err('Отсканируйте товар'); return; }
-      if (!toLoc)    { UI.notify.err('Отсканируйте ячейку назначения'); return; }
-      try {
-        await window.API.movement.move({
-          barcode, from_location_code: fromLoc, to_location_code: toLoc,
-          qty, client_id: clientId,
-        });
-        UI.notify.ok(`Перемещено: ${barcode} × ${qty}: ${fromLoc} → ${toLoc}`);
-        UI.setVal('#move-barcode','');
-        qty = 1; document.getElementById('qty-val').value = 1;
-        document.getElementById('barcode-note').textContent = '';
-        await loadFromContent(fromLoc); // обновить остаток ячейки-источника
-        document.getElementById('move-barcode').focus();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadHistory() {
-      try {
-        const clientId = getClientId();
-        const res = await window.API.movement.history(clientId ? { client_id: clientId, limit: 100 } : { limit: 100 });
-        UI.renderTable('#history-body', res.rows, (r) => `
-          <tr>
-            <td>${UI.fmtDateTime(r.created_at)}</td>
-            <td>${UI.escHtml(r.item_name || r.barcode)}</td>
-            <td>${UI.fmtQty(r.qty)}</td>
-            <td>${UI.escHtml(r.from_location_code||'—')}</td>
-            <td>${UI.escHtml(r.to_location_code||'—')}</td>
-            <td>${UI.escHtml(r.operator_name||'—')}</td>
-          </tr>
-        `);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    loadClients();
-  </script>
+    }, _callee2, null, [[1, 4]]);
+  }));
+  return _loadClients.apply(this, arguments);
+}
+function getClientId() {
+  var v = UI.val('#client-select');
+  if (!v) {
+    UI.notify.err('Выберите клиента вверху страницы');
+    return null;
+  }
+  return Number(v);
+}
+var fromContentRows = [];
+var qty = 1;
+function stepQty(delta) {
+  qty = Math.max(1, qty + delta);
+  document.getElementById('qty-val').value = qty;
+}
+function setQty(val) {
+  qty = Math.max(1, Math.round(Number(val)) || 1);
+  document.getElementById('qty-val').value = qty;
+}
+function loadFromContent(_x) {
+  return _loadFromContent.apply(this, arguments);
+}
+function _loadFromContent() {
+  _loadFromContent = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(locationCode) {
+    var clientId, res, box, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          clientId = getClientId();
+          if (clientId) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2);
+        case 1:
+          _context3.p = 1;
+          _context3.n = 2;
+          return window.API.movement.location({
+            location_code: locationCode,
+            client_id: clientId
+          });
+        case 2:
+          res = _context3.v;
+          fromContentRows = res.rows || [];
+          box = document.getElementById('from-content');
+          if (fromContentRows.length) {
+            _context3.n = 3;
+            break;
+          }
+          box.innerHTML = "<div class=\"refresh-note\">\u042F\u0447\u0435\u0439\u043A\u0430 \u043F\u0443\u0441\u0442\u0430 (\u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043A\u043B\u0438\u0435\u043D\u0442\u0430)</div>";
+          return _context3.a(2);
+        case 3:
+          box.innerHTML = "<div class=\"card-title\" style=\"margin-top:8px;\">\u0421\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u044F\u0447\u0435\u0439\u043A\u0438 \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u0447\u0442\u043E\u0431\u044B \u0432\u044B\u0431\u0440\u0430\u0442\u044C \u0442\u043E\u0432\u0430\u0440</div>" + fromContentRows.map(function (r) {
+            return "\n            <div class=\"list-row content-row\" onclick=\"pickBarcode('".concat(UI.escHtml(r.barcode), "')\">\n              <div class=\"main\">\n                <div class=\"title\">").concat(UI.escHtml(r.item_name || r.barcode), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(r.barcode), "</div>\n              </div>\n              <div class=\"badge\"><span>\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E</span><div>").concat(UI.fmtQty(r.qty_available), "</div></div>\n            </div>\n          ");
+          }).join('');
+          _context3.n = 5;
+          break;
+        case 4:
+          _context3.p = 4;
+          _t2 = _context3.v;
+          document.getElementById('from-content').innerHTML = '';
+          UI.beep('err');
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[1, 4]]);
+  }));
+  return _loadFromContent.apply(this, arguments);
+}
+UI.onScan('#from-location', function (v) {
+  UI.setVal('#from-location', v);
+  loadFromContent(v);
+});
+function pickBarcode(barcode) {
+  UI.setVal('#move-barcode', barcode);
+  checkBarcodeAvailability(barcode);
+  document.getElementById('to-location').focus();
+}
+function checkBarcodeAvailability(barcode) {
+  var row = fromContentRows.find(function (r) {
+    return r.barcode === barcode;
+  });
+  var note = document.getElementById('barcode-note');
+  if (row) {
+    note.textContent = "\u0414\u043E\u0441\u0442\u0443\u043F\u043D\u043E \u0432 \u044D\u0442\u043E\u0439 \u044F\u0447\u0435\u0439\u043A\u0435: ".concat(row.qty_available);
+    qty = 1;
+    document.getElementById('qty-val').value = qty;
+  } else {
+    note.textContent = '';
+    UI.beep('err');
+    UI.notify.err('Этого товара нет в отсканированной ячейке-источнике');
+  }
+}
+UI.onScan('#move-barcode', function (v) {
+  UI.setVal('#move-barcode', v);
+  checkBarcodeAvailability(v);
+  document.getElementById('to-location').focus();
+});
+UI.onScan('#to-location', function (v) {
+  return UI.setVal('#to-location', v);
+});
+function submitMove() {
+  return _submitMove.apply(this, arguments);
+}
+function _submitMove() {
+  _submitMove = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var clientId, fromLoc, toLoc, barcode, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          clientId = getClientId();
+          if (clientId) {
+            _context4.n = 1;
+            break;
+          }
+          return _context4.a(2);
+        case 1:
+          fromLoc = UI.val('#from-location');
+          toLoc = UI.val('#to-location');
+          barcode = UI.val('#move-barcode');
+          if (fromLoc) {
+            _context4.n = 2;
+            break;
+          }
+          UI.notify.err('Отсканируйте ячейку-источник');
+          return _context4.a(2);
+        case 2:
+          if (barcode) {
+            _context4.n = 3;
+            break;
+          }
+          UI.notify.err('Отсканируйте товар');
+          return _context4.a(2);
+        case 3:
+          if (toLoc) {
+            _context4.n = 4;
+            break;
+          }
+          UI.notify.err('Отсканируйте ячейку назначения');
+          return _context4.a(2);
+        case 4:
+          _context4.p = 4;
+          _context4.n = 5;
+          return window.API.movement.move({
+            barcode: barcode,
+            from_location_code: fromLoc,
+            to_location_code: toLoc,
+            qty: qty,
+            client_id: clientId
+          });
+        case 5:
+          UI.notify.ok("\u041F\u0435\u0440\u0435\u043C\u0435\u0449\u0435\u043D\u043E: ".concat(barcode, " \xD7 ").concat(qty, ": ").concat(fromLoc, " \u2192 ").concat(toLoc));
+          UI.setVal('#move-barcode', '');
+          qty = 1;
+          document.getElementById('qty-val').value = 1;
+          document.getElementById('barcode-note').textContent = '';
+          _context4.n = 6;
+          return loadFromContent(fromLoc);
+        case 6:
+          // обновить остаток ячейки-источника
+          document.getElementById('move-barcode').focus();
+          _context4.n = 8;
+          break;
+        case 7:
+          _context4.p = 7;
+          _t3 = _context4.v;
+          UI.notify.err(_t3.message);
+        case 8:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[4, 7]]);
+  }));
+  return _submitMove.apply(this, arguments);
+}
+function loadHistory() {
+  return _loadHistory.apply(this, arguments);
+}
+function _loadHistory() {
+  _loadHistory = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var clientId, res, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          clientId = getClientId();
+          _context5.n = 1;
+          return window.API.movement.history(clientId ? {
+            client_id: clientId,
+            limit: 100
+          } : {
+            limit: 100
+          });
+        case 1:
+          res = _context5.v;
+          UI.renderTable('#history-body', res.rows, function (r) {
+            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.created_at), "</td>\n            <td>").concat(UI.escHtml(r.item_name || r.barcode), "</td>\n            <td>").concat(UI.fmtQty(r.qty), "</td>\n            <td>").concat(UI.escHtml(r.from_location_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.to_location_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.operator_name || '—'), "</td>\n          </tr>\n        ");
+          });
+          _context5.n = 3;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t4 = _context5.v;
+          UI.notify.err(_t4.message);
+        case 3:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _loadHistory.apply(this, arguments);
+}
+loadClients();</script>
 </body>
 </html>

@@ -82,191 +82,285 @@
 
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['supervisor','tenant_admin','inventory_manager'])) {
-      window.location.href = '/app/menu.html';
-    }
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    let warehouses = [];
-    let fillCache = [];
-
-    // ---------- Выбор ячеек галкой → пачечная инвентаризация ----------
-    // Отдельный режим, не трогающий обычное поведение клика по ячейке
-    // (открыть детали) — чтобы точно ничего не сломать для всех, кто просто
-    // смотрит заполняемость. Пока режим выключен, чекбоксы не показываются
-    // и клик по ячейке работает как раньше.
-    let selectMode = false;
-    let selectedCells = new Set();
-
-    function toggleSelectMode() {
-      selectMode = !selectMode;
-      const btn = document.getElementById('select-mode-btn');
-      btn.textContent = selectMode ? '✕ Отменить выбор' : '☑ Выбрать ячейки';
-      btn.classList.toggle('btn-blue', selectMode);
-      if (!selectMode) selectedCells.clear();
-      renderGrid();
-      updateSelectBar();
-    }
-
-    function toggleCellSelect(code, checked) {
-      if (checked) selectedCells.add(code); else selectedCells.delete(code);
-      updateSelectBar();
-      // Обновляем точечно (рамку + чекбокс), без полного renderGrid() — иначе
-      // при быстрых кликах чекбокс теряет фокус/моргает. Синхронизируем оба
-      // источника клика (сам чекбокс и клик по всей плитке) на одно и то же
-      // визуальное состояние.
-      const cellEl = document.querySelector(`.fill-cell[data-code="${CSS.escape(code)}"]`);
-      if (cellEl) {
-        cellEl.classList.toggle('selected', checked);
-        const cb = cellEl.querySelector('.sel-check');
-        if (cb) cb.checked = checked;
+  <script>function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
+function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
+function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t.return || t.return(); } finally { if (u) throw o; } } }; }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['supervisor', 'tenant_admin', 'inventory_manager'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+}
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-    }
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+var warehouses = [];
+var fillCache = [];
 
-    function clearSelection() {
-      selectedCells.clear();
-      renderGrid();
-      updateSelectBar();
-    }
-
-    function updateSelectBar() {
-      const bar = document.getElementById('select-bar');
-      document.getElementById('sel-count').textContent = selectedCells.size;
-      bar.classList.toggle('show', selectMode && selectedCells.size > 0);
-    }
-
-    async function createInventoryForSelected() {
-      if (!selectedCells.size) return;
-      const codes = [...selectedCells];
-      if (!UI.confirm(`Создать проверки инвентаризации по ${codes.length} ячейкам?`)) return;
-      try {
-        const res = await window.API.inventory.createBatchMulti({ location_codes: codes });
-        const failed = (res.results || []).filter(r => !r.ok);
-        UI.notify.ok(`Создано задач: ${res.created}, пропущено (уже есть): ${res.skipped}` + (failed.length ? `, ошибок: ${failed.length}` : ''));
-        clearSelection();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function colorClass(loc) {
-      if (loc.capacity_liters == null || loc.capacity_liters <= 0) return 'fill-nodata';
-      if (loc.fill_pct < 20) return 'fill-green';
-      if (loc.fill_pct <= 90) return 'fill-blue';
-      return 'fill-red';
-    }
-
-    async function loadWarehouses() {
-      try {
-        const res = await window.API.warehouses.list();
-        warehouses = res.warehouses || [];
-        const sel = document.getElementById('f-warehouse');
-        sel.innerHTML = '<option value="">Все склады</option>' +
-          warehouses.map(w => `<option value="${w.id}">${UI.escHtml(w.warehouse_name)}</option>`).join('');
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadFillReport() {
-      try {
-        const warehouseId = UI.val('#f-warehouse');
-        const params = {};
-        if (warehouseId) params.warehouse_id = warehouseId;
-        const res = await window.API.locations.fillReport(params);
-        fillCache = res.locations || [];
-
-        const zones = [...new Set(fillCache.map(l => l.zone_code).filter(Boolean))].sort();
-        const zoneSel = document.getElementById('f-zone');
-        const prevZone = zoneSel.value;
-        zoneSel.innerHTML = '<option value="">Все зоны</option>' +
-          zones.map(z => `<option value="${UI.escHtml(z)}">${UI.escHtml(z)}</option>`).join('');
-        if (zones.includes(prevZone)) zoneSel.value = prevZone;
-
-        renderGrid();
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    function renderGrid() {
-      const zone = UI.val('#f-zone');
-      const rows = zone ? fillCache.filter(l => l.zone_code === zone) : fillCache;
-
-      document.getElementById('grid-count').textContent = rows.length;
-
-      let green=0, blue=0, red=0, nodata=0, occupied=0, capacity=0;
-      for (const l of rows) {
-        const cls = colorClass(l);
-        if (cls === 'fill-green') green++;
-        else if (cls === 'fill-blue') blue++;
-        else if (cls === 'fill-red') red++;
-        else nodata++;
-        occupied += Number(l.occupied_liters) || 0;
-        if (l.capacity_liters != null) capacity += Number(l.capacity_liters);
+// ---------- Выбор ячеек галкой → пачечная инвентаризация ----------
+// Отдельный режим, не трогающий обычное поведение клика по ячейке
+// (открыть детали) — чтобы точно ничего не сломать для всех, кто просто
+// смотрит заполняемость. Пока режим выключен, чекбоксы не показываются
+// и клик по ячейке работает как раньше.
+var selectMode = false;
+var selectedCells = new Set();
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  var btn = document.getElementById('select-mode-btn');
+  btn.textContent = selectMode ? '✕ Отменить выбор' : '☑ Выбрать ячейки';
+  btn.classList.toggle('btn-blue', selectMode);
+  if (!selectMode) selectedCells.clear();
+  renderGrid();
+  updateSelectBar();
+}
+function toggleCellSelect(code, checked) {
+  if (checked) selectedCells.add(code);else selectedCells.delete(code);
+  updateSelectBar();
+  // Обновляем точечно (рамку + чекбокс), без полного renderGrid() — иначе
+  // при быстрых кликах чекбокс теряет фокус/моргает. Синхронизируем оба
+  // источника клика (сам чекбокс и клик по всей плитке) на одно и то же
+  // визуальное состояние.
+  var cellEl = document.querySelector(".fill-cell[data-code=\"".concat(CSS.escape(code), "\"]"));
+  if (cellEl) {
+    cellEl.classList.toggle('selected', checked);
+    var cb = cellEl.querySelector('.sel-check');
+    if (cb) cb.checked = checked;
+  }
+}
+function clearSelection() {
+  selectedCells.clear();
+  renderGrid();
+  updateSelectBar();
+}
+function updateSelectBar() {
+  var bar = document.getElementById('select-bar');
+  document.getElementById('sel-count').textContent = selectedCells.size;
+  bar.classList.toggle('show', selectMode && selectedCells.size > 0);
+}
+function createInventoryForSelected() {
+  return _createInventoryForSelected.apply(this, arguments);
+}
+function _createInventoryForSelected() {
+  _createInventoryForSelected = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var codes, res, failed, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          if (selectedCells.size) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2);
+        case 1:
+          codes = _toConsumableArray(selectedCells);
+          if (UI.confirm("\u0421\u043E\u0437\u0434\u0430\u0442\u044C \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438 \u0438\u043D\u0432\u0435\u043D\u0442\u0430\u0440\u0438\u0437\u0430\u0446\u0438\u0438 \u043F\u043E ".concat(codes.length, " \u044F\u0447\u0435\u0439\u043A\u0430\u043C?"))) {
+            _context3.n = 2;
+            break;
+          }
+          return _context3.a(2);
+        case 2:
+          _context3.p = 2;
+          _context3.n = 3;
+          return window.API.inventory.createBatchMulti({
+            location_codes: codes
+          });
+        case 3:
+          res = _context3.v;
+          failed = (res.results || []).filter(function (r) {
+            return !r.ok;
+          });
+          UI.notify.ok("\u0421\u043E\u0437\u0434\u0430\u043D\u043E \u0437\u0430\u0434\u0430\u0447: ".concat(res.created, ", \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E (\u0443\u0436\u0435 \u0435\u0441\u0442\u044C): ").concat(res.skipped) + (failed.length ? ", \u043E\u0448\u0438\u0431\u043E\u043A: ".concat(failed.length) : ''));
+          clearSelection();
+          _context3.n = 5;
+          break;
+        case 4:
+          _context3.p = 4;
+          _t = _context3.v;
+          UI.notify.err(_t.message);
+        case 5:
+          return _context3.a(2);
       }
-      document.getElementById('s-total').textContent = rows.length;
-      document.getElementById('s-green').textContent = green;
-      document.getElementById('s-blue').textContent = blue;
-      document.getElementById('s-red').textContent = red;
-      document.getElementById('s-nodata').textContent = nodata;
-      document.getElementById('s-occupied').textContent = occupied.toFixed(0);
-      document.getElementById('s-capacity').textContent = capacity.toFixed(0);
-
-      const grid = document.getElementById('fill-grid');
-      if (!rows.length) {
-        grid.innerHTML = `<div class="empty-state">Ячеек не найдено — проверьте фильтр или задайте размеры на странице «Места хранения»</div>`;
-        return;
+    }, _callee3, null, [[2, 4]]);
+  }));
+  return _createInventoryForSelected.apply(this, arguments);
+}
+function colorClass(loc) {
+  if (loc.capacity_liters == null || loc.capacity_liters <= 0) return 'fill-nodata';
+  if (loc.fill_pct < 20) return 'fill-green';
+  if (loc.fill_pct <= 90) return 'fill-blue';
+  return 'fill-red';
+}
+function loadWarehouses() {
+  return _loadWarehouses.apply(this, arguments);
+}
+function _loadWarehouses() {
+  _loadWarehouses = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var res, sel, _t2;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          _context4.p = 0;
+          _context4.n = 1;
+          return window.API.warehouses.list();
+        case 1:
+          res = _context4.v;
+          warehouses = res.warehouses || [];
+          sel = document.getElementById('f-warehouse');
+          sel.innerHTML = '<option value="">Все склады</option>' + warehouses.map(function (w) {
+            return "<option value=\"".concat(w.id, "\">").concat(UI.escHtml(w.warehouse_name), "</option>");
+          }).join('');
+          _context4.n = 3;
+          break;
+        case 2:
+          _context4.p = 2;
+          _t2 = _context4.v;
+          UI.notify.err(_t2.message);
+        case 3:
+          return _context4.a(2);
       }
-      grid.innerHTML = rows.map((l, idx) => {
-        const cls = colorClass(l);
-        const pctText = l.fill_pct != null ? `${l.fill_pct}%` : '—';
-        const litText = l.capacity_liters != null
-          ? `${l.occupied_liters} / ${l.capacity_liters} л`
-          : (l.occupied_liters > 0 ? `${l.occupied_liters} л занято` : 'нет размеров');
-        const isSel = selectedCells.has(l.location_code);
-        const codeAttr = UI.escHtml(l.location_code);
-        const cellClick = selectMode
-          ? `toggleCellSelect('${codeAttr}', !this.classList.contains('selected'))`
-          : `openCellDetails(${idx}, '${zone ? UI.escHtml(zone) : ''}')`;
-        const checkboxHtml = selectMode
-          ? `<input type="checkbox" class="sel-check" ${isSel ? 'checked' : ''} onclick="event.stopPropagation(); toggleCellSelect('${codeAttr}', this.checked);"/>`
-          : '';
-        return `
-          <div class="fill-cell ${cls} ${isSel ? 'selected' : ''}" data-code="${codeAttr}" onclick="${cellClick}">
-            ${checkboxHtml}
-            <div class="code">${UI.escHtml(l.location_code)}</div>
-            <div class="pct">${pctText}</div>
-            <div class="lit">${litText}</div>
-          </div>
-        `;
-      }).join('');
+    }, _callee4, null, [[0, 2]]);
+  }));
+  return _loadWarehouses.apply(this, arguments);
+}
+function loadFillReport() {
+  return _loadFillReport.apply(this, arguments);
+}
+function _loadFillReport() {
+  _loadFillReport = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var warehouseId, params, res, zones, zoneSel, prevZone, _t3;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          warehouseId = UI.val('#f-warehouse');
+          params = {};
+          if (warehouseId) params.warehouse_id = warehouseId;
+          _context5.n = 1;
+          return window.API.locations.fillReport(params);
+        case 1:
+          res = _context5.v;
+          fillCache = res.locations || [];
+          zones = _toConsumableArray(new Set(fillCache.map(function (l) {
+            return l.zone_code;
+          }).filter(Boolean))).sort();
+          zoneSel = document.getElementById('f-zone');
+          prevZone = zoneSel.value;
+          zoneSel.innerHTML = '<option value="">Все зоны</option>' + zones.map(function (z) {
+            return "<option value=\"".concat(UI.escHtml(z), "\">").concat(UI.escHtml(z), "</option>");
+          }).join('');
+          if (zones.includes(prevZone)) zoneSel.value = prevZone;
+          renderGrid();
+          _context5.n = 3;
+          break;
+        case 2:
+          _context5.p = 2;
+          _t3 = _context5.v;
+          UI.notify.err(_t3.message);
+        case 3:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[0, 2]]);
+  }));
+  return _loadFillReport.apply(this, arguments);
+}
+function renderGrid() {
+  var zone = UI.val('#f-zone');
+  var rows = zone ? fillCache.filter(function (l) {
+    return l.zone_code === zone;
+  }) : fillCache;
+  document.getElementById('grid-count').textContent = rows.length;
+  var green = 0,
+    blue = 0,
+    red = 0,
+    nodata = 0,
+    occupied = 0,
+    capacity = 0;
+  var _iterator = _createForOfIteratorHelper(rows),
+    _step;
+  try {
+    for (_iterator.s(); !(_step = _iterator.n()).done;) {
+      var l = _step.value;
+      var cls = colorClass(l);
+      if (cls === 'fill-green') green++;else if (cls === 'fill-blue') blue++;else if (cls === 'fill-red') red++;else nodata++;
+      occupied += Number(l.occupied_liters) || 0;
+      if (l.capacity_liters != null) capacity += Number(l.capacity_liters);
     }
-
-    function openCellDetails(idx) {
-      const zone = UI.val('#f-zone');
-      const rows = zone ? fillCache.filter(l => l.zone_code === zone) : fillCache;
-      const l = rows[idx];
-      if (!l) return;
-      const dims = (l.length_cm && l.width_cm && l.height_cm)
-        ? `${l.length_cm}×${l.width_cm}×${l.height_cm} см`
-        : 'не заданы';
-      document.getElementById('modal-root').innerHTML = `
-        <div class="modal-overlay" onclick="if(event.target===this) closeModal()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;">
-          <div class="modal-card" style="background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:420px;">
-            <div class="card-title">Ячейка ${UI.escHtml(l.location_code)}</div>
-            <p>Зона: ${UI.escHtml(l.zone_code || '—')}</p>
-            <p>Размеры: ${dims}</p>
-            <p>Вместимость: ${l.capacity_liters != null ? l.capacity_liters + ' л' : 'не задана'}</p>
-            <p>Занято: ${l.occupied_liters} л ${l.fill_pct != null ? `(${l.fill_pct}%)` : ''}</p>
-            <p>Товарных позиций (SKU): ${l.sku_count}, штук на руках: ${l.qty_on_hand}</p>
-            <div class="btn-row" style="margin-top:14px;">
-              <a class="btn-big btn-blue" href="/app/locations.html?search=${encodeURIComponent(l.location_code)}" style="text-decoration:none;text-align:center;">Открыть в «Местах хранения»</a>
-              <button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>
-            </div>
-          </div>
-        </div>
-      `;
+  } catch (err) {
+    _iterator.e(err);
+  } finally {
+    _iterator.f();
+  }
+  document.getElementById('s-total').textContent = rows.length;
+  document.getElementById('s-green').textContent = green;
+  document.getElementById('s-blue').textContent = blue;
+  document.getElementById('s-red').textContent = red;
+  document.getElementById('s-nodata').textContent = nodata;
+  document.getElementById('s-occupied').textContent = occupied.toFixed(0);
+  document.getElementById('s-capacity').textContent = capacity.toFixed(0);
+  var grid = document.getElementById('fill-grid');
+  if (!rows.length) {
+    grid.innerHTML = "<div class=\"empty-state\">\u042F\u0447\u0435\u0435\u043A \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E \u2014 \u043F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u0444\u0438\u043B\u044C\u0442\u0440 \u0438\u043B\u0438 \u0437\u0430\u0434\u0430\u0439\u0442\u0435 \u0440\u0430\u0437\u043C\u0435\u0440\u044B \u043D\u0430 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0435 \xAB\u041C\u0435\u0441\u0442\u0430 \u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F\xBB</div>";
+    return;
+  }
+  grid.innerHTML = rows.map(function (l, idx) {
+    var cls = colorClass(l);
+    var pctText = l.fill_pct != null ? "".concat(l.fill_pct, "%") : '—';
+    var litText = l.capacity_liters != null ? "".concat(l.occupied_liters, " / ").concat(l.capacity_liters, " \u043B") : l.occupied_liters > 0 ? "".concat(l.occupied_liters, " \u043B \u0437\u0430\u043D\u044F\u0442\u043E") : 'нет размеров';
+    var isSel = selectedCells.has(l.location_code);
+    var codeAttr = UI.escHtml(l.location_code);
+    var cellClick = selectMode ? "toggleCellSelect('".concat(codeAttr, "', !this.classList.contains('selected'))") : "openCellDetails(".concat(idx, ", '").concat(zone ? UI.escHtml(zone) : '', "')");
+    var checkboxHtml = selectMode ? "<input type=\"checkbox\" class=\"sel-check\" ".concat(isSel ? 'checked' : '', " onclick=\"event.stopPropagation(); toggleCellSelect('").concat(codeAttr, "', this.checked);\"/>") : '';
+    return "\n          <div class=\"fill-cell ".concat(cls, " ").concat(isSel ? 'selected' : '', "\" data-code=\"").concat(codeAttr, "\" onclick=\"").concat(cellClick, "\">\n            ").concat(checkboxHtml, "\n            <div class=\"code\">").concat(UI.escHtml(l.location_code), "</div>\n            <div class=\"pct\">").concat(pctText, "</div>\n            <div class=\"lit\">").concat(litText, "</div>\n          </div>\n        ");
+  }).join('');
+}
+function openCellDetails(idx) {
+  var zone = UI.val('#f-zone');
+  var rows = zone ? fillCache.filter(function (l) {
+    return l.zone_code === zone;
+  }) : fillCache;
+  var l = rows[idx];
+  if (!l) return;
+  var dims = l.length_cm && l.width_cm && l.height_cm ? "".concat(l.length_cm, "\xD7").concat(l.width_cm, "\xD7").concat(l.height_cm, " \u0441\u043C") : 'не заданы';
+  document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\" style=\"position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;\">\n          <div class=\"modal-card\" style=\"background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:420px;\">\n            <div class=\"card-title\">\u042F\u0447\u0435\u0439\u043A\u0430 ".concat(UI.escHtml(l.location_code), "</div>\n            <p>\u0417\u043E\u043D\u0430: ").concat(UI.escHtml(l.zone_code || '—'), "</p>\n            <p>\u0420\u0430\u0437\u043C\u0435\u0440\u044B: ").concat(dims, "</p>\n            <p>\u0412\u043C\u0435\u0441\u0442\u0438\u043C\u043E\u0441\u0442\u044C: ").concat(l.capacity_liters != null ? l.capacity_liters + ' л' : 'не задана', "</p>\n            <p>\u0417\u0430\u043D\u044F\u0442\u043E: ").concat(l.occupied_liters, " \u043B ").concat(l.fill_pct != null ? "(".concat(l.fill_pct, "%)") : '', "</p>\n            <p>\u0422\u043E\u0432\u0430\u0440\u043D\u044B\u0445 \u043F\u043E\u0437\u0438\u0446\u0438\u0439 (SKU): ").concat(l.sku_count, ", \u0448\u0442\u0443\u043A \u043D\u0430 \u0440\u0443\u043A\u0430\u0445: ").concat(l.qty_on_hand, "</p>\n            <div class=\"btn-row\" style=\"margin-top:14px;\">\n              <a class=\"btn-big btn-blue\" href=\"/app/locations.html?search=").concat(encodeURIComponent(l.location_code), "\" style=\"text-decoration:none;text-align:center;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u0432 \xAB\u041C\u0435\u0441\u0442\u0430\u0445 \u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F\xBB</a>\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n          </div>\n        </div>\n      ");
+}
+function closeModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+_asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+  return _regenerator().w(function (_context) {
+    while (1) switch (_context.n) {
+      case 0:
+        _context.n = 1;
+        return loadWarehouses();
+      case 1:
+        _context.n = 2;
+        return loadFillReport();
+      case 2:
+        return _context.a(2);
     }
-    function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-    (async () => { await loadWarehouses(); await loadFillReport(); })();
-  </script>
+  }, _callee);
+}))();</script>
 </body>
 </html>

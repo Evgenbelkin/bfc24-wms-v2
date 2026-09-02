@@ -179,599 +179,842 @@
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
-  <script>
-    if (!UI.requireAuth()) throw new Error('Not logged in');
-    if (!UI.requireRole(['packer','supervisor','tenant_admin'])) {
-      window.location.href = '/app/menu.html';
-    }
-
-    async function logout() { await window.API.auth.logout(); window.location.href = '/app/login.html'; }
-
-    // ---------- Голосовое сопровождение ----------
-    function renderVoiceBtn() {
-      const btn = document.getElementById('voice-toggle-btn');
-      const on = UI.voiceEnabled();
-      btn.textContent = on ? '🔊 Голос' : '🔇 Голос';
-    }
-    function onToggleVoice() { UI.toggleVoice(); renderVoiceBtn(); }
-    renderVoiceBtn();
-
-    let currentTask = null;
-    let currentShipment = null;
-    let currentLines = [];
-    let boxes = 1;
-    let pickupConfirmed = false;
-    let lastScannedBarcode = null;
-    let lastScanSticker = null; // { wb_sticker, wb_sticker_code } — реально ушёл на печать при последнем скане
-
-    function renderTaskUI() {
-      if (!currentTask) {
-        document.getElementById('no-task-card').style.display = 'block';
-        document.getElementById('task-section').style.display = 'none';
-        return;
+  <script>function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+if (!UI.requireAuth()) throw new Error('Not logged in');
+if (!UI.requireRole(['packer', 'supervisor', 'tenant_admin'])) {
+  window.location.href = '/app/menu.html';
+}
+function logout() {
+  return _logout.apply(this, arguments);
+} // ---------- Голосовое сопровождение ----------
+function _logout() {
+  _logout = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.n) {
+        case 0:
+          _context2.n = 1;
+          return window.API.auth.logout();
+        case 1:
+          window.location.href = '/app/login.html';
+        case 2:
+          return _context2.a(2);
       }
-      document.getElementById('no-task-card').style.display = 'none';
-      document.getElementById('task-section').style.display = 'block';
+    }, _callee2);
+  }));
+  return _logout.apply(this, arguments);
+}
+function renderVoiceBtn() {
+  var btn = document.getElementById('voice-toggle-btn');
+  var on = UI.voiceEnabled();
+  btn.textContent = on ? '🔊 Голос' : '🔇 Голос';
+}
+function onToggleVoice() {
+  UI.toggleVoice();
+  renderVoiceBtn();
+}
+renderVoiceBtn();
+var currentTask = null;
+var currentShipment = null;
+var currentLines = [];
+var boxes = 1;
+var pickupConfirmed = false;
+var lastScannedBarcode = null;
+var lastScanSticker = null; // { wb_sticker, wb_sticker_code } — реально ушёл на печать при последнем скане
 
-      document.getElementById('ship-code').textContent = (currentShipment && currentShipment.external_id) || currentTask.shipment_code || '—';
-      document.getElementById('ship-client').textContent = (currentShipment && currentShipment.client_name) || '—';
+function renderTaskUI() {
+  if (!currentTask) {
+    document.getElementById('no-task-card').style.display = 'block';
+    document.getElementById('task-section').style.display = 'none';
+    return;
+  }
+  document.getElementById('no-task-card').style.display = 'none';
+  document.getElementById('task-section').style.display = 'block';
+  document.getElementById('ship-code').textContent = currentShipment && currentShipment.external_id || currentTask.shipment_code || '—';
+  document.getElementById('ship-client').textContent = currentShipment && currentShipment.client_name || '—';
+  renderPickupGate();
+  renderLines();
+  renderBigPhoto();
+  renderStickerCard();
+  renderMarkingCounter({
+    marking_remaining: null
+  });
+}
+function renderStickerCard() {
+  var card = document.getElementById('sticker-card');
+  var box = document.getElementById('sticker-box');
+  var note = document.getElementById('sticker-code-note');
+  if (!lastScanSticker) {
+    card.style.display = 'none';
+    box.innerHTML = '';
+    note.textContent = '';
+    return;
+  }
+  card.style.display = 'block';
+  box.innerHTML = "<img src=\"data:image/svg+xml;base64,".concat(lastScanSticker.wb_sticker, "\" alt=\"\u0421\u0442\u0438\u043A\u0435\u0440 \u0412\u0411\"/>");
+  note.textContent = lastScanSticker.wb_sticker_code || '';
+}
+function openScannedSticker() {
+  if (!lastScanSticker) return;
+  var w = window.open('', '_blank');
+  w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(lastScannedBarcode || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(lastScanSticker.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\"/>\n          ").concat(lastScanSticker.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(lastScanSticker.wb_sticker_code), "</div>") : '', "\n        </body>"));
+  w.document.close();
+}
+function printScannedSticker() {
+  if (!lastScanSticker) return;
+  var w = window.open('', '_blank');
+  w.document.write("<title>\u041F\u0435\u0447\u0430\u0442\u044C \u0441\u0442\u0438\u043A\u0435\u0440\u0430 ".concat(UI.escHtml(lastScannedBarcode || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(lastScanSticker.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(lastScanSticker.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(lastScanSticker.wb_sticker_code), "</div>") : '', "\n        </body>"));
+  w.document.close();
+}
+function renderPickupGate() {
+  var shipmentCode = currentShipment && currentShipment.external_id || currentTask && currentTask.shipment_code || '';
+  document.getElementById('pickup-location').textContent = currentShipment && currentShipment.buffer_location_code || '— не указана сборщиком —';
+  var showItemUi = pickupConfirmed;
+  document.getElementById('pickup-card').style.display = showItemUi ? 'none' : 'block';
+  document.getElementById('item-ui-wrap').style.display = showItemUi ? 'block' : 'none';
+  if (showItemUi) {
+    setTimeout(function () {
+      return document.getElementById('scan-barcode').focus();
+    }, 150);
+  } else {
+    setTimeout(function () {
+      var _el = document.getElementById('pickup-scan');
+      if (_el) _el.focus();
+    }, 150);
+  }
+}
+function confirmPickup(scanned) {
+  var shipmentCode = currentShipment && currentShipment.external_id || currentTask && currentTask.shipment_code || '';
+  if (String(scanned).trim().toUpperCase() !== String(shipmentCode).trim().toUpperCase()) {
+    UI.beep('err');
+    UI.speak('Ошибка. Не тот короб');
+    UI.notify.err('Это не тот короб — код на наклейке не совпадает с текущим заданием');
+    UI.setVal('#pickup-scan', '');
+    return;
+  }
+  pickupConfirmed = true;
+  UI.notify.ok('Короб подтверждён, можно упаковывать');
+  speakNextItemPrompt();
+  renderPickupGate();
+}
+UI.onScan('#pickup-scan', confirmPickup);
 
-      renderPickupGate();
-      renderLines();
-      renderBigPhoto();
-      renderStickerCard();
-      renderMarkingCounter({ marking_remaining: null });
-    }
+// Пока ничего не отсканировано (или последняя отсканированная строка уже
+// полностью упакована) — показываем не пустой плейсхолдер, а карточку
+// СЛЕДУЮЩЕГО ожидаемого товара: имя/фото/крупный штрихкод. Так упаковщик
+// может визуально сверить штрихкод на распечатанном стикере с тем, что
+// реально требуется по заданию, ДО скана — а не гадать по мелкому тексту
+// в списке состава.
+function getNextExpectedLine() {
+  return currentLines.find(function (l) {
+    return Number(l.qty_packed || 0) < Number(l.qty_plan || 0);
+  }) || null;
+}
 
-    function renderStickerCard() {
-      const card = document.getElementById('sticker-card');
-      const box  = document.getElementById('sticker-box');
-      const note = document.getElementById('sticker-code-note');
-      if (!lastScanSticker) {
-        card.style.display = 'none';
-        box.innerHTML = '';
-        note.textContent = '';
-        return;
-      }
-      card.style.display = 'block';
-      box.innerHTML = `<img src="data:image/svg+xml;base64,${lastScanSticker.wb_sticker}" alt="Стикер ВБ"/>`;
-      note.textContent = lastScanSticker.wb_sticker_code || '';
-    }
+// Голосом сразу подсказываем, что сканировать дальше. Если следующий
+// ожидаемый товар промаркирован (marking_mode='scan') — сразу говорим
+// "Отсканируйте киз", а не ждём, пока упаковщик сначала отсканирует
+// обычный штрихкод и ТОЛЬКО ПОТОМ увидит запрос на киз - унифицированное
+// поле #scan-barcode и так принимает киз напрямую (см. handleScan), так
+// что штрихкод можно вообще не сканировать.
+function nextItemPromptText() {
+  var next = getNextExpectedLine();
+  return next && lineNeedsDataMatrixScan(next) ? 'Отсканируйте киз' : 'Сканируйте товар';
+}
+function speakNextItemPrompt() {
+  UI.speak(nextItemPromptText());
+}
+function renderBigPhoto() {
+  var line = currentLines.find(function (l) {
+    return l.barcode === lastScannedBarcode;
+  });
+  var isExpected = false;
+  if (!line) {
+    line = getNextExpectedLine();
+    isExpected = true;
+  }
+  var img = document.getElementById('big-photo-img');
+  var placeholder = document.getElementById('big-photo-placeholder');
+  var hint = document.getElementById('big-photo-hint');
+  if (!line) {
+    img.style.display = 'none';
+    placeholder.style.display = 'block';
+    hint.textContent = 'Все строки упакованы';
+    document.getElementById('big-photo-name').textContent = '';
+    document.getElementById('big-photo-vendor').textContent = '';
+    document.getElementById('big-photo-barcode').textContent = '';
+    document.getElementById('big-photo-pkg-materials').innerHTML = '';
+    return;
+  }
+  document.getElementById('big-photo-name').textContent = line.item_name || line.barcode;
+  document.getElementById('big-photo-vendor').textContent = [line.vendor_code, line.size ? 'разм. ' + line.size : null].filter(Boolean).join(' · ');
+  document.getElementById('big-photo-barcode').innerHTML = isExpected ? "<div class=\"big-photo-expect-tag\">\u041E\u0436\u0438\u0434\u0430\u0435\u0442\u0441\u044F \u043F\u043E \u0437\u0430\u0434\u0430\u043D\u0438\u044E</div>".concat(UI.escHtml(line.barcode)) : UI.escHtml(line.barcode);
+  document.getElementById('big-photo-pkg-materials').innerHTML = fmtPackagingMaterialsHint(line.packaging_materials);
+  if (line.preview_url) {
+    img.src = line.preview_url;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  } else {
+    img.style.display = 'none';
+    placeholder.style.display = 'block';
+    hint.textContent = 'Фото для этого товара не загружено';
+  }
+}
 
-    function openScannedSticker() {
-      if (!lastScanSticker) return;
-      const w = window.open('', '_blank');
-      w.document.write(`<title>Стикер ${UI.escHtml(lastScannedBarcode||'')}</title>
-        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
-          <img src="data:image/svg+xml;base64,${lastScanSticker.wb_sticker}" style="max-width:90vw;max-height:80vh;"/>
-          ${lastScanSticker.wb_sticker_code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(lastScanSticker.wb_sticker_code)}</div>` : ''}
-        </body>`);
-      w.document.close();
-    }
+// Заменяет сломанную <img> (preview_url не грузится) на плейсхолдер-иконку.
+// Раньше это делалось инлайновым onerror с вложенными двойными кавычками
+// прямо внутри HTML-атрибута onerror="..." — браузер обрывал атрибут на
+// первой же внутренней кавычке, и "хвост" строки (включая обрывок вида
+// )))"/>) прорывался на страницу как обычный текст рядом с товаром.
+function linePhotoError(imgEl) {
+  var div = document.createElement('div');
+  div.className = 'line-photo-placeholder';
+  div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>';
+  imgEl.replaceWith(div);
+}
 
-    function printScannedSticker() {
-      if (!lastScanSticker) return;
-      const w = window.open('', '_blank');
-      w.document.write(`<title>Печать стикера ${UI.escHtml(lastScannedBarcode||'')}</title>
-        <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
-          <img src="data:image/svg+xml;base64,${lastScanSticker.wb_sticker}" style="max-width:90vw;max-height:80vh;" onload="window.print()"/>
-          ${lastScanSticker.wb_sticker_code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(lastScanSticker.wb_sticker_code)}</div>` : ''}
-        </body>`);
-      w.document.close();
-    }
+// "Во что упаковывать" — расходники, привязанные к товару (см. items.html:
+// Материалы для упаковки). Показываем прямо в строке, чтобы упаковщик не
+// угадывал — списываются они всё равно автоматически на скане, это только
+// подсказка глазами.
+function fmtPackagingMaterialsHint(materials) {
+  if (!materials || !materials.length) return '';
+  var text = materials.map(function (m) {
+    return "".concat(m.name).concat(Number(m.qty_per_unit) !== 1 ? ' ×' + m.qty_per_unit : '');
+  }).join(', ');
+  return "<div class=\"line-pkg-materials\"><svg class=\"i\" viewBox=\"0 0 24 24\" style=\"width:13px;height:13px;vertical-align:-2px;\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> \u0423\u043F\u0430\u043A\u043E\u0432\u0430\u0442\u044C \u0432: ".concat(UI.escHtml(text), "</div>");
+}
+function renderLines() {
+  var totalPlan = currentLines.reduce(function (s, l) {
+    return s + Number(l.qty_plan || 0);
+  }, 0);
+  var totalPacked = currentLines.reduce(function (s, l) {
+    return s + Math.min(Number(l.qty_packed || 0), Number(l.qty_plan || 0));
+  }, 0);
+  document.getElementById('ship-progress').textContent = "".concat(totalPacked, "/").concat(totalPlan);
+  var pct = totalPlan > 0 ? Math.round(totalPacked / totalPlan * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  var nextExpected = getNextExpectedLine();
+  document.getElementById('lines-list').innerHTML = currentLines.map(function (l, li) {
+    var done = Number(l.qty_packed || 0) >= Number(l.qty_plan || 0);
+    var justScanned = l.barcode === lastScannedBarcode;
+    var isNext = !justScanned && nextExpected && l === nextExpected;
+    var photo = l.preview_url ? "<img class=\"line-photo\" src=\"".concat(UI.escHtml(l.preview_url), "\" onerror=\"linePhotoError(this)\"/>") : "<div class=\"line-photo-placeholder\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg></div>";
+    // Стикеры ВБ этого товара — по одному на каждую физическую единицу.
+    // Видно ДО скана (что должно напечататься), а после каждого скана
+    // соответствующий чип зеленеет — сверяем с тем, что реально выехало
+    // из принтера.
+    var stickersHtml = l.stickers && l.stickers.length ? "<div class=\"line-stickers\">".concat(l.stickers.map(function (s, si) {
+      return "\n              <span class=\"sticker-chip ".concat(si < Number(l.qty_packed || 0) ? 'done' : '', "\"\n                    onclick=\"openStickerChip(").concat(li, ",").concat(si, ");event.stopPropagation();\"\n                    title=\"").concat(si < Number(l.qty_packed || 0) ? 'Уже напечатан' : 'Ожидает печати', "\">\n                <img class=\"sticker-thumb\" id=\"sticker-thumb-").concat(li, "-").concat(si, "\" src=\"").concat(s.image ? 'data:image/svg+xml;base64,' + s.image : '', "\" style=\"").concat(s.image ? '' : 'visibility:hidden;', "\"/>\n                ").concat(UI.escHtml(s.code), "\n              </span>\n            ");
+    }).join(''), "</div>") : '';
+    return "\n          <div class=\"line-row\" style=\"".concat(justScanned ? 'background:#dcfce7;border-radius:10px;padding-left:6px;' : isNext ? 'background:#dbeafe;border-radius:10px;padding-left:6px;' : '', "\">\n            ").concat(photo, "\n            <div class=\"main\" style=\"flex:1;min-width:0;\">\n              <div class=\"line-name\">").concat(UI.escHtml(l.item_name || l.barcode)).concat(isNext ? '<span class="line-next-tag">Далее</span>' : '', "</div>\n              <div class=\"line-barcode\">").concat([l.vendor_code, l.size ? 'р.' + l.size : null, l.barcode].filter(Boolean).map(UI.escHtml).join(' · '), "</div>\n              ").concat(fmtPackagingMaterialsHint(l.packaging_materials), "\n              ").concat(stickersHtml, "\n            </div>\n            <div class=\"line-progress\" style=\"color:").concat(done ? 'var(--green2)' : 'var(--amber)', "\">\n              ").concat(done ? '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg>' : '', " ").concat(l.qty_packed || 0, "/").concat(l.qty_plan || 0, "\n            </div>\n          </div>\n        ");
+  }).join('') || "<div class=\"empty-state\">\u041D\u0435\u0442 \u0441\u0442\u0440\u043E\u043A</div>";
+  preloadLineStickers();
+}
 
-    function renderPickupGate() {
-      const shipmentCode = (currentShipment && currentShipment.external_id) || (currentTask && currentTask.shipment_code) || '';
-      document.getElementById('pickup-location').textContent = (currentShipment && currentShipment.buffer_location_code) || '— не указана сборщиком —';
-
-      const showItemUi = pickupConfirmed;
-      document.getElementById('pickup-card').style.display   = showItemUi ? 'none' : 'block';
-      document.getElementById('item-ui-wrap').style.display  = showItemUi ? 'block' : 'none';
-
-      if (showItemUi) {
-        setTimeout(() => document.getElementById('scan-barcode').focus(), 150);
-      } else {
-        setTimeout(() => { const _el = document.getElementById('pickup-scan'); if (_el) _el.focus(); }, 150);
-      }
-    }
-
-    function confirmPickup(scanned) {
-      const shipmentCode = (currentShipment && currentShipment.external_id) || (currentTask && currentTask.shipment_code) || '';
-      if (String(scanned).trim().toUpperCase() !== String(shipmentCode).trim().toUpperCase()) {
-        UI.beep('err');
-        UI.speak('Ошибка. Не тот короб');
-        UI.notify.err('Это не тот короб — код на наклейке не совпадает с текущим заданием');
-        UI.setVal('#pickup-scan', '');
-        return;
-      }
-      pickupConfirmed = true;
-      UI.notify.ok('Короб подтверждён, можно упаковывать');
-      speakNextItemPrompt();
-      renderPickupGate();
-    }
-    UI.onScan('#pickup-scan', confirmPickup);
-
-    // Пока ничего не отсканировано (или последняя отсканированная строка уже
-    // полностью упакована) — показываем не пустой плейсхолдер, а карточку
-    // СЛЕДУЮЩЕГО ожидаемого товара: имя/фото/крупный штрихкод. Так упаковщик
-    // может визуально сверить штрихкод на распечатанном стикере с тем, что
-    // реально требуется по заданию, ДО скана — а не гадать по мелкому тексту
-    // в списке состава.
-    function getNextExpectedLine() {
-      return currentLines.find(l => Number(l.qty_packed||0) < Number(l.qty_plan||0)) || null;
-    }
-
-    // Голосом сразу подсказываем, что сканировать дальше. Если следующий
-    // ожидаемый товар промаркирован (marking_mode='scan') — сразу говорим
-    // "Отсканируйте киз", а не ждём, пока упаковщик сначала отсканирует
-    // обычный штрихкод и ТОЛЬКО ПОТОМ увидит запрос на киз - унифицированное
-    // поле #scan-barcode и так принимает киз напрямую (см. handleScan), так
-    // что штрихкод можно вообще не сканировать.
-    function nextItemPromptText() {
-      const next = getNextExpectedLine();
-      return (next && lineNeedsDataMatrixScan(next)) ? 'Отсканируйте киз' : 'Сканируйте товар';
-    }
-    function speakNextItemPrompt() {
-      UI.speak(nextItemPromptText());
-    }
-
-    function renderBigPhoto() {
-      let line = currentLines.find(l => l.barcode === lastScannedBarcode);
-      let isExpected = false;
-      if (!line) {
-        line = getNextExpectedLine();
-        isExpected = true;
-      }
-      const img = document.getElementById('big-photo-img');
-      const placeholder = document.getElementById('big-photo-placeholder');
-      const hint = document.getElementById('big-photo-hint');
-
-      if (!line) {
-        img.style.display = 'none';
-        placeholder.style.display = 'block';
-        hint.textContent = 'Все строки упакованы';
-        document.getElementById('big-photo-name').textContent = '';
-        document.getElementById('big-photo-vendor').textContent = '';
-        document.getElementById('big-photo-barcode').textContent = '';
-        document.getElementById('big-photo-pkg-materials').innerHTML = '';
-        return;
-      }
-
-      document.getElementById('big-photo-name').textContent = line.item_name || line.barcode;
-      document.getElementById('big-photo-vendor').textContent = [line.vendor_code, line.size ? 'разм. '+line.size : null].filter(Boolean).join(' · ');
-      document.getElementById('big-photo-barcode').innerHTML = isExpected
-        ? `<div class="big-photo-expect-tag">Ожидается по заданию</div>${UI.escHtml(line.barcode)}`
-        : UI.escHtml(line.barcode);
-      document.getElementById('big-photo-pkg-materials').innerHTML = fmtPackagingMaterialsHint(line.packaging_materials);
-
-      if (line.preview_url) {
-        img.src = line.preview_url;
-        img.style.display = 'block';
-        placeholder.style.display = 'none';
-      } else {
-        img.style.display = 'none';
-        placeholder.style.display = 'block';
-        hint.textContent = 'Фото для этого товара не загружено';
-      }
-    }
-
-    // Заменяет сломанную <img> (preview_url не грузится) на плейсхолдер-иконку.
-    // Раньше это делалось инлайновым onerror с вложенными двойными кавычками
-    // прямо внутри HTML-атрибута onerror="..." — браузер обрывал атрибут на
-    // первой же внутренней кавычке, и "хвост" строки (включая обрывок вида
-    // )))"/>) прорывался на страницу как обычный текст рядом с товаром.
-    function linePhotoError(imgEl) {
-      const div = document.createElement('div');
-      div.className = 'line-photo-placeholder';
-      div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg>';
-      imgEl.replaceWith(div);
-    }
-
-    // "Во что упаковывать" — расходники, привязанные к товару (см. items.html:
-    // Материалы для упаковки). Показываем прямо в строке, чтобы упаковщик не
-    // угадывал — списываются они всё равно автоматически на скане, это только
-    // подсказка глазами.
-    function fmtPackagingMaterialsHint(materials) {
-      if (!materials || !materials.length) return '';
-      const text = materials.map(m => `${m.name}${Number(m.qty_per_unit) !== 1 ? ' ×'+m.qty_per_unit : ''}`).join(', ');
-      return `<div class="line-pkg-materials"><svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px;vertical-align:-2px;"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Упаковать в: ${UI.escHtml(text)}</div>`;
-    }
-
-    function renderLines() {
-      const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
-      const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
-      document.getElementById('ship-progress').textContent = `${totalPacked}/${totalPlan}`;
-      const pct = totalPlan > 0 ? Math.round((totalPacked/totalPlan)*100) : 0;
-      document.getElementById('progress-fill').style.width = pct + '%';
-
-      const nextExpected = getNextExpectedLine();
-      document.getElementById('lines-list').innerHTML = currentLines.map((l, li) => {
-        const done = Number(l.qty_packed||0) >= Number(l.qty_plan||0);
-        const justScanned = l.barcode === lastScannedBarcode;
-        const isNext = !justScanned && nextExpected && l === nextExpected;
-        const photo = l.preview_url
-          ? `<img class="line-photo" src="${UI.escHtml(l.preview_url)}" onerror="linePhotoError(this)"/>`
-          : `<div class="line-photo-placeholder"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></div>`;
-        // Стикеры ВБ этого товара — по одному на каждую физическую единицу.
-        // Видно ДО скана (что должно напечататься), а после каждого скана
-        // соответствующий чип зеленеет — сверяем с тем, что реально выехало
-        // из принтера.
-        const stickersHtml = (l.stickers && l.stickers.length)
-          ? `<div class="line-stickers">${l.stickers.map((s, si) => `
-              <span class="sticker-chip ${si < Number(l.qty_packed||0) ? 'done' : ''}"
-                    onclick="openStickerChip(${li},${si});event.stopPropagation();"
-                    title="${si < Number(l.qty_packed||0) ? 'Уже напечатан' : 'Ожидает печати'}">
-                <img class="sticker-thumb" id="sticker-thumb-${li}-${si}" src="${s.image ? 'data:image/svg+xml;base64,'+s.image : ''}" style="${s.image ? '' : 'visibility:hidden;'}"/>
-                ${UI.escHtml(s.code)}
-              </span>
-            `).join('')}</div>`
-          : '';
-        return `
-          <div class="line-row" style="${justScanned ? 'background:#dcfce7;border-radius:10px;padding-left:6px;' : isNext ? 'background:#dbeafe;border-radius:10px;padding-left:6px;' : ''}">
-            ${photo}
-            <div class="main" style="flex:1;min-width:0;">
-              <div class="line-name">${UI.escHtml(l.item_name || l.barcode)}${isNext ? '<span class="line-next-tag">Далее</span>' : ''}</div>
-              <div class="line-barcode">${[l.vendor_code, l.size ? 'р.'+l.size : null, l.barcode].filter(Boolean).map(UI.escHtml).join(' · ')}</div>
-              ${fmtPackagingMaterialsHint(l.packaging_materials)}
-              ${stickersHtml}
-            </div>
-            <div class="line-progress" style="color:${done ? 'var(--green2)' : 'var(--amber)'}">
-              ${done ? '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg>' : ''} ${l.qty_packed||0}/${l.qty_plan||0}
-            </div>
-          </div>
-        `;
-      }).join('') || `<div class="empty-state">Нет строк</div>`;
-      preloadLineStickers();
-    }
-
-    // Картинки стикеров не приходят вместе со списком строк (см. комментарий
-    // в packing.service.js:getPackingTaskDetails — на большой волне 30-40
-    // позиций это раздувало ОДИН ответ до мегабайт и тормозило открытие
-    // задачи целиком). Вместо этого сразу после отрисовки списка догружаем
-    // картинки каждого стикера ОТДЕЛЬНЫМИ параллельными запросами в фоне —
-    // список текста виден сразу, картинки проявляются по мере загрузки, без
-    // клика. Уже загруженные (s.image) и уже идущие запросы не дублируем.
-    let _stickerPreloadInFlight = new Set();
-    function preloadLineStickers() {
-      currentLines.forEach((l, li) => {
-        (l.stickers || []).forEach((s, si) => {
-          if (!s.order_id || s.image) return;
-          const key = `${li}-${si}`;
-          if (_stickerPreloadInFlight.has(key)) return;
-          _stickerPreloadInFlight.add(key);
-          window.API.packing.stickerImage(s.order_id)
-            .then(res => {
-              s.image = res.image;
-              const img = document.getElementById(`sticker-thumb-${li}-${si}`);
-              if (img) {
-                img.src = 'data:image/svg+xml;base64,' + res.image;
-                img.style.visibility = 'visible';
-              }
-            })
-            .catch(() => { /* стикер без картинки — чип с кодом всё равно виден, не критично */ })
-            .finally(() => { _stickerPreloadInFlight.delete(key); });
-        });
+// Картинки стикеров не приходят вместе со списком строк (см. комментарий
+// в packing.service.js:getPackingTaskDetails — на большой волне 30-40
+// позиций это раздувало ОДИН ответ до мегабайт и тормозило открытие
+// задачи целиком). Вместо этого сразу после отрисовки списка догружаем
+// картинки каждого стикера ОТДЕЛЬНЫМИ параллельными запросами в фоне —
+// список текста виден сразу, картинки проявляются по мере загрузки, без
+// клика. Уже загруженные (s.image) и уже идущие запросы не дублируем.
+var _stickerPreloadInFlight = new Set();
+function preloadLineStickers() {
+  currentLines.forEach(function (l, li) {
+    (l.stickers || []).forEach(function (s, si) {
+      if (!s.order_id || s.image) return;
+      var key = "".concat(li, "-").concat(si);
+      if (_stickerPreloadInFlight.has(key)) return;
+      _stickerPreloadInFlight.add(key);
+      window.API.packing.stickerImage(s.order_id).then(function (res) {
+        s.image = res.image;
+        var img = document.getElementById("sticker-thumb-".concat(li, "-").concat(si));
+        if (img) {
+          img.src = 'data:image/svg+xml;base64,' + res.image;
+          img.style.visibility = 'visible';
+        }
+      }).catch(function () {/* стикер без картинки — чип с кодом всё равно виден, не критично */}).finally(function () {
+        _stickerPreloadInFlight.delete(key);
       });
-    }
+    });
+  });
+}
 
-    // Картинка стикера НЕ приходит вместе со списком строк (см. комментарий
-    // в packing.service.js:getPackingTaskDetails — на большой волне это
-    // раздувало ответ до мегабайт и тормозило открытие задачи). Подгружаем
-    // конкретную картинку по клику и кэшируем в s.image, чтобы повторный
-    // клик по тому же чипу не дёргал сервер заново.
-    async function openStickerChip(lineIdx, stickerIdx) {
-      const l = currentLines[lineIdx];
-      const s = l && l.stickers && l.stickers[stickerIdx];
-      if (!(s && s.order_id)) { UI.notify.warn('Для этого стикера нет изображения'); return; }
-      // Открываем окно СРАЗУ, синхронно по клику - иначе мобильный/desktop
-      // браузер может заблокировать всплывающее окно, открытое после await.
-      const w = window.open('', '_blank');
-      if (!w) { UI.notify.err('Браузер заблокировал всплывающее окно'); return; }
-      w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Загрузка стикера…</p>');
-      try {
-        if (!s.image) {
-          const res = await window.API.packing.stickerImage(s.order_id);
+// Картинка стикера НЕ приходит вместе со списком строк (см. комментарий
+// в packing.service.js:getPackingTaskDetails — на большой волне это
+// раздувало ответ до мегабайт и тормозило открытие задачи). Подгружаем
+// конкретную картинку по клику и кэшируем в s.image, чтобы повторный
+// клик по тому же чипу не дёргал сервер заново.
+function openStickerChip(_x, _x2) {
+  return _openStickerChip.apply(this, arguments);
+}
+function _openStickerChip() {
+  _openStickerChip = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(lineIdx, stickerIdx) {
+    var l, s, w, res, _t;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          l = currentLines[lineIdx];
+          s = l && l.stickers && l.stickers[stickerIdx];
+          if (s && s.order_id) {
+            _context3.n = 1;
+            break;
+          }
+          UI.notify.warn('Для этого стикера нет изображения');
+          return _context3.a(2);
+        case 1:
+          // Открываем окно СРАЗУ, синхронно по клику - иначе мобильный/desktop
+          // браузер может заблокировать всплывающее окно, открытое после await.
+          w = window.open('', '_blank');
+          if (w) {
+            _context3.n = 2;
+            break;
+          }
+          UI.notify.err('Браузер заблокировал всплывающее окно');
+          return _context3.a(2);
+        case 2:
+          w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Загрузка стикера…</p>');
+          _context3.p = 3;
+          if (s.image) {
+            _context3.n = 5;
+            break;
+          }
+          _context3.n = 4;
+          return window.API.packing.stickerImage(s.order_id);
+        case 4:
+          res = _context3.v;
           s.image = res.image;
           if (!s.code && res.code) s.code = res.code;
-        }
-        w.document.open();
-        w.document.write(`<title>Стикер ${UI.escHtml(s.code||'')}</title>
-          <body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">
-            <img src="data:image/svg+xml;base64,${s.image}" style="max-width:90vw;max-height:80vh;"/>
-            ${s.code ? `<div style="font-family:monospace;font-size:14px;color:#333;">${UI.escHtml(s.code)}</div>` : ''}
-          </body>`);
-        w.document.close();
-      } catch (e) {
-        w.document.open();
-        w.document.write(`<p style="font-family:sans-serif;color:red;padding:40px;">${UI.escHtml(e.message)}</p>`);
-        w.document.close();
+        case 5:
+          w.document.open();
+          w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(s.code || ''), "</title>\n          <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n            <img src=\"data:image/svg+xml;base64,").concat(s.image, "\" style=\"max-width:90vw;max-height:80vh;\"/>\n            ").concat(s.code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(s.code), "</div>") : '', "\n          </body>"));
+          w.document.close();
+          _context3.n = 7;
+          break;
+        case 6:
+          _context3.p = 6;
+          _t = _context3.v;
+          w.document.open();
+          w.document.write("<p style=\"font-family:sans-serif;color:red;padding:40px;\">".concat(UI.escHtml(_t.message), "</p>"));
+          w.document.close();
+        case 7:
+          return _context3.a(2);
       }
-    }
-
-    async function loadTaskDetails(res) {
-      currentTask = res.task;
-      currentShipment = res.shipment;
-      currentLines = res.lines || [];
-      pickupConfirmed = false;
-      lastScannedBarcode = null;
-      lastScanSticker = null;
-      pendingDmBarcode = null;
-      const dmCard = document.getElementById('pack-dm-card');
-      if (dmCard) dmCard.style.display = 'none';
-      renderTaskUI();
-    }
-
-    async function takeNext() {
-      try {
-        const res = await window.API.packing.next();
-        if (!res.task) { UI.notify.warn('Нет задач на упаковку'); return; }
-        await loadTaskDetails(res);
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    async function loadCurrent() {
-      try {
-        const res = await window.API.packing.current();
-        if (res.task) await loadTaskDetails(res);
-        else { currentTask = null; renderTaskUI(); }
-      } catch (e) { UI.notify.err(e.message); }
-    }
-
-    // Если товар в режиме маркировки 'scan' (клиент клеит DataMatrix сам) —
-    // после скана штрихкода не отправляем запрос сразу, а ждём ещё скан
-    // DataMatrix именно с этой единицы (см. #pack-dm-card ниже).
-    let pendingDmBarcode = null;
-
-    function findLineByBarcode(barcode) {
-      return currentLines.find(l => l.barcode === barcode);
-    }
-    function lineNeedsDataMatrixScan(line) {
-      // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на упаковке
-      // (независимо от marking_trigger — тот применяется только к печати).
-      // 'scan_packing' — тот же скан на упаковке, но без предварительной
-      // регистрации на приёмке (код регистрируется тем же сканом, см.
-      // marking.service.js consumeScannedCodeAtPacking autoRegister).
-      return !!(line && line.requires_marking && (line.marking_mode === 'scan' || line.marking_mode === 'scan_packing'));
-    }
-
-    async function handleScan(barcode) {
-      if (!currentTask || !pickupConfirmed) return;
-      const scanned = String(barcode || '').trim();
-
-      // Промаркированные товары: можно сразу сканировать киз в это же поле,
-      // без отдельного скана обычного штрихкода — система сама достаёт GTIN
-      // из кода и по нему находит товар (см. items.service.js:findItemByKizCode).
-      // Если код не распознался или товар с таким GTIN не нашёлся у этого
-      // клиента — просто просим отсканировать обычный штрихкод, как раньше.
-      if (UI.isValidKizCode(scanned)) {
-        const statusEl = document.getElementById('scan-status');
-        try {
-          const res = await window.API.items.byKiz(scanned, currentShipment && currentShipment.client_id);
-          if (res.item && res.item.barcode) {
-            // Подстраховка на случай ошибки именно на шаге кода маркировки —
-            // чтобы кнопка "обойти супервайзером" (см. submitMarkingOverride)
-            // сработала так же, как в обычном двухшаговом сценарии.
-            pendingDmBarcode = res.item.barcode;
-            const ok = await submitScan(res.item.barcode, scanned, null);
-            if (!ok) {
-              document.getElementById('pack-dm-card').style.display = 'block';
-              UI.setVal('#pack-dm-input', scanned);
-            }
-            return;
+    }, _callee3, null, [[3, 6]]);
+  }));
+  return _openStickerChip.apply(this, arguments);
+}
+function loadTaskDetails(_x3) {
+  return _loadTaskDetails.apply(this, arguments);
+}
+function _loadTaskDetails() {
+  _loadTaskDetails = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(res) {
+    var dmCard;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.n) {
+        case 0:
+          currentTask = res.task;
+          currentShipment = res.shipment;
+          currentLines = res.lines || [];
+          pickupConfirmed = false;
+          lastScannedBarcode = null;
+          lastScanSticker = null;
+          pendingDmBarcode = null;
+          dmCard = document.getElementById('pack-dm-card');
+          if (dmCard) dmCard.style.display = 'none';
+          renderTaskUI();
+        case 1:
+          return _context4.a(2);
+      }
+    }, _callee4);
+  }));
+  return _loadTaskDetails.apply(this, arguments);
+}
+function takeNext() {
+  return _takeNext.apply(this, arguments);
+}
+function _takeNext() {
+  _takeNext = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var res, _t2;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          _context5.p = 0;
+          _context5.n = 1;
+          return window.API.packing.next();
+        case 1:
+          res = _context5.v;
+          if (res.task) {
+            _context5.n = 2;
+            break;
           }
-        } catch (e) {
-          // не нашли товар по этому кизу — падаем на подсказку ниже
-        }
-        UI.beep('err');
-        UI.speak('Код не найден');
-        UI.notify.err('Не смогли определить товар по этому коду — отсканируйте обычный штрихкод товара');
-        if (statusEl) statusEl.textContent = '';
-        return;
+          UI.notify.warn('Нет задач на упаковку');
+          return _context5.a(2);
+        case 2:
+          _context5.n = 3;
+          return loadTaskDetails(res);
+        case 3:
+          _context5.n = 5;
+          break;
+        case 4:
+          _context5.p = 4;
+          _t2 = _context5.v;
+          UI.notify.err(_t2.message);
+        case 5:
+          return _context5.a(2);
       }
-
-      const line = findLineByBarcode(scanned);
-      if (lineNeedsDataMatrixScan(line)) {
-        pendingDmBarcode = scanned;
-        document.getElementById('pack-dm-card').style.display = 'block';
-        document.getElementById('pack-dm-error').style.display = 'none';
-        document.getElementById('pack-dm-override-btn').style.display = 'none';
-        UI.setVal('#pack-dm-input', '');
-        UI.speak('Отсканируйте киз');
-        setTimeout(() => document.getElementById('pack-dm-input').focus(), 100);
-        return;
+    }, _callee5, null, [[0, 4]]);
+  }));
+  return _takeNext.apply(this, arguments);
+}
+function loadCurrent() {
+  return _loadCurrent.apply(this, arguments);
+} // Если товар в режиме маркировки 'scan' (клиент клеит DataMatrix сам) —
+// после скана штрихкода не отправляем запрос сразу, а ждём ещё скан
+// DataMatrix именно с этой единицы (см. #pack-dm-card ниже).
+function _loadCurrent() {
+  _loadCurrent = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var res, _t3;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          _context6.p = 0;
+          _context6.n = 1;
+          return window.API.packing.current();
+        case 1:
+          res = _context6.v;
+          if (!res.task) {
+            _context6.n = 3;
+            break;
+          }
+          _context6.n = 2;
+          return loadTaskDetails(res);
+        case 2:
+          _context6.n = 4;
+          break;
+        case 3:
+          currentTask = null;
+          renderTaskUI();
+        case 4:
+          _context6.n = 6;
+          break;
+        case 5:
+          _context6.p = 5;
+          _t3 = _context6.v;
+          UI.notify.err(_t3.message);
+        case 6:
+          return _context6.a(2);
       }
-      await submitScan(scanned, null, null);
-    }
-
-    async function submitScan(barcode, dataMatrixCode, markingOverride) {
-      const shipmentCode = (currentShipment && currentShipment.external_id) || currentTask.shipment_code;
-      const statusEl = document.getElementById('scan-status');
-      const errEl = document.getElementById('pack-dm-error');
-      const overrideBtn = document.getElementById('pack-dm-override-btn');
-      try {
-        const res = await window.API.packing.scanItem({
-          shipment_code: shipmentCode, scan_code: barcode,
-          data_matrix_code: dataMatrixCode || undefined,
-          marking_override: markingOverride || undefined,
-        });
-        const line = currentLines.find(l => l.barcode === res.barcode);
-        if (line) line.qty_packed = res.qty_packed;
-        lastScannedBarcode = res.barcode;
-        lastScanSticker = res.wb_sticker ? { wb_sticker: res.wb_sticker, wb_sticker_code: res.wb_sticker_code } : null;
-        renderLines();
-        renderBigPhoto();
-        renderStickerCard();
-        const viaBadge = dataMatrixCode ? ' · <span style="color:var(--green);font-weight:700;">✓ КИЗ</span>' : '';
-        const materialsBadge = (res.used_materials && res.used_materials.length)
-          ? ' · <span style="color:var(--muted);">списано: ' + UI.escHtml(res.used_materials.map(m => `${m.name} ×${m.qty}`).join(', ')) + '</span>'
-          : '';
-        statusEl.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg> ${UI.escHtml(res.barcode)}: ${res.qty_packed}/${res.qty_plan}` + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '') + viaBadge + materialsBadge;
-        renderMarkingCounter(res);
-        UI.notify.ok(res.marking && res.marking.manual_override
-          ? `Упаковано БЕЗ отправки КИЗ в WB (обход супервайзера): ${res.qty_packed}/${res.qty_plan}`
-          : `Упаковано: ${res.qty_packed}/${res.qty_plan}`);
-        // Голосом: если у товара есть привязанные материалы упаковки - говорим
-        // это ПЕРВЫМ делом. РАНЬШЕ это был отдельный UI.speak() до следующего -
-        // не сработало: UI.speak() внутри себя каждый раз делает
-        // speechSynthesis.cancel() (см. ui.js), чтобы не копилась очередь при
-        // частых сканах, а не аккуратно ставит фразы в очередь, как думали
-        // раньше. Из-за этого вторая фраза (Отсканируйте киз/Сканируйте товар/
-        // Всё упаковано) мгновенно обрывала первую (Упаковать в...), и подсказку
-        // не было слышно вообще. Теперь обе фразы - ОДИН вызов UI.speak().
-        const materialsPrompt = (res.used_materials && res.used_materials.length)
-          ? `Упаковать в ${res.used_materials.map(m => m.name).join(', ')}. `
-          : '';
-        // Голосом: если этим сканом закрыли последнюю строку - явно говорим
-        // отнести в зону отгрузки (это следующий физический шаг), иначе
-        // просто короткое подтверждение скана.
-        const totalPlanNow   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
-        const totalPackedNow = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
-        const allPackedNow = totalPlanNow > 0 && totalPackedNow >= totalPlanNow;
-        UI.speak(materialsPrompt + (allPackedNow
-          ? 'Всё упаковано. Разместите короб в зону отгрузки'
+    }, _callee6, null, [[0, 5]]);
+  }));
+  return _loadCurrent.apply(this, arguments);
+}
+var pendingDmBarcode = null;
+function findLineByBarcode(barcode) {
+  return currentLines.find(function (l) {
+    return l.barcode === barcode;
+  });
+}
+function lineNeedsDataMatrixScan(line) {
+  // Для marking_mode='scan' DataMatrix сканируется ВСЕГДА на упаковке
+  // (независимо от marking_trigger — тот применяется только к печати).
+  // 'scan_packing' — тот же скан на упаковке, но без предварительной
+  // регистрации на приёмке (код регистрируется тем же сканом, см.
+  // marking.service.js consumeScannedCodeAtPacking autoRegister).
+  return !!(line && line.requires_marking && (line.marking_mode === 'scan' || line.marking_mode === 'scan_packing'));
+}
+function handleScan(_x4) {
+  return _handleScan.apply(this, arguments);
+}
+function _handleScan() {
+  _handleScan = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(barcode) {
+    var scanned, statusEl, res, ok, line, _t4;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (!(!currentTask || !pickupConfirmed)) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          scanned = String(barcode || '').trim(); // Промаркированные товары: можно сразу сканировать киз в это же поле,
+          // без отдельного скана обычного штрихкода — система сама достаёт GTIN
+          // из кода и по нему находит товар (см. items.service.js:findItemByKizCode).
+          // Если код не распознался или товар с таким GTIN не нашёлся у этого
+          // клиента — просто просим отсканировать обычный штрихкод, как раньше.
+          if (!UI.isValidKizCode(scanned)) {
+            _context7.n = 8;
+            break;
+          }
+          statusEl = document.getElementById('scan-status');
+          _context7.p = 2;
+          _context7.n = 3;
+          return window.API.items.byKiz(scanned, currentShipment && currentShipment.client_id);
+        case 3:
+          res = _context7.v;
+          if (!(res.item && res.item.barcode)) {
+            _context7.n = 5;
+            break;
+          }
+          // Подстраховка на случай ошибки именно на шаге кода маркировки —
+          // чтобы кнопка "обойти супервайзером" (см. submitMarkingOverride)
+          // сработала так же, как в обычном двухшаговом сценарии.
+          pendingDmBarcode = res.item.barcode;
+          _context7.n = 4;
+          return submitScan(res.item.barcode, scanned, null);
+        case 4:
+          ok = _context7.v;
+          if (!ok) {
+            document.getElementById('pack-dm-card').style.display = 'block';
+            UI.setVal('#pack-dm-input', scanned);
+          }
+          return _context7.a(2);
+        case 5:
+          _context7.n = 7;
+          break;
+        case 6:
+          _context7.p = 6;
+          _t4 = _context7.v;
+        case 7:
+          UI.beep('err');
+          UI.speak('Код не найден');
+          UI.notify.err('Не смогли определить товар по этому коду — отсканируйте обычный штрихкод товара');
+          if (statusEl) statusEl.textContent = '';
+          return _context7.a(2);
+        case 8:
+          line = findLineByBarcode(scanned);
+          if (!lineNeedsDataMatrixScan(line)) {
+            _context7.n = 9;
+            break;
+          }
+          pendingDmBarcode = scanned;
+          document.getElementById('pack-dm-card').style.display = 'block';
+          document.getElementById('pack-dm-error').style.display = 'none';
+          document.getElementById('pack-dm-override-btn').style.display = 'none';
+          UI.setVal('#pack-dm-input', '');
+          UI.speak('Отсканируйте киз');
+          setTimeout(function () {
+            return document.getElementById('pack-dm-input').focus();
+          }, 100);
+          return _context7.a(2);
+        case 9:
+          _context7.n = 10;
+          return submitScan(scanned, null, null);
+        case 10:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[2, 6]]);
+  }));
+  return _handleScan.apply(this, arguments);
+}
+function submitScan(_x5, _x6, _x7) {
+  return _submitScan.apply(this, arguments);
+}
+function _submitScan() {
+  _submitScan = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(barcode, dataMatrixCode, markingOverride) {
+    var shipmentCode, statusEl, errEl, overrideBtn, res, line, viaBadge, materialsBadge, materialsPrompt, totalPlanNow, totalPackedNow, allPackedNow, _t5;
+    return _regenerator().w(function (_context8) {
+      while (1) switch (_context8.p = _context8.n) {
+        case 0:
+          shipmentCode = currentShipment && currentShipment.external_id || currentTask.shipment_code;
+          statusEl = document.getElementById('scan-status');
+          errEl = document.getElementById('pack-dm-error');
+          overrideBtn = document.getElementById('pack-dm-override-btn');
+          _context8.p = 1;
+          _context8.n = 2;
+          return window.API.packing.scanItem({
+            shipment_code: shipmentCode,
+            scan_code: barcode,
+            data_matrix_code: dataMatrixCode || undefined,
+            marking_override: markingOverride || undefined
+          });
+        case 2:
+          res = _context8.v;
+          line = currentLines.find(function (l) {
+            return l.barcode === res.barcode;
+          });
+          if (line) line.qty_packed = res.qty_packed;
+          lastScannedBarcode = res.barcode;
+          lastScanSticker = res.wb_sticker ? {
+            wb_sticker: res.wb_sticker,
+            wb_sticker_code: res.wb_sticker_code
+          } : null;
+          renderLines();
+          renderBigPhoto();
+          renderStickerCard();
+          viaBadge = dataMatrixCode ? ' · <span style="color:var(--green);font-weight:700;">✓ КИЗ</span>' : '';
+          materialsBadge = res.used_materials && res.used_materials.length ? ' · <span style="color:var(--muted);">списано: ' + UI.escHtml(res.used_materials.map(function (m) {
+            return "".concat(m.name, " \xD7").concat(m.qty);
+          }).join(', ')) + '</span>' : '';
+          statusEl.innerHTML = "<svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> ".concat(UI.escHtml(res.barcode), ": ").concat(res.qty_packed, "/").concat(res.qty_plan) + (res.print_job ? ' · <svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> отправлено на печать' : '') + viaBadge + materialsBadge;
+          renderMarkingCounter(res);
+          UI.notify.ok(res.marking && res.marking.manual_override ? "\u0423\u043F\u0430\u043A\u043E\u0432\u0430\u043D\u043E \u0411\u0415\u0417 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438 \u041A\u0418\u0417 \u0432 WB (\u043E\u0431\u0445\u043E\u0434 \u0441\u0443\u043F\u0435\u0440\u0432\u0430\u0439\u0437\u0435\u0440\u0430): ".concat(res.qty_packed, "/").concat(res.qty_plan) : "\u0423\u043F\u0430\u043A\u043E\u0432\u0430\u043D\u043E: ".concat(res.qty_packed, "/").concat(res.qty_plan));
+          // Голосом: если у товара есть привязанные материалы упаковки - говорим
+          // это ПЕРВЫМ делом. РАНЬШЕ это был отдельный UI.speak() до следующего -
+          // не сработало: UI.speak() внутри себя каждый раз делает
+          // speechSynthesis.cancel() (см. ui.js), чтобы не копилась очередь при
+          // частых сканах, а не аккуратно ставит фразы в очередь, как думали
+          // раньше. Из-за этого вторая фраза (Отсканируйте киз/Сканируйте товар/
+          // Всё упаковано) мгновенно обрывала первую (Упаковать в...), и подсказку
+          // не было слышно вообще. Теперь обе фразы - ОДИН вызов UI.speak().
+          materialsPrompt = res.used_materials && res.used_materials.length ? "\u0423\u043F\u0430\u043A\u043E\u0432\u0430\u0442\u044C \u0432 ".concat(res.used_materials.map(function (m) {
+            return m.name;
+          }).join(', '), ". ") : ''; // Голосом: если этим сканом закрыли последнюю строку - явно говорим
+          // отнести в зону отгрузки (это следующий физический шаг), иначе
+          // просто короткое подтверждение скана.
+          totalPlanNow = currentLines.reduce(function (s, l) {
+            return s + Number(l.qty_plan || 0);
+          }, 0);
+          totalPackedNow = currentLines.reduce(function (s, l) {
+            return s + Math.min(Number(l.qty_packed || 0), Number(l.qty_plan || 0));
+          }, 0);
+          allPackedNow = totalPlanNow > 0 && totalPackedNow >= totalPlanNow;
+          UI.speak(materialsPrompt + (allPackedNow ? 'Всё упаковано. Разместите короб в зону отгрузки'
           // Подсказываем сразу, что сканировать дальше - если следующий
           // товар промаркирован, сразу "Отсканируйте киз" вместо нейтрального
           // "Принято", чтобы не сканировали штрихкод впустую перед кизом.
           : nextItemPromptText()));
-        // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
-        pendingDmBarcode = null;
-        document.getElementById('pack-dm-card').style.display = 'none';
-        // Если этим сканом закрыли последнюю строку - сканировать в поле
-        // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
-        // отгрузки (туда сканируют физически следующим шагом), а не оставаться
-        // в уже неактуальном поле товара.
-        document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode').focus();
-        return true;
-      } catch (e) {
-        UI.beep('err');
-        UI.speak('Ошибка');
-        if (dataMatrixCode) {
-          // Ошибка именно на шаге DataMatrix (нет в пуле / WB API отклонил и т.п.) —
-          // не прячем карточку, даём возможность повторить скан или вызвать супервайзера.
-          // Карточку показываем явно (а не полагаемся, что она уже видна) — при
-          // прямом скане киза (без отдельного скана штрихкода) она могла ни разу
-          // не открыться до этой ошибки.
-          document.getElementById('pack-dm-card').style.display = 'block';
-          errEl.textContent = e.message;
-          errEl.style.display = 'block';
-          overrideBtn.style.display = 'block';
-        } else {
-          statusEl.textContent = '';
-          UI.notify.err(e.message);
-        }
-        return false;
+          // Успех — прячем карточку DataMatrix, готовы к следующему скану штрихкода.
+          pendingDmBarcode = null;
+          document.getElementById('pack-dm-card').style.display = 'none';
+          // Если этим сканом закрыли последнюю строку - сканировать в поле
+          // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
+          // отгрузки (туда сканируют физически следующим шагом), а не оставаться
+          // в уже неактуальном поле товара.
+          document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode').focus();
+          return _context8.a(2, true);
+        case 3:
+          _context8.p = 3;
+          _t5 = _context8.v;
+          UI.beep('err');
+          UI.speak('Ошибка');
+          if (dataMatrixCode) {
+            // Ошибка именно на шаге DataMatrix (нет в пуле / WB API отклонил и т.п.) —
+            // не прячем карточку, даём возможность повторить скан или вызвать супервайзера.
+            // Карточку показываем явно (а не полагаемся, что она уже видна) — при
+            // прямом скане киза (без отдельного скана штрихкода) она могла ни разу
+            // не открыться до этой ошибки.
+            document.getElementById('pack-dm-card').style.display = 'block';
+            errEl.textContent = _t5.message;
+            errEl.style.display = 'block';
+            overrideBtn.style.display = 'block';
+          } else {
+            statusEl.textContent = '';
+            UI.notify.err(_t5.message);
+          }
+          return _context8.a(2, false);
       }
-    }
-
-    UI.onScan('#pack-dm-input', async (v) => {
-      if (!pendingDmBarcode) return;
-      await submitScan(pendingDmBarcode, String(v || '').trim(), null);
-    });
-
-    // Аварийный обход супервайзером — см. marking.service.js:overrideMarkingAtPacking.
-    // Права проверяются на бэкенде по логину/паролю, введённым в этой форме,
-    // а не по роли текущей сессии упаковщика.
-    function openMarkingOverrideModal() {
-      if (document.getElementById('mo-overlay')) return;
-      const overlay = document.createElement('div');
-      overlay.id = 'mo-overlay';
-      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
-      const inputCss = 'width:100%;padding:12px 14px;background:var(--card2,#f1f5f9);border:2px solid var(--border,#e2e8f0);border-radius:10px;font-size:15px;outline:none;color:var(--text,#0f172a);box-sizing:border-box;';
-      const labelCss = 'display:block;font-size:12px;font-weight:600;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;';
-      overlay.innerHTML = `
-        <div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:380px;box-sizing:border-box;">
-          <div style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text,#0f172a);">Провести без отправки КИЗ в WB</div>
-          <div style="font-size:13px;color:var(--muted,#64748b);margin-bottom:16px;">Только супервайзер или администратор. Единица будет упакована, но код нужно будет вручную привязать в кабинете WB позже.</div>
-          <div style="margin-bottom:12px;">
-            <label style="${labelCss}">Логин супервайзера</label>
-            <input id="mo-username" autocomplete="off" style="${inputCss}"/>
-          </div>
-          <div style="margin-bottom:12px;">
-            <label style="${labelCss}">Пароль</label>
-            <input id="mo-password" type="password" autocomplete="off" style="${inputCss}"/>
-          </div>
-          <div style="margin-bottom:16px;">
-            <label style="${labelCss}">Причина</label>
-            <input id="mo-reason" placeholder="Например: WB API недоступен" style="${inputCss}"/>
-          </div>
-          <div style="display:flex;gap:10px;">
-            <button class="btn-big btn-yellow" style="flex:1;" onclick="document.getElementById('mo-overlay').remove()">Отмена</button>
-            <button class="btn-big btn-red" style="flex:1;" onclick="submitMarkingOverride()">Провести</button>
-          </div>
-        </div>`;
-      document.body.appendChild(overlay);
-      setTimeout(() => { const _el = document.getElementById('mo-username'); if (_el) _el.focus(); }, 100);
-    }
-
-    async function submitMarkingOverride() {
-      const username = UI.val('#mo-username');
-      const password = UI.val('#mo-password');
-      const reason = UI.val('#mo-reason');
-      if (!username || !password) { UI.notify.err('Укажите логин и пароль супервайзера'); return; }
-      if (!reason || !reason.trim()) { UI.notify.err('Укажите причину'); return; }
-      const dmCode = UI.val('#pack-dm-input') || '';
-      if (!dmCode) { UI.notify.err('В поле DataMatrix должен остаться отсканированный код'); return; }
-      const ok = await submitScan(pendingDmBarcode, dmCode, {
-        reason: reason.trim(), supervisor_username: username, supervisor_password: password,
-      });
-      if (ok) { const _mo = document.getElementById('mo-overlay'); if (_mo) _mo.remove(); }
-    }
-
-    // Счётчик оставшихся кодов "Честный знак" для товара из последнего скана.
-    // marking_remaining есть в ответе только если товар помечен как требующий
-    // маркировки (см. packing.service.js:scanItem) — для остальных товаров
-    // карточку просто прячем.
-    function renderMarkingCounter(res) {
-      const card = document.getElementById('marking-counter-card');
-      const text = document.getElementById('marking-counter-text');
-      if (res.marking_remaining === null || res.marking_remaining === undefined) {
-        card.style.display = 'none';
-        return;
+    }, _callee8, null, [[1, 3]]);
+  }));
+  return _submitScan.apply(this, arguments);
+}
+UI.onScan('#pack-dm-input', /*#__PURE__*/function () {
+  var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(v) {
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.n) {
+        case 0:
+          if (pendingDmBarcode) {
+            _context.n = 1;
+            break;
+          }
+          return _context.a(2);
+        case 1:
+          _context.n = 2;
+          return submitScan(pendingDmBarcode, String(v || '').trim(), null);
+        case 2:
+          return _context.a(2);
       }
-      card.style.display = 'block';
-      const n = res.marking_remaining;
-      const low = n <= 5;
-      text.innerHTML = low
-        ? `<span style="color:var(--red);font-weight:700;">Осталось кодов: ${n} — скоро закончатся, дозагрузите пул</span>`
-        : `Осталось кодов маркировки для этого товара: <strong>${n}</strong>`;
-    }
-    UI.onScan('#scan-barcode', handleScan);
-    // Скан ячейки зоны отгрузки сразу завершает упаковку — не нужно после
-    // скана ещё отдельно нажимать "Подтвердить упаковку" рукой.
-    UI.onScan('#pack-location', confirmPacking);
+    }, _callee);
+  }));
+  return function (_x8) {
+    return _ref.apply(this, arguments);
+  };
+}());
 
-    function stepBoxes(delta) { boxes = Math.max(1, boxes + delta); document.getElementById('boxes-val').value = boxes; }
-    function setBoxes(val) { boxes = Math.max(1, Math.round(Number(val)) || 1); document.getElementById('boxes-val').value = boxes; }
-
-    // locationCode передаётся напрямую при скане (см. UI.onScan ниже) — само
-    // поле #pack-location к этому моменту уже очищено сканером, поэтому
-    // подтверждение не может брать код оттуда. При обычном клике на кнопку
-    // locationCode не передаётся, и код берётся из поля как раньше.
-    async function confirmPacking(locationCode) {
-      if (!currentShipment) return;
-      const totalPlan   = currentLines.reduce((s,l) => s + Number(l.qty_plan||0), 0);
-      const totalPacked = currentLines.reduce((s,l) => s + Math.min(Number(l.qty_packed||0), Number(l.qty_plan||0)), 0);
-      if (totalPacked < totalPlan) {
-        if (!UI.confirm(`Упаковано не всё (${totalPacked}/${totalPlan}). Всё равно попробовать завершить?`)) return;
+// Аварийный обход супервайзером — см. marking.service.js:overrideMarkingAtPacking.
+// Права проверяются на бэкенде по логину/паролю, введённым в этой форме,
+// а не по роли текущей сессии упаковщика.
+function openMarkingOverrideModal() {
+  if (document.getElementById('mo-overlay')) return;
+  var overlay = document.createElement('div');
+  overlay.id = 'mo-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+  var inputCss = 'width:100%;padding:12px 14px;background:var(--card2,#f1f5f9);border:2px solid var(--border,#e2e8f0);border-radius:10px;font-size:15px;outline:none;color:var(--text,#0f172a);box-sizing:border-box;';
+  var labelCss = 'display:block;font-size:12px;font-weight:600;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;';
+  overlay.innerHTML = "\n        <div style=\"background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:380px;box-sizing:border-box;\">\n          <div style=\"font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text,#0f172a);\">\u041F\u0440\u043E\u0432\u0435\u0441\u0442\u0438 \u0431\u0435\u0437 \u043E\u0442\u043F\u0440\u0430\u0432\u043A\u0438 \u041A\u0418\u0417 \u0432 WB</div>\n          <div style=\"font-size:13px;color:var(--muted,#64748b);margin-bottom:16px;\">\u0422\u043E\u043B\u044C\u043A\u043E \u0441\u0443\u043F\u0435\u0440\u0432\u0430\u0439\u0437\u0435\u0440 \u0438\u043B\u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440. \u0415\u0434\u0438\u043D\u0438\u0446\u0430 \u0431\u0443\u0434\u0435\u0442 \u0443\u043F\u0430\u043A\u043E\u0432\u0430\u043D\u0430, \u043D\u043E \u043A\u043E\u0434 \u043D\u0443\u0436\u043D\u043E \u0431\u0443\u0434\u0435\u0442 \u0432\u0440\u0443\u0447\u043D\u0443\u044E \u043F\u0440\u0438\u0432\u044F\u0437\u0430\u0442\u044C \u0432 \u043A\u0430\u0431\u0438\u043D\u0435\u0442\u0435 WB \u043F\u043E\u0437\u0436\u0435.</div>\n          <div style=\"margin-bottom:12px;\">\n            <label style=\"".concat(labelCss, "\">\u041B\u043E\u0433\u0438\u043D \u0441\u0443\u043F\u0435\u0440\u0432\u0430\u0439\u0437\u0435\u0440\u0430</label>\n            <input id=\"mo-username\" autocomplete=\"off\" style=\"").concat(inputCss, "\"/>\n          </div>\n          <div style=\"margin-bottom:12px;\">\n            <label style=\"").concat(labelCss, "\">\u041F\u0430\u0440\u043E\u043B\u044C</label>\n            <input id=\"mo-password\" type=\"password\" autocomplete=\"off\" style=\"").concat(inputCss, "\"/>\n          </div>\n          <div style=\"margin-bottom:16px;\">\n            <label style=\"").concat(labelCss, "\">\u041F\u0440\u0438\u0447\u0438\u043D\u0430</label>\n            <input id=\"mo-reason\" placeholder=\"\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: WB API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D\" style=\"").concat(inputCss, "\"/>\n          </div>\n          <div style=\"display:flex;gap:10px;\">\n            <button class=\"btn-big btn-yellow\" style=\"flex:1;\" onclick=\"document.getElementById('mo-overlay').remove()\">\u041E\u0442\u043C\u0435\u043D\u0430</button>\n            <button class=\"btn-big btn-red\" style=\"flex:1;\" onclick=\"submitMarkingOverride()\">\u041F\u0440\u043E\u0432\u0435\u0441\u0442\u0438</button>\n          </div>\n        </div>");
+  document.body.appendChild(overlay);
+  setTimeout(function () {
+    var _el = document.getElementById('mo-username');
+    if (_el) _el.focus();
+  }, 100);
+}
+function submitMarkingOverride() {
+  return _submitMarkingOverride.apply(this, arguments);
+} // Счётчик оставшихся кодов "Честный знак" для товара из последнего скана.
+// marking_remaining есть в ответе только если товар помечен как требующий
+// маркировки (см. packing.service.js:scanItem) — для остальных товаров
+// карточку просто прячем.
+function _submitMarkingOverride() {
+  _submitMarkingOverride = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9() {
+    var username, password, reason, dmCode, ok, _mo;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.n) {
+        case 0:
+          username = UI.val('#mo-username');
+          password = UI.val('#mo-password');
+          reason = UI.val('#mo-reason');
+          if (!(!username || !password)) {
+            _context9.n = 1;
+            break;
+          }
+          UI.notify.err('Укажите логин и пароль супервайзера');
+          return _context9.a(2);
+        case 1:
+          if (!(!reason || !reason.trim())) {
+            _context9.n = 2;
+            break;
+          }
+          UI.notify.err('Укажите причину');
+          return _context9.a(2);
+        case 2:
+          dmCode = UI.val('#pack-dm-input') || '';
+          if (dmCode) {
+            _context9.n = 3;
+            break;
+          }
+          UI.notify.err('В поле DataMatrix должен остаться отсканированный код');
+          return _context9.a(2);
+        case 3:
+          _context9.n = 4;
+          return submitScan(pendingDmBarcode, dmCode, {
+            reason: reason.trim(),
+            supervisor_username: username,
+            supervisor_password: password
+          });
+        case 4:
+          ok = _context9.v;
+          if (ok) {
+            _mo = document.getElementById('mo-overlay');
+            if (_mo) _mo.remove();
+          }
+        case 5:
+          return _context9.a(2);
       }
-      const packLocation = (locationCode !== undefined ? locationCode : UI.val('#pack-location')).trim();
-      if (!packLocation) { UI.notify.err('Отсканируйте ячейку зоны отгрузки'); return; }
-      try {
-        await window.API.packing.confirm({
-          shipment_id: currentShipment.id,
-          boxes_count: boxes,
-          location_code: packLocation,
-        });
-        UI.notify.ok('Упаковка подтверждена! Отгрузка готова к отправке.');
-        currentTask = null; currentShipment = null; currentLines = [];
-        boxes = 1; document.getElementById('boxes-val').value = 1;
-        UI.setVal('#pack-location','');
-        await loadCurrent();
-        if (!currentTask) await takeNext();
-      } catch (e) { UI.beep('err'); UI.notify.err(e.message); }
-    }
+    }, _callee9);
+  }));
+  return _submitMarkingOverride.apply(this, arguments);
+}
+function renderMarkingCounter(res) {
+  var card = document.getElementById('marking-counter-card');
+  var text = document.getElementById('marking-counter-text');
+  if (res.marking_remaining === null || res.marking_remaining === undefined) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  var n = res.marking_remaining;
+  var low = n <= 5;
+  text.innerHTML = low ? "<span style=\"color:var(--red);font-weight:700;\">\u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u043A\u043E\u0434\u043E\u0432: ".concat(n, " \u2014 \u0441\u043A\u043E\u0440\u043E \u0437\u0430\u043A\u043E\u043D\u0447\u0430\u0442\u0441\u044F, \u0434\u043E\u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u0435 \u043F\u0443\u043B</span>") : "\u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u043A\u043E\u0434\u043E\u0432 \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0438 \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0442\u043E\u0432\u0430\u0440\u0430: <strong>".concat(n, "</strong>");
+}
+UI.onScan('#scan-barcode', handleScan);
+// Скан ячейки зоны отгрузки сразу завершает упаковку — не нужно после
+// скана ещё отдельно нажимать "Подтвердить упаковку" рукой.
+UI.onScan('#pack-location', confirmPacking);
+function stepBoxes(delta) {
+  boxes = Math.max(1, boxes + delta);
+  document.getElementById('boxes-val').value = boxes;
+}
+function setBoxes(val) {
+  boxes = Math.max(1, Math.round(Number(val)) || 1);
+  document.getElementById('boxes-val').value = boxes;
+}
 
-    loadCurrent();
-  </script>
+// locationCode передаётся напрямую при скане (см. UI.onScan ниже) — само
+// поле #pack-location к этому моменту уже очищено сканером, поэтому
+// подтверждение не может брать код оттуда. При обычном клике на кнопку
+// locationCode не передаётся, и код берётся из поля как раньше.
+function confirmPacking(_x9) {
+  return _confirmPacking.apply(this, arguments);
+}
+function _confirmPacking() {
+  _confirmPacking = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee0(locationCode) {
+    var totalPlan, totalPacked, packLocation, _t6;
+    return _regenerator().w(function (_context0) {
+      while (1) switch (_context0.p = _context0.n) {
+        case 0:
+          if (currentShipment) {
+            _context0.n = 1;
+            break;
+          }
+          return _context0.a(2);
+        case 1:
+          totalPlan = currentLines.reduce(function (s, l) {
+            return s + Number(l.qty_plan || 0);
+          }, 0);
+          totalPacked = currentLines.reduce(function (s, l) {
+            return s + Math.min(Number(l.qty_packed || 0), Number(l.qty_plan || 0));
+          }, 0);
+          if (!(totalPacked < totalPlan)) {
+            _context0.n = 2;
+            break;
+          }
+          if (UI.confirm("\u0423\u043F\u0430\u043A\u043E\u0432\u0430\u043D\u043E \u043D\u0435 \u0432\u0441\u0451 (".concat(totalPacked, "/").concat(totalPlan, "). \u0412\u0441\u0451 \u0440\u0430\u0432\u043D\u043E \u043F\u043E\u043F\u0440\u043E\u0431\u043E\u0432\u0430\u0442\u044C \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u0442\u044C?"))) {
+            _context0.n = 2;
+            break;
+          }
+          return _context0.a(2);
+        case 2:
+          packLocation = (locationCode !== undefined ? locationCode : UI.val('#pack-location')).trim();
+          if (packLocation) {
+            _context0.n = 3;
+            break;
+          }
+          UI.notify.err('Отсканируйте ячейку зоны отгрузки');
+          return _context0.a(2);
+        case 3:
+          _context0.p = 3;
+          _context0.n = 4;
+          return window.API.packing.confirm({
+            shipment_id: currentShipment.id,
+            boxes_count: boxes,
+            location_code: packLocation
+          });
+        case 4:
+          UI.notify.ok('Упаковка подтверждена! Отгрузка готова к отправке.');
+          currentTask = null;
+          currentShipment = null;
+          currentLines = [];
+          boxes = 1;
+          document.getElementById('boxes-val').value = 1;
+          UI.setVal('#pack-location', '');
+          _context0.n = 5;
+          return loadCurrent();
+        case 5:
+          if (currentTask) {
+            _context0.n = 6;
+            break;
+          }
+          _context0.n = 6;
+          return takeNext();
+        case 6:
+          _context0.n = 8;
+          break;
+        case 7:
+          _context0.p = 7;
+          _t6 = _context0.v;
+          UI.beep('err');
+          UI.notify.err(_t6.message);
+        case 8:
+          return _context0.a(2);
+      }
+    }, _callee0, null, [[3, 7]]);
+  }));
+  return _confirmPacking.apply(this, arguments);
+}
+loadCurrent();</script>
 </body>
 </html>
