@@ -411,6 +411,7 @@ function _handleScan() {
         case 4:
           res = _context7.v;
           if (res.result === 'ok') {
+            UI.beep('ok');
             currentTask.scan_step = res.next_step || 'await_item';
             currentTask.batch_allowed_qty = res.batch_allowed_qty === undefined ? null : res.batch_allowed_qty;
             currentTask.batch_group_need = res.batch_group_need === undefined ? null : res.batch_group_need;
@@ -430,7 +431,10 @@ function _handleScan() {
           }
           // Доработка #6: барк-скан здесь НЕ уходит на сервер сразу — сначала
           // просим ввести количество, а штрихкод + qty отправляются одним
-          // вызовом при подтверждении (см. confirmBatchQty).
+          // вызовом при подтверждении (см. confirmBatchQty) - там и решается
+          // правильный/неправильный товар, поэтому "ок" тут ещё не про финальный
+          // результат, а только про то, что поле количества успешно открылось.
+          UI.beep('ok');
           showBatchQtyEntry(scanned);
           _context7.n = 13;
           break;
@@ -450,6 +454,7 @@ function _handleScan() {
           // кизом — чтобы сборщик видел, что система распознала скан
           // правильно, а не просто молча приняла.
           viaBadge = _res.matched_via === 'kiz' ? '<span style="color:var(--green);font-weight:700;">✓ КИЗ</span>' : '<span style="color:var(--blue);font-weight:700;">✓ Штрихкод</span>';
+          UI.beep('ok');
           if (!_res.done) {
             _context7.n = 10;
             break;
@@ -842,7 +847,13 @@ document.getElementById('scan-input').addEventListener('keydown', /*#__PURE__*/f
             _context.n = 1;
             break;
           }
-          UI.beep('ok');
+          // Раньше тут звучал "ок" сразу по факту скана, ДО проверки на
+          // сервере - при неверном товаре/ячейке следом играл ещё и "ошибка",
+          // и оба сигнала звучали почти одновременно, смазывая друг друга
+          // (жалоба: "нет звука ошибки", хотя технически он играл, просто
+          // терялся сразу после "ок"). Теперь звук зависит от реального
+          // результата - его проставляет handleScan() в нужной ветке
+          // (успех/ошибка/переезд), а не сам факт нажатия Enter.
           _context.n = 1;
           return handleScan(v);
         case 1:
