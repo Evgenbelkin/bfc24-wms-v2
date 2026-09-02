@@ -5,24 +5,55 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
   <title>Проверка браузера</title>
   <style>
-    body{font-family:sans-serif;font-size:22px;padding:20px;line-height:1.6;}
+    body{font-family:sans-serif;font-size:18px;padding:16px;line-height:1.7;}
     .ok{color:green;font-weight:bold;}
     .fail{color:red;font-weight:bold;}
   </style>
 </head>
 <body>
   <h2>Проверка браузера ТСД</h2>
-  <div id="line1">1. Базовый JS: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
-  <div id="line2">2. Современный JS (?.): <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
 
+  <div id="l1">1. var/function: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l2">2. let/const: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l3">3. Стрелочные функции: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l4">4. Шаблонные строки: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l5">5. Optional chaining (?.): <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l6">6. Деструктуризация: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l7">7. Spread (...): <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l8">8. try/catch без переменной: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l9">9. async/await: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l10">10. fetch: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l11">11. localStorage: <span class="fail">НЕ ЗАПУСТИЛСЯ</span></div>
+  <div id="l12">12. addEventListener на форме: <span class="fail">НЕ ОТПРАВЛЕНО</span></div>
+
+  <form id="tf" style="margin-top:20px;"><button type="submit">Тест кнопки (жми)</button></form>
+
+  <script>document.getElementById('l1').innerHTML = '1. var/function: <span class="ok">РАБОТАЕТ</span>';</script>
+  <script>try{ let x = 1; const y = 2; document.getElementById('l2').innerHTML = '2. let/const: <span class="ok">РАБОТАЕТ</span>'; }catch(e){}</script>
+  <script>try{ var f = () => 1; document.getElementById('l3').innerHTML = '3. Стрелочные функции: <span class="ok">РАБОТАЕТ</span>'; }catch(e){}</script>
+  <script>try{ var s = `abc${1+1}`; document.getElementById('l4').innerHTML = '4. Шаблонные строки: <span class="ok">РАБОТАЕТ (' + s + ')</span>'; }catch(e){}</script>
+  <script>try{ var o = {a:1}; var v = o?.a; document.getElementById('l5').innerHTML = '5. Optional chaining (?.): <span class="ok">РАБОТАЕТ</span>'; }catch(e){}</script>
+  <script>try{ var {a:aa} = {a:5}; document.getElementById('l6').innerHTML = '6. Деструктуризация: <span class="ok">РАБОТАЕТ (' + aa + ')</span>'; }catch(e){}</script>
+  <script>try{ var arr = [...[1,2,3]]; document.getElementById('l7').innerHTML = '7. Spread (...): <span class="ok">РАБОТАЕТ</span>'; }catch(e){}</script>
+  <script>try{ try{throw 1}catch{} document.getElementById('l8').innerHTML = '8. try/catch без переменной: <span class="ok">РАБОТАЕТ</span>'; }catch(e){}</script>
   <script>
-    document.getElementById('line1').innerHTML = '1. Базовый JS: <span class="ok">РАБОТАЕТ</span>';
+    try{
+      (async function(){ await Promise.resolve(1); document.getElementById('l9').innerHTML = '9. async/await: <span class="ok">РАБОТАЕТ</span>'; })();
+    }catch(e){}
   </script>
-
   <script>
-    var obj = {a:1};
-    var x = obj?.a;
-    document.getElementById('line2').innerHTML = '2. Современный JS (?.): <span class="ok">РАБОТАЕТ (' + x + ')</span>';
+    try{
+      fetch(location.href, {method:'HEAD'}).then(function(){ document.getElementById('l10').innerHTML = '10. fetch: <span class="ok">РАБОТАЕТ</span>'; }).catch(function(){ document.getElementById('l10').innerHTML = '10. fetch: <span class="ok">запустился, но сеть failed</span>'; });
+    }catch(e){}
+  </script>
+  <script>try{ localStorage.setItem('t','1'); localStorage.removeItem('t'); document.getElementById('l11').innerHTML = '11. localStorage: <span class="ok">РАБОТАЕТ</span>'; }catch(e){}</script>
+  <script>
+    try{
+      document.getElementById('tf').addEventListener('submit', function(e){
+        e.preventDefault();
+        document.getElementById('l12').innerHTML = '12. addEventListener на форме: <span class="ok">РАБОТАЕТ (preventDefault сработал)</span>';
+      });
+    }catch(e){}
   </script>
 </body>
 </html>
