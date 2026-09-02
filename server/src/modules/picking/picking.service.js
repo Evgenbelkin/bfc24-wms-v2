@@ -425,7 +425,7 @@ async function scanLocation({ tenantId, pickerId, taskId, scannedLocationCode })
          VALUES($1,$2,'location',$3,$4,'mismatch','Wrong location')`,
         [taskId, pickerId, task.location_code, scannedLocationCode]
       );
-      return { ok: false, result: 'mismatch', expected: task.location_code, scanned: scannedLocationCode };
+      return { result: 'mismatch', expected: task.location_code, scanned: scannedLocationCode };
     }
 
     // Доработка #6: решаем, каким шагом идти дальше — обычным поштучным
@@ -528,7 +528,7 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
         `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message) VALUES($1,$2,'item',$3,$4,'mismatch','Wrong barcode')`,
         [taskId, pickerId, expected, scanned]
       );
-      return { ok: false, result: 'mismatch', expected, scanned };
+      return { result: 'mismatch', expected, scanned };
     }
 
     const qtyToPick = Number(task.qty);
@@ -630,7 +630,7 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
           [taskId, pickerId, expected, scanned, `Ячейка '${locCode}' пуста, перенаправлено на '${alt.location_code}'`]
         );
         return {
-          ok: false, result: 'relocated',
+          result: 'relocated',
           new_location_code: alt.location_code,
           message: `Ячейка ${locCode} пуста — товар нашёлся в ${alt.location_code}, идите туда`,
         };
@@ -753,7 +753,7 @@ async function scanItemQty({ tenantId, pickerId, taskId, scannedBarcode, qty, co
         `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message) VALUES($1,$2,'item',$3,$4,'mismatch','Wrong barcode')`,
         [taskId, pickerId, expected, scanned]
       );
-      return { ok: false, result: 'mismatch', expected, scanned };
+      return { result: 'mismatch', expected, scanned };
     }
 
     // Группа: это задание + соседи (см. doc-комментарий выше). Лочим соседей
