@@ -356,8 +356,10 @@ function _loadNextTask() {
           } else {
             currentTask = null;
             document.getElementById('task-section').style.display = 'none';
+            // Карточка "wave-complete-card" уже сообщает то же самое текстом
+            // на весь экран — отдельный зелёный тост поверх неё был лишним
+            // и как раз перекрывал половину экрана на маленьких дисплеях ТСД.
             document.getElementById('wave-complete-card').style.display = 'block';
-            UI.notify.ok('Все задачи выполнены! Закройте волну.');
           }
           _context6.n = 3;
           break;
@@ -742,6 +744,13 @@ function closeWave() {
 function closeWaveModalClose() {
   document.getElementById('modal-root').innerHTML = '';
 }
+// Защита от повторного вызова: физический сканер с суффиксом ENTER иногда
+// умудряется отправить Enter дважды (или срабатывают и клавиатурный
+// обработчик, и клик по кнопке "Подтвердить" почти одновременно) — тогда
+// второй вызов бьёт по уже закрытой волне и сыпет "Cannot close wave in
+// status done" в тост, хотя волна на самом деле закрылась нормально с
+// первого раза. Просто игнорируем повторные вызовы, пока первый не завершился.
+var closeWaveBusy = false;
 function confirmCloseWave() {
   return _confirmCloseWave.apply(this, arguments);
 }
@@ -751,6 +760,9 @@ function _confirmCloseWave() {
     return _regenerator().w(function (_context0) {
       while (1) switch (_context0.p = _context0.n) {
         case 0:
+          if (closeWaveBusy) {
+            return _context0.a(2);
+          }
           _cwl = document.getElementById('close-wave-loc');
           bufLoc = _cwl ? _cwl.value.trim().toUpperCase() : undefined;
           if (bufLoc) {
@@ -760,6 +772,7 @@ function _confirmCloseWave() {
           UI.notify.err('Отсканируйте или введите ячейку');
           return _context0.a(2);
         case 1:
+          closeWaveBusy = true;
           _context0.p = 1;
           _context0.n = 2;
           return window.API.picking.closeWave({
@@ -768,6 +781,7 @@ function _confirmCloseWave() {
           });
         case 2:
           res = _context0.v;
+          closeWaveBusy = false;
           closeWaveModalClose();
           UI.notify.ok(res.printJobCreated ? 'Волна закрыта! Наклейка отправлена на печать.' : 'Волна закрыта! (Печать наклейки не настроена — маршрут pick_list_label не задан в панели принтеров)');
           currentTask = null;
@@ -780,6 +794,7 @@ function _confirmCloseWave() {
         case 4:
           _context0.p = 4;
           _t7 = _context0.v;
+          closeWaveBusy = false;
           UI.notify.err(_t7.message);
         case 5:
           return _context0.a(2);

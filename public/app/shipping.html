@@ -771,6 +771,6 @@ loadBoard();
 // Прямая ссылка на конкретную отгрузку (?code=WB-GI-...) — например с
 // Диспетчерской, где строку отгрузки теперь можно кликнуть.
 var deepLinkCode = new URLSearchParams(location.search).get('code');
-if (deepLinkCode) openShipmentByCode(deepLinkCode);</script>
+if (deepLinkCode && deepLinkCode !== 'undefined' && deepLinkCode !== 'null') openShipmentByCode(deepLinkCode);</script>
 </body>
 </html>
