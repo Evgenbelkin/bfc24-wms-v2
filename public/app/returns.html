@@ -62,12 +62,11 @@
           </div>
         </div>
         <div class="field" id="r-location-wrap">
-          <label>Ячейка (куда положить товар)</label>
+          <label id="r-location-label" style="font-size:15px;">Ячейка (куда положить товар)</label>
           <div class="scan-row">
             <input id="r-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
             <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#r-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
           </div>
-          <p id="r-location-hint" style="font-size:16px;font-weight:700;color:var(--amber);background:rgba(217,119,6,.12);border:2px solid var(--yellow);border-radius:10px;padding:10px 12px;margin:8px 0 0;display:none;"></p>
         </div>
         <div class="field"><label>Номер заказа маркетплейса (необязательно)</label><input id="r-order-no"/></div>
         <div class="field"><label>Комментарий (необязательно)</label><input id="r-comment"/></div>
@@ -222,6 +221,16 @@ var returnItemId = null;
 // что чинили в приёмке). Теперь подсказка — это только текст-хинт, а сама
 // ячейка обязана быть подтверждена реальным сканом штрихкода ячейки.
 var returnLocationScanned = false;
+var R_LOCATION_LABEL_DEFAULT = 'Ячейка (куда положить товар)';
+// Подсказанная ячейка раньше выводилась отдельной строкой ПОД полем — на
+// маленьком экране её не было видно без прокрутки. Показываем её прямо в
+// заголовке поля, крупно и другим цветом, чтобы было видно сразу.
+function setReturnLocationLabel(text, highlighted) {
+  var el = document.getElementById('r-location-label');
+  el.textContent = text;
+  el.style.color = highlighted ? 'var(--amber)' : '';
+  el.style.fontWeight = highlighted ? '700' : '';
+}
 function lookupReturnItem() {
   return _lookupReturnItem.apply(this, arguments);
 }
@@ -300,8 +309,7 @@ function _maybeSuggestReturnLocation() {
         case 5:
           res = _context3.v;
           if (res.suggestion) {
-            document.getElementById('r-location-hint').textContent = 'Предложенная ячейка: ' + res.suggestion.location_code + ' — отсканируйте её штрихкод для подтверждения';
-            document.getElementById('r-location-hint').style.display = 'block';
+            setReturnLocationLabel('Положить в ' + res.suggestion.location_code, true);
           }
           _context3.n = 7;
           break;
@@ -362,7 +370,7 @@ UI.onScan('#r-barcode', function (v) {
   UI.setVal('#r-barcode', v);
   UI.setVal('#r-location', '');
   returnLocationScanned = false;
-  document.getElementById('r-location-hint').style.display = 'none';
+  setReturnLocationLabel(R_LOCATION_LABEL_DEFAULT, false);
   var p = lookupReturnItem();
   // Товар отсканирован — сразу переводим курсор на ячейку, чтобы можно было
   // тут же сканировать её, не тыкая пальцем в поле вручную. Подсказка ячейки
@@ -376,7 +384,7 @@ UI.onScan('#r-barcode', function (v) {
 UI.onScan('#r-location', function (v) {
   UI.setVal('#r-location', String(v || '').trim());
   returnLocationScanned = true;
-  document.getElementById('r-location-hint').style.display = 'none';
+  setReturnLocationLabel('Ячейка подтверждена: ' + UI.val('#r-location'), false);
   // Ячейка подтверждена сканом — переводим курсор/фокус на кнопку
   // регистрации, чтобы оператору не нужно было тянуться до неё вручную.
   document.getElementById('r-register-btn').focus();
@@ -442,7 +450,7 @@ function _registerReturn() {
           UI.setVal('#r-order-no', '');
           UI.setVal('#r-comment', '');
           UI.setVal('#r-location', '');
-          document.getElementById('r-location-hint').style.display = 'none';
+          setReturnLocationLabel(R_LOCATION_LABEL_DEFAULT, false);
           returnLocationScanned = false;
           document.getElementById('r-qty').value = 1;
           returnItemId = null;
