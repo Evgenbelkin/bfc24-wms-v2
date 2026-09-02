@@ -920,6 +920,14 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     }
   };
 
+  // ─────────────── Отчёт по дефицитам ───────────────
+
+  var deficit = {
+    report: function report(p) {
+      return _get('/deficit/report', p);
+    }
+  };
+
   // ─────────────── Printing ───────────────
 
   var printing = {
@@ -1476,6 +1484,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     platform: platform,
     tenant: tenant,
     acts: acts,
-    fbsAnalytics: fbsAnalytics
+    fbsAnalytics: fbsAnalytics,
+    deficit: deficit
   };
 })(window);

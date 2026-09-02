@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Отчёт по дефицитам — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+    .toolbar select{padding:9px 10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    th.sortable{cursor:pointer;user-select:none;}
+    th.sortable:hover{color:var(--accent);}
+    .total-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .total-card{flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+    .total-card .num{font-size:26px;font-weight:800;}
+    .total-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    .deficit-cell{font-weight:800;color:var(--red);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg> Отчёт по дефицитам</h1>
+    <button class="btn-sm btn-back" onclick="load()">Обновить</button>
+  </div>
+
+  <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
+    Товары, по которым открытых FBS-заказов (ещё не взятых в поставку) больше, чем сейчас физически
+    доступно в ячейках отбора. Снимок на текущий момент, без учёта резерва "про запас".
+  </p>
+
+  <div class="toolbar">
+    <select id="f-client"><option value="">Все клиенты</option></select>
+  </div>
+
+  <div class="total-row">
+    <div class="total-card">
+      <div class="num" id="sum-lines">—</div>
+      <div class="label">Позиций с дефицитом</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="sum-qty">—</div>
+      <div class="label">Суммарный дефицит, шт</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Дефицит по товарам</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Клиент</th>
+            <th>Товар</th>
+            <th>Артикул</th>
+            <th>Штрихкод</th>
+            <th class="sortable" onclick="sortBy('open_qty')">Открытых заказов ↕</th>
+            <th class="sortable" onclick="sortBy('available_qty')">Доступно на складе ↕</th>
+            <th class="sortable" onclick="sortBy('deficit_qty')">Дефицит ↕</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="empty" style="display:none;">
+      Дефицитов нет — по всем открытым заказам хватает остатка в ячейках отбора.
+    </div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin', 'supervisor'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    var lastRows = [];
+    var sortKey = 'deficit_qty';
+    var sortDir = -1;
+
+    function fmtNum(n) {
+      return (Number(n) || 0).toLocaleString('ru-RU');
+    }
+
+    function sortBy(key) {
+      if (sortKey === key) {
+        sortDir *= -1;
+      } else {
+        sortKey = key;
+        sortDir = -1;
+      }
+      render();
+    }
+
+    function render() {
+      var tbody = document.getElementById('rows');
+      var empty = document.getElementById('empty');
+      if (!lastRows.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      var sorted = lastRows.slice().sort(function (a, b) {
+        var av = a[sortKey] != null ? a[sortKey] : -Infinity;
+        var bv = b[sortKey] != null ? b[sortKey] : -Infinity;
+        return (av - bv) * sortDir;
+      });
+      tbody.innerHTML = sorted.map(function (r) {
+        return '\n        <tr>\n          <td>' + UI.escHtml(r.client_name || '—') + '</td>\n          <td>' + UI.escHtml(r.item_name || '—') + '</td>\n          <td>' + UI.escHtml(r.vendor_code || '—') + '</td>\n          <td>' + UI.escHtml(r.barcode || '—') + '</td>\n          <td>' + fmtNum(r.open_qty) + '</td>\n          <td>' + fmtNum(r.available_qty) + '</td>\n          <td class="deficit-cell">' + fmtNum(r.deficit_qty) + '</td>\n        </tr>\n      ';
+      }).join('');
+    }
+
+    async function loadClients() {
+      try {
+        var res = await window.API.clients.short();
+        var sel = document.getElementById('f-client');
+        sel.innerHTML = '<option value="">Все клиенты</option>' + (res.clients || []).map(function (c) {
+          return '<option value="' + c.id + '">' + UI.escHtml(c.client_name) + '</option>';
+        }).join('');
+      } catch (e) { /* фильтр не критичен, отчёт грузим и без него */ }
+    }
+
+    async function load() {
+      try {
+        var params = {};
+        var clientId = document.getElementById('f-client').value;
+        if (clientId) params.client_id = clientId;
+        var res = await window.API.deficit.report(params);
+        lastRows = res.rows || [];
+        render();
+        document.getElementById('sum-lines').textContent = fmtNum(res.total_deficit_lines);
+        document.getElementById('sum-qty').textContent = fmtNum(res.total_deficit_qty);
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка загрузки отчёта');
+      }
+    }
+
+    document.getElementById('f-client').addEventListener('change', load);
+    loadClients();
+    load();
+  </script>
+</body>
+</html>
