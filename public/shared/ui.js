@@ -344,6 +344,25 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
   // ─────────────── Scanner input helper ───────────────
   // TSD-friendly: Enter-triggered scan
 
+  // На части ТСД (например Атол Smart.Lite со старым WebView) атрибут
+  // inputmode="none" на самих полях не подавляет экранную клавиатуру -
+  // она всё равно всплывает при каждом фокусе, хотя ввод идёт только со
+  // сканера. Стандартный кросс-браузерный трюк: сделать поле readonly
+  // ПЕРЕД focus() (тогда Android не показывает клавиатуру) и сразу же
+  // снять readonly (тогда поле снова принимает ввод от сканера/клавиатуры).
+  function focusNoKeyboard(input) {
+    if (!input) return;
+    try {
+      input.setAttribute('readonly', 'readonly');
+      input.focus();
+      setTimeout(function () {
+        input.removeAttribute('readonly');
+      }, 50);
+    } catch (e) {
+      input.focus();
+    }
+  }
+
   function onScan(inputSelector, callback) {
     var input = el(inputSelector);
     if (!input) return;
@@ -390,7 +409,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
               setTimeout(function () {
                 var active = document.activeElement;
                 if (!active || active === document.body || active === input) {
-                  input.focus();
+                  focusNoKeyboard(input);
                 }
               }, 300);
             case 6:
@@ -404,7 +423,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     }());
     // Автофокус
     setTimeout(function () {
-      input.focus();
+      focusNoKeyboard(input);
     }, 100);
   }
 
@@ -774,6 +793,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     fmtQty: fmtQty,
     onScan: onScan,
     scanInto: scanInto,
+    focusNoKeyboard: focusNoKeyboard,
     populateSelect: populateSelect,
     confirm: confirm,
     openChangePasswordModal: openChangePasswordModal,
