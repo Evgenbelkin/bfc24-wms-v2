@@ -748,9 +748,163 @@ async function getCodesJournal({
   return { rows: r.rows };
 }
 
+// =============================================================================
+// Вывод из оборота "Честный знак" (проданные товары) — см. миграцию 055 и
+// обсуждение с пользователем 04.09.2026. Только РЕАЛЬНО выкупленные (не
+// просто отгруженные) коды - признак: wms.wb_order_status_events со
+// статусом 'sold' на этом заказе (тот же источник, что и % выкупа в
+// fbsAnalytics.service.js). Как только код попал хоть в одну выгрузку -
+// withdrawal_status='exported', и он навсегда выпадает из следующей выборки
+// (см. частичный индекс idx_marking_codes_withdrawal_pending в 055) -
+// поэтому ежедневная выборка остаётся маленькой независимо от объёма
+// истории.
+// =============================================================================
+
+/**
+ * Коды, готовые к выводу из оборота: использованы (упакованы), привязаны к
+ * заказу WB, этот заказ реально ДОЕХАЛ до статуса 'sold' у WB, и код ещё ни
+ * разу не попадал в выгрузку. Используется и для предпросмотра на экране
+ * (до выгрузки), и внутри createWithdrawalExport (там же с FOR UPDATE).
+ */
+async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, dbClient = null, forUpdate = false }) {
+  const run = dbClient ? dbClient.query.bind(dbClient) : query;
+  const params = [tenantId];
+  const conds = [`mc.tenant_id=$1`, `mc.status='used'`, `mc.withdrawal_status IS NULL`, `mc.wb_order_id IS NOT NULL`];
+  let idx = 2;
+  if (clientId) { conds.push(`i.client_id=$${idx++}`); params.push(Number(clientId)); }
+  params.push(Math.min(Number(limit) || 20000, 20000));
+
+  const r = await run(
+    `SELECT mc.id AS marking_code_id, mc.code, mc.wb_order_id,
+            i.barcode AS item_barcode, i.item_name, i.vendor_code, i.size,
+            s.external_id AS shipment_code, c.client_name,
+            sold.observed_at AS sold_at
+     FROM wms.marking_codes mc
+     JOIN wms.items i ON i.id = mc.item_id
+     LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
+     LEFT JOIN wms.clients c ON c.id = i.client_id
+     -- INNER (не LEFT) специально: заказ должен реально существовать и иметь
+     -- событие 'sold', иначе строка отсеивается - это и есть фильтр "только
+     -- выкупленное", а не просто отгруженное.
+     JOIN wms.wb_orders wo ON wo.tenant_id = mc.tenant_id AND wo.wb_order_id = mc.wb_order_id
+     JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e
+       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = mc.wb_order_id AND e.wb_status = 'sold'
+       ORDER BY observed_at ASC LIMIT 1
+     ) sold ON TRUE
+     WHERE ${conds.join(' AND ')}
+     ORDER BY sold.observed_at ASC
+     LIMIT $${idx}
+     ${forUpdate ? 'FOR UPDATE OF mc SKIP LOCKED' : ''}`,
+    params
+  );
+  return r.rows;
+}
+
+/**
+ * Сформировать выгрузку: атомарно снять текущий "хвост" неотведённых
+ * выкупленных кодов, сохранить неизменяемый снимок строк и пометить коды как
+ * exported. FOR UPDATE SKIP LOCKED в getPendingWithdrawal защищает от гонки
+ * "человек нажал кнопку ровно в момент, когда крон делает то же самое" -
+ * оба просто поделят между собой то, что не заблокировано другим.
+ */
+async function createWithdrawalExport({ tenantId, clientId = null, userId = null, source = 'manual' }) {
+  return transaction(async (dbClient) => {
+    const rows = await getPendingWithdrawal({ tenantId, clientId, dbClient, forUpdate: true });
+    if (rows.length === 0) return { export: null, items: [] };
+
+    const expRes = await dbClient.query(
+      `INSERT INTO wms.marking_withdrawal_exports (tenant_id, created_by, source, row_count)
+       VALUES ($1,$2,$3,$4) RETURNING id, tenant_id, created_at, created_by, source, row_count`,
+      [tenantId, userId, source, rows.length]
+    );
+    const exportRow = expRes.rows[0];
+
+    // Bulk-вставка через unnest() - число параметров запроса не растёт с
+    // количеством строк (в отличие от одного INSERT с VALUES на каждую
+    // строку), это важно при пачках в тысячи кодов за раз (см. 047 - у
+    // некоторых клиентов до ~20 000 заказов/сутки).
+    await dbClient.query(
+      `INSERT INTO wms.marking_withdrawal_export_items
+         (export_id, tenant_id, marking_code_id, code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name)
+       SELECT $1, $2, x.marking_code_id, x.code, x.item_barcode, x.item_name, x.vendor_code, x.size, x.sold_at, x.wb_order_id, x.shipment_code, x.client_name
+       FROM unnest($3::bigint[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::timestamptz[], $10::bigint[], $11::text[], $12::text[])
+         AS x(marking_code_id, code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name)`,
+      [
+        exportRow.id, tenantId,
+        rows.map(r => r.marking_code_id),
+        rows.map(r => r.code),
+        rows.map(r => r.item_barcode),
+        rows.map(r => r.item_name),
+        rows.map(r => r.vendor_code),
+        rows.map(r => r.size),
+        rows.map(r => r.sold_at),
+        rows.map(r => r.wb_order_id),
+        rows.map(r => r.shipment_code),
+        rows.map(r => r.client_name),
+      ]
+    );
+
+    await dbClient.query(
+      `UPDATE wms.marking_codes
+       SET withdrawal_status='exported', withdrawal_exported_at=NOW(), withdrawal_export_id=$1
+       WHERE id = ANY($2::bigint[])`,
+      [exportRow.id, rows.map(r => r.marking_code_id)]
+    );
+
+    return { export: exportRow, items: rows };
+  });
+}
+
+/** История выгрузок (шапки, без строк) — для страницы "История выгрузок". */
+async function listWithdrawalExports({ tenantId, limit = 200 }) {
+  const r = await query(
+    `SELECT e.id, e.created_at, e.source, e.row_count, u.full_name AS created_by_name
+     FROM wms.marking_withdrawal_exports e
+     LEFT JOIN wms.users u ON u.id = e.created_by
+     WHERE e.tenant_id=$1
+     ORDER BY e.created_at DESC
+     LIMIT $2`,
+    [tenantId, Math.min(Number(limit) || 200, 1000)]
+  );
+  return r.rows;
+}
+
+/** Строки конкретной выгрузки — неизменяемый снимок, для повторного скачивания. */
+async function getWithdrawalExportItems({ tenantId, exportId }) {
+  const expRes = await query(
+    `SELECT id, created_at, source, row_count FROM wms.marking_withdrawal_exports
+     WHERE id=$1 AND tenant_id=$2`,
+    [Number(exportId), tenantId]
+  );
+  if (expRes.rowCount === 0) return null;
+  const itemsRes = await query(
+    `SELECT code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name
+     FROM wms.marking_withdrawal_export_items
+     WHERE export_id=$1 AND tenant_id=$2
+     ORDER BY id`,
+    [Number(exportId), tenantId]
+  );
+  return { export: expRes.rows[0], items: itemsRes.rows };
+}
+
+/** tenant_id всех тенантов с включённым модулем 'marking' и активным доступом
+ *  (для ночного крона вывода из оборота — тот же паттерн, что
+ *  wb.service.js::listTenantsWithWbIntegration). */
+async function listTenantsWithMarkingModule() {
+  const r = await query(
+    `SELECT t.id FROM platform.tenants t
+     JOIN platform.tenant_modules tm ON tm.tenant_id = t.id AND tm.module_code = 'marking'
+     WHERE t.status IN ('trial','active')`
+  );
+  return r.rows.map(row => row.id);
+}
+
 module.exports = {
   parseCodesText, importCodes, importCodesFromExcel, getCodesSummary, listCodes, deleteCode,
   shouldMarkAt, allocateAndPrint,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
+  getPendingWithdrawal, createWithdrawalExport, listWithdrawalExports, getWithdrawalExportItems,
+  listTenantsWithMarkingModule,
   listPendingManualOverrides, listCodesForShipment, getShippedReport, getCodesJournal,
 };

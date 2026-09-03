@@ -501,6 +501,18 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     logRejectedCode: function logRejectedCode(d) {
       return post('/marking/diagnostics/rejected-code', d);
+    },
+    withdrawalPending: function withdrawalPending(p) {
+      return _get('/marking/withdrawal/pending', p);
+    },
+    withdrawalExport: function withdrawalExport(d) {
+      return post('/marking/withdrawal/export', d || {});
+    },
+    withdrawalExports: function withdrawalExports(p) {
+      return _get('/marking/withdrawal/exports', p);
+    },
+    withdrawalExportItems: function withdrawalExportItems(id) {
+      return _get("/marking/withdrawal/exports/".concat(id));
     }
   };
 

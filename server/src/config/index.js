@@ -156,6 +156,27 @@ const config = {
       .filter(n => Number.isFinite(n)),
   },
 
+  marking: {
+    // Ночной крон "Вывод из оборота" (server/src/jobs/markingWithdrawalExport.js) -
+    // формирует выгрузку выкупленных КИЗ по всем тенантам с модулем 'marking',
+    // тем же путём, что и ручная кнопка (marking.service.js::createWithdrawalExport,
+    // source='cron'). Целевое время готовности - к 9 утра (см. обсуждение с
+    // пользователем 04.09.2026), сервер работает с TZ=Europe/Moscow, поэтому
+    // часы ниже - это уже московское время, без доп. пересчёта.
+    withdrawalExportEnabled: boolEnv('MARKING_WITHDRAWAL_EXPORT_ENABLED', true),
+    // Час первой попытки за сутки (по умолчанию 3:00 - рано, чтобы оставался
+    // запас на самолечение до дедлайна).
+    withdrawalExportHour: intEnv('MARKING_WITHDRAWAL_EXPORT_HOUR', 3),
+    // Час, к которому отчёт должен быть готов. Если к этому часу выгрузка ещё
+    // не прошла успешно (для хотя бы одного тенанта) - шлём Telegram-алерт
+    // владельцу платформы (та же труба, что wbStockReconcileAlert.js), но
+    // продолжаем попытки и после дедлайна - "лучше поздно, чем никогда".
+    withdrawalExportDeadlineHour: intEnv('MARKING_WITHDRAWAL_EXPORT_DEADLINE_HOUR', 9),
+    // Интервал повторных попыток при сбое ("самолечение" - см. требование
+    // пользователя "если не загрузился, чтобы пытался исправить и загрузить").
+    withdrawalExportRetryMinutes: intEnv('MARKING_WITHDRAWAL_EXPORT_RETRY_MINUTES', 20),
+  },
+
   urls: {
     public: optionalEnv('PUBLIC_SITE_URL', 'https://bfc24.ru'),
     app:    optionalEnv('APP_URL', 'https://app.bfc24.ru'),

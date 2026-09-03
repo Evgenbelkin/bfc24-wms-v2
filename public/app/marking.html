@@ -30,6 +30,7 @@
       <button class="tab active" data-tab="shipped" onclick="switchTab('shipped')">Отгружено в WB</button>
       <button class="tab" data-tab="journal" onclick="switchTab('journal')">Журнал кодов</button>
       <button class="tab" data-tab="overrides" onclick="switchTab('overrides')">Требуют ручной привязки</button>
+      <button class="tab" data-tab="withdrawal" onclick="switchTab('withdrawal')">Вывод из оборота</button>
     </div>
 
     <!-- ============ Отгружено в WB ============ -->
@@ -118,6 +119,45 @@
         </div>
       </div>
     </div>
+
+    <!-- ============ Вывод из оборота (проданные товары) ============ -->
+    <div id="tab-withdrawal" style="display:none">
+      <div class="card">
+        <div class="refresh-note" style="text-align:left;margin-bottom:8px;">
+          Здесь собраны коды "Честный знак" по товарам, которые реально ВЫКУПЛЕНЫ покупателем (не просто
+          отгружены). Готовую выгрузку передайте дальше на вывод из оборота (например, в Total Mark).
+          Каждая выгрузка сохраняется в истории ниже без возможности изменить — так всегда видно, что и когда
+          уже было выведено.
+        </div>
+        <div class="badge-row">
+          <div class="badge"><span>Ждут выгрузки</span><div id="w-pending-count">0</div></div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-big btn-blue" style="flex:1;" onclick="loadWithdrawalPending()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Обновить список</button>
+          <button class="btn-big btn-green" style="flex:1;" onclick="doWithdrawalExport()"><svg class="i" viewBox="0 0 24 24"><path d="M12 21V9"/><path d="M7 14l5-5 5 5"/><path d="M4 3h16"/></svg> Сформировать выгрузку</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Ждут выгрузки (предпросмотр)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Дата продажи</th><th>Товар</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Заказ WB</th><th>Клиент</th></tr></thead>
+            <tbody id="withdrawal-pending-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">История выгрузок</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Когда сформирована</th><th>Источник</th><th>Строк</th><th>Кто</th><th></th></tr></thead>
+            <tbody id="withdrawal-exports-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/shared/api.js"></script>
@@ -160,12 +200,16 @@ function showModuleDisabled() {
   document.getElementById('marking-content').style.display = 'none';
 }
 function switchTab(name) {
-  ['shipped', 'journal', 'overrides'].forEach(function (t) {
+  ['shipped', 'journal', 'overrides', 'withdrawal'].forEach(function (t) {
     document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
     document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
   });
   if (name === 'overrides' && !overridesLoaded) loadOverrides();
   if (name === 'journal' && !journalLoaded) loadJournal();
+  if (name === 'withdrawal' && !withdrawalLoaded) {
+    loadWithdrawalPending();
+    loadWithdrawalExports();
+  }
 }
 var WB_STATUS_LABELS = {
   sent: 'Отправлено в WB',
@@ -442,6 +486,97 @@ function exportJournalCsv() {
   URL.revokeObjectURL(url);
 }
 var overridesLoaded = false;
+var withdrawalLoaded = false;
+var withdrawalPendingRows = [];
+var withdrawalExportsRows = [];
+var WITHDRAWAL_SOURCE_LABELS = {
+  manual: 'Вручную',
+  cron: 'Ночной крон'
+};
+function loadWithdrawalPending() {
+  window.API.marking.withdrawalPending({
+    limit: 500
+  }).then(function (res) {
+    withdrawalPendingRows = res.rows || [];
+    document.getElementById('w-pending-count').textContent = res.count != null ? res.count : withdrawalPendingRows.length;
+    UI.renderTable('#withdrawal-pending-body', withdrawalPendingRows, function (r) {
+      return '<tr>' + '<td>' + (r.sold_at ? UI.fmtDateTime(r.sold_at) : '—') + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '</tr>';
+    });
+  }).catch(function (e) {
+    if (isModuleDisabled(e)) {
+      showModuleDisabled();
+      return;
+    }
+    UI.notify.err(e.message);
+  });
+}
+function doWithdrawalExport() {
+  if (!confirm('Сформировать выгрузку сейчас? Она сохранится в истории без возможности изменить.')) return;
+  window.API.marking.withdrawalExport({}).then(function (res) {
+    if (!res.export) {
+      UI.notify.warn('Нет новых кодов для выгрузки — всё уже выведено');
+      return;
+    }
+    UI.notify.ok('Выгрузка сформирована: ' + res.export.row_count + ' строк');
+    loadWithdrawalPending();
+    loadWithdrawalExports();
+  }).catch(function (e) {
+    if (isModuleDisabled(e)) {
+      showModuleDisabled();
+      return;
+    }
+    UI.notify.err(e.message);
+  });
+}
+function loadWithdrawalExports() {
+  withdrawalLoaded = true;
+  window.API.marking.withdrawalExports({
+    limit: 200
+  }).then(function (res) {
+    withdrawalExportsRows = res.rows || [];
+    UI.renderTable('#withdrawal-exports-body', withdrawalExportsRows, function (r) {
+      return '<tr>' + '<td>' + UI.fmtDateTime(r.created_at) + '</td>' + '<td>' + (WITHDRAWAL_SOURCE_LABELS[r.source] || UI.escHtml(r.source || '—')) + '</td>' + '<td>' + r.row_count + '</td>' + '<td>' + UI.escHtml(r.created_by_name || '—') + '</td>' + '<td><button class="btn-sm btn-back" onclick="downloadWithdrawalExport(' + r.id + ')">Скачать</button></td>' + '</tr>';
+    });
+  }).catch(function (e) {
+    if (isModuleDisabled(e)) {
+      showModuleDisabled();
+      return;
+    }
+    UI.notify.err(e.message);
+  });
+}
+function downloadWithdrawalExport(id) {
+  window.API.marking.withdrawalExportItems(id).then(function (res) {
+    var items = res.items || [];
+    if (!items.length) {
+      UI.notify.warn('Выгрузка пуста');
+      return;
+    }
+    var headers = ['Код Честный знак', 'Штрихкод', 'Товар', 'Артикул', 'Размер', 'Дата продажи', 'Заказ WB', 'Поставка', 'Клиент'];
+    var escCsv = function escCsv(v) {
+      return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    };
+    var lines = [headers.map(escCsv).join(';')];
+    items.forEach(function (r) {
+      lines.push([r.code || '', r.item_barcode || '', r.item_name || '', r.vendor_code || '', r.size || '', r.sold_at ? UI.fmtDateTime(r.sold_at) : '', r.wb_order_id || '', r.shipment_code || '', r.client_name || ''].map(escCsv).join(';'));
+    });
+    var blob = new Blob(['﻿' + lines.join('\r\n')], {
+      type: 'text/csv;charset=utf-8;'
+    });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'chz-vyvod-' + id + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }).catch(function (e) {
+    if (isModuleDisabled(e)) {
+      showModuleDisabled();
+      return;
+    }
+    UI.notify.err(e.message);
+  });
+}
 function loadOverrides() {
   return _loadOverrides.apply(this, arguments);
 }

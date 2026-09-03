@@ -7,7 +7,7 @@ const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, requireModule } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
 const { validatePositiveInt } = require('../../utils/validators');
-const { ValidationError } = require('../../utils/errors');
+const { ValidationError, NotFoundError } = require('../../utils/errors');
 const { query } = require('../../config/database');
 const logger = require('../../utils/logger');
 
@@ -239,6 +239,61 @@ router.get('/codes-journal', requireRole('tenant_admin', 'supervisor'), async (r
       dateTo: req.query.date_to || null,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+// ─────────────── Вывод из оборота (проданные товары) ───────────────
+// См. миграцию 055 и marking.service.js — только реально ВЫКУПЛЕННЫЕ коды
+// (не просто отгруженные), для передачи в Total Mark/ЦРПТ. Явный журнал
+// выгрузок без возможности редактирования задним числом (см. обсуждение с
+// пользователем 04.09.2026).
+
+/** GET /marking/withdrawal/pending — предпросмотр того, что попадёт в
+ *  следующую выгрузку (ничего не помечает, просто показывает). */
+router.get('/withdrawal/pending', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const rows = await svc.getPendingWithdrawal({
+      tenantId: req.user.tenantId,
+      clientId: req.query.client_id ? Number(req.query.client_id) : null,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    res.json({ ok: true, rows, count: rows.length });
+  } catch (e) { next(e); }
+});
+
+/** POST /marking/withdrawal/export — сформировать выгрузку прямо сейчас
+ *  (ручная кнопка) — атомарно снимает текущий "хвост" и помечает как
+ *  exported, тот же путь, что и у ночного крона (source различается). */
+router.post('/withdrawal/export', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await svc.createWithdrawalExport({
+      tenantId: req.user.tenantId,
+      clientId: req.body.client_id ? Number(req.body.client_id) : null,
+      userId: req.user.id,
+      source: 'manual',
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+/** GET /marking/withdrawal/exports — история выгрузок (шапки, без строк). */
+router.get('/withdrawal/exports', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const rows = await svc.listWithdrawalExports({
+      tenantId: req.user.tenantId,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    res.json({ ok: true, rows });
+  } catch (e) { next(e); }
+});
+
+/** GET /marking/withdrawal/exports/:id — неизменяемый снимок конкретной
+ *  выгрузки, для повторного скачивания в любой момент. */
+router.get('/withdrawal/exports/:id', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await svc.getWithdrawalExportItems({ tenantId: req.user.tenantId, exportId: req.params.id });
+    if (!result) throw new NotFoundError('Export', req.params.id);
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
