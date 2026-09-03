@@ -68,12 +68,23 @@ async function getPlacementStats(tenantId) {
     реально годных к волне — 12). В волну можно взять только заказ в
     статусе 'new' — остальные статусы так или иначе уже не актуальны для
     формирования волны, поэтому фильтруем по явному "разрешению", а не
-    "исключению". */
+    "исключению".
+
+    04.09.2026: та же история повторилась со складами WB, отключёнными для
+    сборки этим тенантом (is_enabled_for_picking=FALSE - "этот склад
+    обслуживает другой ФФ", см. /wb/orders и /generate-wave) - их заказы
+    физически никогда не попадут в волну ЭТОГО фулфилмента, но всё равно
+    считались в "без волны" на табло, раздувая число тем же образом. */
 async function getWaveBacklogStats(tenantId) {
   const r = await query(
     `SELECT COUNT(*)::int AS backlog_orders
-     FROM wms.wb_orders
-     WHERE tenant_id=$1 AND wb_supply_id IS NULL AND status='new'`,
+     FROM wms.wb_orders o
+     WHERE o.tenant_id=$1 AND o.wb_supply_id IS NULL AND o.status='new'
+       AND NOT EXISTS (
+         SELECT 1 FROM wms.wb_seller_warehouses w
+         WHERE w.mp_account_id=o.mp_account_id AND w.wb_warehouse_id=o.warehouse_id
+           AND w.is_enabled_for_picking=FALSE
+       )`,
     [tenantId]
   );
   return r.rows[0];
