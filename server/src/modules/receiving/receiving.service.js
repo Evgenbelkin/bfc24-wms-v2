@@ -17,9 +17,18 @@ const logger = require('../../utils/logger');
 
 /**
  * Если у товара включена маркировка "Честный знак" с триггером 'receiving' —
- * (1) аллоцировать и напечатать по одному коду ЧЗ на каждую принятую единицу,
+ * (1) аллоцировать и напечатать по одному коду ЧЗ на каждую принятую единицу
+ *     (только в режиме 'print' - см. ниже),
  * (2) напечатать столько же обычных штрихкодовых стикеров товара (item_barcode)
  * — той же операцией, чтобы у приёмщика сразу были ОБА стикера на руках.
+ *
+ * Пункт (2) - ТОЛЬКО для режима 'print' (код печатаем мы из своего пула).
+ * Для режима 'scan' (клиент клеит DataMatrix на заводе) обычный item_barcode
+ * стикер тоже НЕ печатаем - явное решение пользователя 04.09.2026: товар в
+ * этом режиме всегда приходит уже со своим штрихкодом от производителя,
+ * печатать дублирующий стикер на приёмке незачем (раньше печатали "на
+ * всякий случай для внутренних операций склада" - оказалось лишним, только
+ * тратит этикетки и время приёмщика).
  *
  * ВЫЗЫВАЕТСЯ ВНУТРИ ТРАНЗАКЦИИ ПРИЁМКИ (client=dbClient, БЕЗ try/catch вокруг
  * marking.allocateAndPrint) — явное решение пользователя: если в пуле не
@@ -42,8 +51,6 @@ async function handleMarkingAtReceiving(client, { tenantId, clientId, itemId, ba
     // Товар промаркирован клиентом заранее — печатать код ЧЗ нечего,
     // регистрируем уже существующие на товаре коды DataMatrix в пул.
     // Жёсткий блок: по одному коду на каждую принимаемую единицу.
-    // Обычный item_barcode стикер (ниже по функции) всё равно может
-    // понадобиться складу для внутренних операций — не пропускаем его.
     const codes = Array.isArray(dataMatrixCodes) ? dataMatrixCodes.filter(Boolean) : [];
     if (codes.length !== qty) {
       throw new ValidationError(
@@ -52,13 +59,17 @@ async function handleMarkingAtReceiving(client, { tenantId, clientId, itemId, ba
       );
     }
     await marking.registerScannedCodes({ tenantId, itemId, codes, userId, dbClient: client });
-  } else {
-    // Жёсткий блок: бросает ValidationError, если кодов не хватает или нет принтера.
-    await marking.allocateAndPrint({
-      tenantId, clientId, itemId, itemBarcode: barcode, itemName: item.item_name,
-      qty, refType, refId, userId, employeeId: userId, dbClient: client,
-    });
+    // Ничего не печатаем: товар в этом режиме всегда приходит уже со своим
+    // штрихкодом от производителя (см. комментарий у функции выше) - в
+    // отличие от режима 'print' ниже, тут item_barcode стикер лишний.
+    return;
   }
+
+  // Жёсткий блок: бросает ValidationError, если кодов не хватает или нет принтера.
+  await marking.allocateAndPrint({
+    tenantId, clientId, itemId, itemBarcode: barcode, itemName: item.item_name,
+    qty, refType, refId, userId, employeeId: userId, dbClient: client,
+  });
 
   try {
     const resolved = await resolvePrinter(client.query.bind(client), { tenantId, docType: 'item_barcode', employeeId: userId, clientId });
