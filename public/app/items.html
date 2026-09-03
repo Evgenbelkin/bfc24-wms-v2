@@ -322,10 +322,14 @@ function loadMore() {
   itemOffset += PAGE_SIZE;
   loadItems(true);
 }
+// idleSubmit:false - это поле для поиска руками набирают текст (не только
+// сканируют штрихкод), а подстраховка "нет терминатора 200мс" рассчитана на
+// сканер и на обычной скорости печати человека срабатывала практически на
+// каждую букву - см. комментарий в UI.onScan().
 UI.onScan('#f-search', function (v) {
   UI.setVal('#f-search', v);
   loadItems();
-});
+}, { idleSubmit: false });
 function openModal(idx) {
   var it = idx !== null ? itemCache[idx] : null;
   var clientOptions = clientsList.map(function (c) {

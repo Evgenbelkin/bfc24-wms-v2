@@ -405,9 +405,16 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     }
   }
 
-  function onScan(inputSelector, callback) {
+  function onScan(inputSelector, callback, opts) {
     var input = el(inputSelector);
     if (!input) return;
+    // По умолчанию включена (нужна для сканеров без терминатора, см. костыль
+    // под Mertech CL-2310 ниже) - но для полей, где реально печатают руками
+    // (например поиск по названию товара), 200мс между буквами - НОРМАЛЬНАЯ
+    // скорость печати человека, и это молча "досрочно" сабмитило после
+    // каждой буквы (жалоба: "каждая буква как скан"). Такие поля явно
+    // отключают это третьим аргументом: UI.onScan(sel, cb, {idleSubmit:false}).
+    var idleSubmitEnabled = !opts || opts.idleSubmit !== false;
 
     // Раньше это поле ВСЕГДА забирало фокус обратно себе через 300мс — удобно
     // для "сканируем в одно и то же поле подряд" (сборка/упаковка), но ломает
@@ -511,6 +518,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
       // сам по себе, без терминатора. Реальный Enter (keydown-хендлер выше)
       // всегда отменяет этот таймер и всё равно имеет приоритет.
       clearTimeout(idleSubmitTimer);
+      if (!idleSubmitEnabled) return; // поле для ручного ввода - таймер-подстраховка тут не нужен и только мешает
       if (realEnterSeen) return; // сканер тут уже доказал, что шлёт нормальный Enter сам
       idleSubmitTimer = setTimeout(function () {
         if (input.value) submit(input.value);
