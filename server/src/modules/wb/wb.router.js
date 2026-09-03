@@ -439,6 +439,17 @@ router.get('/orders', requireRole('tenant_admin','supervisor'), async (req,res,n
     if (status)     { conds.push(`o.status=$${idx++}`); params.push(status); }
     if (date_from)  { conds.push(`o.created_at>=$${idx++}::date`); params.push(date_from); }
     if (date_to)    { conds.push(`o.created_at<($${idx++}::date+INTERVAL '1 day')`); params.push(date_to); }
+    // Склады WB, явно выключенные админом этого тенанта в настройках
+    // аккаунта ("этот склад обслуживает другой ФФ", is_enabled_for_picking=
+    // FALSE) — не показываем в списке заказов вообще, той же логикой, что
+    // уже применяется в /generate-wave (см. там же) — иначе список визуально
+    // мешает чужие заказы с нашими, и непонятно, что реально попадёт в волну.
+    // Склад без настройки (ещё не засинкан/неизвестен) остаётся включённым.
+    conds.push(`NOT EXISTS (
+      SELECT 1 FROM wms.wb_seller_warehouses w
+      WHERE w.mp_account_id=o.mp_account_id AND w.wb_warehouse_id=o.warehouse_id
+        AND w.is_enabled_for_picking=FALSE
+    )`);
     params.push(Math.min(Number(limit),1000));
     // ВАЖНО: не SELECT o.* — в wb_orders на каждой строке лежит wb_sticker
     // (base64 SVG стикера) и raw (полный JSON-дамп ответа WB), оба могут
