@@ -363,6 +363,15 @@ function fmtDate(d) {
   var m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? "".concat(m[3], ".").concat(m[2], ".").concat(m[1]) : d;
 }
+// created_at — полноценный timestamptz (не голая DATE), поэтому здесь Date()
+// создавать можно спокойно: сдвига на часовой пояс браузера, в отличие от
+// period_date, не будет — просто показываем время создания начисления,
+// это помогает понять, почему период (period_date) разошёлся с фактической
+// датой операции (см. комментарий в billing.service.js про todayLocal()).
+function chargeTime(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
 // quantity в БД — NUMERIC(14,4), pg отдаёт строкой вида "66.0000" — убираем лишние нули для показа
 function fmtQty(q) {
   var n = Number(q);
@@ -602,7 +611,7 @@ function _loadCharges() {
           return _context7.a(2);
         case 3:
           body.innerHTML = chargeCache.map(function (c) {
-            return "\n          <tr>\n            <td>".concat(!c.is_invoiced && canEdit ? "<input type=\"checkbox\" class=\"charge-cb\" data-id=\"".concat(c.id, "\" data-amount=\"").concat(c.total_amount, "\" onclick=\"onChargeCheck(").concat(c.id, ", ").concat(c.total_amount, ", this.checked)\"/>") : '', "</td>\n            <td>").concat(fmtDate(c.period_date), "</td>\n            <td>").concat(serviceLabel(c.service_type)).concat(c.description ? ' · ' + UI.escHtml(c.description) : '', "</td>\n            <td>").concat(fmtQty(c.quantity), "</td>\n            <td>").concat(Number(c.unit_price).toFixed(2), "</td>\n            <td>").concat(Number(c.total_amount).toFixed(2), "</td>\n            <td>").concat(c.is_invoiced ? '✓' : '—', "</td>\n          </tr>\n        ");
+            return "\n          <tr>\n            <td>".concat(!c.is_invoiced && canEdit ? "<input type=\"checkbox\" class=\"charge-cb\" data-id=\"".concat(c.id, "\" data-amount=\"").concat(c.total_amount, "\" onclick=\"onChargeCheck(").concat(c.id, ", ").concat(c.total_amount, ", this.checked)\"/>") : '', "</td>\n            <td>").concat(fmtDate(c.period_date)).concat(c.created_at ? " <span style=\"color:var(--muted);font-size:11px;\">".concat(chargeTime(c.created_at), "</span>") : '', "</td>\n            <td>").concat(serviceLabel(c.service_type)).concat(c.description ? ' · ' + UI.escHtml(c.description) : '', "</td>\n            <td>").concat(fmtQty(c.quantity), "</td>\n            <td>").concat(Number(c.unit_price).toFixed(2), "</td>\n            <td>").concat(Number(c.total_amount).toFixed(2), "</td>\n            <td>").concat(c.is_invoiced ? '✓' : '—', "</td>\n          </tr>\n        ");
           }).join('');
           _context7.n = 6;
           break;
