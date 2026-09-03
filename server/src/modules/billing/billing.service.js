@@ -4,6 +4,20 @@ const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError, ConflictError } = require('../../utils/errors');
 const { validatePositiveInt } = require('../../utils/validators');
 
+// 'Сегодня' по МЕСТНОЙ дате сервера, а не UTC. Date.toISOString() всегда
+// отдаёт UTC-дату независимо от TZ процесса, а сервер поднят с
+// TZ=Europe/Moscow (см. комментарий в config/database.js про тот же класс
+// проблемы с DATE-колонками). Из-за new Date().toISOString().slice(0,10) в
+// период 00:00-02:59 по Москве текущая календарная дата по UTC — ещё вчерашняя,
+// поэтому операция (например, отгрузка), случившаяся ночью по Москве уже
+// 03.09, писалась в начисление ("Обработка") датой 02.09 — начисление и сама
+// отгрузка в отчётах расходились на день.
+function todayLocal() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // =============================================================================
 // Billing Service
 //
@@ -86,7 +100,7 @@ async function upsertPrice({
   const allowExtra = isStorage ? mode === 'volume' : serviceType === 'processing';
   const extraValue = allowExtra && extraUnitPrice != null ? Number(extraUnitPrice) : null;
 
-  const from = validFrom || new Date().toISOString().slice(0, 10);
+  const from = validFrom || todayLocal();
 
   const r = await query(
     `INSERT INTO billing.client_price_list
@@ -174,7 +188,7 @@ async function addCharge({
   const qty   = Number(quantity)  || 1;
   const price = Number(unitPrice) || 0;
   const total = qty * price;
-  const date  = periodDate || new Date().toISOString().slice(0, 10);
+  const date  = periodDate || todayLocal();
 
   const r = await query(
     `INSERT INTO billing.service_charges
@@ -201,7 +215,7 @@ async function addCharge({
  * штуку. Так одна и та же схема тарификации (раньше — только для 'storage')
  * доступна для любой услуги, например 'processing' — обработка по объёму.
  */
-async function chargeForOperation({ tenantId, clientId, serviceType, quantity, refType, refId, periodDate, volumeLiters }) {
+async function chargeForOperation({ tenantId, clientId, serviceType, quantity, refType, refId, periodDate, volumeLiters, itemBarcode }) {
   try {
     // Ищем актуальный прайс
     const priceRes = await query(
@@ -229,16 +243,22 @@ async function chargeForOperation({ tenantId, clientId, serviceType, quantity, r
     let total  = qty * unitCost;
     if (p.min_charge && total < Number(p.min_charge)) total = Number(p.min_charge);
 
+    // itemBarcode (если передан — например, при поштучной тарификации
+    // 'processing' по каждой позиции отгрузки, см. shipping.service.js)
+    // приклеиваем к description, а не заводим отдельную колонку — так его
+    // сразу видно в списке начислений (public/app/billing.html) без миграций.
+    const description = itemBarcode ? `${p.description || ''} · ${itemBarcode}`.trim() : p.description;
+
     const r = await query(
       `INSERT INTO billing.service_charges
          (tenant_id,client_id,service_type,description,ref_type,ref_id,
           quantity,unit_price,total_amount,currency,period_date)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING id`,
-      [tenantId, clientId, serviceType, p.description,
+      [tenantId, clientId, serviceType, description,
        refType || null, refId ? Number(refId) : null,
        qty, unitCost, total, p.currency || 'RUB',
-       periodDate || new Date().toISOString().slice(0, 10)]
+       periodDate || todayLocal()]
     );
     return r.rows[0].id;
   } catch (_) {
@@ -465,7 +485,7 @@ async function listClientsWithActiveStoragePrice() {
  *    карточки, но и не придумывать объём из воздуха.
  */
 async function chargeStorageForClientToday({ tenantId, clientId }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
 
   const existing = await query(
     `SELECT 1 FROM billing.service_charges

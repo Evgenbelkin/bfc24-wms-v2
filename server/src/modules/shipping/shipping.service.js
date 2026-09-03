@@ -337,7 +337,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
       chargeForOperation({
         tenantId, clientId: chargeClientId, serviceType: 'processing',
         quantity: row.shipped_qty, volumeLiters: row.volume_liters,
-        refType: 'shipment_item', refId: shipmentId,
+        refType: 'shipment_item', refId: shipmentId, itemBarcode: row.barcode,
       });
     }
 
