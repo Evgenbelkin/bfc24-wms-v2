@@ -249,43 +249,65 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
   function beep(tone) {
     try {
       if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(function () {});
-      var isErr = tone === 'err';
-      var now = _audioCtx.currentTime;
-      var baseFreq = isErr ? 300 : 1700;
-      var hold = isErr ? 0.2 : 0.16;
-      var tail = 0.06;
 
-      // Компрессор + make-up gain — тот же приём, что и в громких уведомлениях:
-      // сначала "сплющиваем" динамику (компрессор), потом поднимаем общий
-      // уровень выше исходного пика (makeup) — цифровой сигнал становится
-      // громче на слух, чем просто одна нота на полной громкости.
-      var comp = _audioCtx.createDynamicsCompressor();
-      comp.threshold.setValueAtTime(-24, now);
-      comp.knee.setValueAtTime(6, now);
-      comp.ratio.setValueAtTime(12, now);
-      comp.attack.setValueAtTime(0.001, now);
-      comp.release.setValueAtTime(0.05, now);
-      var makeup = _audioCtx.createGain();
-      makeup.gain.setValueAtTime(4, now);
-      comp.connect(makeup).connect(_audioCtx.destination);
+      // На части ТСД (особенно когда сигнал звучит НЕ сразу на keydown, а
+      // после ответа сервера — см. handleScan в picking.html) AudioContext к
+      // этому моменту нередко в состоянии 'suspended' (например, "заснул" от
+      // энергосбережения WebView за время сетевого запроса). resume() —
+      // асинхронный: раньше мы звали его и, не дожидаясь результата, тут же
+      // планировали осцилляторы через _audioCtx.currentTime, снятый ДО того,
+      // как контекст реально возобновился. Пока контекст suspended, его
+      // внутренние часы не идут и граф не обрабатывается — запланированные
+      // start()/stop() на "текущий момент" оказывались в прошлом уже к
+      // моменту, когда resume() фактически завершался, и звук просто
+      // пропадал без единой ошибки в консоли (жалоба: "звука вообще нет").
+      // Поэтому теперь сам проигрыш ноты откладываем до фактического
+      // завершения resume() — currentTime берём заново, уже из работающего
+      // контекста.
+      var playTone = function () {
+        var isErr = tone === 'err';
+        var now = _audioCtx.currentTime;
+        var baseFreq = isErr ? 300 : 1700;
+        var hold = isErr ? 0.2 : 0.16;
+        var tail = 0.06;
 
-      // Две гармоники (основная + октава выше) звучат громче и "плотнее" на
-      // маленьком динамике телефона, чем одна чистая нота той же амплитуды.
-      [baseFreq, baseFreq * 2].forEach(function (freq, i) {
-        var osc = _audioCtx.createOscillator();
-        var gain = _audioCtx.createGain();
-        osc.type = 'square';
-        osc.frequency.value = freq;
-        var peak = i === 0 ? 0.9 : 0.4;
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(peak, now + 0.005); // без щелчка на старте
-        gain.gain.setValueAtTime(peak, now + hold);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + hold + tail);
-        osc.connect(gain).connect(comp);
-        osc.start(now);
-        osc.stop(now + hold + tail + 0.02);
-      });
+        // Компрессор + make-up gain — тот же приём, что и в громких уведомлениях:
+        // сначала "сплющиваем" динамику (компрессор), потом поднимаем общий
+        // уровень выше исходного пика (makeup) — цифровой сигнал становится
+        // громче на слух, чем просто одна нота на полной громкости.
+        var comp = _audioCtx.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-24, now);
+        comp.knee.setValueAtTime(6, now);
+        comp.ratio.setValueAtTime(12, now);
+        comp.attack.setValueAtTime(0.001, now);
+        comp.release.setValueAtTime(0.05, now);
+        var makeup = _audioCtx.createGain();
+        makeup.gain.setValueAtTime(4, now);
+        comp.connect(makeup).connect(_audioCtx.destination);
+
+        // Две гармоники (основная + октава выше) звучат громче и "плотнее" на
+        // маленьком динамике телефона, чем одна чистая нота той же амплитуды.
+        [baseFreq, baseFreq * 2].forEach(function (freq, i) {
+          var osc = _audioCtx.createOscillator();
+          var gain = _audioCtx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = freq;
+          var peak = i === 0 ? 0.9 : 0.4;
+          gain.gain.setValueAtTime(0, now);
+          gain.gain.linearRampToValueAtTime(peak, now + 0.005); // без щелчка на старте
+          gain.gain.setValueAtTime(peak, now + hold);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + hold + tail);
+          osc.connect(gain).connect(comp);
+          osc.start(now);
+          osc.stop(now + hold + tail + 0.02);
+        });
+      };
+
+      if (_audioCtx.state === 'suspended') {
+        _audioCtx.resume().then(playTone).catch(function () {});
+      } else {
+        playTone();
+      }
     } catch (_) {/* звук не критичен для работы - тихо игнорируем (например, если Web Audio недоступен) */}
   }
 
