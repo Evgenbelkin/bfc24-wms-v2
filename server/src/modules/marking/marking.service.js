@@ -16,6 +16,26 @@ const logger = require('../../utils/logger');
 // раздаются по одному при приёмке/упаковке (см. allocateAndPrint).
 // =============================================================================
 
+/**
+ * Достать из ошибки wbClient (см. wb.client.js: e.wbBody кладётся на throw для
+ * статусов 400/401/404/409+) человекочитаемый текст причины отказа. WB для
+ * .../meta/sgtin по документации отдаёт поле errorText в теле 400-ответа —
+ * его показываем в первую очередь; на случай других форм ответа (или будущих
+ * изменений WB) проверяем ещё несколько похожих по смыслу полей, и только
+ * если совсем ничего не нашли — отдаём исходный err.message как есть.
+ */
+function describeWbError(err) {
+  const body = err && err.wbBody;
+  if (body && typeof body === 'object') {
+    if (typeof body.errorText === 'string' && body.errorText.trim()) return body.errorText.trim();
+    if (Array.isArray(body.errors) && body.errors.length) return body.errors.join('; ');
+    if (typeof body.error === 'string' && body.error.trim()) return body.error.trim();
+    if (typeof body.detail === 'string' && body.detail.trim()) return body.detail.trim();
+    if (typeof body.title === 'string' && body.title.trim()) return body.title.trim();
+  }
+  return (err && err.message) || 'неизвестная ошибка WB API';
+}
+
 /** Разобрать текстовый блок кодов (по одному на строку) в массив без пустых/дублей */
 function parseCodesText(raw) {
   const lines = String(raw || '')
@@ -389,7 +409,31 @@ async function consumeScannedCodeAtPacking({
     // Отправляем в WB ДО пометки кода использованным: если WB API вернёт
     // ошибку, throw откатит и это UPDATE, и всю остальную упаковку —
     // код останется available для повторной попытки.
-    await wbClient.setOrderKiz(apiToken, wbOrderId, [codeStr]);
+    //
+    // ВАЖНО (задача 63, обсуждение с пользователем 05.09.2026): раньше сырая
+    // ошибка wbClient (обычный Error, не ValidationError) вылетала наружу
+    // как есть и попадала в централизованный errorHandler как "неожиданная"
+    // - в проде (NODE_ENV=production) она отображается упаковщику как
+    // непонятное "An unexpected error occurred", реальная причина отказа WB
+    // терялась. Именно эта проверка ("код в обороте или нет") у WB
+    // синхронная - других способов узнать это ДО сборки нет (см. обсуждение:
+    // прямая проверка через ГИС МТ/True API требует УКЭП и регистрации в
+    // ГИС МТ, которых у клиентов нет) - поэтому важно хотя бы честно и
+    // понятно показать упаковщику, что именно не так с этим кодом.
+    try {
+      await wbClient.setOrderKiz(apiToken, wbOrderId, [codeStr]);
+    } catch (err) {
+      logger.warn(
+        { tenantId, itemId, wbOrderId, code: codeStr, wbStatus: err.wbStatus, wbBody: err.wbBody },
+        'WB отклонил код "Честный знак" при упаковке'
+      );
+      throw new ValidationError(
+        `WB не принял код "Честный знак" (${codeStr}): ${describeWbError(err)}. ` +
+        `Код НЕ считается использованным (пул не тронут) — проверьте, что это правильный код именно с этой единицы ` +
+        `и что он реально в обороте (не продан/не выведен ранее), затем отсканируйте заново. Если код верный, но WB всё ` +
+        `равно отклоняет — обратитесь к супервайзеру для проведения без отправки в WB.`
+      );
+    }
 
     await client.query(
       `UPDATE wms.marking_codes

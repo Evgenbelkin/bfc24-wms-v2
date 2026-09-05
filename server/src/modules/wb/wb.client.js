@@ -77,19 +77,29 @@ async function wbRequest({ token, method = 'GET', baseUrl = WB_BASE, path, param
 
       // 401 — не ретраим
       if (response.status === 401) {
-        throw new Error(`WB API 401 Unauthorized for path=${path}. Check api_token. body: ${JSON.stringify(response.data)}`);
+        const e = new Error(`WB API 401 Unauthorized for path=${path}. Check api_token. body: ${JSON.stringify(response.data)}`);
+        e.wbStatus = response.status; e.wbBody = response.data;
+        throw e;
       }
 
       // 404 — не ретраим. Тело ответа тоже показываем - WB иногда возвращает
       // тут содержательное пояснение (не просто "not found"), например когда
       // токен не той категории или путь у метода поменялся.
       if (response.status === 404) {
-        throw new Error(`WB API 404 Not Found: ${baseUrl}${path} — body: ${JSON.stringify(response.data)}`);
+        const e = new Error(`WB API 404 Not Found: ${baseUrl}${path} — body: ${JSON.stringify(response.data)}`);
+        e.wbStatus = response.status; e.wbBody = response.data;
+        throw e;
       }
 
-      // Другие ошибки (400, 409, etc.)
+      // Другие ошибки (400, 409, etc.) — тело ответа (response.data) кладём
+      // на сам объект ошибки (wbStatus/wbBody), а не только в текст message:
+      // вызывающему коду (см. marking.service.js consumeScannedCodeAtPacking)
+      // иногда нужно достать оттуда именно человекочитаемое поле WB
+      // (errorText и т.п.), а не парсить обратно строку сообщения.
       if (response.status >= 400) {
-        throw new Error(`WB API ${response.status}: ${JSON.stringify(response.data)}`);
+        const e = new Error(`WB API ${response.status}: ${JSON.stringify(response.data)}`);
+        e.wbStatus = response.status; e.wbBody = response.data;
+        throw e;
       }
 
       // Успех
