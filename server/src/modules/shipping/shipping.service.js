@@ -119,7 +119,8 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
        pt.qty_picked, pt.location_code,
        i.item_name, i.vendor_code, i.wb_nm_id, i.size, i.preview_url,
        wo.wb_sticker, wo.wb_sticker_code,
-       COALESCE(pm.packed_qty, 0)::int AS qty_packed
+       COALESCE(pm.packed_qty, 0)::int AS qty_packed,
+       mc.code AS marking_code
      FROM wms.picking_tasks pt
      LEFT JOIN wms.items i ON i.id=pt.item_id
      LEFT JOIN wms.wb_orders wo ON wo.tenant_id=$1 AND wo.wb_order_id=pt.wb_order_id AND wo.wb_sticker IS NOT NULL
@@ -127,6 +128,14 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
        SELECT SUM(m.qty)::int AS packed_qty FROM wms.stock_movements m
        WHERE m.tenant_id=$1 AND m.movement_type='packing' AND m.ref_type='shipment' AND m.ref_id=$3 AND m.barcode=pt.barcode
      ) pm ON TRUE
+     -- Код "Честный знак", реально ушедший на печать/привязку для ЭТОЙ
+     -- конкретной единицы этой отгрузки (used_ref_id=shipment.id + тот же
+     -- wb_order_id, что у picking-задачи) - нужен для кнопки "Перепечатать
+     -- киз" в карточке отгрузки (обсуждение с пользователем 05.09.2026:
+     -- если стикер/QR поставки можно перепечатать отсюда, то и киз тоже).
+     -- 1:1 по построению (один заказ WB - максимум один выданный код).
+     LEFT JOIN wms.marking_codes mc ON mc.tenant_id=$1 AND mc.used_ref_type='packing'
+       AND mc.used_ref_id=$3 AND mc.wb_order_id=pt.wb_order_id
      WHERE pt.tenant_id=$1 AND pt.shipment_code=$2
      ORDER BY i.item_name, pt.barcode`,
     [tenantId, shipmentCode, shipment.id]

@@ -376,7 +376,7 @@ function _loadShipmentLines() {
         case 2:
           currentLines = res.lines || [];
           UI.renderTable('#lines-body', currentLines, function (l, idx) {
-            return "\n          <tr>\n            <td>".concat(UI.escHtml(l.item_name || l.barcode), "</td>\n            <td>").concat(UI.escHtml(l.vendor_code || '—'), "</td>\n            <td>").concat(l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—', "</td>\n            <td>").concat(UI.escHtml(l.size || '—'), "</td>\n            <td>").concat(UI.fmtQty(l.qty), "</td>\n            <td>").concat(UI.fmtQty(l.qty_picked), "</td>\n            <td>").concat(UI.fmtQty(l.qty_packed), "</td>\n            <td>").concat(l.preview_url ? "<a href=\"#\" onclick=\"openLinePhoto(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.wb_sticker ? "<a href=\"#\" onclick=\"openLineSticker(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.picking_status === 'skipped' ? canRequeue ? "<button class=\"btn-sm btn-back\" onclick=\"requeueLine(".concat(idx, ");return false;\">\u21A9 \u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u0441\u0431\u043E\u0440\u043A\u0443</button>") : "<span class=\"pill pill-red\">\u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E</span>" : '—', "</td>\n          </tr>\n        ");
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(l.item_name || l.barcode), "</td>\n            <td>").concat(UI.escHtml(l.vendor_code || '—'), "</td>\n            <td>").concat(l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—', "</td>\n            <td>").concat(UI.escHtml(l.size || '—'), "</td>\n            <td>").concat(UI.fmtQty(l.qty), "</td>\n            <td>").concat(UI.fmtQty(l.qty_picked), "</td>\n            <td>").concat(UI.fmtQty(l.qty_packed), "</td>\n            <td>").concat(l.preview_url ? "<a href=\"#\" onclick=\"openLinePhoto(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.wb_sticker ? "<a href=\"#\" onclick=\"openLineSticker(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.picking_status === 'skipped' ? canRequeue ? "<button class=\"btn-sm btn-back\" onclick=\"requeueLine(".concat(idx, ");return false;\">\u21A9 \u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u0441\u0431\u043E\u0440\u043A\u0443</button>") : "<span class=\"pill pill-red\">\u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E</span>" : '—', l.marking_code ? "<br><button class=\"btn-sm\" onclick=\"reprintLineMarkingCode(".concat(idx, ");return false;\">\u041F\u0435\u0440\u0435\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C \u043A\u0438\u0437</button>") : '', "</td>\n          </tr>\n        ");
           });
           renderReturnPickedCard(canRequeue ? res.already_picked || [] : []);
           _context4.n = 4;
@@ -591,6 +591,19 @@ function openLineSticker(idx) {
   var w = window.open('', '_blank');
   w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(l.barcode), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(l.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(l.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(l.wb_sticker_code), "</div>") : '', "\n        </body>"));
   w.document.close();
+}
+// Перепечать киз (двойная маркировка) прямо из карточки
+// отгрузки — в отличие от стикера/QR стикер не печатается
+// через браузер, а уходит заданием на физический принтер (wms.print_jobs),
+// так же как и перепечатка киза в модуле упаковки.
+function reprintLineMarkingCode(idx) {
+  var l = currentLines[idx];
+  if (!(l && l.marking_code)) return;
+  window.API.marking.reprintCode(l.marking_code).then(function () {
+    UI.notify.ok('Этикетка киза отправлена на печать ещё раз.');
+  }).catch(function (e) {
+    UI.notify.err(e.message);
+  });
 }
 function renderWbQrCard() {
   var card = document.getElementById('wb-qr-card');
