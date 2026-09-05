@@ -42,6 +42,9 @@
           <input type="date" id="f-date-from"/>
           <input type="date" id="f-date-to"/>
         </div>
+        <div class="filters-row">
+          <input type="text" id="f-sticker" placeholder="Стикер ВБ (если DataMatrix повреждён)"/>
+        </div>
         <div style="display:flex;gap:8px;">
           <button class="btn-big btn-blue" style="flex:1;" onclick="loadShippedReport()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
           <button class="btn-big btn-back" style="flex:1;" onclick="exportShippedCsv()"><svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg> Выгрузить в Excel</button>
@@ -78,6 +81,9 @@
         </div>
         <div class="filters-row">
           <input type="text" id="j-barcode" placeholder="Штрихкод товара (точное совпадение)"/>
+          <input type="text" id="j-sticker" placeholder="Стикер ВБ (если DataMatrix повреждён)"/>
+        </div>
+        <div class="filters-row">
           <input type="date" id="j-date-from"/>
           <input type="date" id="j-date-to"/>
         </div>
@@ -131,6 +137,8 @@
         </div>
         <div class="badge-row">
           <div class="badge"><span>Ждут выгрузки</span><div id="w-pending-count">0</div></div>
+          <div class="badge"><span>Просрочено</span><div id="w-overdue-count" style="color:var(--red);">0</div></div>
+          <div class="badge"><span>Истекает за 24ч</span><div id="w-duesoon-count">0</div></div>
         </div>
         <div style="display:flex;gap:8px;">
           <button class="btn-big btn-blue" style="flex:1;" onclick="loadWithdrawalPending()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Обновить список</button>
@@ -142,7 +150,7 @@
         <div class="card-title">Ждут выгрузки (предпросмотр)</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Дата продажи</th><th>Товар</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Заказ WB</th><th>Клиент</th></tr></thead>
+            <thead><tr><th>Дата продажи</th><th>Товар</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Заказ WB</th><th>Клиент</th><th>Вывести до</th></tr></thead>
             <tbody id="withdrawal-pending-body"></tbody>
           </table>
         </div>
@@ -304,7 +312,7 @@ function loadShippedReport() {
 // (см. public/seller/receiving-history.html), без сторонних библиотек.
 function _loadShippedReport() {
   _loadShippedReport = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
-    var params, clientId, dateFrom, dateTo, res, _t2;
+    var params, clientId, dateFrom, dateTo, sticker, res, _t2;
     return _regenerator().w(function (_context4) {
       while (1) switch (_context4.p = _context4.n) {
         case 0:
@@ -318,6 +326,8 @@ function _loadShippedReport() {
           if (dateFrom) params.date_from = dateFrom;
           dateTo = UI.val('#f-date-to');
           if (dateTo) params.date_to = dateTo;
+          sticker = UI.val('#f-sticker');
+          if (sticker) params.sticker = sticker.trim();
           _context4.n = 1;
           return window.API.marking.shippedReport(params);
         case 1:
@@ -396,7 +406,7 @@ function loadJournal() {
 }
 function _loadJournal() {
   _loadJournal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
-    var params, clientId, status, barcode, dateFrom, dateTo, res, _t3;
+    var params, clientId, status, barcode, sticker, dateFrom, dateTo, res, _t3;
     return _regenerator().w(function (_context5) {
       while (1) switch (_context5.p = _context5.n) {
         case 0:
@@ -411,6 +421,8 @@ function _loadJournal() {
           if (status) params.status = status;
           barcode = UI.val('#j-barcode');
           if (barcode) params.barcode = barcode.trim();
+          sticker = UI.val('#j-sticker');
+          if (sticker) params.sticker = sticker.trim();
           dateFrom = UI.val('#j-date-from');
           if (dateFrom) params.date_from = dateFrom;
           dateTo = UI.val('#j-date-to');
@@ -499,8 +511,15 @@ function loadWithdrawalPending() {
   }).then(function (res) {
     withdrawalPendingRows = res.rows || [];
     document.getElementById('w-pending-count').textContent = res.count != null ? res.count : withdrawalPendingRows.length;
+    document.getElementById('w-overdue-count').textContent = res.overdue_count || 0;
+    document.getElementById('w-duesoon-count').textContent = res.due_soon_count || 0;
     UI.renderTable('#withdrawal-pending-body', withdrawalPendingRows, function (r) {
-      return '<tr>' + '<td>' + (r.sold_at ? UI.fmtDateTime(r.sold_at) : '—') + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '</tr>';
+      var now = Date.now();
+      var deadlineTs = r.deadline_at ? new Date(r.deadline_at).getTime() : null;
+      var overdue = deadlineTs !== null && deadlineTs < now;
+      var dueSoon = deadlineTs !== null && !overdue && deadlineTs <= now + 24 * 60 * 60 * 1000;
+      var deadlineCell = !r.deadline_at ? '—' : overdue ? '<span style="color:var(--red);font-weight:700;">' + UI.fmtDateTime(r.deadline_at) + ' (просрочено)</span>' : dueSoon ? '<span style="color:var(--red);">' + UI.fmtDateTime(r.deadline_at) + '</span>' : UI.fmtDateTime(r.deadline_at);
+      return '<tr>' + '<td>' + (r.sold_at ? UI.fmtDateTime(r.sold_at) : '—') + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;cursor:pointer;text-decoration:underline;" onclick="showCodeTimeline(' + r.marking_code_id + ')" title="Показать историю">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '<td>' + deadlineCell + '</td>' + '</tr>';
     });
   }).catch(function (e) {
     if (isModuleDisabled(e)) {
@@ -544,6 +563,42 @@ function loadWithdrawalExports() {
     }
     UI.notify.err(e.message);
   });
+}
+var CODE_TIMELINE_EVENT_LABELS = {
+  created: 'Приход',
+  used: 'Использован',
+  wb_submitted: 'Отправка в WB',
+  wb_status: 'Статус у WB',
+  withdrawn: 'Вывод из оборота'
+};
+function showCodeTimeline(markingCodeId) {
+  var row = withdrawalPendingRows.filter(function (r) {
+    return r.marking_code_id === markingCodeId;
+  })[0];
+  if (!row || !row.code) {
+    UI.notify.err('Не удалось определить код для показа истории.');
+    return;
+  }
+  window.API.marking.codeTimeline(row.code).then(function (res) {
+    renderCodeTimelineModal(res.code, res.events || []);
+  }).catch(function (e) {
+    UI.notify.err(e.message);
+  });
+}
+function closeCodeTimelineModal() {
+  var overlay = document.getElementById('code-timeline-overlay');
+  if (overlay) overlay.remove();
+}
+function renderCodeTimelineModal(codeInfo, events) {
+  closeCodeTimelineModal();
+  var overlay = document.createElement('div');
+  overlay.id = 'code-timeline-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+  var itemsHtml = events.map(function (ev) {
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border,#e2e8f0);">' + '<div style="font-size:12px;color:var(--muted,#64748b);">' + UI.fmtDateTime(ev.at) + ' — ' + (CODE_TIMELINE_EVENT_LABELS[ev.type] || ev.type) + '</div>' + '<div style="font-size:14px;">' + UI.escHtml(ev.label) + '</div>' + '</div>';
+  }).join('');
+  overlay.innerHTML = '<div style="background:var(--card,#fff);border-radius:14px;max-width:520px;width:100%;max-height:80vh;overflow-y:auto;padding:20px;">' + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;">' + '<div>' + '<div style="font-weight:700;font-size:15px;">' + UI.escHtml(codeInfo.item_name || '') + '</div>' + '<div style="font-family:monospace;font-size:12px;color:var(--muted,#64748b);word-break:break-all;">' + UI.escHtml(codeInfo.code || '') + '</div>' + '</div>' + '<button type="button" class="btn-sm btn-back" onclick="closeCodeTimelineModal()">Закрыть</button>' + '</div>' + (itemsHtml || '<div style="color:var(--muted,#64748b);">Нет событий</div>') + '</div>';
+  document.body.appendChild(overlay);
 }
 function downloadWithdrawalExport(id) {
   window.API.marking.withdrawalExportItems(id).then(function (res) {

@@ -513,6 +513,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     withdrawalExportItems: function withdrawalExportItems(id) {
       return _get("/marking/withdrawal/exports/".concat(id));
+    },
+    reprintCode: function reprintCode(code) {
+      return post('/marking/reprint-code', { code: code });
+    },
+    codeTimeline: function codeTimeline(code) {
+      return _get('/marking/code-timeline', { code: code });
     }
   };
 

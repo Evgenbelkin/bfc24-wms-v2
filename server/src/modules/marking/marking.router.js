@@ -218,13 +218,14 @@ router.get('/shipped-report', requireRole('tenant_admin', 'supervisor'), async (
       clientId: req.query.client_id ? Number(req.query.client_id) : null,
       dateFrom: req.query.date_from || null,
       dateTo: req.query.date_to || null,
+      sticker: req.query.sticker || null,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
 
-/** GET /marking/codes-journal?client_id&barcode&status&date_from&date_to —
+/** GET /marking/codes-journal?client_id&barcode&status&sticker&date_from&date_to —
  *  общий журнал приход/расход по КАЖДОМУ коду тенанта (не только отгруженным,
  *  как /shipped-report) - когда пришёл (импорт/скан) и когда/куда ушёл
  *  (поставка), включая коды, которые ещё лежат в пуле неиспользованными. */
@@ -235,10 +236,36 @@ router.get('/codes-journal', requireRole('tenant_admin', 'supervisor'), async (r
       clientId: req.query.client_id ? Number(req.query.client_id) : null,
       barcode: req.query.barcode || null,
       status: req.query.status || null,
+      sticker: req.query.sticker || null,
       dateFrom: req.query.date_from || null,
       dateTo: req.query.date_to || null,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+/** POST /marking/reprint-code — перепечатать этикетку уже выданного кода
+ *  (двойная маркировка: пакет + коробка). Ничего не меняет в marking_codes,
+ *  только ставит новое печатное задание. Доступно упаковщику. */
+router.post('/reprint-code', requireRole('tenant_admin', 'supervisor', 'packer'), async (req, res, next) => {
+  try {
+    const result = await svc.reprintCode({
+      tenantId: req.user.tenantId,
+      code: req.body.code,
+      userId: req.user.id,
+      employeeId: req.body.employee_id || req.user.id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+/** GET /marking/code-timeline?code=... — хронология движения одного кода
+ *  (клик на код в отчётах). Собирается из уже существующих таблиц. */
+router.get('/code-timeline', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await svc.getCodeTimeline({ tenantId: req.user.tenantId, code: req.query.code });
+    if (!result) throw new NotFoundError('MarkingCode', req.query.code);
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
@@ -258,7 +285,19 @@ router.get('/withdrawal/pending', requireRole('tenant_admin', 'supervisor'), asy
       clientId: req.query.client_id ? Number(req.query.client_id) : null,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
     });
-    res.json({ ok: true, rows, count: rows.length });
+    // Счётчики просрочки — считаются здесь (не в сервисе), т.к. это чисто
+    // презентационная сводка по уже посчитанному deadline_at, "сейчас" имеет
+    // смысл только на момент ответа конкретному запросу.
+    const now = Date.now();
+    const dueSoonMs = now + 24 * 60 * 60 * 1000;
+    let overdueCount = 0, dueSoonCount = 0;
+    for (const r of rows) {
+      if (!r.deadline_at) continue;
+      const t = new Date(r.deadline_at).getTime();
+      if (t < now) overdueCount++;
+      else if (t <= dueSoonMs) dueSoonCount++;
+    }
+    res.json({ ok: true, rows, count: rows.length, overdue_count: overdueCount, due_soon_count: dueSoonCount });
   } catch (e) { next(e); }
 });
 

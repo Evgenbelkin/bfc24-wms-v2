@@ -604,10 +604,74 @@ async function allocateAndPrint({
       [tenantId, itemId]
     );
 
-    return { allocated: ids.length, shortfall: 0, printed: jobIds.length, jobIds, remaining: remainingRes.rows[0].n };
+    // codes — коды, реально ушедшие на печать в этом вызове (не только id) -
+    // фронту нужны для кнопки "Перепечатать киз" (см. reprintCode ниже):
+    // упаковщик мог не разглядеть код на маленьком экране/принтере и хочет
+    // повторно распечатать именно ЭТУ этикетку, не выделяя новый код из пула.
+    const codes = pickRes.rows.map(r => r.code);
+
+    return { allocated: ids.length, shortfall: 0, printed: jobIds.length, jobIds, codes, remaining: remainingRes.rows[0].n };
   };
 
   return dbClient ? doAllocateAndPrint(dbClient) : transaction(doAllocateAndPrint);
+}
+
+/**
+ * Перепечатать УЖЕ выданную этикетку кода "Честный знак" — для двойной
+ * маркировки (один и тот же физический киз клеят и на пакет, и на коробку,
+ * см. обсуждение с пользователем 04.09.2026). НИЧЕГО не меняет в
+ * marking_codes (код остаётся 'used' с исходными used_at/wb_submit_status) -
+ * только создаёт новое печатное задание с тем же кодом. Код должен быть уже
+ * выдан (status='used') — печатать этикетку для кода, ещё лежащего в пуле,
+ * нельзя (это был бы, по сути, обычный allocateAndPrint в обход очереди).
+ */
+async function reprintCode({ tenantId, code, userId, employeeId = null, dbClient = null }) {
+  const run = async (client) => {
+    const codeStr = String(code || '').trim();
+    if (!codeStr) throw new ValidationError('Не передан код для перепечатки.');
+
+    const codeRes = await client.query(
+      `SELECT mc.id, mc.code, mc.item_id, i.item_name, i.barcode AS item_barcode
+       FROM wms.marking_codes mc
+       JOIN wms.items i ON i.id = mc.item_id
+       WHERE mc.tenant_id=$1 AND mc.code=$2 AND mc.status='used'`,
+      [tenantId, codeStr]
+    );
+    if (codeRes.rowCount === 0) {
+      throw new ValidationError('Код не найден среди уже выданных — перепечатать можно только уже использованный код.');
+    }
+    const row = codeRes.rows[0];
+
+    // clientId намеренно не передаём (undefined) - у reprint нет контекста
+    // конкретной отгрузки/клиента под рукой, ищем любой активный маршрут
+    // печати для doc_type=marking_code (см. printerResolver.js: без clientId
+    // фильтр по client_id не применяется вовсе, берём приоритетный/дефолтный
+    // маршрут, а не только "общий").
+    const resolved = await resolvePrinter(client.query.bind(client), {
+      tenantId, docType: 'marking_code', employeeId: employeeId || userId,
+    });
+    if (!resolved) {
+      throw new ValidationError('Не найден принтер для печати кода маркировки "Честный знак".');
+    }
+
+    const svg = generateMarkingLabelSvg(row.code, row.item_name);
+    const jobCode = `MARK-REPRINT-${row.item_id}-${row.id}-${Date.now()}`;
+    const pjRes = await client.query(
+      `INSERT INTO wms.print_jobs
+         (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,copies,payload_json,status,created_by)
+       VALUES($1,$2,$3,$4,'marking_code','item',$5,1,$6::jsonb,'new',$7)
+       RETURNING id`,
+      [
+        tenantId, jobCode, resolved.printerId, resolved.routeId, row.item_id,
+        JSON.stringify({ sticker: svg, code: row.code, barcode: row.item_barcode, item_name: row.item_name, reprint: true }),
+        userId,
+      ]
+    );
+
+    return { jobId: pjRes.rows[0].id, code: row.code };
+  };
+
+  return dbClient ? run(dbClient) : transaction(run);
 }
 
 /**
@@ -667,13 +731,14 @@ async function listCodesForShipment({ tenantId, shipmentExternalId }) {
  * коды (реально ушедшие в заказ на упаковке) - 'available' в отчёт об
  * отгрузке смысла попадать нет.
  */
-async function getShippedReport({ tenantId, clientId = null, dateFrom = null, dateTo = null, limit = 5000 }) {
+async function getShippedReport({ tenantId, clientId = null, dateFrom = null, dateTo = null, sticker = null, limit = 5000 }) {
   const params = [tenantId];
   const conds = [`mc.tenant_id=$1`, `mc.status='used'`];
   let idx = 2;
   if (clientId) { conds.push(`s.client_id=$${idx++}`); params.push(Number(clientId)); }
   if (dateFrom) { conds.push(`mc.used_at >= $${idx++}::date`); params.push(dateFrom); }
   if (dateTo)   { conds.push(`mc.used_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(dateTo); }
+  if (sticker)  { conds.push(`wo.wb_sticker_code=$${idx++}`); params.push(String(sticker).trim()); }
   params.push(Math.min(Number(limit) || 5000, 20000));
 
   const r = await query(
@@ -709,7 +774,7 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
  * КАЖДОГО кода независимо от статуса, в отличие от used_at.
  */
 async function getCodesJournal({
-  tenantId, clientId = null, barcode = null, status = null,
+  tenantId, clientId = null, barcode = null, status = null, sticker = null,
   dateFrom = null, dateTo = null, limit = 5000,
 }) {
   const params = [tenantId];
@@ -717,6 +782,11 @@ async function getCodesJournal({
   let idx = 2;
   if (clientId) { conds.push(`i.client_id=$${idx++}`); params.push(Number(clientId)); }
   if (barcode)  { conds.push(`i.barcode=$${idx++}`); params.push(String(barcode).trim()); }
+  // Поиск по стикеру ВБ (миграционный сценарий: DataMatrix повреждён/не
+  // читается, но стикер WB на коробке/пакете цел) - точное совпадение,
+  // сверяется с wb_orders.wb_sticker_code через тот же LATERAL join, что уже
+  // используется для отображения колонки "Стикер ВБ" ниже.
+  if (sticker) { conds.push(`wo.wb_sticker_code=$${idx++}`); params.push(String(sticker).trim()); }
   if (status && ['available', 'used'].includes(status)) {
     conds.push(`mc.status=$${idx++}`); params.push(status);
   }
@@ -761,6 +831,28 @@ async function getCodesJournal({
 // =============================================================================
 
 /**
+ * Прибавить N РАБОЧИХ дней к дате (пропуская суббота/воскресенье) — для
+ * дедлайна вывода из оборота по 44-ФЗ/приказу Минпромторга: для FBS с
+ * причиной "Дистанционная продажа" - 3 рабочих дня с момента продажи
+ * (см. обсуждение с пользователем 04.09.2026 и seller.wildberries.ru/
+ * instructions/.../how-to-sale-labeled-items-to-legal-entities-and-sole-proprietors).
+ * ВАЖНО: учитывает только выходные (сб/вс), НЕ учитывает праздничные дни -
+ * в редких случаях (праздничная неделя) реальный дедлайн может быть на
+ * день-два позже расчётного. Это сознательное упрощение первой версии.
+ */
+function addBusinessDays(date, days) {
+  const d = new Date(date);
+  let added = 0;
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay(); // 0=вс, 6=сб
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return d;
+}
+const WITHDRAWAL_DEADLINE_BUSINESS_DAYS = 3;
+
+/**
  * Коды, готовые к выводу из оборота: использованы (упакованы), привязаны к
  * заказу WB, этот заказ реально ДОЕХАЛ до статуса 'sold' у WB, и код ещё ни
  * разу не попадал в выгрузку. Используется и для предпросмотра на экране
@@ -798,7 +890,12 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
      ${forUpdate ? 'FOR UPDATE OF mc SKIP LOCKED' : ''}`,
     params
   );
-  return r.rows;
+  // deadline_at считается на лету от sold_at - не хранится в БД, т.к. это
+  // фиксированное правило (+3 рабочих дня), не историческое состояние.
+  return r.rows.map(row => ({
+    ...row,
+    deadline_at: row.sold_at ? addBusinessDays(row.sold_at, WITHDRAWAL_DEADLINE_BUSINESS_DAYS).toISOString() : null,
+  }));
 }
 
 /**
@@ -888,6 +985,98 @@ async function getWithdrawalExportItems({ tenantId, exportId }) {
   return { export: expRes.rows[0], items: itemsRes.rows };
 }
 
+/**
+ * Хронология движения одного кода "Честный знак" — по клику на код в отчёте
+ * "Вывод из оборота" (и в журнале кодов). Собирается ИЗ УЖЕ существующих
+ * таблиц, новых источников данных не требуется (обсуждение с пользователем
+ * 04.09.2026): приход кода в систему, привязка к заказу/отгрузке, вся
+ * история статусов заказа у WB (включая момент продажи), и факт вывода из
+ * оборота, если уже был.
+ */
+async function getCodeTimeline({ tenantId, code }) {
+  const codeStr = String(code || '').trim();
+  if (!codeStr) throw new ValidationError('Не передан код.');
+
+  const codeRes = await query(
+    `SELECT mc.id, mc.code, mc.status, mc.source, mc.created_at,
+            mc.used_at, mc.used_ref_type, mc.used_ref_id, mc.used_by,
+            mc.wb_order_id, mc.wb_submit_status, mc.wb_submitted_at,
+            mc.withdrawal_status, mc.withdrawal_exported_at, mc.withdrawal_export_id,
+            i.item_name, i.barcode AS item_barcode, i.vendor_code, i.size,
+            u1.full_name AS used_by_name,
+            s.external_id AS shipment_code,
+            wo.mp_account_id, wo.wb_sticker_code
+     FROM wms.marking_codes mc
+     JOIN wms.items i ON i.id = mc.item_id
+     LEFT JOIN wms.users u1 ON u1.id = mc.used_by
+     LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
+     LEFT JOIN wms.wb_orders wo ON wo.tenant_id = mc.tenant_id AND wo.wb_order_id = mc.wb_order_id
+     WHERE mc.tenant_id=$1 AND mc.code=$2`,
+    [tenantId, codeStr]
+  );
+  if (codeRes.rowCount === 0) return null;
+  const c = codeRes.rows[0];
+
+  const events = [];
+  events.push({
+    type: 'created',
+    at: c.created_at,
+    label: c.source === 'scanned' ? 'Код зарегистрирован (скан на складе)' : 'Код загружен в пул',
+  });
+  if (c.used_at) {
+    const refLabel = c.used_ref_type === 'packing' ? `упаковка, отгрузка ${c.shipment_code || '—'}`
+      : c.used_ref_type === 'inbound' ? 'приёмка (поставка)'
+      : c.used_ref_type === 'receiving' ? 'приёмка'
+      : c.used_ref_type || '—';
+    events.push({
+      type: 'used',
+      at: c.used_at,
+      label: `Код использован (${refLabel})${c.used_by_name ? ', ' + c.used_by_name : ''}`,
+    });
+  }
+  if (c.wb_submitted_at) {
+    events.push({
+      type: 'wb_submitted',
+      at: c.wb_submitted_at,
+      label: c.wb_submit_status === 'sent' ? 'Отправлен в WB и привязан к заказу'
+        : c.wb_submit_status === 'export_only' ? 'Зафиксирован для выгрузки (без прямой отправки в WB)'
+        : c.wb_submit_status === 'manual_override' ? 'Проведён без отправки в WB (обход супервайзера)'
+        : 'Обработан для отправки в WB',
+    });
+  }
+
+  if (c.wb_order_id && c.mp_account_id) {
+    const evRes = await query(
+      `SELECT wb_status, observed_at FROM wms.wb_order_status_events
+       WHERE mp_account_id=$1 AND wb_order_id=$2
+       ORDER BY observed_at ASC`,
+      [c.mp_account_id, c.wb_order_id]
+    );
+    for (const ev of evRes.rows) {
+      events.push({ type: 'wb_status', at: ev.observed_at, label: `Статус заказа у WB: ${ev.wb_status}` });
+    }
+  }
+
+  if (c.withdrawal_exported_at) {
+    events.push({
+      type: 'withdrawn',
+      at: c.withdrawal_exported_at,
+      label: `Выведен из оборота (выгрузка #${c.withdrawal_export_id})`,
+    });
+  }
+
+  events.sort((a, b) => new Date(a.at) - new Date(b.at));
+
+  return {
+    code: {
+      code: c.code, status: c.status, item_name: c.item_name, item_barcode: c.item_barcode,
+      vendor_code: c.vendor_code, size: c.size, wb_order_id: c.wb_order_id,
+      wb_sticker_code: c.wb_sticker_code, withdrawal_status: c.withdrawal_status,
+    },
+    events,
+  };
+}
+
 /** tenant_id всех тенантов с включённым модулем 'marking' и активным доступом
  *  (для ночного крона вывода из оборота — тот же паттерн, что
  *  wb.service.js::listTenantsWithWbIntegration). */
@@ -902,9 +1091,10 @@ async function listTenantsWithMarkingModule() {
 
 module.exports = {
   parseCodesText, importCodes, importCodesFromExcel, getCodesSummary, listCodes, deleteCode,
-  shouldMarkAt, allocateAndPrint,
+  shouldMarkAt, allocateAndPrint, reprintCode,
   registerScannedCodes, consumeScannedCodeAtPacking, overrideMarkingAtPacking,
   getPendingWithdrawal, createWithdrawalExport, listWithdrawalExports, getWithdrawalExportItems,
+  getCodeTimeline,
   listTenantsWithMarkingModule,
   listPendingManualOverrides, listCodesForShipment, getShippedReport, getCodesJournal,
 };
