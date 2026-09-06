@@ -30,6 +30,19 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# На части компьютеров (особенно старые Windows 10/сборки с "родным"
+# PowerShell 5.1) .NET по умолчанию пытается качать по TLS 1.0/1.1, а
+# nssm.cc и sumatrapdfreader.org давно принимают только TLS 1.2 — без этой
+# строчки Invoke-WebRequest ниже падает с "Не удалось создать защищённый
+# канал SSL/TLS" (реальная причина жалобы "не скачивается nssm" 06.09.2026).
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+} catch {
+  # Очень старый .NET без поддержки Tls12 в enum — не критично, просто
+  # оставляем системные настройки как есть и даём загрузке шанс сработать.
+}
+
 $SourceDir = $PSScriptRoot
 $NssmPath = Join-Path $SourceDir "nssm.exe"
 $BinDir = Join-Path $SourceDir "bin"
@@ -99,17 +112,26 @@ if (Test-Path $NssmPath) {
   Ok "  уже на месте."
 } else {
   Info "  не найден, скачиваю..."
-  $nssmZip = Join-Path $env:TEMP "nssm.zip"
-  $nssmExtract = Join-Path $env:TEMP "nssm-extract"
-  Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $nssmZip
-  if (Test-Path $nssmExtract) { Remove-Item $nssmExtract -Recurse -Force }
-  Expand-Archive -Path $nssmZip -DestinationPath $nssmExtract -Force
-  $found = Get-ChildItem -Path $nssmExtract -Recurse -Filter "nssm.exe" |
-    Where-Object { $_.FullName -match '\\win64\\' } | Select-Object -First 1
-  if (-not $found) { $found = Get-ChildItem -Path $nssmExtract -Recurse -Filter "nssm.exe" | Select-Object -First 1 }
-  if (-not $found) { Fail "Не удалось найти nssm.exe внутри скачанного архива." }
-  Copy-Item $found.FullName $NssmPath -Force
-  Ok "  скачан и положен рядом со скриптом."
+  try {
+    $nssmZip = Join-Path $env:TEMP "nssm.zip"
+    $nssmExtract = Join-Path $env:TEMP "nssm-extract"
+    Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $nssmZip
+    if (Test-Path $nssmExtract) { Remove-Item $nssmExtract -Recurse -Force }
+    Expand-Archive -Path $nssmZip -DestinationPath $nssmExtract -Force
+    $found = Get-ChildItem -Path $nssmExtract -Recurse -Filter "nssm.exe" |
+      Where-Object { $_.FullName -match '\\win64\\' } | Select-Object -First 1
+    if (-not $found) { $found = Get-ChildItem -Path $nssmExtract -Recurse -Filter "nssm.exe" | Select-Object -First 1 }
+    if (-not $found) { Fail "Не удалось найти nssm.exe внутри скачанного архива." }
+    Copy-Item $found.FullName $NssmPath -Force
+    Ok "  скачан и положен рядом со скриптом."
+  } catch {
+    # Автоматическая закачка не всегда доходит (сайт недоступен именно
+    # сейчас, антивирус/фаервол блокирует, нет интернета на этом ПК и т.п.) —
+    # вместо невнятной ошибки PowerShell даём точный ручной путь, которым
+    # пользовался человек и раньше, до появления этого скрипта.
+    Warn "  автоматическая закачка не удалась: $($_.Exception.Message)"
+    Fail "Не получилось скачать nssm.exe автоматически.`n`nСкачайте вручную: https://nssm.cc/download (файл nssm-2.24.zip)`nРаспакуйте, найдите nssm.exe в папке win64 (или win32, если система 32-битная)`nи положите его сюда: $NssmPath`n`nПосле этого запустите .\setup-hub.ps1 ещё раз - он увидит файл на месте и пойдёт дальше сам."
+  }
 }
 
 Info "=== 3/5: SumatraPDF.exe (нужен для ровной печати термоэтикеток) ==="
@@ -128,16 +150,21 @@ if (Test-Path $SumatraPath) {
     Rename-Item -Path $misnamed.FullName -NewName "SumatraPDF.exe"
   } else {
     Info "  не найден, скачиваю SumatraPDF 3.6.1..."
-    $sumZip = Join-Path $env:TEMP "sumatra.zip"
-    $sumExtract = Join-Path $env:TEMP "sumatra-extract"
-    Invoke-WebRequest -Uri "https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" -OutFile $sumZip
-    if (Test-Path $sumExtract) { Remove-Item $sumExtract -Recurse -Force }
-    Expand-Archive -Path $sumZip -DestinationPath $sumExtract -Force
-    $exe = Get-ChildItem -Path $sumExtract -Recurse -Filter "*-32.exe" | Select-Object -First 1
-    if (-not $exe) { $exe = Get-ChildItem -Path $sumExtract -Recurse -Filter "SumatraPDF*.exe" | Select-Object -First 1 }
-    if (-not $exe) { Fail "Не удалось найти SumatraPDF.exe внутри скачанного архива." }
-    Copy-Item $exe.FullName $SumatraPath -Force
-    Ok "  скачан и положен как bin\SumatraPDF.exe."
+    try {
+      $sumZip = Join-Path $env:TEMP "sumatra.zip"
+      $sumExtract = Join-Path $env:TEMP "sumatra-extract"
+      Invoke-WebRequest -Uri "https://www.sumatrapdfreader.org/dl/rel/3.6.1/SumatraPDF-3.6.1.zip" -OutFile $sumZip
+      if (Test-Path $sumExtract) { Remove-Item $sumExtract -Recurse -Force }
+      Expand-Archive -Path $sumZip -DestinationPath $sumExtract -Force
+      $exe = Get-ChildItem -Path $sumExtract -Recurse -Filter "*-32.exe" | Select-Object -First 1
+      if (-not $exe) { $exe = Get-ChildItem -Path $sumExtract -Recurse -Filter "SumatraPDF*.exe" | Select-Object -First 1 }
+      if (-not $exe) { Fail "Не удалось найти SumatraPDF.exe внутри скачанного архива." }
+      Copy-Item $exe.FullName $SumatraPath -Force
+      Ok "  скачан и положен как bin\SumatraPDF.exe."
+    } catch {
+      Warn "  автоматическая закачка не удалась: $($_.Exception.Message)"
+      Fail "Не получилось скачать SumatraPDF автоматически.`n`nСкачайте вручную: https://www.sumatrapdfreader.org/download-free-pdf-viewer (портативная 32-битная версия)`nПереименуйте скачанный файл ровно в SumatraPDF.exe`nи положите его сюда: $SumatraPath`n`nПосле этого запустите .\setup-hub.ps1 ещё раз - он увидит файл на месте и пойдёт дальше сам."
+    }
   }
 }
 
