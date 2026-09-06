@@ -421,11 +421,15 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       }
     }
 
-    // Отдаём фронту именно тот стикер, который реально ушёл на печать для этой
-    // конкретной единицы (не просто "какой-то стикер по этому штрихкоду" —
-    // при нескольких заказах на один и тот же товар у каждой физической
-    // единицы свой уникальный стикер, см. комментарий выше про OFFSET).
-    // Так упаковщик может визуально сверить с тем, что реально печатает принтер.
+    // Отдаём фронту КОД стикера (и id заказа, чтобы при желании догрузить
+    // картинку отдельно) — но НЕ саму картинку (scannedSticker.wb_sticker,
+    // base64 SVG на десятки КБ). Раньше картинка ехала в каждом ответе на
+    // скан, даже если оператор на неё не смотрит — на большой волне и слабом
+    // интернете это ощутимо тормозило именно скорость самого скана (см.
+    // обсуждение с пользователем 06.09.2026, тот же принцип уже применён к
+    // списку строк — см. комментарий в getPackingTaskDetails). Картинка
+    // теперь загружается по клику через GET /packing/sticker-image/:id
+    // (см. openScannedSticker/printScannedSticker в packing.html).
     const scannedSticker = stickerRes.rows[0] || null;
 
     return {
@@ -434,8 +438,8 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       qty_packed:  newPacked,
       shipment_id: shipment.id,
       print_job:   printJob,
-      wb_sticker:      scannedSticker?.wb_sticker || null,
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
+      wb_order_id:     scannedSticker?.wb_order_id || null,
       marking:           markingJob,
       marking_remaining: markingJob ? markingJob.remaining : null,
       used_materials:    usedMaterials, // [{name, qty, qty_on_hand}] — что списалось со склада на эту единицу

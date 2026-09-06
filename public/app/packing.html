@@ -255,20 +255,66 @@ function renderStickerCard() {
     return;
   }
   card.style.display = 'block';
-  box.innerHTML = "<img src=\"data:image/svg+xml;base64,".concat(lastScanSticker.wb_sticker, "\" alt=\"\u0421\u0442\u0438\u043A\u0435\u0440 \u0412\u0411\"/>");
+  // \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0443 \u0441\u044E\u0434\u0430 \u0431\u043E\u043B\u044C\u0448\u0435 \u041D\u0415 \u043F\u043E\u0434\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438 \u043F\u0440\u0438 \u043A\u0430\u0436\u0434\u043E\u043C \u0441\u043A\u0430\u043D\u0435 (\u0441\u043C.
+  // \u043E\u0431\u0441\u0443\u0436\u0434\u0435\u043D\u0438\u0435 \u0441 \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0435\u043C 06.09.2026: \u043D\u0430 \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u0432\u043E\u043B\u043D\u0435 \u0438 \u0441\u043B\u0430\u0431\u043E\u043C
+  // \u0438\u043D\u0442\u0435\u0440\u043D\u0435\u0442\u0435 \u043A\u0430\u0436\u0434\u044B\u0439 \u0441\u043A\u0430\u043D \u0442\u044F\u043D\u0443\u043B \u043B\u0438\u0448\u043D\u0438\u0435 \u0434\u0435\u0441\u044F\u0442\u043A\u0438 \u041A\u0411 base64-\u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438, \u0434\u0430\u0436\u0435
+  // \u0435\u0441\u043B\u0438 \u043E\u043F\u0435\u0440\u0430\u0442\u043E\u0440 \u043D\u0430 \u043D\u0435\u0451 \u043D\u0435 \u0441\u043C\u043E\u0442\u0440\u0438\u0442 - \u044D\u0442\u043E \u0438 \u0442\u043E\u0440\u043C\u043E\u0437\u0438\u043B\u043E \u0441\u0430\u043C \u0441\u043A\u0430\u043D). \u041F\u0440\u043E\u0441\u0442\u043E
+  // \u0442\u0435\u043A\u0441\u0442 \u043A\u043E\u0434\u0430 \u0441\u0440\u0430\u0437\u0443, \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 - \u043F\u043E \u043A\u043B\u0438\u043A\u0443 "\u041E\u0442\u043A\u0440\u044B\u0442\u044C"/"\u041F\u0435\u0447\u0430\u0442\u044C \u0435\u0449\u0451 \u0440\u0430\u0437" \u0447\u0435\u0440\u0435\u0437
+  // fetchScannedStickerImage() (\u0442\u043E\u0442 \u0436\u0435 \u043F\u0440\u0438\u043D\u0446\u0438\u043F, \u0447\u0442\u043E \u0438 \u0432 preloadLineStickers/
+  // openStickerChip \u0434\u043B\u044F \u0441\u043F\u0438\u0441\u043A\u0430 \u0441\u0442\u0440\u043E\u043A).
+  box.innerHTML = '';
   note.textContent = lastScanSticker.wb_sticker_code || '';
+}
+// \u0414\u043E\u0441\u0442\u0430\u0451\u0442 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0443 \u0441\u0442\u0438\u043A\u0435\u0440\u0430 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0435\u0433\u043E \u0441\u043A\u0430\u043D\u0430 \u2014 \u0438\u0437 \u043A\u044D\u0448\u0430 (lastScanSticker.image,
+// \u0435\u0441\u043B\u0438 \u0443\u0436\u0435 \u0433\u0440\u0443\u0437\u0438\u043B\u0438 \u0432 \u044D\u0442\u043E\u043C \u0436\u0435 \u0441\u043A\u0430\u043D\u0435) \u043B\u0438\u0431\u043E \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u043C \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u043C \u043A \u0441\u0435\u0440\u0432\u0435\u0440\u0443.
+// \u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 Promise<string> (base64 SVG).
+function fetchScannedStickerImage() {
+  if (!lastScanSticker) return Promise.reject(new Error('\u041D\u0435\u0442 \u0441\u0442\u0438\u043A\u0435\u0440\u0430 \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u0441\u043A\u0430\u043D\u0430'));
+  if (lastScanSticker.image) return Promise.resolve(lastScanSticker.image);
+  if (!lastScanSticker.wb_order_id) return Promise.reject(new Error('\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0441\u0442\u0438\u043A\u0435\u0440\u0430 \u0434\u043B\u044F \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438'));
+  return window.API.packing.stickerImage(lastScanSticker.wb_order_id).then(function (res) {
+    lastScanSticker.image = res.image;
+    if (!lastScanSticker.wb_sticker_code && res.code) lastScanSticker.wb_sticker_code = res.code;
+    return res.image;
+  });
 }
 function openScannedSticker() {
   if (!lastScanSticker) return;
+  // \u041E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \u043E\u043A\u043D\u043E \u0421\u0420\u0410\u0417\u0423, \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u043D\u043E \u043F\u043E \u043A\u043B\u0438\u043A\u0443 - \u0438\u043D\u0430\u0447\u0435 \u0431\u0440\u0430\u0443\u0437\u0435\u0440 \u043C\u043E\u0436\u0435\u0442
+  // \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0432\u0441\u043F\u043B\u044B\u0432\u0430\u044E\u0449\u0435\u0435 \u043E\u043A\u043D\u043E, \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0435 \u0443\u0436\u0435 \u043F\u043E\u0441\u043B\u0435 await/.then().
   var w = window.open('', '_blank');
-  w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(lastScannedBarcode || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(lastScanSticker.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\"/>\n          ").concat(lastScanSticker.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(lastScanSticker.wb_sticker_code), "</div>") : '', "\n        </body>"));
-  w.document.close();
+  if (!w) {
+    UI.notify.err('\u0411\u0440\u0430\u0443\u0437\u0435\u0440 \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u043B \u0432\u0441\u043F\u043B\u044B\u0432\u0430\u044E\u0449\u0435\u0435 \u043E\u043A\u043D\u043E');
+    return;
+  }
+  w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u0442\u0438\u043A\u0435\u0440\u0430\u2026</p>');
+  fetchScannedStickerImage().then(function (image) {
+    w.document.open();
+    w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(lastScannedBarcode || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(image, "\" style=\"max-width:90vw;max-height:80vh;\"/>\n          ").concat(lastScanSticker.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(lastScanSticker.wb_sticker_code), "</div>") : '', "\n        </body>"));
+    w.document.close();
+  }).catch(function (e) {
+    w.document.open();
+    w.document.write("<p style=\"font-family:sans-serif;color:red;padding:40px;\">".concat(UI.escHtml(e.message), "</p>"));
+    w.document.close();
+  });
 }
 function printScannedSticker() {
   if (!lastScanSticker) return;
   var w = window.open('', '_blank');
-  w.document.write("<title>\u041F\u0435\u0447\u0430\u0442\u044C \u0441\u0442\u0438\u043A\u0435\u0440\u0430 ".concat(UI.escHtml(lastScannedBarcode || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(lastScanSticker.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(lastScanSticker.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(lastScanSticker.wb_sticker_code), "</div>") : '', "\n        </body>"));
-  w.document.close();
+  if (!w) {
+    UI.notify.err('\u0411\u0440\u0430\u0443\u0437\u0435\u0440 \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u043B \u0432\u0441\u043F\u043B\u044B\u0432\u0430\u044E\u0449\u0435\u0435 \u043E\u043A\u043D\u043E');
+    return;
+  }
+  w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u0442\u0438\u043A\u0435\u0440\u0430\u2026</p>');
+  fetchScannedStickerImage().then(function (image) {
+    w.document.open();
+    w.document.write("<title>\u041F\u0435\u0447\u0430\u0442\u044C \u0441\u0442\u0438\u043A\u0435\u0440\u0430 ".concat(UI.escHtml(lastScannedBarcode || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(image, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(lastScanSticker.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(lastScanSticker.wb_sticker_code), "</div>") : '', "\n        </body>"));
+    w.document.close();
+  }).catch(function (e) {
+    w.document.open();
+    w.document.write("<p style=\"font-family:sans-serif;color:red;padding:40px;\">".concat(UI.escHtml(e.message), "</p>"));
+    w.document.close();
+  });
 }
 function renderPickupGate() {
   var shipmentCode = currentShipment && currentShipment.external_id || currentTask && currentTask.shipment_code || '';
@@ -740,9 +786,10 @@ function _submitScan() {
           });
           if (line) line.qty_packed = res.qty_packed;
           lastScannedBarcode = res.barcode;
-          lastScanSticker = res.wb_sticker ? {
-            wb_sticker: res.wb_sticker,
-            wb_sticker_code: res.wb_sticker_code
+          lastScanSticker = res.wb_order_id ? {
+            wb_order_id: res.wb_order_id,
+            wb_sticker_code: res.wb_sticker_code,
+            image: null
           } : null;
           renderLines();
           renderBigPhoto();
