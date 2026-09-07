@@ -162,6 +162,39 @@ async function getWaveByShipmentCode({ tenantId, shipmentCode }) {
   return r.rows[0];
 }
 
+/**
+ * Детали волны для диспетчерской (клик по карточке волны) — сама волна
+ * (клиент, сборщик, статус) + полный список её заданий в порядке обхода
+ * склада (тот же priority/id, которым фактически водит сборщика getNextTask,
+ * см. locationWalkKey выше), с ячейкой, товаром, количеством и статусом
+ * каждого. Задача #67, обсуждение с пользователем 07.09.2026 — раньше узнать
+ * состав волны и путь сборщика можно было только прямыми запросами в БД.
+ */
+async function getWaveDetail({ tenantId, waveId }) {
+  const wRes = await query(
+    `SELECT w.*, u.username AS picker_name, c.client_name
+     FROM wms.pick_waves w
+     LEFT JOIN wms.users u ON u.id=w.picker_id
+     LEFT JOIN wms.clients c ON c.id=w.client_id
+     WHERE w.tenant_id=$1 AND w.id=$2 LIMIT 1`,
+    [tenantId, waveId]
+  );
+  if (wRes.rowCount === 0) throw new NotFoundError('Wave', waveId);
+
+  const tasksRes = await query(
+    `SELECT t.id, t.barcode, t.location_code, t.qty, t.qty_picked, t.status,
+       t.priority, t.started_at, t.finished_at, t.reason, t.comment,
+       i.item_name, i.vendor_code, i.size
+     FROM wms.picking_tasks t
+     LEFT JOIN wms.items i ON i.id=t.item_id
+     WHERE t.tenant_id=$1 AND t.wave_id=$2
+     ORDER BY t.priority ASC, t.id ASC`,
+    [tenantId, waveId]
+  );
+
+  return { wave: wRes.rows[0], tasks: tasksRes.rows };
+}
+
 /** Взять волну (picker берёт в работу) */
 async function takeWave({ tenantId, pickerId }) {
   return transaction(async (client) => {
@@ -1571,7 +1604,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
 }
 
 module.exports = {
-  listWaves, getWaveByShipmentCode, takeWave, resetWave,
+  listWaves, getWaveByShipmentCode, getWaveDetail, takeWave, resetWave,
   getNextTask, scanLocation, scanItem, scanItemQty, skipTask,
   listSkippedTasks, requeueSkippedTask,
   closeWave, getWaveStatus,

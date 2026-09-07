@@ -773,6 +773,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     resetWave: function resetWave(waveId) {
       return post("/picking/wave/".concat(waveId, "/reset"), {});
     },
+    waveDetail: function waveDetail(waveId) {
+      return _get("/picking/wave/".concat(waveId));
+    },
     next: function next(p) {
       return _get('/picking/next', p);
     },

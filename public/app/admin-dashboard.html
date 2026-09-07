@@ -207,10 +207,10 @@ function renderWaves(_ref) {
   active.forEach(function (w) {
     var idleMin = minutesAgo(w.updated_at);
     var isIdle = idleMin !== null && idleMin >= IDLE_THRESHOLD_MS / 60000;
-    rows.push("\n          <div class=\"card wave-card ".concat(isIdle ? 'idle' : 'active', "\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">").concat(UI.escHtml(w.shipment_code), "</div>\n                <div class=\"wave-client\">").concat(UI.escHtml(w.client_name || '\u2014'), "</div>\n                <div class=\"wave-sub\">\u0421\u0431\u043E\u0440\u0449\u0438\u043A: ").concat(UI.escHtml(w.picker_name || '—'), " \xB7 ").concat(w.done_count || 0, "/").concat(w.task_count || 0, " \u0441\u043E\u0431\u0440\u0430\u043D\u043E</div>\n              </div>\n              ").concat(isIdle ? "<span class=\"idle-tag\">\u23F8 \u043F\u0440\u043E\u0441\u0442\u043E\u0439 ".concat(idleMin, " \u043C\u0438\u043D</span>") : "<span class=\"pill pill-blue\">\u0432 \u0440\u0430\u0431\u043E\u0442\u0435</span>", "\n            </div>\n            <div class=\"mini-progress\"><div class=\"mini-progress-fill\" style=\"width:").concat(w.task_count ? Math.round(w.done_count / w.task_count * 100) : 0, "%\"></div></div>\n            ").concat(isIdle ? "<button type=\"button\" class=\"btn-sm btn-back\" style=\"margin-top:8px;\" onclick=\"resetWave(".concat(w.id, ");event.stopPropagation();\">↻ Сбросить волну</button>") : '', "\n          </div>\n        "));
+    rows.push("\n          <div class=\"card wave-card ".concat(isIdle ? 'idle' : 'active', "\" style=\"cursor:pointer;\" onclick=\"openWaveDetail(").concat(w.id, ")\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">").concat(UI.escHtml(w.shipment_code), "</div>\n                <div class=\"wave-client\">").concat(UI.escHtml(w.client_name || '\u2014'), "</div>\n                <div class=\"wave-sub\">\u0421\u0431\u043E\u0440\u0449\u0438\u043A: ").concat(UI.escHtml(w.picker_name || '—'), " \xB7 ").concat(w.done_count || 0, "/").concat(w.task_count || 0, " \u0441\u043E\u0431\u0440\u0430\u043D\u043E</div>\n              </div>\n              ").concat(isIdle ? "<span class=\"idle-tag\">\u23F8 \u043F\u0440\u043E\u0441\u0442\u043E\u0439 ".concat(idleMin, " \u043C\u0438\u043D</span>") : "<span class=\"pill pill-blue\">\u0432 \u0440\u0430\u0431\u043E\u0442\u0435</span>", "\n            </div>\n            <div class=\"mini-progress\"><div class=\"mini-progress-fill\" style=\"width:").concat(w.task_count ? Math.round(w.done_count / w.task_count * 100) : 0, "%\"></div></div>\n            ").concat(isIdle ? "<button type=\"button\" class=\"btn-sm btn-back\" style=\"margin-top:8px;\" onclick=\"resetWave(".concat(w.id, ");event.stopPropagation();\">↻ Сбросить волну</button>") : '', "\n          </div>\n        "));
   });
   ready.forEach(function (w) {
-    rows.push("\n          <div class=\"card wave-card ready\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">".concat(UI.escHtml(w.shipment_code), "</div>\n                <div class=\"wave-client\">").concat(UI.escHtml(w.client_name || '\u2014'), "</div>\n                <div class=\"wave-sub\">\u0421\u0431\u043E\u0440\u0449\u0438\u043A: ").concat(UI.escHtml(w.picker_name || '—'), " \xB7 \u0441\u043E\u0431\u0440\u0430\u043D\u0430, \u0436\u0434\u0451\u0442 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F (\u043A\u043E\u0440\u043E\u0431 \u2192 ").concat(UI.escHtml(w.buffer_location_code || 'не указано'), ")</div>\n              </div>\n              <span class=\"pill pill-green\">\u0433\u043E\u0442\u043E\u0432\u0430</span>\n            </div>\n          </div>\n        "));
+    rows.push("\n          <div class=\"card wave-card ready\" style=\"cursor:pointer;\" onclick=\"openWaveDetail(").concat(w.id, ")\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">".concat(UI.escHtml(w.shipment_code), "</div>\n                <div class=\"wave-client\">").concat(UI.escHtml(w.client_name || '\u2014'), "</div>\n                <div class=\"wave-sub\">\u0421\u0431\u043E\u0440\u0449\u0438\u043A: ").concat(UI.escHtml(w.picker_name || '—'), " \xB7 \u0441\u043E\u0431\u0440\u0430\u043D\u0430, \u0436\u0434\u0451\u0442 \u0437\u0430\u043A\u0440\u044B\u0442\u0438\u044F (\u043A\u043E\u0440\u043E\u0431 \u2192 ").concat(UI.escHtml(w.buffer_location_code || 'не указано'), ")</div>\n              </div>\n              <span class=\"pill pill-green\">\u0433\u043E\u0442\u043E\u0432\u0430</span>\n            </div>\n          </div>\n        "));
   });
   if (open.length) {
     rows.push("\n          <div class=\"card wave-card\">\n            <div class=\"wave-top\">\n              <div>\n                <div class=\"wave-title\">\u0412 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043D\u0430 \u0441\u0431\u043E\u0440\u043A\u0443</div>\n                <div class=\"wave-sub\">".concat(open.length, " \u0432\u043E\u043B\u043D(\u044B) \u043E\u0436\u0438\u0434\u0430\u044E\u0442, \u043A\u043E\u0433\u0434\u0430 \u0441\u0431\u043E\u0440\u0449\u0438\u043A \u0432\u043E\u0437\u044C\u043C\u0451\u0442 \u0438\u0445 \u0432 \u0440\u0430\u0431\u043E\u0442\u0443</div>\n              </div>\n              <span class=\"pill pill-gray\">").concat(open.length, "</span>\n            </div>\n          </div>\n        "));
@@ -450,6 +450,77 @@ function resetWave(waveId) {
   window.API.picking.resetWave(waveId).then(function (res) {
     UI.notify.ok('Волна сброшена, в пул возвращено заданий: ' + (res.tasksReturned || 0));
     loadAll();
+  }).catch(function (e) {
+    UI.notify.err(e.message);
+  });
+}
+var TASK_STATUS_LABELS = {
+  new: 'ожидает',
+  in_progress: 'в работе',
+  done: 'собрано',
+  cancelled: 'отменено',
+  skipped: 'пропущено'
+};
+var TASK_STATUS_COLORS = {
+  new: '#94a3b8',
+  in_progress: '#0284c7',
+  done: '#16a34a',
+  cancelled: '#94a3b8',
+  skipped: '#dc2626'
+};
+function closeWaveDetailModal() {
+  var overlay = document.getElementById('wave-detail-overlay');
+  if (overlay) overlay.remove();
+}
+function renderWaveDetailModal(wave, tasks) {
+  closeWaveDetailModal();
+  var overlay = document.createElement('div');
+  overlay.id = 'wave-detail-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  var rowsHtml = tasks.map(function (t) {
+    var label = TASK_STATUS_LABELS[t.status] || t.status;
+    var color = TASK_STATUS_COLORS[t.status] || '#64748b';
+    var itemName = t.item_name || t.barcode || '—';
+    return '<tr style="border-bottom:1px solid var(--border,#e2e8f0);">' +
+      '<td style="padding:8px 6px;font-family:monospace;">' + UI.escHtml(t.location_code || '—') + '</td>' +
+      '<td style="padding:8px 6px;">' + UI.escHtml(itemName) + (t.size ? ' (' + UI.escHtml(t.size) + ')' : '') + '</td>' +
+      '<td style="padding:8px 6px;text-align:center;white-space:nowrap;">' + (t.qty_picked || 0) + '/' + t.qty + '</td>' +
+      '<td style="padding:8px 6px;">' +
+        '<span style="color:' + color + ';font-weight:600;">' + UI.escHtml(label) + '</span>' +
+        (t.reason ? '<div style="font-size:11px;color:var(--muted,#94a3b8);">' + UI.escHtml(t.reason) + '</div>' : '') +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  overlay.innerHTML =
+    '<div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:640px;max-height:85vh;overflow-y:auto;box-sizing:border-box;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:10px;">' +
+        '<div>' +
+          '<div style="font-size:17px;font-weight:700;">' + UI.escHtml(wave.shipment_code) + '</div>' +
+          '<div style="font-size:13px;color:var(--muted,#64748b);margin-top:2px;">' + UI.escHtml(wave.client_name || '—') + '</div>' +
+        '</div>' +
+        '<button type="button" onclick="closeWaveDetailModal()" style="background:none;border:none;font-size:22px;cursor:pointer;line-height:1;color:var(--muted,#64748b);">×</button>' +
+      '</div>' +
+      '<div style="font-size:13px;color:var(--muted,#64748b);margin-bottom:14px;">Сборщик: ' + UI.escHtml(wave.picker_name || '—') +
+        ' · Статус: ' + UI.escHtml(WAVE_STATUS_LABELS[wave.status] || wave.status) +
+        (wave.buffer_location_code ? ' · Буфер: ' + UI.escHtml(wave.buffer_location_code) : '') +
+      '</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="border-bottom:2px solid var(--border,#e2e8f0);text-align:left;">' +
+          '<th style="padding:6px;">Ячейка</th><th style="padding:6px;">Товар</th><th style="padding:6px;text-align:center;">Кол-во</th><th style="padding:6px;">Статус</th>' +
+        '</tr></thead>' +
+        '<tbody>' + (rowsHtml || '<tr><td colspan="4" style="padding:14px 6px;color:var(--muted,#64748b);">Нет заданий</td></tr>') + '</tbody>' +
+      '</table>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeWaveDetailModal();
+  });
+}
+function openWaveDetail(waveId) {
+  window.API.picking.waveDetail(waveId).then(function (res) {
+    renderWaveDetailModal(res.wave, res.tasks);
   }).catch(function (e) {
     UI.notify.err(e.message);
   });

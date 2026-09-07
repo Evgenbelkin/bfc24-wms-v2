@@ -69,6 +69,21 @@ router.post('/wave/close', requireRole('tenant_admin','supervisor','picker'), as
   } catch(e){ next(e); }
 });
 
+/**
+ * GET /picking/wave/:id — детали волны (диспетчерская, клик по карточке).
+ * ВАЖНО: этот роут с параметром :id должен идти ПОСЛЕ всех буквальных
+ * /wave/... роутов выше (take/status/close/:id/reset) — иначе он бы их
+ * перехватывал (Express матчит по порядку регистрации, /wave/:id раньше
+ * /wave/status считал бы 'status' значением :id).
+ */
+router.get('/wave/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const waveId = validatePositiveInt(req.params.id, 'id');
+    const result = await svc.getWaveDetail({ tenantId: req.user.tenantId, waveId });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** GET /picking/next — следующее задание */
 router.get('/next', requireRole('tenant_admin','supervisor','picker'), async (req,res,next)=>{
   try {
