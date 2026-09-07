@@ -948,6 +948,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     postings: function postings(p) {
       return _get('/ozon/postings', p);
+    },
+    importItems: function importItems(d) {
+      return post('/ozon/import-items', d);
+    },
+    items: function items(p) {
+      return _get('/ozon/items', p);
     }
   };
 

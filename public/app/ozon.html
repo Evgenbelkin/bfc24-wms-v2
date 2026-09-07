@@ -18,6 +18,12 @@
     .locations-box .loc-row:last-child{border-bottom:none;}
     .items-cell{font-size:12px;color:var(--muted2);}
     .items-cell div{padding:2px 0;}
+    .catalog-thumb{width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--card2);}
+    .catalog-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+    .catalog-row:last-child{border-bottom:none;}
+    .catalog-row .main{flex:1;min-width:0;}
+    .catalog-row .title{font-size:14px;font-weight:600;}
+    .catalog-row .sub{font-size:12px;color:var(--muted);margin-top:2px;}
   </style>
 </head>
 <body>
@@ -37,6 +43,7 @@
   <div id="ozon-content">
     <div class="tabs">
       <button class="tab active" data-tab="accounts" onclick="switchTab('accounts')">МР Аккаунты</button>
+      <button class="tab" data-tab="catalog" onclick="switchTab('catalog')">Справочник Ozon</button>
       <button class="tab" data-tab="orders" onclick="switchTab('orders')">Отправления</button>
     </div>
 
@@ -47,6 +54,24 @@
         <div id="acc-list"></div>
       </div>
       <button class="btn-big btn-green btn-full" onclick="openAccModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый аккаунт</button>
+    </div>
+
+    <!-- ============ Справочник Ozon ============ -->
+    <div id="tab-catalog" style="display:none">
+      <div class="card">
+        <div class="card-title">Аккаунт</div>
+        <select id="cat-account" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+          <option value="">Загрузка...</option>
+        </select>
+        <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="importCatalog()">⬇ Импортировать карточки из Ozon</button>
+        <div class="refresh-note" style="text-align:left;margin-top:6px;">Подтягивает фото, габариты (см) и вес по всем товарам магазина — не только по тем, на которые уже пришли заказы.</div>
+        <div id="import-result"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Товары (<span id="cat-count">0</span>)</div>
+        <div id="cat-list"></div>
+      </div>
     </div>
 
     <!-- ============ Отправления ============ -->
@@ -108,11 +133,12 @@
 
     var ordersLoaded = false;
     function switchTab(name) {
-      ['accounts', 'orders'].forEach(function (t) {
+      ['accounts', 'catalog', 'orders'].forEach(function (t) {
         document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
         document.querySelector('.tab[data-tab="' + t + '"]').classList.toggle('active', t === name);
       });
       if (name === 'orders' && !ordersLoaded) { ordersLoaded = true; loadPostings(); }
+      if (name === 'catalog') loadCatalog();
     }
 
     var STATUS_LABELS = {
@@ -162,6 +188,7 @@
           }).join('');
         }
         UI.populateSelect('#ord-account', accountsList, { valueKey: 'id', labelKey: 'account_name', emptyLabel: '— Выберите аккаунт —' });
+        UI.populateSelect('#cat-account', accountsList, { valueKey: 'id', labelKey: 'account_name', emptyLabel: '— Выберите аккаунт —' });
       }).catch(function (err) {
         if (isModuleDisabled(err)) { showModuleDisabled(); return; }
         UI.notify.err(err.message);
@@ -310,6 +337,54 @@
             '</tr>';
           }).join('');
         }
+      }).catch(function (err) {
+        if (isModuleDisabled(err)) { showModuleDisabled(); return; }
+        UI.notify.err(err.message);
+      });
+    }
+
+    function importCatalog() {
+      var accountId = UI.val('#cat-account');
+      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
+      UI.notify.info('Импортируем карточки товаров из Ozon (может занять минуту)...');
+      window.API.ozon.importItems({ account_id: accountId }).then(function (res) {
+        document.getElementById('import-result').innerHTML = '<div class="result-box">Карточек получено: <strong>' + res.fetched_cards + '</strong> · сохранено в справочник: <strong>' + res.saved_items + '</strong> · заполнено габаритов: <strong>' + res.filled_dimensions + '</strong></div>';
+        UI.notify.ok('Импорт завершён');
+        loadCatalog();
+      }).catch(function (err) {
+        if (isModuleDisabled(err)) { showModuleDisabled(); return; }
+        UI.notify.err(err.message);
+      });
+    }
+
+    function loadCatalog() {
+      var accountId = UI.val('#cat-account');
+      if (!accountId) return;
+      window.API.ozon.items({ account_id: accountId }).then(function (res) {
+        var items = res.items || [];
+        document.getElementById('cat-count').textContent = items.length;
+        var list = document.getElementById('cat-list');
+        if (!items.length) {
+          list.innerHTML = '<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>Справочник пуст — нажмите «Импортировать карточки из Ozon»</div>';
+          return;
+        }
+        list.innerHTML = items.map(function (it) {
+          var dims = (it.length_cm && it.width_cm && it.height_cm)
+            ? (it.length_cm + '×' + it.width_cm + '×' + it.height_cm + ' см')
+            : '<span style="color:var(--muted);">габариты не заполнены</span>';
+          var weight = it.weight_grams ? (', ' + it.weight_grams + ' г') : '';
+          var thumb = it.preview_url
+            ? '<img class="catalog-thumb" src="' + UI.escHtml(it.preview_url) + '" onerror="this.style.display=\'none\'"/>'
+            : '<div class="catalog-thumb"></div>';
+          return '' +
+            '<div class="catalog-row">' +
+              thumb +
+              '<div class="main">' +
+                '<div class="title">' + UI.escHtml(it.name || it.offer_id) + '</div>' +
+                '<div class="sub">Артикул ' + UI.escHtml(it.offer_id) + ' · ' + dims + weight + '</div>' +
+              '</div>' +
+            '</div>';
+        }).join('');
       }).catch(function (err) {
         if (isModuleDisabled(err)) { showModuleDisabled(); return; }
         UI.notify.err(err.message);

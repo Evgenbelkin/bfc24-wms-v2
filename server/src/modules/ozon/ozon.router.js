@@ -60,6 +60,31 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
   } catch(e){ next(e); }
 });
 
+// ─────────────── Справочник товаров (задача #78) ───────────────
+
+/** POST /ozon/import-items — импортировать карточки товаров (фото, габариты) по аккаунту */
+router.post('/import-items', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const accountId = Number(req.body.account_id);
+    const acc = await ozonService.getMpAccount(req.user.tenantId, accountId);
+    const result = await ozonService.importCatalogForAccount({
+      tenantId: req.user.tenantId, accountId, clientId: acc.client_id,
+      ozonClientId: acc.ozon_client_id, ozonApiKey: acc.ozon_api_key,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** GET /ozon/items — справочник карточек по аккаунту */
+router.get('/items', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const accountId = Number(req.query.account_id);
+    if (!accountId) return res.json({ ok: true, items: [] });
+    const items = await ozonService.listCatalogForAccount({ tenantId: req.user.tenantId, accountId });
+    res.json({ ok: true, items });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Синхронизация отправлений ───────────────
 
 /** POST /ozon/sync — синхронизировать отправления по всем активным Ozon-аккаунтам тенанта */

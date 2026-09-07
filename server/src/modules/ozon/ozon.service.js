@@ -289,10 +289,131 @@ async function generateWaveFromPostings({ tenantId, accountId, actorId, limit = 
   return { created, skipped };
 }
 
+/**
+ * Достаём число из объекта Ozon product/info по одному из нескольких
+ * возможных имён поля — реальная форма ответа для габаритов/фото ещё не
+ * подтверждена живым запросом (см. комментарий в миграции 057), поэтому
+ * пробуем самые вероятные варианты по документации Ozon вместо того, чтобы
+ * полагаться на одно жёстко зашитое имя.
+ */
+function firstNumber(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v !== undefined && v !== null && v !== '' && !Number.isNaN(Number(v))) return Number(v);
+  }
+  return null;
+}
+function firstString(obj, keys) {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/**
+ * Импорт карточек товаров Ozon (задача #78, аналог importItemsForAccount у
+ * WB) — заполняет фото и габариты в wms.items и заводит справочник
+ * wms.ozon_items, независимо от того, приходили уже заказы по этому товару
+ * или нет. Единицы измерения у Ozon — мм и граммы (в отличие от WB, где
+ * карточка уже отдаёт см) — конвертируем в см при записи в wms.items, чтобы
+ * формат совпадал с тем, что уже пишет WB-импорт.
+ */
+async function importCatalogForAccount({ tenantId, accountId, ozonClientId, ozonApiKey, clientId }) {
+  const credentials = { clientId: ozonClientId, apiKey: ozonApiKey };
+
+  const offerIds = await ozonClient.fetchAllProductOfferIds(credentials);
+  if (offerIds.length === 0) return { fetched_cards: 0, saved_items: 0, filled_dimensions: 0 };
+
+  const productInfos = await ozonClient.fetchProductInfoByOfferIds(credentials, offerIds);
+
+  let savedItems = 0; let filledDimensions = 0;
+  await transaction(async (client) => {
+    for (const item of productInfos) {
+      if (!item.offer_id) continue;
+
+      const preview = firstString(item, ['primary_image']) ||
+        (Array.isArray(item.images) && item.images.length ? String(item.images[0]) : null) ||
+        (Array.isArray(item.primary_image) && item.primary_image.length ? String(item.primary_image[0]) : null);
+
+      const unit = (item.dimension_unit || '').toLowerCase();
+      const mmToCm = (v) => v == null ? null : (unit === 'cm' ? v : Number((v / 10).toFixed(2)));
+      const lengthCm = mmToCm(firstNumber(item, ['depth', 'length']));
+      const widthCm  = mmToCm(firstNumber(item, ['width']));
+      const heightCm = mmToCm(firstNumber(item, ['height']));
+      const weightGrams = (() => {
+        const w = firstNumber(item, ['weight']);
+        if (w == null) return null;
+        const wu = (item.weight_unit || 'g').toLowerCase();
+        return wu === 'kg' ? Math.round(w * 1000) : Math.round(w);
+      })();
+
+      await client.query(
+        `INSERT INTO wms.ozon_items(tenant_id,mp_account_id,offer_id,ozon_product_id,ozon_sku,name,preview_url,
+                                     length_cm,width_cm,height_cm,weight_grams,raw)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT(mp_account_id,offer_id) DO UPDATE SET
+           ozon_product_id=EXCLUDED.ozon_product_id, ozon_sku=EXCLUDED.ozon_sku,
+           name=EXCLUDED.name, preview_url=EXCLUDED.preview_url,
+           length_cm=EXCLUDED.length_cm, width_cm=EXCLUDED.width_cm, height_cm=EXCLUDED.height_cm,
+           weight_grams=EXCLUDED.weight_grams, raw=EXCLUDED.raw, updated_at=NOW()`,
+        [tenantId, accountId, item.offer_id, item.id || null, item.sku || null,
+         item.name || null, preview, lengthCm, widthCm, heightCm, weightGrams, JSON.stringify(item)]
+      );
+      savedItems++;
+
+      const barcodes = Array.isArray(item.barcodes) ? item.barcodes.filter(Boolean) : [];
+      const volumeLiters = (lengthCm && widthCm && heightCm)
+        ? Number(((lengthCm * widthCm * heightCm) / 1000).toFixed(4))
+        : null;
+
+      for (const barcode of barcodes) {
+        const existing = await client.query(
+          `SELECT id, volume_liters, preview_url FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+          [tenantId, clientId, barcode]
+        );
+        if (existing.rowCount === 0) {
+          await client.query(
+            `INSERT INTO wms.items(tenant_id,client_id,barcode,item_name,unit,source,preview_url,
+                                    length_cm,width_cm,height_cm,volume_liters,weight_grams)
+             VALUES($1,$2,$3,$4,'шт','ozon',$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING`,
+            [tenantId, clientId, barcode, item.name || barcode, preview, lengthCm, widthCm, heightCm, volumeLiters, weightGrams]
+          );
+          if (volumeLiters) filledDimensions++;
+        } else if (existing.rows[0].volume_liters == null && volumeLiters) {
+          await client.query(
+            `UPDATE wms.items SET
+               length_cm = COALESCE(length_cm, $1), width_cm = COALESCE(width_cm, $2),
+               height_cm = COALESCE(height_cm, $3), volume_liters = COALESCE(volume_liters, $4),
+               weight_grams = COALESCE(weight_grams, $5), preview_url = COALESCE(preview_url, $6),
+               updated_at = NOW()
+             WHERE id=$7`,
+            [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, preview, existing.rows[0].id]
+          );
+          filledDimensions++;
+        }
+      }
+    }
+  });
+
+  return { fetched_cards: productInfos.length, saved_items: savedItems, filled_dimensions: filledDimensions };
+}
+
+async function listCatalogForAccount({ tenantId, accountId }) {
+  const r = await query(
+    `SELECT id, offer_id, ozon_sku, name, preview_url, length_cm, width_cm, height_cm, weight_grams, updated_at
+     FROM wms.ozon_items WHERE tenant_id=$1 AND mp_account_id=$2 ORDER BY name NULLS LAST, offer_id LIMIT 500`,
+    [tenantId, accountId]
+  );
+  return r.rows;
+}
+
 module.exports = {
   listActiveAccounts,
   getMpAccount,
   syncPostingsForAccount,
   syncAllAccountsForTenant,
   generateWaveFromPostings,
+  importCatalogForAccount,
+  listCatalogForAccount,
 };

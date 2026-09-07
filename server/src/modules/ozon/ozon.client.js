@@ -198,9 +198,43 @@ async function fetchProductInfoByOfferIds(credentials, offerIds) {
   return all;
 }
 
+/**
+ * Полный список товаров продавца (offer_id) — нужен для "Справочник Ozon"
+ * (задача #78), где, в отличие от резолва штрихкода по офферам из уже
+ * пришедших отправлений (задача #77), нужно подтянуть КАРТОЧКИ ВСЕХ товаров
+ * магазина заранее, до первого заказа — по аналогии с "Импортировать карточки
+ * из WB" на экране Wildberries. /v3/product/list отдаёт только id/offer_id
+ * (без деталей), пагинация курсором last_id — по документации Ozon Seller
+ * API этот метод стабилен уже несколько лет, в отличие от product/info,
+ * который недавно менялся (см. комментарий у fetchProductInfoByOfferIds про
+ * /v2/product/info удалённый и его замену на /v3/product/info/list).
+ */
+async function fetchAllProductOfferIds(credentials, { pageSize = 100, maxPages = 200 } = {}) {
+  const all = [];
+  let lastId = '';
+  let page = 0;
+
+  while (page < maxPages) {
+    const data = await ozonRequest({
+      credentials, method: 'POST',
+      path: '/v3/product/list',
+      data: { filter: { visibility: 'ALL' }, last_id: lastId, limit: pageSize },
+    });
+    const items = data?.result?.items || [];
+    all.push(...items.map(i => i.offer_id).filter(Boolean));
+    const nextLastId = data?.result?.last_id || '';
+    if (!nextLastId || items.length === 0 || nextLastId === lastId) break;
+    lastId = nextLastId;
+    page++;
+  }
+
+  return all;
+}
+
 module.exports = {
   ozonRequest,
   fetchFbsPostings,
   fetchAllFbsPostings,
   fetchProductInfoByOfferIds,
+  fetchAllProductOfferIds,
 };
