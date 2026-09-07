@@ -231,10 +231,40 @@ async function fetchAllProductOfferIds(credentials, { pageSize = 100, maxPages =
   return all;
 }
 
+/**
+ * Полные характеристики карточки товара (задача #78) — В ОТЛИЧИЕ от
+ * /v3/product/info/list (используется в fetchProductInfoByOfferIds для
+ * резолва штрихкода при синке отправлений, задача #77), этот ответ НЕ
+ * содержит габаритов/веса вообще — проверено живым запросом 07.09.2026 на
+ * реальном товаре (raw в wms.ozon_items не имел полей height/width/depth/weight).
+ * Нужные поля отдаёт отдельный метод /v4/product/info/attributes —
+ * подтверждено живым запросом в тот же день: height/width/depth (числа,
+ * единица в dimension_unit — на практике "mm"), weight (число, единица в
+ * weight_unit — на практике "g"), плюс primary_image (строка, не массив,
+ * как в product/info/list!) и barcodes[].
+ */
+const PRODUCT_ATTRS_BATCH_SIZE = 100;
+
+async function fetchProductAttributesByOfferIds(credentials, offerIds) {
+  const uniqueIds = [...new Set(offerIds.filter(Boolean))];
+  const all = [];
+  for (let i = 0; i < uniqueIds.length; i += PRODUCT_ATTRS_BATCH_SIZE) {
+    const chunk = uniqueIds.slice(i, i + PRODUCT_ATTRS_BATCH_SIZE);
+    const data = await ozonRequest({
+      credentials, method: 'POST',
+      path: '/v4/product/info/attributes',
+      data: { filter: { offer_id: chunk }, limit: chunk.length },
+    });
+    all.push(...(data?.result || []));
+  }
+  return all;
+}
+
 module.exports = {
   ozonRequest,
   fetchFbsPostings,
   fetchAllFbsPostings,
   fetchProductInfoByOfferIds,
   fetchAllProductOfferIds,
+  fetchProductAttributesByOfferIds,
 };

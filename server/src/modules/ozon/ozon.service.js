@@ -290,11 +290,13 @@ async function generateWaveFromPostings({ tenantId, accountId, actorId, limit = 
 }
 
 /**
- * Достаём число из объекта Ozon product/info по одному из нескольких
- * возможных имён поля — реальная форма ответа для габаритов/фото ещё не
- * подтверждена живым запросом (см. комментарий в миграции 057), поэтому
- * пробуем самые вероятные варианты по документации Ozon вместо того, чтобы
- * полагаться на одно жёстко зашитое имя.
+ * Достаём число/строку из объекта Ozon product/info по одному из нескольких
+ * возможных имён поля. Основные имена (height/width/depth/weight/
+ * dimension_unit/weight_unit/primary_image) уже подтверждены живым запросом
+ * к /v4/product/info/attributes 07.09.2026 (задача #78) — держим
+ * firstNumber/firstString с запасными вариантами на случай, если у части
+ * товаров (другая категория, другая версия карточки) форма чуть отличается,
+ * а не потому что мы гадаем вслепую.
  */
 function firstNumber(obj, keys) {
   for (const k of keys) {
@@ -318,6 +320,13 @@ function firstString(obj, keys) {
  * или нет. Единицы измерения у Ozon — мм и граммы (в отличие от WB, где
  * карточка уже отдаёт см) — конвертируем в см при записи в wms.items, чтобы
  * формат совпадал с тем, что уже пишет WB-импорт.
+ *
+ * Источник данных — /v4/product/info/attributes (fetchProductAttributesByOfferIds),
+ * НЕ /v3/product/info/list (тот используется в fetchProductInfoByOfferIds
+ * только для резолва штрихкода при синке отправлений, задача #77) — первая
+ * попытка использовать /v3/product/info/list и здесь показала на живых
+ * данных, что тот ответ вообще не содержит габаритов/веса (см. историю
+ * задачи #78), только цену/сток/картинки.
  */
 async function importCatalogForAccount({ tenantId, accountId, ozonClientId, ozonApiKey, clientId }) {
   const credentials = { clientId: ozonClientId, apiKey: ozonApiKey };
@@ -325,7 +334,7 @@ async function importCatalogForAccount({ tenantId, accountId, ozonClientId, ozon
   const offerIds = await ozonClient.fetchAllProductOfferIds(credentials);
   if (offerIds.length === 0) return { fetched_cards: 0, saved_items: 0, filled_dimensions: 0 };
 
-  const productInfos = await ozonClient.fetchProductInfoByOfferIds(credentials, offerIds);
+  const productInfos = await ozonClient.fetchProductAttributesByOfferIds(credentials, offerIds);
 
   let savedItems = 0; let filledDimensions = 0;
   await transaction(async (client) => {
