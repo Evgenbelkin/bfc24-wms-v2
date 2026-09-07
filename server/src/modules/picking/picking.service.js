@@ -1357,6 +1357,63 @@ async function listSkippedTasks({ tenantId, warehouseId = null, limit = 100 }) {
 }
 
 /**
+ * Отменить (снять) пропущенное задание — не возвращать в сборку, а окончательно
+ * убрать из списка "Пропущенные позиции" супервайзера, потому что недостача уже
+ * признана и закрыта другим способом (актом списания, ручной корректировкой и
+ * т.п.) и держать её дальше в очереди "требует решения" не нужно. Задача #69,
+ * обсуждение с пользователем 07.09.2026 — до этого пропущенные задания
+ * копились в списке навсегда без возможности их разобрать.
+ * Только supervisor/tenant_admin — та же причина, что у requeueSkippedTask.
+ */
+async function cancelSkippedTask({ tenantId, taskId, actorId, comment }) {
+  return transaction(async (client) => {
+    const tRes = await client.query(
+      `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [taskId, tenantId]
+    );
+    if (tRes.rowCount === 0) throw new NotFoundError('PickingTask', taskId);
+    const task = tRes.rows[0];
+    if (task.status !== 'skipped') {
+      throw new ValidationError(`Отменить можно только пропущенное задание (сейчас статус '${task.status}')`);
+    }
+    await client.query(
+      `UPDATE wms.picking_tasks
+       SET status='cancelled', comment=COALESCE($1, comment), updated_at=NOW(), updated_by=$2
+       WHERE id=$3`,
+      [comment || null, actorId, taskId]
+    );
+    return { ok: true, taskId };
+  });
+}
+
+/**
+ * Отменённые задания (для отдельной вкладки в диспетчерской) — сюда попадают
+ * и задания, снятые вручную через cancelSkippedTask() выше, и задания,
+ * отменённые целиком вместе с отгрузкой (см. cancelShipment в
+ * shipping.service.js) — оба случая одинаково "больше не актуально", разница
+ * видна по reason/comment.
+ */
+async function listCancelledTasks({ tenantId, warehouseId = null, limit = 100 }) {
+  const r = await query(
+    `SELECT t.id, t.barcode, t.qty, t.qty_picked, t.location_code, t.shipment_code, t.wave_id,
+       t.reason, t.comment, t.updated_at, t.warehouse_id,
+       i.item_name,
+       u.username AS picker_name,
+       w.status AS wave_status
+     FROM wms.picking_tasks t
+     LEFT JOIN wms.items i ON i.id = t.item_id
+     LEFT JOIN wms.users u ON u.id = t.picker_id
+     LEFT JOIN wms.pick_waves w ON w.id = t.wave_id
+     WHERE t.tenant_id=$1 AND t.status='cancelled'
+       AND ($2::int IS NULL OR t.warehouse_id=$2)
+     ORDER BY t.updated_at DESC
+     LIMIT $3`,
+    [tenantId, warehouseId, Math.min(limit, 200)]
+  );
+  return r.rows;
+}
+
+/**
  * Вернуть пропущенное задание обратно в сборку (только supervisor/tenant_admin —
  * не сам сборщик, чтобы не получилось "пропустил → сразу вернул себе то же самое").
  * Сбрасывает задание в статус 'new' в той же волне; если волна уже успела стать
@@ -1606,7 +1663,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
 module.exports = {
   listWaves, getWaveByShipmentCode, getWaveDetail, takeWave, resetWave,
   getNextTask, scanLocation, scanItem, scanItemQty, skipTask,
-  listSkippedTasks, requeueSkippedTask,
+  listSkippedTasks, requeueSkippedTask, cancelSkippedTask, listCancelledTasks,
   closeWave, getWaveStatus,
   createManualWave,
 };

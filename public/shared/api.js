@@ -799,6 +799,14 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     requeue: function requeue(id) {
       return post("/picking/tasks/".concat(id, "/requeue"));
+    },
+    cancelTask: function cancelTask(id, comment) {
+      return post("/picking/tasks/".concat(id, "/cancel"), {
+        comment: comment || null
+      });
+    },
+    cancelled: function cancelled(p) {
+      return _get('/picking/tasks/cancelled', p);
     }
   };
 

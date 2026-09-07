@@ -183,6 +183,35 @@ router.post('/tasks/:id/requeue', requireRole('tenant_admin','supervisor'), asyn
   } catch(e){ next(e); }
 });
 
+/**
+ * POST /picking/tasks/:id/cancel — снять пропущенное задание (не возвращать в
+ * сборку, окончательно убрать из очереди супервайзера). Недоступно 'picker' —
+ * та же причина, что у requeue.
+ */
+router.post('/tasks/:id/cancel', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.cancelSkippedTask({
+      tenantId: req.user.tenantId,
+      taskId:   validatePositiveInt(req.params.id, 'id'),
+      actorId:  req.user.id,
+      comment:  req.body?.comment || null,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** GET /picking/tasks/cancelled — отменённые задания (отдельная вкладка диспетчерской) */
+router.get('/tasks/cancelled', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const rows = await svc.listCancelledTasks({
+      tenantId:    req.user.tenantId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      limit:       Number(req.query.limit) || 100,
+    });
+    res.json({ ok: true, rows });
+  } catch(e){ next(e); }
+});
+
 /** POST /picking/manual-wave — создать отгрузку+волну вручную (без маркетплейса) */
 router.post('/manual-wave', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
