@@ -74,13 +74,15 @@ router.post('/sync', requireRole('tenant_admin','supervisor'), async (req,res,ne
 router.get('/postings', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const accountId = req.query.account_id ? Number(req.query.account_id) : null;
-    const params = [req.user.tenantId]; const conds = ['tenant_id=$1']; let idx=2;
-    if (accountId) { conds.push(`mp_account_id=$${idx++}`); params.push(accountId); }
+    const params = [req.user.tenantId]; const conds = ['p.tenant_id=$1']; let idx=2;
+    if (accountId) { conds.push(`p.mp_account_id=$${idx++}`); params.push(accountId); }
     const r = await query(
-      `SELECT id, mp_account_id, posting_number, order_number, status, substatus,
-         warehouse_name, tpl_provider, shipment_date, tracking_number, wms_shipment_code, fetched_at
-       FROM wms.ozon_postings WHERE ${conds.join(' AND ')}
-       ORDER BY fetched_at DESC LIMIT 200`,
+      `SELECT p.id, p.mp_account_id, p.posting_number, p.order_number, p.status, p.substatus,
+         p.warehouse_name, p.tpl_provider, p.shipment_date, p.tracking_number, p.wms_shipment_code, p.fetched_at,
+         (SELECT json_agg(json_build_object('barcode', i.barcode, 'offer_id', i.offer_id, 'item_name', i.item_name, 'qty', i.qty) ORDER BY i.id)
+            FROM wms.ozon_posting_items i WHERE i.posting_id=p.id) AS items
+       FROM wms.ozon_postings p WHERE ${conds.join(' AND ')}
+       ORDER BY p.fetched_at DESC LIMIT 200`,
       params
     );
     res.json({ ok: true, postings: r.rows });

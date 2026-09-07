@@ -16,6 +16,8 @@
     .locations-box{background:var(--card2);border-radius:10px;padding:8px 14px;}
     .locations-box .loc-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border);}
     .locations-box .loc-row:last-child{border-bottom:none;}
+    .items-cell{font-size:12px;color:var(--muted2);}
+    .items-cell div{padding:2px 0;}
   </style>
 </head>
 <body>
@@ -33,43 +35,50 @@
   </div>
 
   <div id="ozon-content">
-    <div class="card">
-      <div class="card-title">Аккаунты (<span id="acc-count">0</span>)</div>
-      <div id="acc-list"></div>
+    <div class="tabs">
+      <button class="tab active" data-tab="accounts" onclick="switchTab('accounts')">МР Аккаунты</button>
+      <button class="tab" data-tab="orders" onclick="switchTab('orders')">Отправления</button>
     </div>
-    <button class="btn-big btn-green btn-full" onclick="openAccModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый аккаунт</button>
 
-    <div class="card">
-      <div class="card-title">Отправления</div>
-      <div class="refresh-note" style="text-align:left;margin-bottom:8px;">У Ozon нет отдельного шага «поставка» — каждое отправление сразу собирается в свою волну. Сначала синхронизируйте отправления, потом сформируйте волну по нужному аккаунту.</div>
+    <!-- ============ Аккаунты ============ -->
+    <div id="tab-accounts">
+      <div class="card">
+        <div class="card-title">Аккаунты (<span id="acc-count">0</span>)</div>
+        <div id="acc-list"></div>
+      </div>
+      <button class="btn-big btn-green btn-full" onclick="openAccModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый аккаунт</button>
+    </div>
 
-      <div class="field">
-        <label>Аккаунт</label>
+    <!-- ============ Отправления ============ -->
+    <div id="tab-orders" style="display:none">
+      <div class="card">
+        <div class="card-title">Аккаунт</div>
         <select id="ord-account" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
           <option value="">Загрузка...</option>
         </select>
+
+        <button class="btn-big btn-blue btn-full" onclick="syncPostings()"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Синхронизировать отправления</button>
+        <div id="sync-result"></div>
+        <div class="refresh-note" style="text-align:left;margin-top:6px;">У Ozon нет отдельного шага «поставка» — каждое отправление сразу собирается в свою волну.</div>
+
+        <div class="field" style="margin-top:14px;">
+          <label>Сколько отправлений включить в волну</label>
+          <input id="wave-limit" type="number" value="50" min="1" max="200"/>
+        </div>
+        <button class="btn-big btn-green btn-full" onclick="generateWave()"><svg class="i" viewBox="0 0 24 24"><path d="M2 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 20c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg> Сформировать волну</button>
+        <div id="wave-result"></div>
       </div>
 
-      <button class="btn-big btn-blue btn-full" onclick="syncPostings()"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Синхронизировать отправления</button>
-      <div id="sync-result"></div>
-
-      <div class="field" style="margin-top:14px;">
-        <label>Сколько отправлений включить в волну</label>
-        <input id="wave-limit" type="number" value="50" min="1" max="200"/>
+      <div class="card">
+        <div class="card-title">Отправления (<span id="post-count">0</span>)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Отправление</th><th>Товары / Штрихкод</th><th>Склад</th><th>Статус</th><th>Волна</th><th>Когда</th></tr></thead>
+            <tbody id="post-body"></tbody>
+          </table>
+        </div>
+        <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadPostings()">↻ Обновить список</button>
       </div>
-      <button class="btn-big btn-green btn-full" onclick="generateWave()"><svg class="i" viewBox="0 0 24 24"><path d="M2 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 20c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg> Сформировать волну</button>
-      <div id="wave-result"></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Последние отправления (<span id="post-count">0</span>)</div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Отправление</th><th>Статус</th><th>Склад</th><th>Волна</th><th>Когда</th></tr></thead>
-          <tbody id="post-body"></tbody>
-        </table>
-      </div>
-      <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadPostings()">↻ Обновить список</button>
     </div>
   </div>
 
@@ -95,6 +104,15 @@
     function showModuleDisabled() {
       document.getElementById('module-disabled').style.display = 'block';
       document.getElementById('ozon-content').style.display = 'none';
+    }
+
+    var ordersLoaded = false;
+    function switchTab(name) {
+      ['accounts', 'orders'].forEach(function (t) {
+        document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
+        document.querySelector('.tab[data-tab="' + t + '"]').classList.toggle('active', t === name);
+      });
+      if (name === 'orders' && !ordersLoaded) { ordersLoaded = true; loadPostings(); }
     }
 
     var STATUS_LABELS = {
@@ -262,6 +280,15 @@
       });
     }
 
+    function renderItemsCell(items) {
+      if (!items || !items.length) return '<span style="color:var(--muted);">—</span>';
+      return '<div class="items-cell">' + items.map(function (it) {
+        var name = it.item_name ? UI.escHtml(it.item_name) : UI.escHtml(it.offer_id);
+        var barcode = it.barcode ? UI.escHtml(it.barcode) : '<span style="color:var(--red)">нет штрихкода</span>';
+        return '<div>' + name + ' — ' + barcode + ' ×' + it.qty + '</div>';
+      }).join('') + '</div>';
+    }
+
     function loadPostings() {
       var accountId = UI.val('#ord-account');
       var params = accountId ? { account_id: accountId } : {};
@@ -270,13 +297,14 @@
         document.getElementById('post-count').textContent = postings.length;
         var body = document.getElementById('post-body');
         if (!postings.length) {
-          body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);">Пока нет отправлений</td></tr>';
+          body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);">Пока нет отправлений</td></tr>';
         } else {
           body.innerHTML = postings.map(function (p) {
             return '<tr>' +
               '<td>' + UI.escHtml(p.posting_number) + '</td>' +
-              '<td>' + UI.escHtml(STATUS_LABELS[p.status] || p.status) + '</td>' +
+              '<td>' + renderItemsCell(p.items) + '</td>' +
               '<td>' + UI.escHtml(p.warehouse_name || '—') + '</td>' +
+              '<td>' + UI.escHtml(STATUS_LABELS[p.status] || p.status) + '</td>' +
               '<td>' + (p.wms_shipment_code ? UI.escHtml(p.wms_shipment_code) : '—') + '</td>' +
               '<td>' + (p.fetched_at ? new Date(p.fetched_at).toLocaleString('ru-RU') : '—') + '</td>' +
             '</tr>';
@@ -290,7 +318,6 @@
 
     loadClients();
     loadAccounts();
-    loadPostings();
   </script>
 </body>
 </html>
