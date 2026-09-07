@@ -135,10 +135,12 @@ async function listWaves({ tenantId, warehouseId = null, status = null, pickerId
   const r = await query(
     `SELECT w.*,
        u.username AS picker_name,
+       c.client_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id) AS task_count,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id AND t.status='done') AS done_count
      FROM wms.pick_waves w
      LEFT JOIN wms.users u ON u.id=w.picker_id
+     LEFT JOIN wms.clients c ON c.id=w.client_id
      WHERE ${conds.join(' AND ')} ORDER BY w.created_at DESC LIMIT $${idx}`,
     params
   );
@@ -147,10 +149,12 @@ async function listWaves({ tenantId, warehouseId = null, status = null, pickerId
 
 async function getWaveByShipmentCode({ tenantId, shipmentCode }) {
   const r = await query(
-    `SELECT w.*, u.username AS picker_name,
+    `SELECT w.*, u.username AS picker_name, c.client_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id) AS task_count,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id AND t.status='done') AS done_count
-     FROM wms.pick_waves w LEFT JOIN wms.users u ON u.id=w.picker_id
+     FROM wms.pick_waves w
+     LEFT JOIN wms.users u ON u.id=w.picker_id
+     LEFT JOIN wms.clients c ON c.id=w.client_id
      WHERE w.tenant_id=$1 AND w.shipment_code=$2 LIMIT 1`,
     [tenantId, shipmentCode]
   );
