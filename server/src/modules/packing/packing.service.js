@@ -7,6 +7,7 @@ const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
 const marking = require('../marking/marking.service');
 const { recordUsage: recordConsumableUsage } = require('../consumables/consumables.service');
+const ozonService = require('../ozon/ozon.service');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -461,6 +462,7 @@ async function getStickerImage({ tenantId, wbOrderId }) {
 /** Подтвердить упаковку (завершить задачу) */
 async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, locationCode, comment }) {
   let chargeClientId = null, chargeQty = 0;
+  let isOzonShipment = false; // см. вызов ozonService.shipPostingForShipment после транзакции
 
   const result = await transaction(async (client) => {
     const shipRes = await client.query(
@@ -558,6 +560,7 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
 
     chargeClientId = shipment.client_id;
     chargeQty = billablePackedQty;
+    isOzonShipment = shipment.marketplace === 'ozon';
 
     return { ok: true, shipmentId, status: 'ready_to_ship', totalPlan, totalPacked, packingLocationCode: code };
   });
@@ -569,6 +572,20 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
   // оказывалась).
   if (chargeClientId && chargeQty > 0) {
     chargeForOperation({ tenantId, clientId: chargeClientId, serviceType: 'packing', quantity: chargeQty, refType: 'shipment', refId: shipmentId });
+  }
+
+  // Ozon: "собрать заказ" на их стороне (задача #74) — только на РЕАЛЬНОМ
+  // подтверждении (isOzonShipment остаётся false на идемпотентном повторе,
+  // см. ветку "уже ready_to_ship" выше — не дёргаем /ship второй раз на тот
+  // же короб). Вне транзакции и через try/catch по тому же принципу soft-fail,
+  // что и печать wb_sticker в scanItem: ошибка Ozon API не должна откатывать
+  // уже подтверждённую в нашей WMS упаковку. Печать этикетки Ozon не
+  // происходит здесь же — Ozon отдаёт PDF не раньше чем через 45-60с после
+  // сборки, поэтому её забирает отдельная фоновая джоба (ozonLabelSync.js).
+  if (isOzonShipment) {
+    ozonService.shipPostingForShipment({ tenantId, shipmentId }).catch((err) => {
+      logger.warn({ err, tenantId, shipmentId }, 'Ozon ship-confirm failed (soft-fail, этикетка для этой отгрузки не запустится автоматически)');
+    });
   }
 
   return result;

@@ -322,39 +322,53 @@ async function processJob(job) {
       payload = typeof job.payload_json === 'object' ? job.payload_json : JSON.parse(job.payload_json);
     }
 
-    const svgText = decodeSvg(payload);
-    if (!svgText) throw new Error('No SVG/sticker in payload_json');
-
-    // Сохраняем сырой SVG "как есть" в debug/ — чтобы при жалобах на кривую
-    // печать можно было посмотреть, что РЕАЛЬНО пришло с сервера, не гадая
-    // вслепую.
     const debugBase = path.join(DEBUG_DIR, `job-${job.id}-${job.doc_type}-${Date.now()}`);
-    try { fs.writeFileSync(`${debugBase}.svg`, svgText, 'utf8'); } catch (_) {}
 
-    // Все три типа документа (стикер WB, внутренняя наклейка сборки, QR поставки)
-    // печатаются на одном и том же физическом рулоне термоэтикеток 58×40мм —
-    // раньше QR-документы (shipping_qr, pick_list_label) рендерились в PDF-страницу
-    // 58×58 (квадрат), что не совпадает с реальной этикеткой. QR — квадратное
-    // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
-    // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
-    // безопасен для всех типов документов.
-    // ВАЖНО (уточнено пользователем по референсу): текст на стикерах/QR от WB
-    // ДОЛЖЕН быть вертикальным - это их штатный вид (WB.ru печатает так же).
-    // <g transform="rotate(270) translate(-400 0)"> в их SVG - это и есть
-    // правильная, ожидаемая ориентация, а не баг. Пробовали гасить её своим
-    // rotate90 - это НЕПРАВИЛЬНО, результат получал двойной поворот и почти
-    // весь уезжал за край страницы (см. фото - пусто, обрезанный QR). Рендерим
-    // SVG "как есть", без какого-либо дополнительного поворота с нашей стороны.
-    // job.copies — сколько одинаковых этикеток нужно на выходе (см. комментарий
-    // у buildPdf выше). Раньше это поле в БД всегда было 1 (тираж делали N
-    // отдельными print_jobs) - теперь для "печать этикетки товара N шт." сервер
-    // кладёт реальное N сюда одним заданием.
-    const copies = Math.min(Math.max(Number(job.copies) || 1, 1), 500);
-    const dims = { widthMm: 58, heightMm: 40, copies };
+    // Ozon (задача #74, ozon_label) присылает УЖЕ ГОТОВЫЙ PDF (Ozon сам рендерит
+    // и накладной, и штрихкод в него на своей стороне) — в отличие от wb_sticker/
+    // shipping_qr/pick_list_label, где сервер шлёт SVG, а PDF из него собирает
+    // этот агент (см. buildPdf/SVGtoPDF ниже). Печатаем такой PDF как есть, без
+    // конвертации через SVG — свой размер страницы уже встроен в сам файл, поэтому
+    // и жёстко заданные 58×40мм (см. dims ниже) сюда не применяются.
+    if (payload.pdf_base64) {
+      const pdfBuffer = Buffer.from(String(payload.pdf_base64), 'base64');
+      fs.writeFileSync(pdfPath, pdfBuffer);
+      try { fs.writeFileSync(`${debugBase}.pdf`, pdfBuffer); } catch (_) {}
+      pruneDebugDir();
+    } else {
+      const svgText = decodeSvg(payload);
+      if (!svgText) throw new Error('No SVG/sticker or pdf_base64 in payload_json');
 
-    await buildPdf(svgText, pdfPath, dims);
-    try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
-    pruneDebugDir();
+      // Сохраняем сырой SVG "как есть" в debug/ — чтобы при жалобах на кривую
+      // печать можно было посмотреть, что РЕАЛЬНО пришло с сервера, не гадая
+      // вслепую.
+      try { fs.writeFileSync(`${debugBase}.svg`, svgText, 'utf8'); } catch (_) {}
+
+      // Все три типа документа (стикер WB, внутренняя наклейка сборки, QR поставки)
+      // печатаются на одном и том же физическом рулоне термоэтикеток 58×40мм —
+      // раньше QR-документы (shipping_qr, pick_list_label) рендерились в PDF-страницу
+      // 58×58 (квадрат), что не совпадает с реальной этикеткой. QR — квадратное
+      // содержимое, preserveAspectRatio:'xMidYMid meet' в buildPdf вписывает его по
+      // высоте 40мм без обрезки, просто с полями по бокам — так что единый размер
+      // безопасен для всех типов документов.
+      // ВАЖНО (уточнено пользователем по референсу): текст на стикерах/QR от WB
+      // ДОЛЖЕН быть вертикальным - это их штатный вид (WB.ru печатает так же).
+      // <g transform="rotate(270) translate(-400 0)"> в их SVG - это и есть
+      // правильная, ожидаемая ориентация, а не баг. Пробовали гасить её своим
+      // rotate90 - это НЕПРАВИЛЬНО, результат получал двойной поворот и почти
+      // весь уезжал за край страницы (см. фото - пусто, обрезанный QR). Рендерим
+      // SVG "как есть", без какого-либо дополнительного поворота с нашей стороны.
+      // job.copies — сколько одинаковых этикеток нужно на выходе (см. комментарий
+      // у buildPdf выше). Раньше это поле в БД всегда было 1 (тираж делали N
+      // отдельными print_jobs) - теперь для "печать этикетки товара N шт." сервер
+      // кладёт реальное N сюда одним заданием.
+      const copies = Math.min(Math.max(Number(job.copies) || 1, 1), 500);
+      const dims = { widthMm: 58, heightMm: 40, copies };
+
+      await buildPdf(svgText, pdfPath, dims);
+      try { fs.copyFileSync(pdfPath, `${debugBase}.pdf`); } catch (_) {}
+      pruneDebugDir();
+    }
 
     // ВАЖНО: printer_name — это просто ярлык из WMS ("XP365B"), который
     // придумывает пользователь, а не реальное имя принтера в Windows.

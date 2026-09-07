@@ -4,6 +4,7 @@ const { query, transaction } = require('../../config/database');
 const ozonClient = require('./ozon.client');
 const { resolveOrCreateItem } = require('../masterdata/items/items.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const { resolvePrinter } = require('../printing/printerResolver');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 
@@ -417,6 +418,137 @@ async function listCatalogForAccount({ tenantId, accountId }) {
   return r.rows;
 }
 
+/**
+ * "Собрать заказ" на стороне Ozon (задача #74) — вызывается из
+ * packing.service.js::confirmPacking В МОМЕНТ, когда упаковщик реально
+ * поставил короб в зону отгрузки (shipment.status -> ready_to_ship), для
+ * marketplace='ozon' отгрузок. Soft-fail по духу (вызывающий код сам решает,
+ * ловить ли ошибку) — если Ozon недоступен или что-то не так, упаковка в
+ * нашей WMS всё равно уже подтверждена, просто не запустится получение
+ * этикетки для этой конкретной отгрузки (можно будет разобраться руками).
+ *
+ * Тихо ничего не делает, если это не Ozon-отправление (ещё не засинкано в
+ * wms.ozon_postings) — вызывающий код НЕ обязан заранее проверять
+ * marketplace, functions сама разбирается по данным.
+ */
+async function shipPostingForShipment({ tenantId, shipmentId }) {
+  const shipRes = await query(
+    `SELECT external_id FROM wms.shipments WHERE id=$1 AND tenant_id=$2`,
+    [shipmentId, tenantId]
+  );
+  if (shipRes.rowCount === 0) return { skipped: true, reason: 'shipment_not_found' };
+  const postingNumber = shipRes.rows[0].external_id;
+
+  const postingRes = await query(
+    `SELECT op.id, ma.supplier_id AS ozon_client_id, ma.api_token AS ozon_api_key
+     FROM wms.ozon_postings op JOIN wms.mp_accounts ma ON ma.id=op.mp_account_id
+     WHERE op.tenant_id=$1 AND op.posting_number=$2 LIMIT 1`,
+    [tenantId, postingNumber]
+  );
+  if (postingRes.rowCount === 0) return { skipped: true, reason: 'not_ozon_posting' };
+  const posting = postingRes.rows[0];
+
+  const itemsRes = await query(
+    `SELECT sku, qty FROM wms.ozon_posting_items WHERE posting_id=$1 AND sku IS NOT NULL`,
+    [posting.id]
+  );
+  if (itemsRes.rowCount === 0) return { skipped: true, reason: 'no_sku' };
+
+  const credentials = { clientId: posting.ozon_client_id, apiKey: posting.ozon_api_key };
+  const products = itemsRes.rows.map(r => ({ product_id: Number(r.sku), quantity: Number(r.qty) }));
+
+  await ozonClient.shipPosting(credentials, { postingNumber, packages: [{ products }] });
+  await query(`UPDATE wms.ozon_postings SET shipped_at=NOW() WHERE id=$1`, [posting.id]);
+
+  return { ok: true, postingNumber };
+}
+
+/**
+ * Фоновый шаг получения этикеток (задача #74, вызывается из
+ * server/src/jobs/ozonLabelSync.js) — забирает PDF для отправлений, которые
+ * мы отправили в /ship не раньше чем 55 секунд назад (Ozon просит 45-60с,
+ * берём с небольшим запасом) и для которых этикетка ещё не была получена.
+ * Глобальный проход по всем тенантам сразу (без явного перебора tenantId) —
+ * каждая строка wms.ozon_postings уже несёт свой tenant_id, поэтому
+ * дальнейшие джойны (mp_accounts/shipments) остаются в рамках того же
+ * тенанта сами по себе, без риска утечки между тенантами.
+ */
+async function fetchLabelsForReadyPostings({ limit = 50, minAgeSeconds = 55, maxAttempts = 5 } = {}) {
+  const dueRes = await query(
+    `SELECT op.id, op.tenant_id, op.posting_number,
+            ma.supplier_id AS ozon_client_id, ma.api_token AS ozon_api_key
+     FROM wms.ozon_postings op
+     JOIN wms.mp_accounts ma ON ma.id=op.mp_account_id
+     WHERE op.shipped_at IS NOT NULL
+       AND op.shipped_at <= NOW() - ($1 || ' seconds')::interval
+       AND op.label_fetched_at IS NULL
+       AND op.label_attempts < $2
+     ORDER BY op.shipped_at ASC LIMIT $3`,
+    [minAgeSeconds, maxAttempts, limit]
+  );
+
+  let fetched = 0, notReady = 0, failed = 0, noPrinter = 0;
+
+  for (const row of dueRes.rows) {
+    try {
+      const credentials = { clientId: row.ozon_client_id, apiKey: row.ozon_api_key };
+      const { pdfBase64 } = await ozonClient.fetchPackageLabelPdf(credentials, [row.posting_number]);
+
+      const shipRes = await query(
+        `SELECT id, packer_id, client_id FROM wms.shipments
+         WHERE tenant_id=$1 AND external_id=$2 ORDER BY id DESC LIMIT 1`,
+        [row.tenant_id, row.posting_number]
+      );
+      if (shipRes.rowCount === 0) {
+        await query(`UPDATE wms.ozon_postings SET label_attempts=label_attempts+1 WHERE id=$1`, [row.id]);
+        continue;
+      }
+      const shipment = shipRes.rows[0];
+
+      // employeeId=packer_id — та же логика приоритета, что и у wb_sticker:
+      // если у упаковщика активно рабочее место со своим принтером, этикетка
+      // уйдёт туда, иначе — общий маршрут printer_routes по doc_type='ozon_label'.
+      const resolved = await resolvePrinter(query, {
+        tenantId: row.tenant_id, docType: 'ozon_label',
+        employeeId: shipment.packer_id, clientId: shipment.client_id,
+      });
+      if (!resolved) {
+        noPrinter++;
+        logger.warn({ tenantId: row.tenant_id, postingNumber: row.posting_number },
+          'Ozon label: не нашли принтер (нет рабочего места у упаковщика и нет маршрута doc_type=ozon_label) — этикетка не поставлена в очередь');
+      } else {
+        const jobCode = `OZL-${shipment.id}-${Date.now()}`;
+        await query(
+          `INSERT INTO wms.print_jobs(tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,
+                                       copies,payload_json,status,created_by)
+           VALUES($1,$2,$3,$4,'ozon_label','shipment',$5,1,$6::jsonb,'new',$7)`,
+          [row.tenant_id, jobCode, resolved.printerId, resolved.routeId, shipment.id,
+           JSON.stringify({ pdf_base64: pdfBase64, posting_number: row.posting_number }),
+           shipment.packer_id || null]
+        );
+      }
+
+      await query(`UPDATE wms.ozon_postings SET label_fetched_at=NOW() WHERE id=$1`, [row.id]);
+      fetched++;
+    } catch (e) {
+      const msg = String(e.message || '');
+      // "next postings aren't ready" - ожидаемое временное состояние
+      // (см. комментарий у fetchPackageLabelPdf), не настоящая ошибка -
+      // просто попробуем на следующем тике джобы, не тратя одну из
+      // maxAttempts попыток так же агрессивно, как на реальных ошибках.
+      if (/ready/i.test(msg)) {
+        notReady++;
+      } else {
+        failed++;
+        logger.warn({ err: e, tenantId: row.tenant_id, postingNumber: row.posting_number }, 'Ozon label fetch failed');
+      }
+      await query(`UPDATE wms.ozon_postings SET label_attempts=label_attempts+1 WHERE id=$1`, [row.id]);
+    }
+  }
+
+  return { checked: dueRes.rowCount, fetched, notReady, failed, noPrinter };
+}
+
 module.exports = {
   listActiveAccounts,
   getMpAccount,
@@ -425,4 +557,6 @@ module.exports = {
   generateWaveFromPostings,
   importCatalogForAccount,
   listCatalogForAccount,
+  shipPostingForShipment,
+  fetchLabelsForReadyPostings,
 };

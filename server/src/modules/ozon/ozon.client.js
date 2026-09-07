@@ -260,6 +260,78 @@ async function fetchProductAttributesByOfferIds(credentials, offerIds) {
   return all;
 }
 
+/**
+ * "Собрать заказ" (задача #74) — POST /v4/posting/fbs/ship. Переводит
+ * отправление awaiting_packaging -> awaiting_deliver. ВАЖНО (подтверждено
+ * живым тестом 07.09.2026): product_id в packages[].products[] — это тот же
+ * sku, что лежит в wms.ozon_posting_items.sku (он же приходит в самом
+ * отправлении, posting.products[].sku) — НЕ ozon_items.ozon_product_id
+ * (внутренний id карточки из /v4/product/info/attributes): с ним Ozon
+ * отвечает {"code":3,"message":"UNKNOWN_PRODUCT_DEFINED"}.
+ *
+ * v2 и v3 этого метода — 404 (сняты с продакшена), проверено живым запросом
+ * в тот же день, актуальна только v4.
+ */
+async function shipPosting(credentials, { postingNumber, packages }) {
+  return ozonRequest({
+    credentials, method: 'POST',
+    path: '/v4/posting/fbs/ship',
+    data: { posting_number: postingNumber, packages },
+  });
+}
+
+/**
+ * PDF-этикетка отправления(й), до 20 штук за раз (задача #74) —
+ * POST /v2/posting/fbs/package-label. Работает ТОЛЬКО для отправлений в
+ * статусе awaiting_deliver (после shipPosting), и Ozon прямо просит подождать
+ * 45-60 секунд после сборки, иначе отвечает ошибкой "next postings aren't
+ * ready" — это НЕ баг с нашей стороны, поэтому получение этикетки не может
+ * быть частью того же запроса, что и /ship (см. server/src/jobs/ozonLabelSync.js).
+ *
+ * В ОТЛИЧИЕ от всех остальных методов этого клиента, успешный ответ — НЕ
+ * JSON, а сырые байты PDF (Content-Type: application/pdf, подтверждено живым
+ * запросом 07.09.2026: 200, 10737 байт настоящего PDF) — ozonRequest() здесь
+ * не подходит (он всегда парсит JSON), поэтому отдельная реализация с
+ * responseType:'arraybuffer'. Ошибки Ozon в этом методе приходят тем же JSON,
+ * что и везде, просто с другим Content-Type при успехе — различаем по
+ * фактическому content-type ответа, а не по HTTP-статусу.
+ */
+async function fetchPackageLabelPdf(credentials, postingNumbers) {
+  const { clientId, apiKey } = credentials || {};
+  if (!clientId || !apiKey) {
+    throw new Error('Ozon credentials (clientId/apiKey) are required');
+  }
+
+  const response = await axios({
+    method: 'POST',
+    url: `${OZON_BASE}/v2/posting/fbs/package-label`,
+    data: { posting_number: postingNumbers },
+    headers: {
+      'Client-Id':    String(clientId),
+      'Api-Key':      String(apiKey),
+      'Content-Type': 'application/json',
+      'Accept':       'application/pdf, application/json',
+    },
+    responseType: 'arraybuffer',
+    timeout: DEFAULT_TIMEOUT,
+    validateStatus: () => true,
+  });
+
+  const contentType = String(response.headers['content-type'] || '');
+  if (response.status === 200 && contentType.includes('pdf')) {
+    return { pdfBase64: Buffer.from(response.data).toString('base64') };
+  }
+
+  // Не PDF - значит ошибка; тело на самом деле JSON текстом внутри buffer'а
+  // (см. комментарий выше — arraybuffer нужен именно для успешного случая).
+  let parsed = null;
+  try { parsed = JSON.parse(Buffer.from(response.data).toString('utf8')); } catch (_) { /* оставляем null */ }
+  const message = parsed?.message || `Ozon package-label HTTP ${response.status}`;
+  const err = new Error(`Ozon package-label error: ${message}`);
+  err.ozonStatus = response.status; err.ozonBody = parsed;
+  throw err;
+}
+
 module.exports = {
   ozonRequest,
   fetchFbsPostings,
@@ -267,4 +339,6 @@ module.exports = {
   fetchProductInfoByOfferIds,
   fetchAllProductOfferIds,
   fetchProductAttributesByOfferIds,
+  shipPosting,
+  fetchPackageLabelPdf,
 };
