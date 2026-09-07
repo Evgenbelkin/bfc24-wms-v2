@@ -929,6 +929,28 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     }
   };
 
+  // ─────────────── Ozon ───────────────
+
+  var ozon = {
+    accounts: {
+      list: function list(p) {
+        return _get('/ozon/accounts', p);
+      },
+      create: function create(d) {
+        return post('/ozon/accounts', d);
+      }
+    },
+    sync: function sync() {
+      return post('/ozon/sync', {});
+    },
+    generateWave: function generateWave(d) {
+      return post('/ozon/generate-wave', d);
+    },
+    postings: function postings(p) {
+      return _get('/ozon/postings', p);
+    }
+  };
+
   // ─────────────── FBS-аналитика ───────────────
 
   var fbsAnalytics = {
@@ -1503,6 +1525,7 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     packing: packing,
     shipping: shipping,
     wb: wb,
+    ozon: ozon,
     printing: printing,
     overview: overview,
     workstations: workstations,

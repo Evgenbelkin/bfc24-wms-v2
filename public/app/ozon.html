@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Ozon — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .acc-row{cursor:pointer;}
+    .acc-row:active{opacity:.7;}
+    .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
+    .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
+    @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    .result-box{background:var(--card2);border-radius:10px;padding:12px 14px;margin-top:10px;font-size:13px;color:var(--muted2);}
+    .result-box strong{color:var(--text);}
+    .locations-box{background:var(--card2);border-radius:10px;padding:8px 14px;}
+    .locations-box .loc-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border);}
+    .locations-box .loc-row:last-child{border-bottom:none;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg> Ozon</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div id="module-disabled" class="card" style="display:none">
+    <div class="empty-state">
+      <div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      Модуль интеграции с Ozon не подключён для вашей компании.<br/>Обратитесь к администратору платформы.
+    </div>
+  </div>
+
+  <div id="ozon-content">
+    <div class="card">
+      <div class="card-title">Аккаунты (<span id="acc-count">0</span>)</div>
+      <div id="acc-list"></div>
+    </div>
+    <button class="btn-big btn-green btn-full" onclick="openAccModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый аккаунт</button>
+
+    <div class="card">
+      <div class="card-title">Отправления</div>
+      <div class="refresh-note" style="text-align:left;margin-bottom:8px;">У Ozon нет отдельного шага «поставка» — каждое отправление сразу собирается в свою волну. Сначала синхронизируйте отправления, потом сформируйте волну по нужному аккаунту.</div>
+
+      <div class="field">
+        <label>Аккаунт</label>
+        <select id="ord-account" style="width:100%;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:15px;">
+          <option value="">Загрузка...</option>
+        </select>
+      </div>
+
+      <button class="btn-big btn-blue btn-full" onclick="syncPostings()"><svg class="i" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Синхронизировать отправления</button>
+      <div id="sync-result"></div>
+
+      <div class="field" style="margin-top:14px;">
+        <label>Сколько отправлений включить в волну</label>
+        <input id="wave-limit" type="number" value="50" min="1" max="200"/>
+      </div>
+      <button class="btn-big btn-green btn-full" onclick="generateWave()"><svg class="i" viewBox="0 0 24 24"><path d="M2 15c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 20c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/></svg> Сформировать волну</button>
+      <div id="wave-result"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Последние отправления (<span id="post-count">0</span>)</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Отправление</th><th>Статус</th><th>Склад</th><th>Волна</th><th>Когда</th></tr></thead>
+          <tbody id="post-body"></tbody>
+        </table>
+      </div>
+      <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadPostings()">↻ Обновить список</button>
+    </div>
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['supervisor', 'tenant_admin'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    function logout() {
+      window.API.auth.logout().then(function () {
+        window.location.href = '/app/login.html';
+      });
+    }
+
+    function isModuleDisabled(e) {
+      return e && e.code === 'MODULE_DISABLED';
+    }
+    function showModuleDisabled() {
+      document.getElementById('module-disabled').style.display = 'block';
+      document.getElementById('ozon-content').style.display = 'none';
+    }
+
+    var STATUS_LABELS = {
+      awaiting_registration: 'Ожидает регистрации',
+      acceptance_in_progress: 'Идёт приёмка',
+      awaiting_approve: 'Ожидает подтверждения',
+      awaiting_packaging: 'Ожидает упаковки',
+      awaiting_deliver: 'Ожидает отгрузки',
+      delivering: 'В доставке',
+      delivered: 'Доставлено',
+      cancelled: 'Отменено',
+      not_accepted: 'Не принято'
+    };
+
+    var clientsList = [];
+    var accountsList = [];
+
+    function loadClients() {
+      return window.API.clients.short().then(function (res) {
+        clientsList = res.clients || [];
+      }).catch(function (err) {
+        UI.notify.err(err.message);
+      });
+    }
+
+    function loadAccounts() {
+      return window.API.ozon.accounts.list().then(function (res) {
+        accountsList = res.accounts || [];
+        document.getElementById('acc-count').textContent = accountsList.length;
+        var list = document.getElementById('acc-list');
+        if (!accountsList.length) {
+          list.innerHTML = '<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>Аккаунтов пока нет</div>';
+        } else {
+          list.innerHTML = accountsList.map(function (a, idx) {
+            return '' +
+              '<div class="list-row acc-row" onclick="openAccModal(' + idx + ')">' +
+                '<div class="main">' +
+                  '<div class="title">' + UI.escHtml(a.account_name) + '</div>' +
+                  '<div class="sub">' + UI.escHtml(a.client_name) +
+                    (a.ozon_client_id ? ' · Client-Id ' + UI.escHtml(a.ozon_client_id) : '') +
+                    (a.has_key ? '' : ' · <span style="color:var(--red)">нет ключа</span>') +
+                    (a.is_active ? '' : ' · <span style="color:var(--red)">выключен</span>') +
+                  '</div>' +
+                '</div>' +
+                '<div class="badge"><span>OZ</span></div>' +
+              '</div>';
+          }).join('');
+        }
+        UI.populateSelect('#ord-account', accountsList, { valueKey: 'id', labelKey: 'account_name', emptyLabel: '— Выберите аккаунт —' });
+      }).catch(function (err) {
+        if (isModuleDisabled(err)) { showModuleDisabled(); return; }
+        UI.notify.err(err.message);
+      });
+    }
+
+    function openAccModal(idx) {
+      var a = (idx !== undefined && idx !== null) ? accountsList[idx] : null;
+      var clientOptions = clientsList.map(function (c) {
+        return '<option value="' + c.id + '" ' + (a && a.client_id === c.id ? 'selected' : '') + '>' + UI.escHtml(c.client_name) + '</option>';
+      }).join('');
+      document.getElementById('modal-root').innerHTML = '' +
+        '<div class="modal-overlay" onclick="if(event.target===this) closeModal()">' +
+          '<div class="modal-card">' +
+            '<div class="card-title">' + (a ? UI.escHtml(a.account_name) : 'Новый аккаунт Ozon') + '</div>' +
+            (!a ? ('<div class="field"><label>Клиент</label><select id="m-client">' + clientOptions + '</select></div>') : '') +
+            '<div class="field"><label>Название аккаунта</label><input id="m-name" value="' + (a ? UI.escHtml(a.account_name) : '') + '" placeholder="Напр. Основной магазин"/></div>' +
+            '<div class="field"><label>Код (опционально)</label><input id="m-code" value="' + (a && a.account_code ? UI.escHtml(a.account_code) : '') + '"/></div>' +
+            '<div class="field"><label>Client-Id</label><input id="m-client-id" value="' + (a && a.ozon_client_id ? UI.escHtml(a.ozon_client_id) : '') + '" placeholder="Напр. 1296148"/></div>' +
+            '<div class="field">' +
+              '<label>Api-Key ' + (a ? '(оставьте пустым, чтобы не менять)' : '') + '</label>' +
+              '<input id="m-api-key" type="password" placeholder="' + (a && a.has_key ? 'Ключ уже сохранён' : 'Вставьте ключ из кабинета Ozon') + '"/>' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">' +
+                'Ключ создаётся в кабинете Ozon: Настройки → Seller API → «Сгенерировать ключ». Нужны роли «Посылки FBS» и «Товары».' +
+              '</div>' +
+            '</div>' +
+            (a ? ('<div class="field"><label style="display:inline;">Активен</label> <input type="checkbox" id="m-active" ' + (a.is_active ? 'checked' : '') + '/></div>') : '') +
+            '<div class="btn-row">' +
+              '<button class="btn-big btn-green" onclick="saveAccount(' + (idx === undefined ? 'null' : idx) + ')"><svg class="i" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg> Сохранить</button>' +
+              '<button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+
+    function closeModal() {
+      document.getElementById('modal-root').innerHTML = '';
+    }
+
+    function saveAccount(idx) {
+      var a = (idx !== null && idx !== undefined && accountsList[idx]) ? accountsList[idx] : null;
+      var name = UI.val('#m-name');
+      if (!name) { UI.notify.err('Укажите название аккаунта'); return; }
+      var apiKey = UI.val('#m-api-key');
+      if (!a) {
+        var clientId = UI.val('#m-client');
+        if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+        if (!apiKey) { UI.notify.err('Укажите Api-Key'); return; }
+        window.API.ozon.accounts.create({
+          client_id: clientId,
+          account_name: name,
+          account_code: UI.val('#m-code') || null,
+          ozon_client_id: UI.val('#m-client-id') || null,
+          ozon_api_key: apiKey
+        }).then(function () {
+          UI.notify.ok('Аккаунт создан');
+          closeModal();
+          return loadAccounts();
+        }).catch(function (err) {
+          UI.notify.err(err.message);
+        });
+      } else {
+        UI.notify.err('Редактирование аккаунта пока не реализовано в этом экране — обратитесь к администратору платформы.');
+      }
+    }
+
+    function syncPostings() {
+      UI.notify.info('Синхронизируем отправления с Ozon...');
+      window.API.ozon.sync().then(function (res) {
+        var rows = (res.results || []).map(function (r) {
+          return '<div class="loc-row"><span>' + UI.escHtml(r.account_name || ('#' + r.account_id)) + '</span><span>' +
+            (r.ok ? ('+' + r.saved + '/' + r.fetched) : ('<svg class="i" viewBox="0 0 24 24"><path d="M12 2 1 21h22z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg> ' + UI.escHtml(r.error || 'ошибка'))) +
+            '</span></div>';
+        }).join('');
+        document.getElementById('sync-result').innerHTML = '<div class="locations-box" style="margin-top:6px;">' + (rows || '<div style="color:var(--muted);font-size:13px;">Нет активных Ozon-аккаунтов</div>') + '</div>';
+        UI.notify.ok('Синхронизация завершена');
+        loadPostings();
+      }).catch(function (err) {
+        if (isModuleDisabled(err)) { showModuleDisabled(); return; }
+        UI.notify.err(err.message);
+      });
+    }
+
+    function generateWave() {
+      var accountId = UI.val('#ord-account');
+      if (!accountId) { UI.notify.err('Выберите аккаунт'); return; }
+      if (!UI.confirm('Сформировать волну на сборку из готовых отправлений?')) return;
+      UI.notify.info('Формируем волну...');
+      var limit = Number(UI.val('#wave-limit')) || 50;
+      window.API.ozon.generateWave({ account_id: accountId, limit: limit }).then(function (res) {
+        var created = res.created || [];
+        var skipped = res.skipped || [];
+        if (!created.length) {
+          document.getElementById('wave-result').innerHTML = '<div class="result-box">' + UI.escHtml(res.message || 'Нет готовых отправлений') + '</div>';
+          return;
+        }
+        var skippedNote = skipped.length
+          ? ('<div class="result-box" style="border-color:var(--amber);margin-top:8px;">' +
+              '<svg class="i" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> ' +
+              skipped.length + ' отправлени' + (skipped.length === 1 ? 'е пропущено' : 'й пропущено') + ' (нет штрихкода товара или пустой состав) — попадут в волну после следующей синхронизации.' +
+            '</div>')
+          : '';
+        document.getElementById('wave-result').innerHTML = '' +
+          '<div class="result-box">' +
+            'Сформировано волн: <strong>' + created.length + '</strong><br/>' +
+            created.map(function (c) {
+              return UI.escHtml(c.posting_number) + ' — задач на сборку: <strong>' + c.tasks_inserted + '</strong>';
+            }).join('<br/>') +
+            '<br/>Волна появится в «Диспетчерской» и на экране «Сборка».' +
+          '</div>' + skippedNote;
+        UI.notify.ok('Волна сформирована');
+        loadPostings();
+      }).catch(function (err) {
+        if (isModuleDisabled(err)) { showModuleDisabled(); return; }
+        UI.notify.err(err.message);
+      });
+    }
+
+    function loadPostings() {
+      var accountId = UI.val('#ord-account');
+      var params = accountId ? { account_id: accountId } : {};
+      window.API.ozon.postings(params).then(function (res) {
+        var postings = res.postings || [];
+        document.getElementById('post-count').textContent = postings.length;
+        var body = document.getElementById('post-body');
+        if (!postings.length) {
+          body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);">Пока нет отправлений</td></tr>';
+        } else {
+          body.innerHTML = postings.map(function (p) {
+            return '<tr>' +
+              '<td>' + UI.escHtml(p.posting_number) + '</td>' +
+              '<td>' + UI.escHtml(STATUS_LABELS[p.status] || p.status) + '</td>' +
+              '<td>' + UI.escHtml(p.warehouse_name || '—') + '</td>' +
+              '<td>' + (p.wms_shipment_code ? UI.escHtml(p.wms_shipment_code) : '—') + '</td>' +
+              '<td>' + (p.fetched_at ? new Date(p.fetched_at).toLocaleString('ru-RU') : '—') + '</td>' +
+            '</tr>';
+          }).join('');
+        }
+      }).catch(function (err) {
+        if (isModuleDisabled(err)) { showModuleDisabled(); return; }
+        UI.notify.err(err.message);
+      });
+    }
+
+    loadClients();
+    loadAccounts();
+    loadPostings();
+  </script>
+</body>
+</html>
