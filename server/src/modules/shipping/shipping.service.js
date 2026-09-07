@@ -565,6 +565,19 @@ async function cancelShipment({ tenantId, shipmentCode, userId, reason }) {
       [tenantId, shipmentCode]
     );
 
+    // Волна сборки (wms.pick_waves) — отдельная запись от picking_tasks, у неё
+    // свой статус ('open'/'active'/'ready'/...), который выше никак не
+    // затрагивается. Без этого волна остаётся висеть в диспетчерской (в
+    // "Волны сборки") даже после того, как все её задания уже отменены —
+    // выглядит как будто "Отменить отгрузку" ничего не сделала (реальный
+    // случай, обсуждение с пользователем 07.09.2026). 'done' волну не трогаем
+    // (уже полностью закрыта штатно, отменять нечего и не нужно).
+    await client.query(
+      `UPDATE wms.pick_waves SET status='cancelled', updated_at=NOW()
+       WHERE tenant_id=$1 AND shipment_code=$2 AND status <> 'done'`,
+      [tenantId, shipmentCode]
+    );
+
     // ВАЖНО: задачи сборки со status='done' здесь НЕ трогаем — по ним товар
     // уже физически снят с полки (consumeStock сработал ещё в момент сборки,
     // см. picking.service.js:387) и стоит сейчас где-то у упаковщика/на столе
