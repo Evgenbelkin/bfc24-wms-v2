@@ -2,6 +2,9 @@
 
 const { query, transaction } = require('../../config/database');
 const ozonClient = require('./ozon.client');
+const { resolveOrCreateItem } = require('../masterdata/items/items.service');
+const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 
 // =============================================================================
@@ -14,6 +17,21 @@ const logger = require('../../utils/logger');
 // 056), отправление и так уже однозначно идентифицируется posting_number, и
 // его статус/пропажу видно по обычному повторному синку с фильтром по датам.
 // =============================================================================
+
+async function getMpAccount(tenantId, accountId) {
+  const r = await query(
+    `SELECT id, client_id, supplier_id AS ozon_client_id, api_token AS ozon_api_key
+     FROM wms.mp_accounts
+     WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE AND marketplace='ozon' LIMIT 1`,
+    [accountId, tenantId]
+  );
+  if (r.rowCount === 0) throw new NotFoundError('Ozon MP Account', accountId);
+  const acc = r.rows[0];
+  if (!acc.ozon_client_id || !acc.ozon_api_key) {
+    throw new ValidationError(`Ozon account ${accountId} has no Client-Id/Api-Key configured`);
+  }
+  return acc;
+}
 
 async function listActiveAccounts(tenantId) {
   const r = await query(
@@ -162,8 +180,119 @@ async function syncAllAccountsForTenant(tenantId) {
   return results;
 }
 
+/**
+ * "Сформировать волну" для Ozon (задача #73) — в отличие от WB, у Ozon НЕТ
+ * отдельного шага "поставка" перед сборкой (см. комментарий в миграции 056):
+ * единица группировки — уже готовое отправление (posting_number), поэтому
+ * здесь просто превращаем каждое ещё не сформированное отправление (
+ * wms_shipment_code IS NULL) в СВОИ wms.shipments + wms.pick_waves +
+ * wms.picking_tasks, один в один, без промежуточного контейнера.
+ *
+ * Отправление, у которого хоть одна позиция ещё без резолвленного barcode
+ * (см. задачу #77), пропускаем целиком — resolveOrCreateItem без штрихкода
+ * не может создать товар, и заводить "проблемную" задачу сборки, для которой
+ * заведомо непонятно, что сканировать, было бы хуже, чем просто оставить
+ * отправление в очереди на следующий синк (barcode может подтянуться позже).
+ */
+async function generateWaveFromPostings({ tenantId, accountId, actorId, limit = 50 }) {
+  const acc = await getMpAccount(tenantId, accountId);
+  const wh = await getDefaultWarehouse(tenantId);
+
+  // Свежий синк перед выборкой — сужает окно гонки, тот же приём, что и в
+  // wb.router.js::generate-wave.
+  await syncPostingsForAccount({
+    tenantId, accountId, ozonClientId: acc.ozon_client_id, ozonApiKey: acc.ozon_api_key,
+  });
+
+  const postingsRes = await query(
+    `SELECT id, posting_number, order_number FROM wms.ozon_postings
+     WHERE tenant_id=$1 AND mp_account_id=$2 AND wms_shipment_code IS NULL
+       AND status='awaiting_packaging'
+     ORDER BY in_process_at ASC NULLS LAST LIMIT $3`,
+    [tenantId, accountId, Math.min(limit, 200)]
+  );
+  if (postingsRes.rowCount === 0) return { created: [], skipped: [], message: 'Нет отправлений, готовых к формированию волны' };
+
+  const created = [];
+  const skipped = [];
+
+  for (const posting of postingsRes.rows) {
+    const itemsRes = await query(
+      `SELECT offer_id, sku, barcode, item_name, qty FROM wms.ozon_posting_items WHERE posting_id=$1`,
+      [posting.id]
+    );
+    const lines = itemsRes.rows;
+    const missingBarcode = lines.find(l => !l.barcode);
+    if (lines.length === 0 || missingBarcode) {
+      skipped.push({
+        posting_number: posting.posting_number,
+        reason: lines.length === 0 ? 'no_items' : 'missing_barcode',
+        offer_id: missingBarcode?.offer_id || null,
+      });
+      continue;
+    }
+
+    await transaction(async (client) => {
+      await client.query(
+        `INSERT INTO wms.shipments(tenant_id,warehouse_id,client_id,external_id,marketplace,status,created_by)
+         VALUES($1,$2,$3,$4,'ozon','new',$5)
+         ON CONFLICT(tenant_id,external_id) DO UPDATE SET client_id=EXCLUDED.client_id`,
+        [tenantId, wh.id, acc.client_id, posting.posting_number, actorId]
+      );
+
+      await client.query(
+        `INSERT INTO wms.pick_waves(tenant_id,warehouse_id,client_id,shipment_code,status,total_tasks,created_by)
+         VALUES($1,$2,$3,$4,'open',0,$5)
+         ON CONFLICT(tenant_id,shipment_code) DO NOTHING`,
+        [tenantId, wh.id, acc.client_id, posting.posting_number, actorId]
+      );
+
+      const waveRes = await client.query(
+        `SELECT id FROM wms.pick_waves WHERE tenant_id=$1 AND shipment_code=$2 LIMIT 1`,
+        [tenantId, posting.posting_number]
+      );
+      const waveId = waveRes.rows[0].id;
+
+      let insertedTasks = 0;
+      for (const line of lines) {
+        const itemId = await resolveOrCreateItem({
+          tenantId, clientId: acc.client_id, barcode: line.barcode, dbClient: client,
+        });
+        await client.query(
+          `INSERT INTO wms.picking_tasks
+             (tenant_id,warehouse_id,client_id,wave_id,item_id,barcode,qty,status,priority,
+              order_ref,shipment_code,created_by,updated_by)
+           VALUES($1,$2,$3,$4,$5,$6,$7,'new',3,$8,$9,$10,$10)`,
+          [tenantId, wh.id, acc.client_id, waveId, itemId, line.barcode, line.qty,
+           posting.order_number, posting.posting_number, actorId]
+        );
+        insertedTasks++;
+      }
+
+      await client.query(
+        `UPDATE wms.pick_waves SET total_tasks=(SELECT COUNT(*)::int FROM wms.picking_tasks WHERE wave_id=pick_waves.id)
+         WHERE tenant_id=$1 AND shipment_code=$2`,
+        [tenantId, posting.posting_number]
+      );
+
+      // Помечаем отправление сформированным — дальше синк уже не трогает его
+      // wms.ozon_posting_items (см. комментарий у alreadyWaved в syncPostingsForAccount).
+      await client.query(
+        `UPDATE wms.ozon_postings SET wms_shipment_code=$1 WHERE id=$2`,
+        [posting.posting_number, posting.id]
+      );
+
+      created.push({ posting_number: posting.posting_number, tasks_inserted: insertedTasks });
+    });
+  }
+
+  return { created, skipped };
+}
+
 module.exports = {
   listActiveAccounts,
+  getMpAccount,
   syncPostingsForAccount,
   syncAllAccountsForTenant,
+  generateWaveFromPostings,
 };

@@ -48,6 +48,18 @@ router.post('/accounts', requireRole('tenant_admin'), async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** POST /ozon/generate-wave — сформировать волны сборки из готовых отправлений */
+router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const accountId = Number(req.body.account_id);
+    const limit = Math.min(Number(req.body.limit) || 50, 200);
+    const result = await ozonService.generateWaveFromPostings({
+      tenantId: req.user.tenantId, accountId, actorId: req.user.id, limit,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Синхронизация отправлений ───────────────
 
 /** POST /ozon/sync — синхронизировать отправления по всем активным Ozon-аккаунтам тенанта */
