@@ -168,8 +168,39 @@ async function fetchAllFbsPostings(credentials, { since, to, status = null, page
   return all;
 }
 
+/**
+ * Информация о товарах по offer_id (батч, до BATCH_SIZE штук за запрос) —
+ * нужен, чтобы получить barcode: posting.products[] отдаёт только
+ * offer_id/sku, без штрихкода (проверено живым запросом 07.09.2026, задача
+ * #77). Метод /v3/product/info/list подтверждён живым тестом на реальном
+ * товаре — возвращает barcodes[] (товар может иметь несколько штрихкодов,
+ * берём первый — см. resolveBarcodesByOfferId в ozon.service.js).
+ *
+ * ВАЖНО: возвращённый barcode может быть сгенерирован самим Ozon
+ * (вида "OZN<sku>"), если продавец не указал реальный EAN — тогда он может
+ * физически не совпадать с тем, что наклеено на товар. Это забота уже
+ * приёмки/сверки конкретного клиента, не этого метода.
+ */
+const PRODUCT_INFO_BATCH_SIZE = 100;
+
+async function fetchProductInfoByOfferIds(credentials, offerIds) {
+  const uniqueIds = [...new Set(offerIds.filter(Boolean))];
+  const all = [];
+  for (let i = 0; i < uniqueIds.length; i += PRODUCT_INFO_BATCH_SIZE) {
+    const chunk = uniqueIds.slice(i, i + PRODUCT_INFO_BATCH_SIZE);
+    const data = await ozonRequest({
+      credentials, method: 'POST',
+      path: '/v3/product/info/list',
+      data: { offer_id: chunk },
+    });
+    all.push(...(data?.items || []));
+  }
+  return all;
+}
+
 module.exports = {
   ozonRequest,
   fetchFbsPostings,
   fetchAllFbsPostings,
+  fetchProductInfoByOfferIds,
 };

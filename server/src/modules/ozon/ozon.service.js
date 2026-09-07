@@ -111,6 +111,36 @@ async function syncPostingsForAccount({ tenantId, accountId, ozonClientId, ozonA
     }
   });
 
+  // Резолв штрихкода по offer_id (задача #77) — Ozon не отдаёт barcode прямо в
+  // отправлении (posting.products[] содержит только offer_id/sku), нужен
+  // отдельный запрос к /v3/product/info/list. Делаем ПОСЛЕ основной
+  // транзакции (тот же паттерн, что notifyWbSupplyDelivered у WB — не
+  // держим открытое соединение/лок на время похода в сеть), точечно только
+  // по offer_id, реально встреченным в этом тике синка. Мягкий отказ — если
+  // Ozon недоступен или роли токена не хватает, штрихкод просто останется
+  // пустым до следующего синка, сборку заказов это не ломает (просто ещё не
+  // видно волну, пока barcode не резолвится).
+  const offerIds = [...new Set(postings.flatMap(p => (p.products || []).map(l => l.offer_id)).filter(Boolean))];
+  if (offerIds.length > 0) {
+    try {
+      const productInfos = await ozonClient.fetchProductInfoByOfferIds(credentials, offerIds);
+      for (const item of productInfos) {
+        const barcode = Array.isArray(item.barcodes) && item.barcodes.length ? item.barcodes[0] : null;
+        if (!item.offer_id || !barcode) continue;
+        await query(
+          `UPDATE wms.ozon_posting_items opi
+             SET barcode=$1
+           FROM wms.ozon_postings op
+           WHERE opi.posting_id=op.id AND op.mp_account_id=$2
+             AND opi.offer_id=$3 AND opi.barcode IS NULL`,
+          [barcode, accountId, item.offer_id]
+        );
+      }
+    } catch (e) {
+      logger.warn({ err: e.message, tenantId, accountId }, 'Ozon: barcode resolve failed (soft-fail, роли токена может не хватать)');
+    }
+  }
+
   return { fetched: postings.length, saved };
 }
 
