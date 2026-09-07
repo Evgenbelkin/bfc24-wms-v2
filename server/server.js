@@ -17,6 +17,7 @@ const wbStockReconcileAlert = require('./src/jobs/wbStockReconcileAlert');
 const wbStatsRegionSync = require('./src/jobs/wbStatsRegionSync');
 const markingWithdrawalExport = require('./src/jobs/markingWithdrawalExport');
 const ozonLabelSync = require('./src/jobs/ozonLabelSync');
+const ozonStatusSync = require('./src/jobs/ozonStatusSync');
 
 // =============================================================================
 // Server entry point с graceful shutdown
@@ -65,6 +66,7 @@ async function start() {
   wbStatsRegionSync.start();
   markingWithdrawalExport.start();
   ozonLabelSync.start();
+  ozonStatusSync.start();
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +85,7 @@ async function shutdown(signal) {
   wbStatsRegionSync.stop();
   markingWithdrawalExport.stop();
   ozonLabelSync.stop();
+  ozonStatusSync.stop();
 
   if (server) {
     server.close(async () => {

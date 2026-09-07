@@ -5,6 +5,7 @@ const ozonClient = require('./ozon.client');
 const { resolveOrCreateItem } = require('../masterdata/items/items.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const { resolvePrinter } = require('../printing/printerResolver');
+const shippingService = require('../shipping/shipping.service');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
 
@@ -44,6 +45,18 @@ async function listActiveAccounts(tenantId) {
     [tenantId]
   );
   return r.rows;
+}
+
+/** Все тенанты с включённым модулем ozon_integration (задача #75, тот же
+ *  паттерн, что и listTenantsWithWbIntegration в wb.service.js) — нужен
+ *  фоновым джобам, которые обходят ВСЕХ клиентов платформы, а не один тенант. */
+async function listTenantsWithOzonIntegration() {
+  const r = await query(
+    `SELECT t.id FROM platform.tenants t
+     JOIN platform.tenant_modules tm ON tm.tenant_id = t.id AND tm.module_code = 'ozon_integration'
+     WHERE t.status IN ('trial','active')`
+  );
+  return r.rows.map(row => row.id);
 }
 
 /**
@@ -549,8 +562,74 @@ async function fetchLabelsForReadyPostings({ limit = 50, minAgeSeconds = 55, max
   return { checked: dueRes.rowCount, fetched, notReady, failed, noPrinter };
 }
 
+/**
+ * Обратный синк статусов (задача #75, первая половина — пуш остатков
+ * сознательно отложен отдельной задачей, см. обсуждение с пользователем
+ * 07.09.2026: у стока риск повторить инцидент с перепродажей, который уже
+ * был у WB, а у Ozon-аккаунтов пуш остатков и так выключен по умолчанию).
+ *
+ * syncAllAccountsForTenant уже обновляет wms.ozon_postings.status на каждый
+ * тик (ON CONFLICT ... DO UPDATE SET status=EXCLUDED.status в
+ * syncPostingsForAccount) — этого достаточно для отображения статуса в самой
+ * вкладке "Отправления". Здесь — дополнительный шаг: если Ozon сообщил, что
+ * отправление отменено или доставлено, а НАША локальная отгрузка (wms.shipments)
+ * всё ещё висит в незакрытом статусе, доводим её до конца сами, теми же
+ * функциями, что уже использует ручное управление отгрузками:
+ *   - status='cancelled' у Ozon -> shippingService.cancelShipment (снимает
+ *     резервы, закрывает волну/задачи сборки — как ручная кнопка "Отменить
+ *     отгрузку", см. задачу #70) — иначе отменённый на стороне Ozon заказ
+ *     навсегда зависает активной волной в "Диспетчерской".
+ *   - status='delivered' у Ozon -> shippingService.markDelivered, но ТОЛЬКО
+ *     если наша отгрузка уже в 'in_transit' (сама функция это и проверяет) -
+ *     не форсируем более ранние статусы, чтобы не "телепортировать" отгрузку
+ *     через несобранные/неотгруженные шаги.
+ * Каждая отгрузка — отдельная try/catch: ошибка по одной не должна останавливать
+ * обработку остальных (тот же принцип, что и в остальных Ozon/WB джобах).
+ */
+async function reflectTerminalStatusesForTenant(tenantId) {
+  let cancelled = 0, delivered = 0, errors = 0;
+
+  const cancelledRes = await query(
+    `SELECT op.posting_number FROM wms.ozon_postings op
+     JOIN wms.shipments s ON s.tenant_id=op.tenant_id AND s.external_id=op.posting_number
+     WHERE op.tenant_id=$1 AND op.status='cancelled' AND s.status NOT IN ('done','cancelled')`,
+    [tenantId]
+  );
+  for (const row of cancelledRes.rows) {
+    try {
+      await shippingService.cancelShipment({
+        tenantId, shipmentCode: row.posting_number, userId: null,
+        reason: 'Отправление отменено на стороне Ozon (автоматически, обратный синк статусов)',
+      });
+      cancelled++;
+    } catch (e) {
+      errors++;
+      logger.warn({ err: e, tenantId, postingNumber: row.posting_number }, 'Ozon status-sync: cancelShipment failed');
+    }
+  }
+
+  const deliveredRes = await query(
+    `SELECT op.posting_number FROM wms.ozon_postings op
+     JOIN wms.shipments s ON s.tenant_id=op.tenant_id AND s.external_id=op.posting_number
+     WHERE op.tenant_id=$1 AND op.status='delivered' AND s.status='in_transit'`,
+    [tenantId]
+  );
+  for (const row of deliveredRes.rows) {
+    try {
+      await shippingService.markDelivered({ tenantId, shipmentCode: row.posting_number, userId: null });
+      delivered++;
+    } catch (e) {
+      errors++;
+      logger.warn({ err: e, tenantId, postingNumber: row.posting_number }, 'Ozon status-sync: markDelivered failed');
+    }
+  }
+
+  return { cancelled, delivered, errors };
+}
+
 module.exports = {
   listActiveAccounts,
+  listTenantsWithOzonIntegration,
   getMpAccount,
   syncPostingsForAccount,
   syncAllAccountsForTenant,
@@ -559,4 +638,5 @@ module.exports = {
   listCatalogForAccount,
   shipPostingForShipment,
   fetchLabelsForReadyPostings,
+  reflectTerminalStatusesForTenant,
 };
