@@ -33,6 +33,20 @@ router.post('/wave/take', requireRole('tenant_admin','supervisor','picker'), asy
   } catch(e){ next(e); }
 });
 
+/** POST /picking/wave/:id/reset — сбросить зависшую волну (диспетчерская) */
+router.post('/wave/:id/reset', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const waveId = validatePositiveInt(req.params.id, 'id');
+    const result = await svc.resetWave({
+      tenantId:      req.user.tenantId,
+      waveId,
+      actorId:       req.user.id,
+      actorUsername: req.user.username,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** GET /picking/wave/status — статус волны текущего picker'а */
 router.get('/wave/status', requireRole('tenant_admin','supervisor','picker'), async (req,res,next)=>{
   try {

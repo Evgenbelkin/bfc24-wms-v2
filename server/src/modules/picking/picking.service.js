@@ -203,6 +203,55 @@ async function takeWave({ tenantId, pickerId }) {
   });
 }
 
+/**
+ * Сбросить "зависшую" волну — сборщик взял её в работу (status='active'/
+ * 'offered'), но физически бросил (пропал, не закрыл сканом ячейки буфера) -
+ * в диспетчерской такая волна долго висит "в простое" без прогресса, и до
+ * этой функции единственным способом её высвободить было лезть прямо в БД.
+ * Снимаем picker_id с волны и НЕзавершённых заданий (status IN ('new',
+ * 'in_progress')) - они возвращаются в свободный пул и их сможет забрать
+ * любой другой сборщик через обычный "взять волну". Уже собранные (done),
+ * пропущенные (skipped) и отменённые (cancelled) задания НЕ трогаем - их
+ * прогресс/решение сохраняется как есть, в том числе частично собранные
+ * (qty_picked>0, status='in_progress') - qty_picked не обнуляем, новый
+ * сборщик продолжит с того места, докуда физически успели собрать.
+ * Обсуждение с пользователем 07.09.2026 (диспетчерская, зависшая волна 38+ч).
+ */
+async function resetWave({ tenantId, waveId, actorId, actorUsername }) {
+  return transaction(async (client) => {
+    const wRes = await client.query(
+      `SELECT * FROM wms.pick_waves WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+      [tenantId, waveId]
+    );
+    if (wRes.rowCount === 0) throw new NotFoundError('Wave', waveId);
+    const wave = wRes.rows[0];
+    if (!['active', 'offered'].includes(wave.status)) {
+      throw new ValidationError(
+        `Волна в статусе '${wave.status}' не назначена сборщику сейчас — сбрасывать нечего.`
+      );
+    }
+
+    const tasksRes = await client.query(
+      `UPDATE wms.picking_tasks
+       SET picker_id=NULL, status='new', updated_at=NOW(), updated_by=$1
+       WHERE wave_id=$2 AND status IN ('new','in_progress')
+       RETURNING id`,
+      [actorId, wave.id]
+    );
+
+    const noteLine = `Сброшена вручную (${actorUsername || 'supervisor'}, ${new Date().toISOString()}) — возвращено в пул заданий: ${tasksRes.rowCount}.`;
+    await client.query(
+      `UPDATE wms.pick_waves
+       SET status='open', picker_id=NULL, accepted_at=NULL, updated_at=NOW(),
+           notes=CASE WHEN notes IS NULL OR notes='' THEN $1 ELSE notes || E'\n' || $1 END
+       WHERE id=$2`,
+      [noteLine, wave.id]
+    );
+
+    return { ok: true, waveId: wave.id, tasksReturned: tasksRes.rowCount };
+  });
+}
+
 /** Следующая задача для picker'а */
 async function getNextTask({ tenantId, pickerId, shipmentCode }) {
   // Сначала — задача в in_progress у этого picker
@@ -1496,7 +1545,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
 }
 
 module.exports = {
-  listWaves, getWaveByShipmentCode, takeWave,
+  listWaves, getWaveByShipmentCode, takeWave, resetWave,
   getNextTask, scanLocation, scanItem, scanItemQty, skipTask,
   listSkippedTasks, requeueSkippedTask,
   closeWave, getWaveStatus,
