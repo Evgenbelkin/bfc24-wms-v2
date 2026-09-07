@@ -231,6 +231,28 @@ async function resetWave({ tenantId, waveId, actorId, actorUsername }) {
       );
     }
 
+    // Защита от ложного срабатывания (обсуждение с пользователем 07.09.2026):
+    // волна может "зависнуть" не только потому что сборщик её физически
+    // бросил, но и потому что саму отгрузку закрыли В ОБХОД ВМС (продавец
+    // отгрузил прямо в кабинете WB, см. cancelShipment в shipping.service.js)
+    // - тогда собирать уже нечего, товар физически уехал, и вернуть волну в
+    // очередь на сборку было бы неправильно (сборщик пойдёт искать то, чего
+    // уже нет). Если у этой волны уже есть реальная отгрузка НЕ в статусе
+    // 'new'/'picking' - значит с ней что-то уже сделали помимо сборки, и
+    // правильный инструмент тут "Отменить отгрузку" в карточке отгрузки, а
+    // не сброс волны.
+    const shipRes = await client.query(
+      `SELECT status FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 ORDER BY id DESC LIMIT 1`,
+      [tenantId, wave.shipment_code]
+    );
+    if (shipRes.rowCount > 0 && !['new', 'picking'].includes(shipRes.rows[0].status)) {
+      throw new ValidationError(
+        `Отгрузка '${wave.shipment_code}' уже в статусе '${shipRes.rows[0].status}' (не 'сборка') — похоже, с ней что-то ` +
+        `сделали помимо сборки (например, отгрузили в обход ВМС). Возвращать волну в очередь на сборку не нужно — ` +
+        `откройте карточку этой отгрузки в модуле "Отгрузка" и используйте там кнопку "Отменить отгрузку".`
+      );
+    }
+
     const tasksRes = await client.query(
       `UPDATE wms.picking_tasks
        SET picker_id=NULL, status='new', updated_at=NOW(), updated_by=$1
