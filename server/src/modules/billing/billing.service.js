@@ -846,13 +846,22 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     [...baseParams, granularity]
   );
 
-  // Оплачено по периодам — момент перехода в статус paid (paid_at)
+  // Оплачено по периодам — раньше брали inv.paid_at (момент, когда счёт
+  // ЦЕЛИКОМ закрывался), но с частичной оплатой (миграция 059) деньги могут
+  // приходить несколькими платежами в разные дни, а счёт при этом остаётся
+  // 'sent' до последней части — inv.paid_at так и не проставляется, и график
+  // "Оплачено" показывал 0 даже при реально полученных деньгах. Источник
+  // истины теперь billing.invoice_payments — каждая строка уже несёт свою
+  // фактическую дату оплаты (paid_at), независимо от того, закрыла она счёт
+  // целиком или нет.
+  const paidClientCond = clientId ? ` AND inv.client_id=$4` : '';
   const paidSeriesRes = await query(
-    `SELECT date_trunc($${baseParams.length + 1}, inv.paid_at)::date AS period,
-            SUM(inv.total_amount)::numeric AS total
-     FROM billing.invoices inv
-     WHERE inv.tenant_id=$1 AND inv.paid_at IS NOT NULL
-       AND inv.paid_at::date>=$2::date AND inv.paid_at::date<=$3::date${clientCond}
+    `SELECT date_trunc($${baseParams.length + 1}, ip.paid_at::timestamp)::date AS period,
+            SUM(ip.amount)::numeric AS total
+     FROM billing.invoice_payments ip
+     JOIN billing.invoices inv ON inv.id = ip.invoice_id
+     WHERE inv.tenant_id=$1
+       AND ip.paid_at>=$2::date AND ip.paid_at<=$3::date${paidClientCond}
      GROUP BY period
      ORDER BY period`,
     [...baseParams, granularity]
@@ -875,20 +884,19 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     [...baseParams, granularity]
   );
 
-  // Разбивка по клиентам за весь период: сколько выставлено/оплачено внутри
-  // диапазона дат, плюс ТЕКУЩИЙ непогашенный остаток (status='sent') —
-  // это снимок на сейчас, а не событие внутри диапазона, поэтому считается
-  // без фильтра по датам.
+  // Разбивка по клиентам за весь период: сколько выставлено внутри диапазона
+  // дат, плюс ТЕКУЩИЙ непогашенный остаток (status='sent', за вычетом уже
+  // полученных частичных оплат — total_amount-paid_amount, не total_amount
+  // целиком, см. миграцию 059) — это снимок на сейчас, а не событие внутри
+  // диапазона, поэтому считается без фильтра по датам. paid_total сюда
+  // больше не входит — он теперь из billing.invoice_payments, см. ниже.
   const byClientCond = clientId ? ` AND inv.client_id=$4` : '';
   const byClientRes = await query(
     `SELECT inv.client_id, c.client_name,
             COALESCE(SUM(inv.total_amount) FILTER (
               WHERE inv.sent_at IS NOT NULL AND inv.sent_at::date>=$2::date AND inv.sent_at::date<=$3::date
             ), 0)::numeric AS sent_total,
-            COALESCE(SUM(inv.total_amount) FILTER (
-              WHERE inv.paid_at IS NOT NULL AND inv.paid_at::date>=$2::date AND inv.paid_at::date<=$3::date
-            ), 0)::numeric AS paid_total,
-            COALESCE(SUM(inv.total_amount) FILTER (WHERE inv.status='sent'), 0)::numeric AS outstanding_total
+            COALESCE(SUM(inv.total_amount - inv.paid_amount) FILTER (WHERE inv.status='sent'), 0)::numeric AS outstanding_total
      FROM billing.invoices inv
      JOIN wms.clients c ON c.id = inv.client_id
      WHERE inv.tenant_id=$1${byClientCond}
@@ -896,14 +904,30 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
      HAVING SUM(inv.total_amount) FILTER (
               WHERE inv.sent_at IS NOT NULL AND inv.sent_at::date>=$2::date AND inv.sent_at::date<=$3::date
             ) IS NOT NULL
-         OR SUM(inv.total_amount) FILTER (WHERE inv.status='sent') > 0
+         OR SUM(inv.total_amount - inv.paid_amount) FILTER (WHERE inv.status='sent') > 0
      ORDER BY outstanding_total DESC, sent_total DESC`,
     baseParams
   );
 
-  // Текущий непогашенный остаток (снимок на сейчас), для KPI-плашки
+  // Оплачено по клиентам за период — из billing.invoice_payments (тот же
+  // источник, что paidSeriesRes выше), отдельным запросом и мёрджем в карту
+  // ниже (тем же паттерном, что uninvoicedRes) — клиент может получить
+  // платёж в периоде, даже если счёт не выставлялся/не гасился в этом же
+  // периоде.
+  const paidByClientRes = await query(
+    `SELECT inv.client_id, c.client_name, SUM(ip.amount)::numeric AS total
+     FROM billing.invoice_payments ip
+     JOIN billing.invoices inv ON inv.id = ip.invoice_id
+     JOIN wms.clients c ON c.id = inv.client_id
+     WHERE inv.tenant_id=$1 AND ip.paid_at>=$2::date AND ip.paid_at<=$3::date${paidClientCond}
+     GROUP BY inv.client_id, c.client_name`,
+    baseParams
+  );
+
+  // Текущий непогашенный остаток (снимок на сейчас), для KPI-плашки — тоже
+  // за вычетом уже полученных частичных оплат.
   const outstandingRes = await query(
-    `SELECT COALESCE(SUM(inv.total_amount),0)::numeric AS total, COUNT(*)::int AS n
+    `SELECT COALESCE(SUM(inv.total_amount - inv.paid_amount),0)::numeric AS total, COUNT(*)::int AS n
      FROM billing.invoices inv
      WHERE inv.tenant_id=$1 AND inv.status='sent'${clientId ? ' AND inv.client_id=$2' : ''}`,
     clientId ? [tenantId, clientId] : [tenantId]
@@ -927,27 +951,30 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
   const sentTotal = sentSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
   const paidTotal  = paidSeriesRes.rows.reduce((s, r) => s + Number(r.total), 0);
 
-  // Мёрджим разбивку по счетам (byClientRes) и по неучтённым начислениям
-  // (uninvoicedRes) в единую карту по client_id — клиент может присутствовать
-  // только в одном из источников (например, ни разу не выставляли счёт, но
-  // начисления уже копятся).
+  // Мёрджим разбивку по счетам (byClientRes), оплатам (paidByClientRes) и по
+  // неучтённым начислениям (uninvoicedRes) в единую карту по client_id —
+  // клиент может присутствовать только в части источников (например, ни разу
+  // не выставляли счёт, но начисления уже копятся; или счёт выставлен давно,
+  // а платёж пришёл только в этом периоде).
   const byClientMap = new Map();
+  const getOrCreateClient = (id, name) => {
+    let entry = byClientMap.get(id);
+    if (!entry) {
+      entry = { client_id: id, client_name: name, sent_total: 0, paid_total: 0, outstanding_total: 0, uninvoiced_total: 0 };
+      byClientMap.set(id, entry);
+    }
+    return entry;
+  };
   for (const r of byClientRes.rows) {
-    byClientMap.set(r.client_id, {
-      client_id: r.client_id, client_name: r.client_name,
-      sent_total: Number(r.sent_total), paid_total: Number(r.paid_total),
-      outstanding_total: Number(r.outstanding_total), uninvoiced_total: 0,
-    });
+    const entry = getOrCreateClient(r.client_id, r.client_name);
+    entry.sent_total = Number(r.sent_total);
+    entry.outstanding_total = Number(r.outstanding_total);
+  }
+  for (const r of paidByClientRes.rows) {
+    getOrCreateClient(r.client_id, r.client_name).paid_total = Number(r.total);
   }
   for (const r of uninvoicedRes.rows) {
-    const existing = byClientMap.get(r.client_id);
-    if (existing) { existing.uninvoiced_total = Number(r.total); }
-    else {
-      byClientMap.set(r.client_id, {
-        client_id: r.client_id, client_name: r.client_name,
-        sent_total: 0, paid_total: 0, outstanding_total: 0, uninvoiced_total: Number(r.total),
-      });
-    }
+    getOrCreateClient(r.client_id, r.client_name).uninvoiced_total = Number(r.total);
   }
   const byClient = [...byClientMap.values()]
     .sort((a, b) => (b.outstanding_total + b.uninvoiced_total) - (a.outstanding_total + a.uninvoiced_total));
