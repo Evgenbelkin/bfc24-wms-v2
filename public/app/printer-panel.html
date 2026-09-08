@@ -171,6 +171,7 @@ var ZONE_TYPES = [{
 var warehouses = [];
 var printersList = [];
 var workstationsList = [];
+var jobsList = [];
 var routesLoaded = false,
   jobsLoaded = false,
   workstationsLoaded = false;
@@ -1010,6 +1011,7 @@ function _loadJobs() {
         case 1:
           res = _context14.v;
           jobs = res.data || [];
+          jobsList = jobs;
           document.getElementById('job-count').textContent = jobs.length;
           list = document.getElementById('job-list');
           if (jobs.length) {
@@ -1022,7 +1024,7 @@ function _loadJobs() {
           list.innerHTML = jobs.map(function (j) {
             return "\n          <div class=\"list-row\">\n            <div class=\"main\">\n              <div class=\"title\">".concat(UI.escHtml((DOC_TYPES.find(function (d) {
               return d.value === j.doc_type;
-            }) || {}).label || j.doc_type), " <span class=\"pill ").concat(JOB_STATUS_PILL[j.status] || 'pill-gray', "\">").concat(JOB_STATUS_LABELS[j.status] || j.status, "</span></div>\n              <div class=\"sub\">").concat(UI.escHtml(j.printer_name), " \xB7 ").concat(UI.fmtDateTime(j.created_at), " ").concat(j.error_text ? '· <span style=\"color:var(--red)\">' + UI.escHtml(j.error_text) + '</span>' : '', "</div>\n            </div>\n            <div style=\"display:flex;gap:6px;\">\n              ").concat(j.status === 'error' || j.status === 'printed' || j.status === 'new' ? "<button class=\"btn-sm btn-back\" onclick=\"reprintJob(".concat(j.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M23 4v6h-6\"/><path d=\"M1 20v-6h6\"/><path d=\"M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15\"/></svg> \u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C</button>") : '', "\n              ").concat(j.status === 'new' || j.status === 'processing' ? "<button class=\"btn-sm btn-red\" onclick=\"cancelJob(".concat(j.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C</button>") : '', "\n            </div>\n          </div>\n        ");
+            }) || {}).label || j.doc_type), " <span class=\"pill ").concat(JOB_STATUS_PILL[j.status] || 'pill-gray', "\">").concat(JOB_STATUS_LABELS[j.status] || j.status, "</span></div>\n              <div class=\"sub\">").concat(UI.escHtml(j.printer_name), " \xB7 ").concat(UI.fmtDateTime(j.created_at), " ").concat(j.error_text ? '· <span style=\"color:var(--red)\">' + UI.escHtml(j.error_text) + '</span>' : '', "</div>\n            </div>\n            <div style=\"display:flex;gap:6px;\">\n              ").concat(j.payload_json && j.payload_json.pdf_base64 ? '<button class="btn-sm btn-green" onclick="openJobPdf(' + j.id + ')">Открыть PDF</button>' : '', "\n              ").concat(j.status === 'error' || j.status === 'printed' || j.status === 'new' ? "<button class=\"btn-sm btn-back\" onclick=\"reprintJob(".concat(j.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M23 4v6h-6\"/><path d=\"M1 20v-6h6\"/><path d=\"M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15\"/></svg> \u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C</button>") : '', "\n              ").concat(j.status === 'new' || j.status === 'processing' ? "<button class=\"btn-sm btn-red\" onclick=\"cancelJob(".concat(j.id, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C</button>") : '', "\n            </div>\n          </div>\n        ");
           }).join('');
           _context14.n = 4;
           break;
@@ -1104,6 +1106,27 @@ function _cancelJob() {
     }, _callee16, null, [[1, 4]]);
   }));
   return _cancelJob.apply(this, arguments);
+}
+// Открыть PDF из payload_json задания печати прямо в браузере — без
+// физического принтера/агента посмотреть, что реально пришло (например,
+// этикетка Ozon, см. doc_type=ozon_label), было нечем. pdf_base64 уже лежит
+// в ответе GET /printing/jobs (pj.* включает payload_json), просто раньше
+// нигде не отображался. Обычная синхронная функция (без async) — тут не
+// нужен отдельный запрос к серверу.
+function openJobPdf(jobId) {
+  var job = jobsList.find(function (j) { return j.id === jobId; });
+  var b64 = job && job.payload_json && job.payload_json.pdf_base64;
+  if (!b64) { UI.notify.err('В этом задании нет PDF (это не Ozon-этикетка или файл другого формата)'); return; }
+  try {
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+    var blob = new Blob([bytes], { type: 'application/pdf' });
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  } catch (e) {
+    UI.notify.err('Не удалось открыть PDF: ' + e.message);
+  }
 }
 _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
   return _regenerator().w(function (_context) {
