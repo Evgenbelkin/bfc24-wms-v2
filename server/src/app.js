@@ -171,7 +171,7 @@ app.use(config.server.apiPrefix, (req, res, next) => {
 // позволить более щедрый предел, не открывая дыру для злоупотреблений.
 const agentLimiter = rateLimit({
   windowMs: 60_000,
-  max: 600,
+  max: config.rateLimit.agentMax,
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, error: { code: 'RATE_LIMIT', message: 'Too many requests' } },
