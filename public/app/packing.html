@@ -458,7 +458,15 @@ function renderLines() {
     }).join(''), "</div>") : '';
     return "\n          <div class=\"line-row\" style=\"".concat(justScanned ? 'background:#dcfce7;border-radius:10px;padding-left:6px;' : isNext ? 'background:#dbeafe;border-radius:10px;padding-left:6px;' : '', "\">\n            ").concat(photo, "\n            <div class=\"main\" style=\"flex:1;min-width:0;\">\n              <div class=\"line-name\">").concat(UI.escHtml(l.item_name || l.barcode)).concat(isNext ? '<span class="line-next-tag">Далее</span>' : '', "</div>\n              <div class=\"line-barcode\">").concat([l.vendor_code, l.size ? 'р.' + l.size : null, l.barcode].filter(Boolean).map(UI.escHtml).join(' · '), "</div>\n              ").concat(fmtPackagingMaterialsHint(l.packaging_materials), "\n              ").concat(stickersHtml, "\n            </div>\n            <div class=\"line-progress\" style=\"color:").concat(done ? 'var(--green2)' : 'var(--amber)', "\">\n              ").concat(done ? '<svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg>' : '', " ").concat(l.qty_packed || 0, "/").concat(l.qty_plan || 0, "\n            </div>\n          </div>\n        ");
   }).join('') || "<div class=\"empty-state\">\u041D\u0435\u0442 \u0441\u0442\u0440\u043E\u043A</div>";
-  preloadLineStickers();
+  // Preload kartinok stickerov ubran otsyuda (08.09.2026): na volne 30-40
+  // pozitsiy preloadLineStickers() zapuskal desyatki parallelnyh zaprosov
+  // srazu posle rendera; brauzer ogranichivaet chislo parallelnyh soedineniy
+  // na domen (~6), i zapros ocherednogo skana tovara realno vstaval v
+  // ochered pozadi etih kartinok - polzovatelyu kazalos, chto sborka
+  // "zavisaet" poka ne progruzitsya sticker. Kartinka teper gruzitsya tolko
+  // po kliku na chip, sm. openStickerChip() - sam kod stickera pri etom
+  // viden srazu (on prihodit vmeste so spiskom strok), dostatochno dlya
+  // sverki i pechati.
 }
 
 // Картинки стикеров не приходят вместе со списком строк (см. комментарий
