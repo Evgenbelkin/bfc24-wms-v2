@@ -137,6 +137,17 @@ const globalLimiter = rateLimit({
   // В dev не ограничиваем localhost; /printer-agent живёт на отдельном, более
   // щедром лимите ниже — см. комментарий там про причину.
   skip: (req) => (config.isDev && req.ip === '::1') || req.path.startsWith('/printer-agent'),
+  // express-rate-limit САМ дополнительно проверяет заголовок X-Forwarded-For
+  // поверх express'овского 'trust proxy' (который у нас уже корректно и
+  // осознанно настроен на 'loopback' выше) — и на этой связке (nginx на том
+  // же хосте, Node видит адрес как '::ffff:127.0.0.1') эта ДОБАВОЧНАЯ проверка
+  // ложно кидает ERR_ERL_UNEXPECTED_X_FORWARDED_FOR буквально на каждый
+  // запрос (обнаружено 08.09.2026 по завалу error.log и стабильно высокому
+  // CPU — throw/catch на каждый запрос не бесплатен, особенно при частом
+  // опросе от printer-agent). Отключаем только эту избыточную проверку —
+  // сам trust proxy и основанное на нём ограничение по IP продолжают
+  // работать как прежде.
+  validate: { xForwardedForHeader: false },
 });
 
 app.use(config.server.apiPrefix, globalLimiter);
@@ -164,6 +175,11 @@ const agentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, error: { code: 'RATE_LIMIT', message: 'Too many requests' } },
+  // См. комментарий у globalLimiter про ERR_ERL_UNEXPECTED_X_FORWARDED_FOR —
+  // этот лимитер видит основную часть трафика (частый опрос от printer-agent),
+  // поэтому именно на нём эффект от лишнего throw/catch на каждый запрос
+  // был особенно заметен.
+  validate: { xForwardedForHeader: false },
 });
 app.use(`${config.server.apiPrefix}/printer-agent`, agentLimiter);
 

@@ -36,6 +36,9 @@ const registerLimiter = rateLimit({
   message:  { ok: false, error: { code: 'RATE_LIMIT', message: 'Слишком много попыток регистрации. Попробуйте позже.' } },
   standardHeaders: true,
   legacyHeaders:   false,
+  // См. комментарий у globalLimiter в app.js про ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+  // (trust proxy 'loopback' настроен верно, это лишняя проверка самого пакета).
+  validate: { xForwardedForHeader: false },
 });
 
 router.post('/register', registerLimiter, async (req, res, next) => {
