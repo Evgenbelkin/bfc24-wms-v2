@@ -311,7 +311,7 @@ async function listInvoices({ tenantId, clientId = null, status = null, limit = 
   params.push(Math.min(limit, 500), Math.max(offset, 0));
   const r = await query(
     `SELECT inv.id, inv.invoice_number, inv.period_from, inv.period_to,
-            inv.total_amount, inv.currency, inv.status, inv.notes,
+            inv.total_amount, inv.paid_amount, inv.currency, inv.status, inv.notes,
             inv.created_at, inv.updated_at,
             c.client_name,
             (SELECT COUNT(*)::int FROM billing.service_charges sc WHERE sc.invoice_id=inv.id) AS charges_count
@@ -448,6 +448,111 @@ async function updateInvoiceStatus({ tenantId, invoiceId, status, notes }) {
     }
 
     return r.rows[0];
+  });
+}
+
+// ─────────────── Оплаты счёта (частичная оплата) ───────────────
+//
+// См. миграцию 059 — журнал фактических поступлений, invoices.paid_amount
+// денормализован и пересчитывается здесь при каждом изменении.
+
+/** Добавить платёж по счёту. Автоматически переводит счёт в 'paid', когда
+ *  сумма всех оплат достигает total_amount — до этого статус не трогаем
+ *  (остаётся 'sent'), деньги просто накапливаются в paid_amount. */
+async function addInvoicePayment({ tenantId, invoiceId, amount, paidAt, comment, userId }) {
+  const amt = Number(amount);
+  if (!(amt > 0)) throw new ValidationError('amount must be a positive number');
+  if (!paidAt) throw new ValidationError('paid_at is required');
+
+  return transaction(async (client) => {
+    const invRes = await client.query(
+      `SELECT id, status, total_amount, paid_amount FROM billing.invoices WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [invoiceId, tenantId]
+    );
+    if (invRes.rowCount === 0) throw new NotFoundError('Invoice', invoiceId);
+    const invoice = invRes.rows[0];
+    if (invoice.status === 'cancelled') {
+      throw new ValidationError('Cannot add a payment to a cancelled invoice');
+    }
+
+    const newPaid = Number(invoice.paid_amount) + amt;
+    // Небольшой допуск на копейки округления, не строгое равенство.
+    if (newPaid > Number(invoice.total_amount) + 0.01) {
+      throw new ValidationError(
+        `Payment exceeds invoice total: already paid ${invoice.paid_amount}, +${amt.toFixed(2)} would be ${newPaid.toFixed(2)}, invoice total is ${invoice.total_amount}`
+      );
+    }
+
+    await client.query(
+      `INSERT INTO billing.invoice_payments(tenant_id, invoice_id, amount, paid_at, comment, created_by)
+       VALUES($1,$2,$3,$4,$5,$6)`,
+      [tenantId, invoiceId, amt.toFixed(2), paidAt, comment || null, userId || null]
+    );
+
+    const becomesFullyPaid = newPaid >= Number(invoice.total_amount) - 0.01;
+    const r = await client.query(
+      `UPDATE billing.invoices
+       SET paid_amount=$1, updated_at=NOW(),
+           status  = CASE WHEN $2 THEN 'paid' ELSE status END,
+           paid_at = CASE WHEN $2 THEN COALESCE(paid_at, NOW()) ELSE paid_at END
+       WHERE id=$3
+       RETURNING id, invoice_number, status, paid_amount, total_amount, paid_at`,
+      [newPaid.toFixed(2), becomesFullyPaid, invoiceId]
+    );
+    return r.rows[0];
+  });
+}
+
+async function listInvoicePayments({ tenantId, invoiceId }) {
+  const r = await query(
+    `SELECT ip.id, ip.amount, ip.paid_at, ip.comment, ip.created_at, u.username AS created_by_name
+     FROM billing.invoice_payments ip
+     LEFT JOIN wms.users u ON u.id = ip.created_by
+     WHERE ip.tenant_id=$1 AND ip.invoice_id=$2
+     ORDER BY ip.paid_at DESC, ip.id DESC`,
+    [tenantId, invoiceId]
+  );
+  return r.rows;
+}
+
+/** Удалить ошибочно внесённый платёж — пересчитывает paid_amount и, если
+ *  счёт из-за этого перестал быть полностью оплачен, откатывает status
+ *  'paid' -> 'sent' (иначе он навсегда завис бы "оплаченным" без реальных
+ *  денег, а updateInvoiceStatus в принципе запрещает трогать paid вручную —
+ *  здесь это не ручное изменение статуса, а исправление причины, из-за
+ *  которой он таким стал). */
+async function deleteInvoicePayment({ tenantId, invoiceId, paymentId }) {
+  return transaction(async (client) => {
+    const payRes = await client.query(
+      `SELECT amount FROM billing.invoice_payments WHERE id=$1 AND tenant_id=$2 AND invoice_id=$3 FOR UPDATE`,
+      [paymentId, tenantId, invoiceId]
+    );
+    if (payRes.rowCount === 0) throw new NotFoundError('Payment', paymentId);
+    const amt = Number(payRes.rows[0].amount);
+
+    const invRes = await client.query(
+      `SELECT status, total_amount, paid_amount FROM billing.invoices WHERE id=$1 AND tenant_id=$2 FOR UPDATE`,
+      [invoiceId, tenantId]
+    );
+    if (invRes.rowCount === 0) throw new NotFoundError('Invoice', invoiceId);
+    const invoice = invRes.rows[0];
+    if (invoice.status === 'cancelled') {
+      throw new ValidationError('Cannot modify payments on a cancelled invoice');
+    }
+
+    await client.query(`DELETE FROM billing.invoice_payments WHERE id=$1`, [paymentId]);
+
+    const newPaid = Math.max(0, Number(invoice.paid_amount) - amt);
+    const stillFullyPaid = newPaid >= Number(invoice.total_amount) - 0.01;
+    await client.query(
+      `UPDATE billing.invoices
+       SET paid_amount=$1, updated_at=NOW(),
+           status  = CASE WHEN status='paid' AND NOT $2 THEN 'sent' ELSE status END,
+           paid_at = CASE WHEN NOT $2 THEN NULL ELSE paid_at END
+       WHERE id=$3`,
+      [newPaid.toFixed(2), stillFullyPaid, invoiceId]
+    );
+    return { ok: true, invoiceId, paid_amount: newPaid };
   });
 }
 
@@ -864,16 +969,25 @@ async function getInvoiceAnalytics({ tenantId, clientId = null, dateFrom, dateTo
 
 // ─────────────── Summary ───────────────
 
+/**
+ * Баланс клиента. Раньше "выставлено, не оплачено" считалось по начислениям
+ * счетов со status='sent' целиком (SUM total_amount) — с появлением частичной
+ * оплаты (миграция 059) это стало неточным: счёт, оплаченный на 100 000 из
+ * 116 654.80, всё ещё status='sent', и старый запрос показал бы весь остаток
+ * невыставленным, "теряя" уже полученные деньги. Считаем теперь от самих
+ * счетов (total_amount - paid_amount), а не от привязанных к ним начислений.
+ */
 async function getClientBalance({ tenantId, clientId }) {
   const r = await query(
     `SELECT
-       SUM(sc.total_amount) FILTER(WHERE sc.is_invoiced=FALSE)::numeric AS uninvoiced_total,
-       SUM(sc.total_amount) FILTER(WHERE inv.status='sent')::numeric    AS invoiced_unpaid,
-       SUM(sc.total_amount) FILTER(WHERE inv.status='paid')::numeric    AS total_paid,
-       COUNT(*) FILTER(WHERE sc.is_invoiced=FALSE)::int AS uninvoiced_count
-     FROM billing.service_charges sc
-     LEFT JOIN billing.invoices inv ON inv.id=sc.invoice_id
-     WHERE sc.tenant_id=$1 AND sc.client_id=$2`,
+       (SELECT COALESCE(SUM(sc.total_amount),0)::numeric FROM billing.service_charges sc
+          WHERE sc.tenant_id=$1 AND sc.client_id=$2 AND sc.is_invoiced=FALSE) AS uninvoiced_total,
+       (SELECT COALESCE(SUM(inv.total_amount - inv.paid_amount),0)::numeric FROM billing.invoices inv
+          WHERE inv.tenant_id=$1 AND inv.client_id=$2 AND inv.status='sent') AS invoiced_unpaid,
+       (SELECT COALESCE(SUM(inv.paid_amount),0)::numeric FROM billing.invoices inv
+          WHERE inv.tenant_id=$1 AND inv.client_id=$2 AND inv.status IN ('sent','paid')) AS total_paid,
+       (SELECT COUNT(*)::int FROM billing.service_charges sc
+          WHERE sc.tenant_id=$1 AND sc.client_id=$2 AND sc.is_invoiced=FALSE) AS uninvoiced_count`,
     [tenantId, clientId]
   );
   return r.rows[0];
@@ -891,6 +1005,9 @@ module.exports = {
   getInvoice,
   createInvoice,
   updateInvoiceStatus,
+  addInvoicePayment,
+  listInvoicePayments,
+  deleteInvoicePayment,
   getClientBalance,
   getRevenueAnalytics,
   getInvoiceAnalytics,

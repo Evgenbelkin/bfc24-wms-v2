@@ -29,6 +29,9 @@ router.use(authRequired, tenantMiddleware, requireModule('billing'));
 // GET  /billing/invoices/:id          — детальный инвойс
 // POST /billing/invoices              — создать инвойс за период
 // PATCH /billing/invoices/:id/status  — обновить статус
+// GET    /billing/invoices/:id/payments             — история платежей по счёту
+// POST   /billing/invoices/:id/payments             — внести (частичную) оплату
+// DELETE /billing/invoices/:id/payments/:paymentId  — удалить ошибочный платёж
 //
 // --- Analytics ---
 // GET /billing/analytics/revenue      — динамика выручки
@@ -221,6 +224,43 @@ router.patch('/invoices/:id/status', requireRole('tenant_admin'), async (req, re
       invoiceId: validatePositiveInt(req.params.id, 'id'),
       status:    req.body.status,
       notes:     req.body.notes || null,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+// ─────────────── Оплаты счёта (частичная оплата, см. миграцию 059) ───────────────
+
+router.get('/invoices/:id/payments', requireRole('tenant_admin','supervisor','analyst'), async (req, res, next) => {
+  try {
+    const payments = await svc.listInvoicePayments({
+      tenantId:  req.user.tenantId,
+      invoiceId: validatePositiveInt(req.params.id, 'id'),
+    });
+    res.json({ ok: true, payments });
+  } catch (e) { next(e); }
+});
+
+router.post('/invoices/:id/payments', requireRole('tenant_admin'), async (req, res, next) => {
+  try {
+    const invoice = await svc.addInvoicePayment({
+      tenantId:  req.user.tenantId,
+      invoiceId: validatePositiveInt(req.params.id, 'id'),
+      amount:    req.body.amount,
+      paidAt:    req.body.paid_at,
+      comment:   req.body.comment || null,
+      userId:    req.user.id,
+    });
+    res.status(201).json({ ok: true, invoice });
+  } catch (e) { next(e); }
+});
+
+router.delete('/invoices/:id/payments/:paymentId', requireRole('tenant_admin'), async (req, res, next) => {
+  try {
+    const result = await svc.deleteInvoicePayment({
+      tenantId:  req.user.tenantId,
+      invoiceId: validatePositiveInt(req.params.id, 'id'),
+      paymentId: validatePositiveInt(req.params.paymentId, 'paymentId'),
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }

@@ -1145,6 +1145,15 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
           status: status,
           notes: notes
         });
+      },
+      payments: function payments(id) {
+        return _get("/billing/invoices/".concat(id, "/payments"));
+      },
+      addPayment: function addPayment(id, d) {
+        return post("/billing/invoices/".concat(id, "/payments"), d);
+      },
+      deletePayment: function deletePayment(id, paymentId) {
+        return del("/billing/invoices/".concat(id, "/payments/").concat(paymentId));
       }
     }
   };
