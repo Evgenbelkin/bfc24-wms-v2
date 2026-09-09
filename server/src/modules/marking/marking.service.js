@@ -5,7 +5,7 @@ const { query, transaction } = require('../../config/database');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { generateMarkingLabelSvg } = require('../../utils/qrcode');
 const { ValidationError, ForbiddenError } = require('../../utils/errors');
-const { isValidKizCode, hasValidKizStructure } = require('../../utils/validators');
+const { isValidKizCode, hasValidKizStructure, hasOnlyAsciiChars } = require('../../utils/validators');
 const wbClient = require('../wb/wb.client');
 const logger = require('../../utils/logger');
 
@@ -61,9 +61,22 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
   // это типично для скана камерой телефона, см. hasValidKizStructure). Такие
   // коды технически "похожи" на КИЗ, но неизбежно провалятся при отправке в
   // WB — лучше поймать это здесь, чем через несколько дней в кабинете WB.
-  const codes = longEnough.filter(hasValidKizStructure);
-  const skippedBroken = longEnough.length - codes.length;
+  const structOk = longEnough.filter(hasValidKizStructure);
+  const skippedBroken = longEnough.length - structOk.length;
+
+  // Отдельно отсекаем коды с нелатинскими символами (кириллица-омоглифы вместо
+  // латиницы — типично при копировании/сканировании с русской раскладкой,
+  // см. hasOnlyAsciiChars). Длина и структура при этом в порядке, поэтому
+  // предыдущие два фильтра такое не ловят — а WB отклонит только через дни,
+  // при реальной отправке в поставку.
+  const codes = structOk.filter(hasOnlyAsciiChars);
+  const skippedNonLatin = structOk.length - codes.length;
   if (codes.length === 0) {
+    if (skippedNonLatin > 0) {
+      throw new ValidationError(
+        `${skippedNonLatin} код(ов) содержат нелатинские символы (похоже, кириллица вместо латиницы — например из-за русской раскладки клавиатуры на терминале в момент скана/копирования). WB такие коды не примет. Проверьте раскладку (должна быть английская) и пересканируйте/скопируйте коды заново.`
+      );
+    }
     if (skippedBroken > 0) {
       throw new ValidationError(
         `${skippedBroken} код(ов) похожи на "Честный знак" по длине, но структура повреждена (потерян или задвоен служебный разделитель) — обычно так бывает при скане камерой телефона. Пересканируйте физическим сканером в режиме GS1 DataMatrix.`
@@ -88,7 +101,11 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
     );
     if (r.rowCount > 0) imported++;
   }
-  return { imported, duplicates: codes.length - imported, skipped_invalid: skippedInvalid, skipped_broken_structure: skippedBroken, total_in_batch: allCodes.length };
+  return {
+    imported, duplicates: codes.length - imported,
+    skipped_invalid: skippedInvalid, skipped_broken_structure: skippedBroken,
+    skipped_non_latin: skippedNonLatin, total_in_batch: allCodes.length,
+  };
 }
 
 /**
@@ -270,6 +287,25 @@ async function registerScannedCodes({ tenantId, itemId, codes, userId, dbClient 
     );
   }
 
+  // Проверка на нелатинские символы (кириллица-омоглифы вместо латиницы) —
+  // см. hasOnlyAsciiChars. Реальный инцидент (08-09.09.2026): раскладка
+  // клавиатуры на терминале в момент скана оказалась русской, часть латинских
+  // букв кода напечаталась похожими кириллическими — длина и структура GS1 в
+  // порядке, код спокойно регистрируется и "используется", а WB отклоняет его
+  // через дни при реальной отправке в поставку ("sgtinHasNonLatinSymbols"),
+  // когда поставка уже может физически ехать. Ловим здесь, на входе.
+  const nonLatinCode = list.find(c => !hasOnlyAsciiChars(c));
+  if (nonLatinCode) {
+    logger.warn(
+      { tenantId, itemId, len: nonLatinCode.length, hex: Buffer.from(nonLatinCode, 'binary').toString('hex') },
+      'registerScannedCodes: код отклонён проверкой на нелатинские символы (hasOnlyAsciiChars)'
+    );
+    throw new ValidationError(
+      `Код содержит нелатинские символы (похоже, кириллица вместо латиницы) — WB такой код не примет. ` +
+      `Скорее всего на терминале сейчас русская раскладка клавиатуры — переключите на английскую и пересканируйте код заново.`
+    );
+  }
+
   const doRegister = async (client) => {
     const insertedIds = [];
     for (const code of list) {
@@ -351,6 +387,16 @@ async function consumeScannedCodeAtPacking({
         throw new ValidationError(
           `Код похож на "Честный знак" по длине, но структура повреждена (потерян или задвоен служебный разделитель) — обычно так бывает при скане камерой телефона. ` +
           `Пересканируйте физическим сканером в режиме GS1 DataMatrix.`
+        );
+      }
+      if (!hasOnlyAsciiChars(codeStr)) {
+        logger.warn(
+          { tenantId, itemId, len: codeStr.length, hex: Buffer.from(codeStr, 'binary').toString('hex') },
+          'consumeScannedCodeAtPacking: код отклонён проверкой на нелатинские символы (авторегистрация на упаковке, scan_packing)'
+        );
+        throw new ValidationError(
+          `Код содержит нелатинские символы (похоже, кириллица вместо латиницы) — WB такой код не примет. ` +
+          `Скорее всего на терминале сейчас русская раскладка клавиатуры — переключите на английскую и пересканируйте код заново.`
         );
       }
       const insRes = await client.query(
