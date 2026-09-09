@@ -592,17 +592,31 @@ function openLineSticker(idx) {
   w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(l.barcode), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(l.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(l.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(l.wb_sticker_code), "</div>") : '', "\n        </body>"));
   w.document.close();
 }
-// Перепечать киз (двойная маркировка) прямо из карточки
-// отгрузки — в отличие от стикера/QR стикер не печатается
-// через браузер, а уходит заданием на физический принтер (wms.print_jobs),
-// так же как и перепечатка киза в модуле упаковки.
+// Перепечать киз (двойная маркировка) прямо из карточки отгрузки — уходит
+// заданием на физический принтер (wms.print_jobs), так же как и перепечатка
+// киза в модуле упаковки. ДОПОЛНИТЕЛЬНО (08-09.09.2026, реальный инцидент —
+// задание тихо легло в очередь, т.к. принтер-агент на рабочем месте не был
+// настроен, а посмотреть код было негде) открываем SVG в новой вкладке как
+// аварийный фолбэк — окно открываем СРАЗУ, синхронно по клику (иначе браузер
+// может заблокировать всплывающее окно, открытое уже после ответа сервера),
+// см. тот же приём в openStickerChip (packing.html).
 function reprintLineMarkingCode(idx) {
   var l = currentLines[idx];
   if (!(l && l.marking_code)) return;
-  window.API.marking.reprintCode(l.marking_code).then(function () {
+  var w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Печать киза…</p>');
+  window.API.marking.reprintCode(l.marking_code).then(function (res) {
     UI.notify.ok('Этикетка киза отправлена на печать ещё раз.');
+    if (w && res && res.svg) {
+      w.document.open();
+      w.document.write("<title>Киз ".concat(UI.escHtml(res.code || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          ").concat(res.svg, "\n          <div style=\"font-family:monospace;font-size:14px;color:#333;\">").concat(UI.escHtml(res.code || ''), "</div>\n        </body>"));
+      w.document.close();
+    } else if (w) {
+      w.close();
+    }
   }).catch(function (e) {
     UI.notify.err(e.message);
+    if (w) w.close();
   });
 }
 function renderWbQrCard() {
