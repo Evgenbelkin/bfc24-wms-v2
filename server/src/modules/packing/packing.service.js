@@ -4,6 +4,7 @@ const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError, ForbiddenError } = require('../../utils/errors');
 const { validatePositiveInt } = require('../../utils/validators');
 const { resolvePrinter } = require('../printing/printerResolver');
+const { findItemIdByBarcode } = require('../masterdata/items/items.service');
 const { chargeForOperation } = require('../billing/billing.service');
 const marking = require('../marking/marking.service');
 const { recordUsage: recordConsumableUsage } = require('../consumables/consumables.service');
@@ -184,14 +185,42 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
     if (shipRes.rowCount === 0) throw new NotFoundError(`Shipment '${shipmentCode}'`);
     const shipment = shipRes.rows[0];
 
-    // Проверяем план
+    // Проверяем план — сначала буквально по отсканированному штрихкоду
     const planRes = await client.query(
-      `SELECT COALESCE(SUM(qty),0)::int AS qty_plan
+      `SELECT item_id, COALESCE(SUM(qty),0)::int AS qty_plan
        FROM wms.picking_tasks
-       WHERE tenant_id=$1 AND shipment_code=$2 AND barcode=$3 AND status IN ('new','in_progress','done')`,
+       WHERE tenant_id=$1 AND shipment_code=$2 AND barcode=$3 AND status IN ('new','in_progress','done')
+       GROUP BY item_id`,
       [tenantId, shipmentCode, barcode]
     );
-    const qtyPlan = planRes.rows[0].qty_plan;
+    let qtyPlan = planRes.rows[0]?.qty_plan || 0;
+    let planItemId = planRes.rows[0]?.item_id || null;
+
+    if (qtyPlan === 0) {
+      // Точного совпадения нет — возможно это алиас-штрихкод того же товара
+      // (см. миграцию 060 / wms.item_barcodes): в задании лежит ДРУГОЙ
+      // валидный штрихкод того же физического товара (тот, что пришёл в
+      // заказе от ВБ), а на упаковке отсканировали второй. Резолвим по
+      // item_id и переключаемся на канонический штрихкод из плана — дальше
+      // весь учёт (движение, "уже упаковано", стикер ВБ) идёт под ним, чтобы
+      // не разъехаться с уже упакованными единицами этого же товара.
+      const resolved = await findItemIdByBarcode({ tenantId, clientId: shipment.client_id, barcode, dbClient: client });
+      if (resolved && resolved.is_active) {
+        const altPlan = await client.query(
+          `SELECT barcode, item_id, COALESCE(SUM(qty),0)::int AS qty_plan
+           FROM wms.picking_tasks
+           WHERE tenant_id=$1 AND shipment_code=$2 AND item_id=$3 AND status IN ('new','in_progress','done')
+           GROUP BY barcode, item_id
+           ORDER BY qty_plan DESC LIMIT 1`,
+          [tenantId, shipmentCode, resolved.id]
+        );
+        if (altPlan.rowCount > 0) {
+          barcode = altPlan.rows[0].barcode;
+          qtyPlan = altPlan.rows[0].qty_plan;
+          planItemId = altPlan.rows[0].item_id;
+        }
+      }
+    }
     if (qtyPlan === 0) throw new ValidationError(`Barcode '${barcode}' is not in packing plan for this shipment`);
 
     // Уже упаковано
@@ -205,12 +234,14 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       throw new ValidationError(`Barcode '${barcode}' already fully packed (${alreadyPacked}/${qtyPlan})`);
     }
 
-    // Ищем item_id явно — нужен для INSERT. Заодно тянем item_name/маркировку —
-    // пригодится ниже для печати кода "Честный знак" вместе со стикером ВБ.
+    // Тянем сам товар (item_name/маркировка — пригодится ниже для печати кода
+    // "Честный знак" вместе со стикером ВБ). Берём по item_id из плана, а не
+    // по строке штрихкода — при алиасах (см. выше) items.barcode может
+    // отличаться от штрихкода, который лежит в задании/был отсканирован.
     const itemRes = await client.query(
       `SELECT id, item_name, requires_marking, marking_trigger, marking_mode, needs_packaging
-       FROM wms.items WHERE tenant_id=$1 AND barcode=$2 AND client_id=$3 LIMIT 1`,
-      [tenantId, barcode, shipment.client_id]
+       FROM wms.items WHERE tenant_id=$1 AND id=$2 AND client_id=$3 LIMIT 1`,
+      [tenantId, planItemId, shipment.client_id]
     );
     if (itemRes.rowCount === 0) {
       throw new ValidationError(`Item with barcode '${barcode}' not found in masterdata for this client`);

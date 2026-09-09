@@ -4,6 +4,7 @@ const { query, transaction } = require('../../config/database');
 const wbClient = require('./wb.client');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
+const { findItemIdByBarcode } = require('../masterdata/items/items.service');
 
 // =============================================================================
 // WB Service — переиспользуемая логика синхронизации, общая для:
@@ -953,42 +954,83 @@ async function importItemsForAccount({ tenantId, accountId, apiToken, clientId }
       savedItems++;
 
       const barcodes = wbClient.extractCardBarcodes(card);
-      for (const b of barcodes) {
-        await client.query(
-          `INSERT INTO wms.wb_item_barcodes(tenant_id,mp_account_id,nm_id,chrt_id,barcode)
-           VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-          [tenantId, accountId, b.nm_id, b.chrt_id, b.barcode]
-        );
-        savedBarcodes++;
 
-        const item = await client.query(
-          `SELECT id, volume_liters, size FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-          [tenantId, clientId, b.barcode]
-        );
-        if (item.rowCount === 0 && card.title) {
+      // Группируем по chrt_id (конкретный размер/вариант карточки). Если у
+      // ОДНОГО варианта несколько штрихкодов — это дубли одного физического
+      // товара (см. миграцию 060 / wms.item_barcodes), заводить на них
+      // отдельные wms.items больше не нужно, только алиасы. Разные chrt_id —
+      // разные размеры, как и раньше остаются раздельными товарами.
+      const byChrt = new Map();
+      for (const b of barcodes) {
+        const key = String(b.chrt_id);
+        if (!byChrt.has(key)) byChrt.set(key, []);
+        byChrt.get(key).push(b);
+      }
+
+      for (const group of byChrt.values()) {
+        for (const b of group) {
           await client.query(
+            `INSERT INTO wms.wb_item_barcodes(tenant_id,mp_account_id,nm_id,chrt_id,barcode)
+             VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+            [tenantId, accountId, b.nm_id, b.chrt_id, b.barcode]
+          );
+          savedBarcodes++;
+        }
+
+        // Ищем уже существующий товар по ЛЮБОМУ штрихкоду этого варианта
+        // (с учётом уже известных алиасов) — чтобы второй штрихкод того же
+        // варианта не завёл дублирующий wms.items.
+        let existing = null;
+        for (const b of group) {
+          const found = await findItemIdByBarcode({ tenantId, clientId, barcode: b.barcode, dbClient: client });
+          if (found && found.is_active) { existing = found; break; }
+        }
+
+        const primary = group[0];
+
+        if (!existing && card.title) {
+          const ins = await client.query(
             `INSERT INTO wms.items(tenant_id,client_id,barcode,item_name,vendor_code,brand,unit,source,wb_nm_id,preview_url,
                                     length_cm,width_cm,height_cm,volume_liters,weight_grams,size)
-             VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING`,
-            [tenantId, clientId, b.barcode,
+             VALUES($1,$2,$3,$4,$5,$6,'шт','wb',$7,$8,$9,$10,$11,$12,$13,$14)
+             ON CONFLICT (tenant_id, client_id, barcode) DO UPDATE SET updated_at = NOW()
+             RETURNING id`,
+            [tenantId, clientId, primary.barcode,
              card.title, card.vendorCode||null, card.brand||null, card.nmID, previewUrl,
-             lengthCm, widthCm, heightCm, volumeLiters, weightGrams, b.tech_size||null]
+             lengthCm, widthCm, heightCm, volumeLiters, weightGrams, primary.tech_size||null]
           );
+          existing = { id: ins.rows[0].id, is_active: true };
           if (volumeLiters) filledVolume++;
-        } else if (item.rowCount > 0 && ((item.rows[0].volume_liters == null && volumeLiters) || (item.rows[0].size == null && b.tech_size))) {
-          await client.query(
-            `UPDATE wms.items SET
-               length_cm = COALESCE(length_cm, $1),
-               width_cm  = COALESCE(width_cm, $2),
-               height_cm = COALESCE(height_cm, $3),
-               volume_liters = COALESCE(volume_liters, $4),
-               weight_grams = COALESCE(weight_grams, $5),
-               size = COALESCE(size, $6),
-               updated_at = NOW()
-             WHERE id=$7`,
-            [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, b.tech_size||null, item.rows[0].id]
-          );
-          if (volumeLiters) filledVolume++;
+        } else if (existing) {
+          const cur = await client.query(`SELECT volume_liters, size FROM wms.items WHERE id=$1`, [existing.id]);
+          if (cur.rowCount > 0 && ((cur.rows[0].volume_liters == null && volumeLiters) || (cur.rows[0].size == null && primary.tech_size))) {
+            await client.query(
+              `UPDATE wms.items SET
+                 length_cm = COALESCE(length_cm, $1),
+                 width_cm  = COALESCE(width_cm, $2),
+                 height_cm = COALESCE(height_cm, $3),
+                 volume_liters = COALESCE(volume_liters, $4),
+                 weight_grams = COALESCE(weight_grams, $5),
+                 size = COALESCE(size, $6),
+                 updated_at = NOW()
+               WHERE id=$7`,
+              [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, primary.tech_size||null, existing.id]
+            );
+            if (volumeLiters) filledVolume++;
+          }
+        }
+
+        if (existing) {
+          // Все штрихкоды варианта — алиасы на итоговый товар (включая тот,
+          // что уже лежит в items.barcode как основной — конфликт по
+          // UNIQUE просто ничего не сделает).
+          for (const b of group) {
+            await client.query(
+              `INSERT INTO wms.item_barcodes(tenant_id, client_id, item_id, barcode, source)
+               VALUES($1,$2,$3,$4,'wb') ON CONFLICT (tenant_id, client_id, barcode) DO NOTHING`,
+              [tenantId, clientId, existing.id, b.barcode]
+            );
+          }
         }
       }
     }

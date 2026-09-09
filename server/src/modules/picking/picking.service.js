@@ -2,7 +2,7 @@
 
 const { query, transaction } = require('../../config/database');
 const ledger = require('../stock/stock.ledger');
-const { resolveOrCreateItem } = require('../masterdata/items/items.service');
+const { resolveOrCreateItem, findItemIdByBarcode } = require('../masterdata/items/items.service');
 const { findBestPickLocation, getLocationByCode } = require('../masterdata/locations/locations.service');
 const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt, isValidKizCode } = require('../../utils/validators');
@@ -631,6 +631,19 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
       if (kizRes.rowCount > 0) { matched = true; matchedVia = 'kiz'; }
     }
 
+    // Алиасы штрихкодов (см. миграцию 060 / wms.item_barcodes): у товара
+    // может быть несколько зарегистрированных в ВБ штрихкодов на один и тот
+    // же физический товар/размер. Задание хранит один конкретный (тот, что
+    // пришёл в заказе от ВБ), но с полки сборщик мог взять экземпляр с
+    // ДРУГИМ валидным штрихкодом того же товара — считаем это тем же самым
+    // сканом, а не браком.
+    if (!matched && task.item_id) {
+      const resolved = await findItemIdByBarcode({ tenantId, clientId: task.client_id, barcode: scanned, dbClient: client });
+      if (resolved && resolved.is_active && resolved.id === task.item_id) {
+        matched = true; matchedVia = 'alias_barcode';
+      }
+    }
+
     if (!matched) {
       await client.query(
         `INSERT INTO wms.picking_scans(picking_task_id,picker_id,scan_type,expected,scanned,result,message) VALUES($1,$2,'item',$3,$4,'mismatch','Wrong barcode')`,
@@ -854,6 +867,19 @@ async function scanItemQty({ tenantId, pickerId, taskId, scannedBarcode, qty, co
         [tenantId, task.item_id, scanned]
       );
       if (kizRes.rowCount > 0) { matched = true; matchedVia = 'kiz'; }
+    }
+
+    // Алиасы штрихкодов (см. миграцию 060 / wms.item_barcodes): у товара
+    // может быть несколько зарегистрированных в ВБ штрихкодов на один и тот
+    // же физический товар/размер. Задание хранит один конкретный (тот, что
+    // пришёл в заказе от ВБ), но с полки сборщик мог взять экземпляр с
+    // ДРУГИМ валидным штрихкодом того же товара — считаем это тем же самым
+    // сканом, а не браком.
+    if (!matched && task.item_id) {
+      const resolved = await findItemIdByBarcode({ tenantId, clientId: task.client_id, barcode: scanned, dbClient: client });
+      if (resolved && resolved.is_active && resolved.id === task.item_id) {
+        matched = true; matchedVia = 'alias_barcode';
+      }
     }
 
     if (!matched) {

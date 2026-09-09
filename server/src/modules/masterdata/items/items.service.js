@@ -380,20 +380,67 @@ async function setItemPackagingMaterials({ tenantId, itemId, materials }) {
 }
 
 /** Гарантировать наличие item + SKU registry */
+/**
+ * Резолв штрихкода → item_id с учётом алиасов (wms.item_barcodes).
+ *
+ * Зачем: у одной карточки WB может быть зарегистрировано НЕСКОЛЬКО штрихкодов
+ * на один и тот же физический товар (не путать с разными размерами — те
+ * остаются раздельными товарами). wms.items хранит ровно один "основной"
+ * штрихкод на строку — второй и последующие живут в wms.item_barcodes и
+ * указывают на тот же item_id. Сначала смотрим туда, потом — как раньше,
+ * в items.barcode напрямую (для подавляющего большинства товаров без
+ * алиасов ничего не меняется).
+ *
+ * Если найденный по items.barcode товар уже слит с другим (merged_into_item_id
+ * заполнен — см. одноразовый скрипт слияния дублей), идём по цепочке к
+ * актуальному товару, а не возвращаем неактивную "старую" строку.
+ */
+async function findItemIdByBarcode({ tenantId, clientId, barcode, dbClient = null }) {
+  const db = dbClient || { query: (sql, params) => query(sql, params) };
+  const b = validateBarcode(barcode);
+
+  const aliasRes = await db.query(
+    `SELECT i.id, i.is_active, i.merged_into_item_id
+     FROM wms.item_barcodes ib
+     JOIN wms.items i ON i.id = ib.item_id
+     WHERE ib.tenant_id=$1 AND ib.client_id=$2 AND ib.barcode=$3 LIMIT 1`,
+    [tenantId, clientId, b]
+  );
+  let row = aliasRes.rowCount > 0 ? aliasRes.rows[0] : null;
+
+  if (!row) {
+    const directRes = await db.query(
+      `SELECT id, is_active, merged_into_item_id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+      [tenantId, clientId, b]
+    );
+    row = directRes.rowCount > 0 ? directRes.rows[0] : null;
+  }
+  if (!row) return null;
+
+  // Цепочка слияния (на практике максимум 1 шаг, но на всякий случай идём
+  // до конца, чтобы не споткнуться, если что-то слили дважды).
+  let guard = 0;
+  while (row.merged_into_item_id && guard++ < 5) {
+    const nextRes = await db.query(
+      `SELECT id, is_active, merged_into_item_id FROM wms.items WHERE id=$1 LIMIT 1`,
+      [row.merged_into_item_id]
+    );
+    if (nextRes.rowCount === 0) break;
+    row = nextRes.rows[0];
+  }
+  return row;
+}
+
 async function resolveOrCreateItem({ tenantId, clientId, barcode, dbClient = null }) {
   const db = dbClient || { query: (sql, params) => query(sql, params) };
   const b = validateBarcode(barcode);
 
-  // Ищем item
-  const itemRes = await db.query(
-    `SELECT i.id, i.is_active FROM wms.items i WHERE i.tenant_id=$1 AND i.client_id=$2 AND i.barcode=$3 LIMIT 1`,
-    [tenantId, clientId, b]
-  );
+  const found = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: db });
 
   let itemId;
-  if (itemRes.rowCount > 0) {
-    if (!itemRes.rows[0].is_active) throw new ValidationError(`Item with barcode '${b}' is inactive`);
-    itemId = itemRes.rows[0].id;
+  if (found) {
+    if (!found.is_active) throw new ValidationError(`Item with barcode '${b}' is inactive`);
+    itemId = found.id;
   } else {
     // Создаём минимальный item (будет обогащён позже из WB)
     const ins = await db.query(
@@ -432,25 +479,22 @@ async function resolveExistingItem({ tenantId, clientId, barcode, dbClient = nul
   const db = dbClient || { query: (sql, params) => query(sql, params) };
   const b = validateBarcode(barcode);
 
-  const res = await db.query(
-    `SELECT id, is_active FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-    [tenantId, clientId, b]
-  );
-  if (res.rowCount === 0) {
+  const found = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: db });
+  if (!found) {
     throw new ValidationError(
       `Товар со штрихкодом '${b}' не найден в каталоге этого клиента. ` +
       `Сначала заведите товар в справочнике (в админке или в кабинете клиента), затем принимайте.`
     );
   }
-  if (!res.rows[0].is_active) {
+  if (!found.is_active) {
     throw new ValidationError(`Товар со штрихкодом '${b}' есть в каталоге, но отключён (неактивен).`);
   }
-  return res.rows[0].id;
+  return found.id;
 }
 
 module.exports = {
   listItems, getItemById, getItemByBarcode, findItemByKizCode,
   createItem, updateItem, deleteItem, bulkDeleteItems,
-  resolveOrCreateItem, resolveExistingItem,
+  resolveOrCreateItem, resolveExistingItem, findItemIdByBarcode,
   getItemPackagingMaterials, setItemPackagingMaterials,
 };
