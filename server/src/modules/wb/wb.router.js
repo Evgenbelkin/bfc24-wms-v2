@@ -12,7 +12,7 @@ const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenan
 const { requireRole } = require('../../middleware/requireRole');
 const { requireModule } = require('../../middleware/tenant');
 const { ValidationError, NotFoundError } = require('../../utils/errors');
-const { resolveOrCreateItem } = require('../masterdata/items/items.service');
+const { resolveOrCreateItem, findItemIdByBarcode } = require('../masterdata/items/items.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const logger = require('../../utils/logger');
 
@@ -285,9 +285,60 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     );
     if (ordersRes.rowCount === 0) return res.json({ ok:true, message:'No orders without supply', supplies:[] });
 
+    // Не включаем в волну заказы, по которым сейчас физически нет доступного
+    // остатка (обсуждение с пользователем 10.09.2026) — раньше такой заказ
+    // всё равно улетал в поставку ВБ, а на сборке благополучно "зависал"
+    // или пропускался, разбираться приходилось постфактум. Правильнее не
+    // создавать поставку под то, чего нет: заказ остаётся непривязанным
+    // (wb_supply_id остаётся NULL) и естественным образом попадёт в
+    // СЛЕДУЮЩИЙ запуск формирования волны, когда остаток появится — обычный
+    // путь для новых заказов, ничего специального делать не надо.
+    // Резолвим баркод в item_id через ту же alias-логику, что и everywhere
+    // else (см. миграцию 060) — иначе для товаров с двумя штрихкодами ВБ
+    // остаток по "не основному" баркоду тут не найдётся.
+    const uniqueBarcodes = [...new Set(ordersRes.rows.map(r => String(r.barcode||'').trim()).filter(Boolean))];
+    const itemIdByBarcode = new Map();
+    for (const b of uniqueBarcodes) {
+      const found = await findItemIdByBarcode({ tenantId: req.user.tenantId, clientId: acc.client_id, barcode: b });
+      if (found && found.is_active) itemIdByBarcode.set(b, found.id);
+    }
+    const involvedItemIds = [...new Set(itemIdByBarcode.values())];
+    const availByItem = new Map();
+    if (involvedItemIds.length) {
+      const availRes = await query(
+        `SELECT item_id, COALESCE(SUM(qty_available),0)::int AS qty
+         FROM wms.stock_balances
+         WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=ANY($4::int[])
+         GROUP BY item_id`,
+        [req.user.tenantId, wh.id, acc.client_id, involvedItemIds]
+      );
+      for (const row of availRes.rows) availByItem.set(row.item_id, row.qty);
+    }
+    // Заказы уже отсортированы по created_at ASC (см. запрос выше) — при
+    // нехватке остатка на несколько заказов одного товара в волну попадают
+    // более старые, остальные ждут следующего раза (справедливо по очереди).
+    const stockFilteredRows = [];
+    const stockShortageByBarcode = new Map(); // barcode -> {count, itemName}
+    for (const row of ordersRes.rows) {
+      const b = String(row.barcode||'').trim();
+      const itemId = itemIdByBarcode.get(b);
+      const remaining = itemId != null ? (availByItem.get(itemId) ?? 0) : 0;
+      if (itemId != null && remaining > 0) {
+        availByItem.set(itemId, remaining - 1);
+        stockFilteredRows.push(row);
+      } else {
+        const cur = stockShortageByBarcode.get(b) || 0;
+        stockShortageByBarcode.set(b, cur + 1);
+      }
+    }
+    const stockShortage = [...stockShortageByBarcode.entries()].map(([barcode, orders_skipped]) => ({ barcode, orders_skipped }));
+    if (!stockFilteredRows.length) {
+      return res.json({ ok:true, message:'No orders with available stock', supplies:[], stock_shortage: stockShortage });
+    }
+
     // Группируем по складу WB
     const groups = new Map();
-    for (const row of ordersRes.rows) {
+    for (const row of stockFilteredRows) {
       const key = String(row.warehouse_id||'')+'|'+(row.warehouse_name||'');
       if (!groups.has(key)) groups.set(key, { warehouse_id:row.warehouse_id, warehouse_name:row.warehouse_name, orders:[] });
       groups.get(key).orders.push(row);
@@ -425,7 +476,7 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     }
 
     const totalDropped = suppliesResult.reduce((s,r)=>s+(r.dropped_count||0),0);
-    res.json({ ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult, dropped_total:totalDropped });
+    res.json({ ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult, dropped_total:totalDropped, stock_shortage: stockShortage });
   } catch(e){ next(e); }
 });
 
