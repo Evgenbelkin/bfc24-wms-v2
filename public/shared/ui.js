@@ -264,12 +264,21 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
       // Поэтому теперь сам проигрыш ноты откладываем до фактического
       // завершения resume() — currentTime берём заново, уже из работающего
       // контекста.
+      // ЖАЛОБА 10.09.2026 (сборка/picking): на неправильной ячейке "ок" звук
+      // играет нормально, а звука ошибки не слышно вообще — при том что код
+      // beep('err') реально вызывается (проверено). Раньше err-тон был на
+      // 300 Гц — заметно ниже, чем ok (1700 Гц), а маленькие динамики ТСД
+      // обычно слабо/глухо воспроизводят низкие частоты (иногда почти не
+      // слышно на слух, хотя технически звук играет). Чинили не пытаясь
+      // угадать "правильную" громкость на конкретном устройстве, а убрав
+      // саму зависимость от того, слышно ли низкую ноту: подняли частоту
+      // err ближе к ok (по-прежнему ниже и от того отличимая на слух) и,
+      // главное, сделали err ДВОЙНЫМ импульсом вместо одной длинной ноты —
+      // так его отличаешь от "ок" по ритму (два коротких против одного),
+      // даже если разница высоты тона на слабом динамике не читается.
       var playTone = function () {
         var isErr = tone === 'err';
         var now = _audioCtx.currentTime;
-        var baseFreq = isErr ? 300 : 1700;
-        var hold = isErr ? 0.2 : 0.16;
-        var tail = 0.06;
 
         // Компрессор + make-up gain — тот же приём, что и в громких уведомлениях:
         // сначала "сплющиваем" динамику (компрессор), потом поднимаем общий
@@ -285,22 +294,36 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
         makeup.gain.setValueAtTime(4, now);
         comp.connect(makeup).connect(_audioCtx.destination);
 
-        // Две гармоники (основная + октава выше) звучат громче и "плотнее" на
-        // маленьком динамике телефона, чем одна чистая нота той же амплитуды.
-        [baseFreq, baseFreq * 2].forEach(function (freq, i) {
-          var osc = _audioCtx.createOscillator();
-          var gain = _audioCtx.createGain();
-          osc.type = 'square';
-          osc.frequency.value = freq;
-          var peak = i === 0 ? 0.9 : 0.4;
-          gain.gain.setValueAtTime(0, now);
-          gain.gain.linearRampToValueAtTime(peak, now + 0.005); // без щелчка на старте
-          gain.gain.setValueAtTime(peak, now + hold);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + hold + tail);
-          osc.connect(gain).connect(comp);
-          osc.start(now);
-          osc.stop(now + hold + tail + 0.02);
-        });
+        var playPulse = function (startAt, baseFreq, hold, peakMul) {
+          var tail = 0.06;
+          // Две гармоники (основная + октава выше) звучат громче и "плотнее"
+          // на маленьком динамике телефона, чем одна чистая нота той же
+          // амплитуды.
+          [baseFreq, baseFreq * 2].forEach(function (freq, i) {
+            var osc = _audioCtx.createOscillator();
+            var gain = _audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.value = freq;
+            var peak = (i === 0 ? 0.9 : 0.4) * peakMul;
+            gain.gain.setValueAtTime(0, startAt);
+            gain.gain.linearRampToValueAtTime(peak, startAt + 0.005); // без щелчка на старте
+            gain.gain.setValueAtTime(peak, startAt + hold);
+            gain.gain.exponentialRampToValueAtTime(0.001, startAt + hold + tail);
+            osc.connect(gain).connect(comp);
+            osc.start(startAt);
+            osc.stop(startAt + hold + tail + 0.02);
+          });
+        };
+
+        if (isErr) {
+          // Двойной импульс погромче (peakMul 1.15, упирается в лимитер
+          // компрессора, клиппинга не даёт) на 550 Гц — заметно выше 300, но
+          // всё ещё ниже и потому отличимо от "ок" (1700 Гц).
+          playPulse(now, 550, 0.11, 1.15);
+          playPulse(now + 0.16, 550, 0.11, 1.15);
+        } else {
+          playPulse(now, 1700, 0.16, 1);
+        }
       };
 
       if (_audioCtx.state === 'suspended') {
