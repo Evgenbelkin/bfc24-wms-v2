@@ -433,7 +433,7 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
 
 router.get('/orders', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
-    const { account_id, status, date_from, date_to, limit=200 } = req.query;
+    const { account_id, status, date_from, date_to, limit=200, offset=0 } = req.query;
     const params=[req.user.tenantId]; const conds=['o.tenant_id=$1']; let idx=2;
     if (account_id) { conds.push(`o.mp_account_id=$${idx++}`); params.push(Number(account_id)); }
     if (status)     { conds.push(`o.status=$${idx++}`); params.push(status); }
@@ -450,7 +450,18 @@ router.get('/orders', requireRole('tenant_admin','supervisor'), async (req,res,n
       WHERE w.mp_account_id=o.mp_account_id AND w.wb_warehouse_id=o.warehouse_id
         AND w.is_enabled_for_picking=FALSE
     )`);
-    params.push(Math.min(Number(limit),1000));
+    // Отдельный запрос total — count:r.rowCount раньше выдавался за "общее
+    // число заказов", хотя на деле был просто числом строк в текущей
+    // странице (обрезанным лимитом) — из-за этого в UI не было видно
+    // реального количества и нельзя было понять, сколько страниц пролистать.
+    const totalRes = await query(
+      `SELECT COUNT(*)::int AS n FROM wms.wb_orders o WHERE ${conds.join(' AND ')}`,
+      params
+    );
+    const total = totalRes.rows[0].n;
+
+    const limitIdx = idx++; const offsetIdx = idx++;
+    params.push(Math.min(Number(limit),500), Math.max(Number(offset)||0, 0));
     // ВАЖНО: не SELECT o.* — в wb_orders на каждой строке лежит wb_sticker
     // (base64 SVG стикера) и raw (полный JSON-дамп ответа WB), оба могут
     // весить десятки КБ на заказ. Список заказов их не показывает и не
@@ -464,10 +475,10 @@ router.get('/orders', requireRole('tenant_admin','supervisor'), async (req,res,n
               ma.account_name
        FROM wms.wb_orders o
        JOIN wms.mp_accounts ma ON ma.id=o.mp_account_id
-       WHERE ${conds.join(' AND ')} ORDER BY o.created_at DESC NULLS LAST LIMIT $${idx}`,
+       WHERE ${conds.join(' AND ')} ORDER BY o.created_at DESC NULLS LAST LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
     );
-    res.json({ ok:true, orders:r.rows, count:r.rowCount });
+    res.json({ ok:true, orders:r.rows, count:r.rowCount, total, offset: Number(offset)||0, limit: Math.min(Number(limit),500) });
   } catch(e){ next(e); }
 });
 

@@ -116,7 +116,7 @@
             <option value="">Всё время</option>
           </select>
         </div>
-        <button class="btn-big btn-blue btn-full" onclick="loadOrders()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+        <button class="btn-big btn-blue btn-full" onclick="loadOrdersFromStart()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
       </div>
 
       <div class="card">
@@ -126,6 +126,14 @@
             <thead><tr><th>Заказ</th><th>Штрихкод</th><th>Склад WB</th><th>Статус</th><th>Поставка</th><th>Когда</th></tr></thead>
             <tbody id="ord-body"></tbody>
           </table>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <div id="ord-page-info" style="color:var(--muted);font-size:13px;"></div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn-sm btn-back" onclick="ordFirstPage()">« В начало</button>
+            <button class="btn-sm btn-back" onclick="ordPrevPage()">‹ Назад</button>
+            <button class="btn-sm btn-back" onclick="ordNextPage()">Вперёд ›</button>
+          </div>
         </div>
       </div>
     </div>
@@ -745,19 +753,43 @@ function _generateWave() {
   }));
   return _generateWave.apply(this, arguments);
 }
+var ORD_PAGE_SIZE = 100; // раньше грузили разом 300 без пагинации — тяжело и не видно, сколько всего
+var ordOffset = 0;
+var ordTotal = 0;
+function ordFirstPage() {
+  ordOffset = 0;
+  loadOrders();
+}
+function ordPrevPage() {
+  ordOffset = Math.max(0, ordOffset - ORD_PAGE_SIZE);
+  loadOrders();
+}
+function ordNextPage() {
+  if (ordOffset + ORD_PAGE_SIZE >= ordTotal) return;
+  ordOffset += ORD_PAGE_SIZE;
+  loadOrders();
+}
+// Фильтры/поиск ("Показать") всегда возвращают на первую страницу — иначе
+// после пролистывания вперёд смена фильтра молча применится с "чужим"
+// offset и покажет пустую/странную страницу.
+function loadOrdersFromStart() {
+  ordOffset = 0;
+  loadOrders();
+}
 function loadOrders() {
   return _loadOrders.apply(this, arguments);
 }
 function _loadOrders() {
   _loadOrders = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee11() {
-    var params, accountId, status, period, d, res, _t1;
+    var params, accountId, status, period, d, res, _t1, shownFrom, shownTo;
     return _regenerator().w(function (_context11) {
       while (1) switch (_context11.p = _context11.n) {
         case 0:
           _context11.p = 0;
           ordersLoaded = true;
           params = {
-            limit: 300
+            limit: ORD_PAGE_SIZE,
+            offset: ordOffset
           };
           accountId = UI.val('#ord-account');
           if (accountId) params.account_id = accountId;
@@ -773,7 +805,11 @@ function _loadOrders() {
           return window.API.wb.orders(params);
         case 1:
           res = _context11.v;
-          document.getElementById('ord-count').textContent = res.count;
+          ordTotal = res.total != null ? res.total : res.count;
+          document.getElementById('ord-count').textContent = ordTotal;
+          shownFrom = ordTotal === 0 ? 0 : ordOffset + 1;
+          shownTo = ordOffset + res.orders.length;
+          document.getElementById('ord-page-info').textContent = "Показано ".concat(shownFrom, "–").concat(shownTo, " из ").concat(ordTotal);
           UI.renderTable('#ord-body', res.orders, function (o) {
             return "\n          <tr>\n            <td>".concat(UI.escHtml(o.article || o.wb_order_id), "</td>\n            <td>").concat(UI.escHtml(o.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(o.warehouse_name || '—'), "</td>\n            <td><span class=\"pill ").concat(STATUS_PILL_CLASS[o.status] || 'pill-blue', "\">").concat(STATUS_LABELS[o.status] || UI.escHtml(o.status || '—'), "</span></td>\n            <td>").concat(o.wb_supply_id ? "<span class=\"pill pill-green\">".concat(UI.escHtml(o.wb_supply_id), "</span>") : '—', "</td>\n            <td>").concat(UI.fmtDateTime(o.created_at), "</td>\n          </tr>\n        ");
           });
@@ -798,7 +834,7 @@ function _loadOrders() {
   return _loadOrders.apply(this, arguments);
 }
 document.getElementById('ord-account').addEventListener('change', function () {
-  return loadOrders();
+  return loadOrdersFromStart();
 });
 
 // ---------- Сверка остатков ----------
