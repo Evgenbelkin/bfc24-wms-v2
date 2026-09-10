@@ -152,7 +152,7 @@ async function getStuckOrdersGroups(tenantId) {
   const r = await query(
     `SELECT
        o.wb_supply_id AS external_id,
-       o.client_id,
+       COALESCE(s.client_id, ma.client_id) AS client_id,
        cl.client_name,
        s.id AS shipment_id,
        s.status AS shipment_status,
@@ -162,8 +162,9 @@ async function getStuckOrdersGroups(tenantId) {
        COUNT(*)::int AS orders_count,
        MIN(o.created_at) AS earliest_order_at
      FROM wms.wb_orders o
+     JOIN wms.mp_accounts ma ON ma.id = o.mp_account_id
      LEFT JOIN wms.shipments s ON s.tenant_id = o.tenant_id AND s.external_id = o.wb_supply_id
-     LEFT JOIN wms.clients cl ON cl.id = o.client_id
+     LEFT JOIN wms.clients cl ON cl.id = COALESCE(s.client_id, ma.client_id)
      WHERE o.tenant_id = $1
        AND o.status = 'confirm'
        AND o.wb_supply_id IS NOT NULL
@@ -173,7 +174,7 @@ async function getStuckOrdersGroups(tenantId) {
          OR s.status = 'cancelled'
          OR (s.status NOT IN ('in_transit','done') AND s.created_at < NOW() - INTERVAL '48 hours')
        )
-     GROUP BY o.wb_supply_id, o.client_id, cl.client_name, s.id, s.status, s.cancelled_at, s.cancel_reason, s.created_at
+     GROUP BY o.wb_supply_id, COALESCE(s.client_id, ma.client_id), cl.client_name, s.id, s.status, s.cancelled_at, s.cancel_reason, s.created_at
      ORDER BY MIN(o.created_at) ASC
      LIMIT 50`,
     [tenantId]
