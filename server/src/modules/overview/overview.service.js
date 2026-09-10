@@ -19,6 +19,7 @@ async function getFunnelOverview({ tenantId }) {
     picking,
     packing,
     shipping,
+    stuckOrders,
   ] = await Promise.all([
     getReceivingStats(tenantId),
     getPlacementStats(tenantId),
@@ -26,9 +27,10 @@ async function getFunnelOverview({ tenantId }) {
     getPickingStats(tenantId),
     getPackingStats(tenantId),
     getShippingStats(tenantId),
+    getStuckOrdersStats(tenantId),
   ]);
 
-  return { receiving, placement, waveBacklog, picking, packing, shipping };
+  return { receiving, placement, waveBacklog, picking, packing, shipping, stuckOrders };
 }
 
 /** Приёмка: активные заявки (не completed/cancelled) — план vs факт */
@@ -131,4 +133,58 @@ async function getShippingStats(tenantId) {
   return r.rows[0];
 }
 
-module.exports = { getFunnelOverview };
+/** Заказы ВБ, подтверждённые в поставку (status='confirm'), у которых локальная
+    отгрузка WMS не отражает реальный ход дел на стороне ВБ:
+      - отгрузку в WMS отменили (cancelShipment), но wms.wb_orders так и
+        остался 'confirm' навсегда - реконсиляция его не видит, т.к. она
+        трогает только заказы БЕЗ wb_supply_id (см. fetchAndUpsertOrders);
+      - либо отгрузка вообще не найдена по wb_supply_id (сироты);
+      - либо отгрузка жива, но застряла дольше 48ч и не дошла до
+        in_transit/done (забытая волна, заблокированная упаковка и т.п.).
+    Реальный инцидент (09.09.2026, WB-GI-274281627): супервайзер отменил
+    зависшую отгрузку с комментарием "отгружено", думая что уже отгрузил её
+    напрямую через кабинет ВБ - но заказ реально висел "на сборке" на ВБ ещё
+    3 дня, а WMS никак это не показывала (cancelled-отгрузки нигде не видны
+    отдельным списком). wb_status (обновляется раз в 30 мин job'ом
+    wbFbsStatusSync.js, независимо от wb_supply_id) используется, чтобы не
+    дёргать зря уже реально закрытые на ВБ заказы (sold/canceled/...). */
+async function getStuckOrdersGroups(tenantId) {
+  const r = await query(
+    `SELECT
+       o.wb_supply_id AS external_id,
+       o.client_id,
+       cl.client_name,
+       s.id AS shipment_id,
+       s.status AS shipment_status,
+       s.cancelled_at,
+       s.cancel_reason,
+       s.created_at AS shipment_created_at,
+       COUNT(*)::int AS orders_count,
+       MIN(o.created_at) AS earliest_order_at
+     FROM wms.wb_orders o
+     LEFT JOIN wms.shipments s ON s.tenant_id = o.tenant_id AND s.external_id = o.wb_supply_id
+     LEFT JOIN wms.clients cl ON cl.id = o.client_id
+     WHERE o.tenant_id = $1
+       AND o.status = 'confirm'
+       AND o.wb_supply_id IS NOT NULL
+       AND COALESCE(o.wb_status,'') NOT IN ('sold','canceled','canceled_by_client','declined_by_client','defect')
+       AND (
+         s.id IS NULL
+         OR s.status = 'cancelled'
+         OR (s.status NOT IN ('in_transit','done') AND s.created_at < NOW() - INTERVAL '48 hours')
+       )
+     GROUP BY o.wb_supply_id, o.client_id, cl.client_name, s.id, s.status, s.cancelled_at, s.cancel_reason, s.created_at
+     ORDER BY MIN(o.created_at) ASC
+     LIMIT 50`,
+    [tenantId]
+  );
+  return r.rows;
+}
+
+async function getStuckOrdersStats(tenantId) {
+  const groups = await getStuckOrdersGroups(tenantId);
+  const stuckOrders = groups.reduce((sum, g) => sum + Number(g.orders_count), 0);
+  return { stuck_supplies: groups.length, stuck_orders: stuckOrders, groups };
+}
+
+module.exports = { getFunnelOverview, getStuckOrdersGroups };
