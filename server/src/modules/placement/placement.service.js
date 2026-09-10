@@ -11,6 +11,7 @@ const { chargeForOperation } = require('../billing/billing.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
 const { locationWalkKey } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
+const { findItemIdByBarcode } = require('../masterdata/items/items.service');
 
 // =============================================================================
 // Placement Service
@@ -64,9 +65,23 @@ async function listPendingPlacement({ tenantId, warehouseId = null, clientId = n
   return { items: r.rows, total, limit, offset };
 }
 
-async function getPendingByBarcode({ tenantId, barcode, warehouseId = null }) {
+async function getPendingByBarcode({ tenantId, barcode, warehouseId = null, clientId = null }) {
   const b = validateBarcode(barcode);
-  const params = [tenantId, b];
+
+  // Алиасы штрихкодов (см. миграцию 060 / wms.item_barcodes): в ячейках
+  // ожидания может лежать остаток, физически принесённый под ДРУГИМ
+  // зарегистрированным в ВБ штрихкодом того же товара — sb.barcode это
+  // денормализация (последний записанный штрихкод), совпадение с ней не
+  // гарантировано. Если знаем клиента — резолвим сканированный штрихкод в
+  // item_id через алиасы и ищем по item_id, чтобы найти остаток независимо
+  // от того, каким из штрихкодов он был когда-то оприходован.
+  let resolved = null;
+  if (clientId) {
+    resolved = await findItemIdByBarcode({ tenantId, clientId, barcode: b });
+    if (!resolved || !resolved.is_active) resolved = null;
+  }
+
+  const params = [tenantId];
   let sql = `
     SELECT sb.barcode, sb.qty_on_hand, sb.qty_available,
            l.id AS location_id, l.location_code, l.location_type,
@@ -78,10 +93,20 @@ async function getPendingByBarcode({ tenantId, barcode, warehouseId = null }) {
     JOIN wms.warehouses w ON w.id = sb.warehouse_id
     LEFT JOIN wms.items i ON i.id = sb.item_id
     LEFT JOIN wms.clients c ON c.id = sb.client_id
-    WHERE sb.tenant_id=$1 AND sb.barcode=$2
-      AND sb.qty_on_hand>0
+    WHERE sb.tenant_id=$1`;
+
+  if (resolved) {
+    params.push(resolved.id, clientId);
+    sql += ` AND sb.item_id=$${params.length - 1} AND sb.client_id=$${params.length}`;
+  } else {
+    params.push(b);
+    sql += ` AND sb.barcode=$${params.length}`;
+    if (clientId) { params.push(clientId); sql += ` AND sb.client_id=$${params.length}`; }
+  }
+
+  sql += ` AND sb.qty_on_hand>0
       AND l.location_type IN ('receiving','buffer','quarantine')`;
-  if (warehouseId) { sql += ` AND sb.warehouse_id = $3`; params.push(warehouseId); }
+  if (warehouseId) { params.push(warehouseId); sql += ` AND sb.warehouse_id = $${params.length}`; }
   sql += ` ORDER BY l.location_code`;
   const r = await query(sql, params);
   return r.rows;
@@ -115,13 +140,13 @@ async function placeStock({ tenantId, warehouseId, clientId, barcode, fromLocati
     }
     if (fromLoc.id === toLoc.id) throw new ValidationError('From and to locations must differ');
 
-    // 3. item_id
-    const itemRes = await client.query(
-      `SELECT id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-      [tenantId, clientId, b]
-    );
-    if (itemRes.rowCount === 0) throw new NotFoundError(`Item '${b}'`);
-    const itemId = itemRes.rows[0].id;
+    // 3. item_id — через алиасы (см. миграцию 060 / wms.item_barcodes): у
+    // товара может быть несколько зарегистрированных в ВБ штрихкодов на один
+    // и тот же физический товар, прямой поиск по items.barcode их не видит.
+    const resolved = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: client });
+    if (!resolved) throw new NotFoundError(`Item '${b}'`);
+    if (!resolved.is_active) throw new ValidationError(`Item with barcode '${b}' is inactive`);
+    const itemId = resolved.id;
 
     // 4. Проверяем остаток FOR UPDATE
     const balRes = await client.query(
@@ -222,12 +247,11 @@ async function placeBatch({ tenantId, warehouseId, clientId, lines, userId }) {
         throw new ValidationError(`Invalid to-location type: ${toLoc.location_type}`);
       }
 
-      const itemRes = await client.query(
-        `SELECT id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-        [tenantId, clientId, b]
-      );
-      if (itemRes.rowCount === 0) throw new NotFoundError(`Item '${b}'`);
-      const itemId = itemRes.rows[0].id;
+      // item_id — через алиасы (см. миграцию 060 / wms.item_barcodes)
+      const resolvedLine = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: client });
+      if (!resolvedLine) throw new NotFoundError(`Item '${b}'`);
+      if (!resolvedLine.is_active) throw new ValidationError(`Item with barcode '${b}' is inactive`);
+      const itemId = resolvedLine.id;
 
       const balRes = await client.query(
         `SELECT qty_available FROM wms.stock_balances

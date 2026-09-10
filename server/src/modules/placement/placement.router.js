@@ -51,6 +51,7 @@ router.get('/pending', requireRole('tenant_admin','supervisor','receiver'), asyn
  */
 router.get('/pending/barcode', requireRole('tenant_admin','supervisor','receiver'), async (req, res, next) => {
   try {
+    const clientId = resolveClientScope(req, req.query.client_id);
     const wh = req.query.warehouse_id
       ? { id: Number(req.query.warehouse_id) }
       : await getDefaultWarehouse(req.user.tenantId);
@@ -59,6 +60,7 @@ router.get('/pending/barcode', requireRole('tenant_admin','supervisor','receiver
       tenantId:    req.user.tenantId,
       barcode:     req.query.barcode,
       warehouseId: wh.id,
+      clientId,
     });
     res.json({ ok: true, rows });
   } catch (e) { next(e); }

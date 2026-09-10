@@ -10,6 +10,7 @@ const {
 const { validateBarcode, validateQty } = require('../../utils/validators');
 const logger = require('../../utils/logger');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { findItemIdByBarcode } = require('../masterdata/items/items.service');
 
 // =============================================================================
 // Movement Service
@@ -70,13 +71,13 @@ async function moveItem({
     const toLoc = toRes.rows[0];
     if (!toLoc.is_active) throw new ValidationError(`Location '${toCode}' is inactive`);
 
-    // item_id
-    const itemRes = await client.query(
-      `SELECT id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-      [tenantId, clientId, b]
-    );
-    if (itemRes.rowCount === 0) throw new NotFoundError(`Item '${b}'`);
-    const itemId = itemRes.rows[0].id;
+    // item_id — через алиасы (см. миграцию 060): у товара может быть
+    // несколько зарегистрированных в ВБ штрихкодов на один и тот же
+    // физический товар, прямой поиск по items.barcode их не видит.
+    const found = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: client });
+    if (!found) throw new NotFoundError(`Item '${b}'`);
+    if (!found.is_active) throw new ValidationError(`Item with barcode '${b}' is inactive`);
+    const itemId = found.id;
 
     // Проверяем остаток WITH LOCK
     const balRes = await client.query(
@@ -179,12 +180,10 @@ async function moveBatch({ tenantId, warehouseId, clientId, lines, userId }) {
       if (toRes.rowCount === 0) throw new NotFoundError(`Location '${toCode}'`);
       const toLoc = toRes.rows[0];
 
-      const itemRes = await client.query(
-        `SELECT id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-        [tenantId, clientId, b]
-      );
-      if (itemRes.rowCount === 0) throw new NotFoundError(`Item '${b}'`);
-      const itemId = itemRes.rows[0].id;
+      const found = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: client });
+      if (!found) throw new NotFoundError(`Item '${b}'`);
+      if (!found.is_active) throw new ValidationError(`Item with barcode '${b}' is inactive`);
+      const itemId = found.id;
 
       const balRes = await client.query(
         `SELECT qty_available, avg_cost FROM wms.stock_balances

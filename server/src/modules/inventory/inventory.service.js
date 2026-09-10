@@ -13,6 +13,7 @@ const { triggerRedistributionForClient } = require('../wb/wb.service');
 const { getLocationByCode } = require('../masterdata/locations/locations.service');
 const { InsufficientStockError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
+const { findItemIdByBarcode } = require('../masterdata/items/items.service');
 
 // =============================================================================
 // Inventory Service
@@ -67,12 +68,12 @@ async function createTask({
     let itemId    = null;
 
     if (b) {
-      const itemRes = await client.query(
-        `SELECT id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
-        [tenantId, clientId, b]
-      );
-      if (itemRes.rowCount > 0) {
-        itemId = itemRes.rows[0].id;
+      // item_id — через алиасы (см. миграцию 060 / wms.item_barcodes): у товара
+      // может быть несколько зарегистрированных в ВБ штрихкодов на один и тот же
+      // физический товар, прямой поиск по items.barcode их не видит.
+      const resolved = await findItemIdByBarcode({ tenantId, clientId, barcode: b, dbClient: client });
+      if (resolved && resolved.is_active) {
+        itemId = resolved.id;
         const balRes = await client.query(
           `SELECT qty_on_hand FROM wms.stock_balances
            WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5`,
