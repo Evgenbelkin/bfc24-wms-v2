@@ -789,7 +789,7 @@ router.get('/dashboard-summary', async (req,res,next)=>{
   try {
     const clientId = resolveClientScope(req, req.user.clientId);
     const tenantId = req.user.tenantId;
-    const [receiving, placement, picking, packing, shipping] = await Promise.all([
+    const [receiving, orders, picking, packing, shipping] = await Promise.all([
       // Приёмка: активные заявки клиента (ещё не закрыты) + сколько принято
       // сегодня (по первому непустому из completed_at/closed_at/updated_at -
       // раздельных "дата приёмки"-колонок в схеме нет).
@@ -803,14 +803,26 @@ router.get('/dashboard-summary', async (req,res,next)=>{
          WHERE tenant_id=$1 AND client_id=$2`,
         [tenantId, clientId]
       ),
-      // Размещение: сколько товара клиента лежит в приёмке/буфере/карантине,
-      // ещё не разложено по ячейкам хранения - живой остаток, не "за сегодня".
+      // Заказы: сколько заказов ВБ этого клиента ещё НЕ сформировано в волну/
+      // поставку (backlog_orders, та же логика "разрешения", что и в
+      // overview.service.js::getWaveBacklogStats - см. её комментарий про
+      // статус 'new' и отключённые под сборку склады) + сколько всего заказов
+      // пришло сегодня (orders_today, по created_at, независимо от статуса).
+      // wms.wb_orders не имеет client_id напрямую - скоуп через mp_accounts.
       query(
-        `SELECT COALESCE(SUM(sb.qty_on_hand),0)::int AS units_pending
-         FROM wms.stock_balances sb
-         JOIN wms.locations l ON l.id = sb.location_id
-         WHERE sb.tenant_id=$1 AND sb.client_id=$2 AND sb.qty_on_hand > 0
-           AND l.location_type IN ('receiving','buffer','quarantine')`,
+        `SELECT
+           COUNT(*) FILTER (
+             WHERE o.wb_supply_id IS NULL AND o.status='new'
+               AND NOT EXISTS (
+                 SELECT 1 FROM wms.wb_seller_warehouses w
+                 WHERE w.mp_account_id=o.mp_account_id AND w.wb_warehouse_id=o.warehouse_id
+                   AND w.is_enabled_for_picking=FALSE
+               )
+           )::int AS backlog_orders,
+           COUNT(*) FILTER (WHERE o.created_at::date = CURRENT_DATE)::int AS orders_today
+         FROM wms.wb_orders o
+         JOIN wms.mp_accounts ma ON ma.id = o.mp_account_id
+         WHERE o.tenant_id=$1 AND ma.client_id=$2`,
         [tenantId, clientId]
       ),
       // Сборка: сколько задач в работе сейчас + сколько завершено сегодня.
@@ -846,7 +858,7 @@ router.get('/dashboard-summary', async (req,res,next)=>{
       ok: true,
       summary: {
         receiving: receiving.rows[0],
-        placement: placement.rows[0],
+        orders: orders.rows[0],
         picking: picking.rows[0],
         packing: packing.rows[0],
         shipping: shipping.rows[0],

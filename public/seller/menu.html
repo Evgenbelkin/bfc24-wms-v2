@@ -164,9 +164,9 @@
             <span class="proc-val" id="pb-receiving">—</span>
           </div>
           <div class="proc-row" data-c="purple">
-            <span class="proc-ic-wrap"><svg viewBox="0 0 24 24"><path d="M12 22s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
-            <span class="proc-text"><span class="proc-label-name">Размещение</span><span class="proc-sub" id="pb-placement-sub">—</span></span>
-            <span class="proc-val" id="pb-placement">—</span>
+            <span class="proc-ic-wrap"><svg viewBox="0 0 24 24"><path d="M6 2h12v19l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg></span>
+            <span class="proc-text"><span class="proc-label-name">Заказы</span><span class="proc-sub" id="pb-orders-sub">—</span></span>
+            <span class="proc-val" id="pb-orders">—</span>
           </div>
           <div class="proc-row" data-c="orange">
             <span class="proc-ic-wrap"><svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M2 3h2l2.4 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21 7H6"/></svg></span>
@@ -314,12 +314,12 @@ function loadDashboardBoard() {
   window.API.seller.dashboardSummary().then(function (res) {
     var s = res.summary || {};
     var r = s.receiving || {};
-    var p = s.placement || {};
+    var o = s.orders || {};
     var pk = s.picking || {};
     var pa = s.packing || {};
     var sh = s.shipping || {};
     setProcRow('receiving', (r.active_orders || 0) + ' в работе', 'принято сегодня: ' + (r.units_received_today || 0) + ' шт');
-    setProcRow('placement', (p.units_pending || 0) + ' шт', 'ожидает размещения');
+    setProcRow('orders', (o.backlog_orders || 0) + ' без волны', 'всего сегодня: ' + (o.orders_today || 0));
     setProcRow('picking', (pk.tasks_pending || 0) + ' в сборке', 'собрано сегодня: ' + (pk.tasks_done_today || 0));
     setProcRow('packing', (pa.tasks_pending || 0) + ' в упаковке', 'упаковано сегодня: ' + (pa.tasks_done_today || 0));
     setProcRow('shipping', (sh.ready_to_ship || 0) + ' готово', 'отгружено сегодня: ' + (sh.shipped_today || 0));
