@@ -775,6 +775,86 @@ router.get('/billing/invoices/:id', requireModule('billing'), async (req,res,nex
   } catch(e){ next(e); }
 });
 
+// ─────────────── Табло (сводка обработки для главной кабинета) ───────────────
+
+/** GET /seller/dashboard-summary — живой снимок "где сейчас товары клиента":
+ *  сколько в работе на каждом из 5 этапов (приёмка → размещение → сборка →
+ *  упаковка → отгрузка) плюс что уже сделано сегодня. Для табло-коробки на
+ *  главной странице кабинета (public/seller/menu.html) - клиент должен видеть
+ *  это сразу при входе, без переходов по разделам.
+ *  Паттерн запросов скопирован с server/src/modules/overview/overview.service.js
+ *  (внутреннее табло склада), но с добавлением client_id-скоупа и фильтра
+ *  "сегодня" там, где это осмысленно (см. комментарии к отдельным этапам). */
+router.get('/dashboard-summary', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const tenantId = req.user.tenantId;
+    const [receiving, placement, picking, packing, shipping] = await Promise.all([
+      // Приёмка: активные заявки клиента (ещё не закрыты) + сколько принято
+      // сегодня (по первому непустому из completed_at/closed_at/updated_at -
+      // раздельных "дата приёмки"-колонок в схеме нет).
+      query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status NOT IN ('completed','cancelled'))::int AS active_orders,
+           COALESCE(SUM(total_received_qty) FILTER (
+             WHERE COALESCE(completed_at, closed_at, updated_at)::date = CURRENT_DATE
+           ), 0)::int AS units_received_today
+         FROM wms.inbound_orders
+         WHERE tenant_id=$1 AND client_id=$2`,
+        [tenantId, clientId]
+      ),
+      // Размещение: сколько товара клиента лежит в приёмке/буфере/карантине,
+      // ещё не разложено по ячейкам хранения - живой остаток, не "за сегодня".
+      query(
+        `SELECT COALESCE(SUM(sb.qty_on_hand),0)::int AS units_pending
+         FROM wms.stock_balances sb
+         JOIN wms.locations l ON l.id = sb.location_id
+         WHERE sb.tenant_id=$1 AND sb.client_id=$2 AND sb.qty_on_hand > 0
+           AND l.location_type IN ('receiving','buffer','quarantine')`,
+        [tenantId, clientId]
+      ),
+      // Сборка: сколько задач в работе сейчас + сколько завершено сегодня.
+      query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status IN ('new','in_progress'))::int AS tasks_pending,
+           COUNT(*) FILTER (WHERE status='done' AND finished_at::date = CURRENT_DATE)::int AS tasks_done_today
+         FROM wms.picking_tasks
+         WHERE tenant_id=$1 AND client_id=$2`,
+        [tenantId, clientId]
+      ),
+      // Упаковка: аналогично сборке. finished_at у packing_tasks нет - берём
+      // updated_at (обновляется при переходе в done, этого достаточно).
+      query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status IN ('new','in_progress'))::int AS tasks_pending,
+           COUNT(*) FILTER (WHERE status='done' AND updated_at::date = CURRENT_DATE)::int AS tasks_done_today
+         FROM wms.packing_tasks
+         WHERE tenant_id=$1 AND client_id=$2`,
+        [tenantId, clientId]
+      ),
+      // Отгрузка: готово к отгрузке сейчас + отгружено сегодня.
+      query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status='ready_to_ship')::int AS ready_to_ship,
+           COUNT(*) FILTER (WHERE shipped_at::date = CURRENT_DATE)::int AS shipped_today
+         FROM wms.shipments
+         WHERE tenant_id=$1 AND client_id=$2`,
+        [tenantId, clientId]
+      ),
+    ]);
+    res.json({
+      ok: true,
+      summary: {
+        receiving: receiving.rows[0],
+        placement: placement.rows[0],
+        picking: picking.rows[0],
+        packing: packing.rows[0],
+        shipping: shipping.rows[0],
+      },
+    });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Профиль ───────────────
 
 router.get('/profile', async (req,res,next)=>{

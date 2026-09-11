@@ -20,6 +20,35 @@
     .support-link .ic{width:22px;height:22px;flex-shrink:0;color:var(--accent);}
     .support-link .ic svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
     .support-link .sub2{display:block;font-weight:500;font-size:11px;color:var(--muted);margin-top:1px;}
+
+    /* Табло "обработка сейчас" - коробка, стоящая ровно, с живыми цифрами
+       поверх (см. чат: аналог таблички с сайта bfc-24.ru, но без фото -
+       фото плохо ложится под текст, а тут важна читаемость цифр). */
+    .proc-card{padding-top:16px;}
+    .proc-box{position:relative;border-radius:14px;overflow:hidden;padding:16px 14px 12px;
+      border:1px solid rgba(0,0,0,.18);
+      box-shadow:0 10px 22px rgba(0,0,0,.16), inset 0 0 0 1px rgba(255,255,255,.08);
+      background:
+        repeating-linear-gradient(45deg, rgba(0,0,0,.035) 0 6px, rgba(0,0,0,0) 6px 12px),
+        linear-gradient(160deg, #d8b483, #ba9058 55%, #a67c43);}
+    .proc-box:before{content:"";position:absolute;left:0;right:0;top:0;height:14px;
+      background:linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,0));}
+    .proc-box-tape{position:absolute;top:0;bottom:0;left:50%;width:44px;margin-left:-22px;
+      background:linear-gradient(90deg, rgba(255,255,255,.14), rgba(255,255,255,.32) 50%, rgba(255,255,255,.14));
+      opacity:.5;}
+    .proc-box-brand{position:absolute;top:9px;right:13px;font-size:10.5px;font-weight:800;letter-spacing:1px;
+      color:rgba(255,255,255,.6);border:1.5px solid rgba(255,255,255,.45);border-radius:5px;
+      padding:2px 6px;transform:rotate(-4deg);}
+    .proc-rows{position:relative;display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+    .proc-row{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.16);
+      border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:9px 11px;}
+    .proc-ic{width:20px;height:20px;flex-shrink:0;color:#3c2a12;}
+    .proc-ic svg{width:100%;height:100%;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+    .proc-text{flex:1;min-width:0;}
+    .proc-label{display:block;font-size:13px;font-weight:800;color:#2c1d0c;}
+    .proc-sub{display:block;font-size:11px;color:#5a4426;margin-top:1px;}
+    .proc-val{font-size:16px;font-weight:800;color:#2c1d0c;white-space:nowrap;padding-left:6px;text-align:right;}
+    .proc-updated{position:relative;margin-top:10px;font-size:10.5px;color:rgba(255,255,255,.6);text-align:right;}
   </style>
 </head>
 <body>
@@ -35,6 +64,42 @@
   <div class="card">
     <div class="card-title">Компания</div>
     <div id="client-name" style="font-size:18px;font-weight:700;">—</div>
+  </div>
+
+  <div class="card proc-card">
+    <div class="card-title">Обработка ваших товаров — сейчас</div>
+    <div class="proc-box" id="proc-box">
+      <div class="proc-box-tape"></div>
+      <div class="proc-box-brand">BFC24</div>
+      <div class="proc-rows">
+        <div class="proc-row">
+          <span class="proc-ic"><svg class="i" viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v8"/></svg></span>
+          <span class="proc-text"><span class="proc-label">Приёмка</span><span class="proc-sub" id="pb-receiving-sub">—</span></span>
+          <span class="proc-val" id="pb-receiving">—</span>
+        </div>
+        <div class="proc-row">
+          <span class="proc-ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
+          <span class="proc-text"><span class="proc-label">Размещение</span><span class="proc-sub" id="pb-placement-sub">—</span></span>
+          <span class="proc-val" id="pb-placement">—</span>
+        </div>
+        <div class="proc-row">
+          <span class="proc-ic"><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M2 3h2l2.4 12.4a2 2 0 0 0 2 1.6h8.6a2 2 0 0 0 2-1.6L21 7H6"/></svg></span>
+          <span class="proc-text"><span class="proc-label">Сборка</span><span class="proc-sub" id="pb-picking-sub">—</span></span>
+          <span class="proc-val" id="pb-picking">—</span>
+        </div>
+        <div class="proc-row">
+          <span class="proc-ic"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="13" rx="1"/><path d="M3 8l9-5 9 5"/><path d="M12 3v18"/></svg></span>
+          <span class="proc-text"><span class="proc-label">Упаковка</span><span class="proc-sub" id="pb-packing-sub">—</span></span>
+          <span class="proc-val" id="pb-packing">—</span>
+        </div>
+        <div class="proc-row">
+          <span class="proc-ic"><svg class="i" viewBox="0 0 24 24"><rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h5l3 4v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="18" cy="19" r="1.8"/></svg></span>
+          <span class="proc-text"><span class="proc-label">Отгрузка</span><span class="proc-sub" id="pb-shipping-sub">—</span></span>
+          <span class="proc-val" id="pb-shipping">—</span>
+        </div>
+      </div>
+      <div class="proc-updated" id="pb-updated">Загрузка…</div>
+    </div>
   </div>
 
   <div class="tile-grid">
@@ -167,6 +232,46 @@ _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
         return _context.a(2);
     }
   }, _callee, null, [[0, 2]]);
-}))();</script>
+}))();
+
+// Табло "обработка сейчас" - живой снимок (см. GET /seller/dashboard-summary).
+// Написано без async/await и без Promise-цепочек через _asyncToGenerator
+// специально, plain .then()/.catch() - тот же уровень совместимости, что и
+// в public/shared/ui.js/scanner.js (см. задачу "Транспилировать JS под
+// старый WebView ТСД"), не требует regenerator-помощника для этого куска.
+function setProcRow(key, val, sub) {
+  var v = document.getElementById('pb-' + key);
+  var s = document.getElementById('pb-' + key + '-sub');
+  if (v) v.textContent = val;
+  if (s) s.textContent = sub;
+}
+function loadDashboardBoard() {
+  window.API.seller.dashboardSummary().then(function (res) {
+    var s = res.summary || {};
+    var r = s.receiving || {};
+    var p = s.placement || {};
+    var pk = s.picking || {};
+    var pa = s.packing || {};
+    var sh = s.shipping || {};
+    setProcRow('receiving', (r.active_orders || 0) + ' в работе', 'принято сегодня: ' + (r.units_received_today || 0) + ' шт');
+    setProcRow('placement', (p.units_pending || 0) + ' шт', 'ожидает размещения');
+    setProcRow('picking', (pk.tasks_pending || 0) + ' в сборке', 'собрано сегодня: ' + (pk.tasks_done_today || 0));
+    setProcRow('packing', (pa.tasks_pending || 0) + ' в упаковке', 'упаковано сегодня: ' + (pa.tasks_done_today || 0));
+    setProcRow('shipping', (sh.ready_to_ship || 0) + ' готово', 'отгружено сегодня: ' + (sh.shipped_today || 0));
+    var upd = document.getElementById('pb-updated');
+    if (upd) {
+      var now = new Date();
+      var hh = ('0' + now.getHours()).slice(-2);
+      var mm = ('0' + now.getMinutes()).slice(-2);
+      upd.textContent = 'Обновлено в ' + hh + ':' + mm;
+    }
+  }).catch(function () {
+    var upd = document.getElementById('pb-updated');
+    if (upd) upd.textContent = 'Не удалось обновить';
+  });
+}
+loadDashboardBoard();
+setInterval(loadDashboardBoard, 60000);
+</script>
 </body>
 </html>

@@ -1242,6 +1242,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     profile: function profile() {
       return _get('/seller/profile');
     },
+    dashboardSummary: function dashboardSummary() {
+      return _get('/seller/dashboard-summary');
+    },
     inbound: {
       list: function list(p) {
         return _get('/seller/inbound', p);
