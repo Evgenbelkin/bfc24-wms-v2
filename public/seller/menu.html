@@ -53,11 +53,6 @@
       background:repeating-linear-gradient(100deg, rgba(0,0,0,.04) 0 6px, rgba(0,0,0,0) 6px 12px),
         linear-gradient(200deg,#e7c99a,#c9a06e 65%,#ad8148);
       clip-path:polygon(0 100%, 40px 0, 100% 0, calc(100% - 40px) 100%);}
-    /* Синий скотч через верхнюю грань (по рисунку клиента в чате) - только
-       на крышке, передний торец не трогаем. */
-    .proc-tape{position:absolute;top:0;bottom:0;left:50%;width:15%;margin-left:-7.5%;
-      background:linear-gradient(90deg, rgba(47,111,237,0), rgba(47,111,237,.8) 30%, rgba(74,138,255,.85) 50%, rgba(47,111,237,.8) 70%, rgba(47,111,237,0));
-      pointer-events:none;}
     .proc-right{position:absolute;top:0;left:100%;width:40px;height:100%;
       background:repeating-linear-gradient(100deg, rgba(0,0,0,.12) 0 6px, rgba(0,0,0,0) 6px 12px),
         linear-gradient(200deg,#96703f,#7c5a30 65%,#664a27);
@@ -154,7 +149,7 @@
     <div class="proc-cube-wrap">
       <div class="proc-cube-shadow"></div>
       <div class="proc-cube">
-        <div class="proc-top"><div class="proc-tape"></div></div>
+        <div class="proc-top"></div>
         <div class="proc-right"></div>
         <div class="proc-box" id="proc-box">
       <div class="proc-label">
