@@ -147,7 +147,11 @@ async function getShippingStats(tenantId) {
     3 дня, а WMS никак это не показывала (cancelled-отгрузки нигде не видны
     отдельным списком). wb_status (обновляется раз в 30 мин job'ом
     wbFbsStatusSync.js, независимо от wb_supply_id) используется, чтобы не
-    дёргать зря уже реально закрытые на ВБ заказы (sold/canceled/...). */
+    дёргать зря уже реально закрытые на ВБ заказы (sold/canceled/...).
+    ФИКС 12.09.2026: 'sorted' (ВБ реально отсканировал заказ у себя на складе -
+    в fbsAnalytics.service.js это уже классифицируется как бакет "in_transit",
+    т.е. заказ уже поехал дальше) не был в списке исключений - алерт продолжал
+    висеть даже после того, как товар физически отсканировали на стороне ВБ. */
 async function getStuckOrdersGroups(tenantId) {
   const r = await query(
     `SELECT
@@ -168,7 +172,7 @@ async function getStuckOrdersGroups(tenantId) {
      WHERE o.tenant_id = $1
        AND o.status = 'confirm'
        AND o.wb_supply_id IS NOT NULL
-       AND COALESCE(o.wb_status,'') NOT IN ('sold','canceled','canceled_by_client','declined_by_client','defect')
+       AND COALESCE(o.wb_status,'') NOT IN ('sorted','sold','canceled','canceled_by_client','declined_by_client','defect')
        AND (
          s.id IS NULL
          OR s.status = 'cancelled'
