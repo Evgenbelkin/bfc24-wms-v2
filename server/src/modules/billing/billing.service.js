@@ -807,13 +807,18 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     baseParams
   );
 
+  // period × client_id (не только period) — чтобы на графике "Динамика
+  // отгрузок по клиентам" можно было провести отдельную линию на каждого
+  // клиента (тот же паттерн, что и у seriesRes для выручки), а не только
+  // общую сумму по всем сразу.
   const shippedQtyRes = await query(
     `SELECT date_trunc($${baseParams.length + 1}, s.shipped_at)::date AS period,
-            SUM(s.total_shipped_qty)::numeric AS qty
+            s.client_id, c.client_name, SUM(s.total_shipped_qty)::numeric AS qty
      FROM wms.shipments s
+     JOIN wms.clients c ON c.id = s.client_id
      WHERE s.tenant_id=$1 AND s.shipped_at IS NOT NULL
        AND s.shipped_at::date>=$2::date AND s.shipped_at::date<=$3::date${shipClientCond}
-     GROUP BY period
+     GROUP BY period, s.client_id, c.client_name
      ORDER BY period`,
     [...baseParams, granularity]
   );
@@ -849,7 +854,9 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
     })),
     by_service_type: byTypeRes.rows.map(r => ({ service_type: r.service_type, total: Number(r.total) })),
     by_client: mergeByClient(byClientRes.rows, shippedQtyByClientRes.rows),
-    shipped_qty_series: shippedQtyRes.rows.map(r => ({ period: r.period, qty: Number(r.qty) })),
+    shipped_qty_series: shippedQtyRes.rows.map(r => ({
+      period: r.period, client_id: r.client_id, client_name: r.client_name, qty: Number(r.qty),
+    })),
     shipped_qty_total: shippedQtyTotal,
     storage_series: storageSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),
     storage_total: storageTotal,

@@ -62,6 +62,12 @@
   </div>
 
   <div class="card">
+    <div class="card-title">Динамика отгрузок по клиентам, шт</div>
+    <div class="refresh-note" style="margin-bottom:8px;">Сколько товара физически отгрузили каждому клиенту по дням — те же клиенты и цвета, что и на «Динамике выручки», чтобы сверять деньги и объём.</div>
+    <div class="chart-wrap"><canvas id="chart-shipped-qty-by-client"></canvas></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Динамика по хранению</div>
     <div class="refresh-note" style="margin-bottom:8px;">Начисляется раз в сутки (по остатку на складе), поэтому отдельно от разовых операций — на общем графике выручки суточное хранение теряется на фоне всплесков по отгрузкам.</div>
     <div class="chart-wrap" style="height:220px;"><canvas id="chart-storage-series"></canvas></div>
@@ -228,7 +234,8 @@ var chartRevenueSeries = null,
   chartPayrollSeries = null,
   chartPayrollType = null,
   chartStorageSeries = null,
-  chartRevenueTypeSeries = null;
+  chartRevenueTypeSeries = null,
+  chartShippedQtyByClient = null;
 function destroyChart(c) {
   if (c) c.destroy();
   return null;
@@ -238,7 +245,7 @@ function loadRevenue(_x) {
 }
 function _loadRevenue() {
   _loadRevenue = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(params) {
-    var res, periods, clientIds, noteEl, datasets, totals, top, topIds, hasRest, _cnf, clientName, typesPresent, _t2;
+    var res, periods, clientIds, noteEl, datasets, totals, top, topIds, hasRest, _cnf, clientName, typesPresent, _t2, qtyDatasets;
     return _regenerator().w(function (_context4) {
       while (1) switch (_context4.p = _context4.n) {
         case 0:
@@ -358,10 +365,11 @@ function _loadRevenue() {
           datasets = [].concat(_toConsumableArray(datasets), [{
             label: 'Отгружено, шт',
             data: periods.map(function (p) {
-              var row = (res.shipped_qty_series || []).find(function (r) {
+              return (res.shipped_qty_series || []).filter(function (r) {
                 return r.period === p;
-              });
-              return row ? row.qty : 0;
+              }).reduce(function (s, r) {
+                return s + r.qty;
+              }, 0);
             }),
             borderColor: '#f59e0b',
             backgroundColor: '#f59e0b',
@@ -396,6 +404,98 @@ function _loadRevenue() {
                   grid: {
                     drawOnChartArea: false
                   }
+                }
+              }
+            }
+          });
+
+          // Динамика отгрузок по клиентам, шт — отдельный график (не мешаем с
+          // рублями: масштаб и смысл разные). Те же топ-6 клиентов, тот же
+          // порядок и палитра цветов, что и на "Динамике выручки" выше (top/
+          // topIds уже посчитаны там) — чтобы линия одного клиента была видна
+          // тем же цветом на обоих графиках и легко было сверять деньги с объёмом.
+          if (!params.client_id && clientIds.length > 1) {
+            qtyDatasets = top.map(function (c, i) {
+              return {
+                label: c.client_name,
+                data: periods.map(function (p) {
+                  var row = (res.shipped_qty_series || []).find(function (r) {
+                    return r.period === p && r.client_id === c.client_id;
+                  });
+                  return row ? row.qty : 0;
+                }),
+                borderColor: PALETTE[i % PALETTE.length],
+                backgroundColor: PALETTE[i % PALETTE.length],
+                tension: 0.25,
+                fill: false
+              };
+            });
+            if (hasRest) {
+              qtyDatasets.push({
+                label: 'Остальные',
+                data: periods.map(function (p) {
+                  return (res.shipped_qty_series || []).filter(function (r) {
+                    return r.period === p && !topIds.has(r.client_id);
+                  }).reduce(function (s, r) {
+                    return s + r.qty;
+                  }, 0);
+                }),
+                borderColor: '#94a3b8',
+                backgroundColor: '#94a3b8',
+                borderDash: [4, 4],
+                tension: 0.25,
+                fill: false
+              });
+            }
+            qtyDatasets.push({
+              label: 'Итого',
+              data: periods.map(function (p) {
+                return (res.shipped_qty_series || []).filter(function (r) {
+                  return r.period === p;
+                }).reduce(function (s, r) {
+                  return s + r.qty;
+                }, 0);
+              }),
+              borderColor: '#0f172a',
+              backgroundColor: '#0f172a',
+              borderWidth: 3,
+              tension: 0.25,
+              fill: false
+            });
+          } else {
+            qtyDatasets = [{
+              label: 'Отгружено, шт',
+              data: periods.map(function (p) {
+                return (res.shipped_qty_series || []).filter(function (r) {
+                  return r.period === p;
+                }).reduce(function (s, r) {
+                  return s + r.qty;
+                }, 0);
+              }),
+              borderColor: '#f59e0b',
+              backgroundColor: '#f59e0b',
+              tension: 0.25,
+              fill: false
+            }];
+          }
+          chartShippedQtyByClient = destroyChart(chartShippedQtyByClient);
+          chartShippedQtyByClient = new Chart(document.getElementById('chart-shipped-qty-by-client'), {
+            type: 'line',
+            data: {
+              labels: periods,
+              datasets: qtyDatasets
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  display: true
+                }
+              },
+              scales: {
+                y: {
+                  beginAtZero: true
                 }
               }
             }
