@@ -363,8 +363,23 @@ async function syncDeliveryStatusForTenant(tenantId) {
     );
   }
 
+  // ФИКС 13.09.2026 ("В пути" на табло показывало старьё вместо реальных
+  // свежих поставок): allAccepted требовал, чтобы ВСЕ заказы поставки вышли
+  // из 'waiting' - один-единственный "застрявший" заказ (wbStatus так и не
+  // обновился - null, или навсегда остался 'waiting') блокировал ВСЮ
+  // поставку НАВСЕГДА, даже если остальные её заказы давно 'sold'/
+  // 'ready_for_pickup'. Реальные находки: WB-GI-274957736 (создана 7 дней
+  // назад, 16 из 17 заказов уже sold/ready_for_pickup, 1 навечно waiting) и
+  // WB-GI-264794671 (создана месяц назад, оба заказа wbStatus=null навсегда,
+  // видимо статус вообще никогда не пришёл от WB) - обе так и висели в
+  // "in_transit" бесконечно, раздувая счётчик "В пути" старыми зомби вместо
+  // честного числа реально свежих поставок. Пороговое значение 5 дней -
+  // с большим запасом сверх SLA приёмки WB (48ч), чтобы не закрыть реально
+  // ещё едущую поставку по ошибке.
+  const STUCK_SHIPMENT_FORCE_CLOSE_HOURS = 24 * 5; // 5 дней
+
   const shipRes = await query(
-    `SELECT id, external_id FROM wms.shipments WHERE tenant_id=$1 AND status='in_transit'`,
+    `SELECT id, external_id, created_at FROM wms.shipments WHERE tenant_id=$1 AND status='in_transit'`,
     [tenantId]
   );
   if (shipRes.rowCount === 0) return { checked: 0, updated: 0 };
@@ -372,6 +387,9 @@ async function syncDeliveryStatusForTenant(tenantId) {
   let updated = 0;
   for (const shipment of shipRes.rows) {
     try {
+      const ageHours = (Date.now() - new Date(shipment.created_at).getTime()) / 3600000;
+      const stuckTooLong = ageHours >= STUCK_SHIPMENT_FORCE_CLOSE_HOURS;
+
       const ordersRes = await query(
         `SELECT wo.wb_order_id, ma.api_token
          FROM wms.wb_orders wo
@@ -379,7 +397,21 @@ async function syncDeliveryStatusForTenant(tenantId) {
          WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND ma.api_token IS NOT NULL`,
         [tenantId, shipment.external_id]
       );
-      if (ordersRes.rowCount === 0) continue; // ещё не досинхронизировано/нет токена — попробуем в следующий прогон
+      if (ordersRes.rowCount === 0) {
+        // Ни одного заказа не сопоставилось с этой поставкой вообще (плохой
+        // external_id / токен убрали / данные ещё не досинхронизировались).
+        // Если это тянется дольше 5 дней - ждать уже нечего, закрываем, чтобы
+        // не копилась зомби-запись без единого шанса когда-либо разрешиться.
+        if (stuckTooLong) {
+          logger.warn(
+            { tenantId, shipmentId: shipment.id, externalId: shipment.external_id, ageHours: Math.round(ageHours) },
+            'syncDeliveryStatusForTenant: поставка без единого сопоставленного заказа дольше 5 дней - принудительно закрываем'
+          );
+          await query(`UPDATE wms.shipments SET status='done', wb_accepted_at=NOW(), updated_at=NOW() WHERE id=$1`, [shipment.id]);
+          updated++;
+        }
+        continue; // иначе пробуем в следующий прогон
+      }
 
       // Поставка всегда привязана к одному WB-аккаунту, поэтому один токен на все её заказы.
       const token = ordersRes.rows[0].api_token;
@@ -388,8 +420,19 @@ async function syncDeliveryStatusForTenant(tenantId) {
       const statuses = await wbClient.fetchOrderStatuses(token, orderIds);
       if (!statuses.length) continue;
 
-      const allAccepted = statuses.every(s => s.wbStatus && s.wbStatus !== 'waiting');
-      if (allAccepted) {
+      const stragglers = statuses.filter(s => !s.wbStatus || s.wbStatus === 'waiting');
+      const allAccepted = stragglers.length === 0;
+      const forceClose = !allAccepted && stuckTooLong;
+      if (allAccepted || forceClose) {
+        if (forceClose) {
+          logger.warn(
+            {
+              tenantId, shipmentId: shipment.id, externalId: shipment.external_id,
+              ageHours: Math.round(ageHours), stuckOrders: stragglers.length, totalOrders: statuses.length,
+            },
+            'syncDeliveryStatusForTenant: часть заказов поставки навсегда осталась waiting/без статуса дольше 5 дней - принудительно закрываем поставку'
+          );
+        }
         await query(
           `UPDATE wms.shipments SET status='done', wb_accepted_at=NOW(), updated_at=NOW() WHERE id=$1`,
           [shipment.id]
