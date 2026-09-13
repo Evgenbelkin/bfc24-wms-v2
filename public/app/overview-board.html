@@ -126,7 +126,7 @@ function loadAll() {
 }
 function _loadAll() {
   _loadAll = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
-    var res, r, p, w, pk, pc, sh, st, attention, html, _t;
+    var res, r, p, w, pk, pc, sh, st, fo, attention, html, _t;
     return _regenerator().w(function (_context2) {
       while (1) switch (_context2.p = _context2.n) {
         case 0:
@@ -142,6 +142,7 @@ function _loadAll() {
           pc = res.packing || {};
           sh = res.shipping || {};
           st = res.stuckOrders || {}; // Сводка сверху: сколько всего требует внимания прямо сейчас, по всей воронке
+          fo = res.fbsOnTimeToday || {}; // ДОБАВЛЕНО 13.09.2026: % заказов, принятых ВБ сегодня в срок (48ч от создания)
           attention = (p.lines_pending || 0) + (w.backlog_orders || 0) + (pk.tasks_pending || 0) + (pc.tasks_pending || 0);
           document.getElementById('kpi-grid').innerHTML = [{
             num: attention,
@@ -159,6 +160,10 @@ function _loadAll() {
             num: st.stuck_orders || 0,
             label: 'Зависли на ВБ',
             cls: (st.stuck_orders || 0) > 0 ? 'danger' : 'ok'
+          }, {
+            num: fo.on_time_rate != null ? Math.round(fo.on_time_rate) + '%' : '—',
+            label: 'В срок сегодня (' + (fo.processed || 0) + ')',
+            cls: fo.on_time_rate == null ? '' : fo.on_time_rate >= 90 ? 'ok' : fo.on_time_rate >= 70 ? 'warn' : 'danger'
           }].map(function (k) {
             return "<div class=\"kpi ".concat(k.cls, "\"><div class=\"num\">").concat(k.num, "</div><div class=\"label\">").concat(k.label, "</div></div>");
           }).join('');

@@ -20,6 +20,7 @@ async function getFunnelOverview({ tenantId }) {
     packing,
     shipping,
     stuckOrders,
+    fbsOnTimeToday,
   ] = await Promise.all([
     getReceivingStats(tenantId),
     getPlacementStats(tenantId),
@@ -28,9 +29,41 @@ async function getFunnelOverview({ tenantId }) {
     getPackingStats(tenantId),
     getShippingStats(tenantId),
     getStuckOrdersStats(tenantId),
+    getFbsOnTimeToday(tenantId),
   ]);
 
-  return { receiving, placement, waveBacklog, picking, packing, shipping, stuckOrders };
+  return { receiving, placement, waveBacklog, picking, packing, shipping, stuckOrders, fbsOnTimeToday };
+}
+
+/** % заказов, принятых ВБ СЕГОДНЯ (wb_accepted_at), уложившихся в 48ч от
+ *  создания заказа до приёмки ВБ. ДОБАВЛЕНО 13.09.2026 по просьбе клиента -
+ *  "табло наполовину пустое, добавь что-то полезное". Специально считаем по
+ *  ДАТЕ ПРИЁМКИ (wb_accepted_at), а не по дате СОЗДАНИЯ заказа (как делает
+ *  fbsAnalyticsService.getProcessingSpeed для отчётов за период) - если
+ *  фильтровать по created_at='сегодня', большая часть заказов, созданных
+ *  сегодня, физически ещё не успела дойти до приёмки ВБ (окно приёмки до
+ *  48ч) и tile почти весь день показывал бы "processed:0" - бесполезно для
+ *  табло, которое смотрят прямо сейчас, в моменте дня. */
+async function getFbsOnTimeToday(tenantId) {
+  const r = await query(
+    `SELECT wo.created_at, s.wb_accepted_at AS accepted_at
+     FROM wms.wb_orders wo
+     JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     WHERE wo.tenant_id = $1
+       AND s.wb_accepted_at >= date_trunc('day', NOW())
+       AND s.wb_accepted_at < date_trunc('day', NOW()) + INTERVAL '1 day'`,
+    [tenantId]
+  );
+  let onTime = 0;
+  const processed = r.rowCount;
+  for (const row of r.rows) {
+    const hours = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
+    if (hours <= 48) onTime++;
+  }
+  return {
+    processed,
+    on_time_rate: processed > 0 ? (onTime / processed) * 100 : null,
+  };
 }
 
 /** Приёмка: активные заявки (не completed/cancelled) — план vs факт */
