@@ -130,20 +130,45 @@ router.get('/accounts/:id/warehouses', requireRole('tenant_admin','supervisor'),
   } catch(e){ next(e); }
 });
 
+/** PATCH /accounts/:id/warehouses/:whId — теперь также принимает weight и
+ *  is_enabled_for_dist (доля/участие в автораспределении остатков), не только
+ *  is_enabled_for_picking. ПРАВКА 13.09.2026: раньше этим управлял сам клиент
+ *  на /seller/wb-warehouses.html — убрали оттуда после инцидента (ИП Макарова
+ *  С.И. случайно включила 3 склада, 2 из которых физически обслуживает другой
+ *  ФФ на том же WB-аккаунте, и наша программа затёрла его остаток). Теперь
+ *  сотрудник сам спрашивает у клиента, какие склады реально его, и ставит
+ *  галочки здесь — клиент прямого доступа к этой настройке больше не имеет. */
 router.patch('/accounts/:id/warehouses/:whId', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const accountId = Number(req.params.id);
     const whId = Number(req.params.whId);
-    const { is_enabled_for_picking } = req.body;
-    if (is_enabled_for_picking === undefined) throw new ValidationError('is_enabled_for_picking is required');
+    const { is_enabled_for_picking, is_enabled_for_dist, weight } = req.body;
+    if (is_enabled_for_picking === undefined && is_enabled_for_dist === undefined && weight === undefined) {
+      throw new ValidationError('Nothing to update');
+    }
+    const fields = []; const params = []; let idx = 1;
+    if (is_enabled_for_picking !== undefined) { fields.push(`is_enabled_for_picking=$${idx++}`); params.push(!!is_enabled_for_picking); }
+    if (is_enabled_for_dist !== undefined) { fields.push(`is_enabled_for_dist=$${idx++}`); params.push(!!is_enabled_for_dist); }
+    if (weight !== undefined) {
+      const w = Number(weight);
+      if (!Number.isFinite(w) || w < 0) throw new ValidationError('weight must be a non-negative number');
+      fields.push(`weight=$${idx++}`); params.push(w);
+    }
+    fields.push(`updated_at=NOW()`);
+    params.push(whId, accountId, req.user.tenantId);
     const r = await query(
-      `UPDATE wms.wb_seller_warehouses w SET is_enabled_for_picking=$1, updated_at=NOW()
+      `UPDATE wms.wb_seller_warehouses w SET ${fields.join(', ')}
        FROM wms.mp_accounts ma
-       WHERE w.mp_account_id = ma.id AND w.id=$2 AND w.mp_account_id=$3 AND ma.tenant_id=$4
-       RETURNING w.id, w.is_enabled_for_picking`,
-      [!!is_enabled_for_picking, whId, accountId, req.user.tenantId]
+       WHERE w.mp_account_id = ma.id AND w.id=$${idx++} AND w.mp_account_id=$${idx++} AND ma.tenant_id=$${idx++}
+       RETURNING w.id, w.is_enabled_for_picking, w.is_enabled_for_dist, w.weight, ma.client_id`,
+      params
     );
     if (r.rowCount === 0) throw new NotFoundError('Warehouse', whId);
+    // Пересчитать и отправить в WB, только если реально поменялась настройка
+    // раздачи (а не только is_enabled_for_picking - та не влияет на остатки).
+    if (is_enabled_for_dist !== undefined || weight !== undefined) {
+      wbService.triggerRedistributionForClient({ tenantId: req.user.tenantId, clientId: r.rows[0].client_id });
+    }
     res.json({ ok: true, warehouse: r.rows[0] });
   } catch(e){ next(e); }
 });
