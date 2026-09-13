@@ -417,7 +417,29 @@ async function syncDeliveryStatusForTenant(tenantId) {
       const token = ordersRes.rows[0].api_token;
       const orderIds = ordersRes.rows.map(r => Number(r.wb_order_id));
 
-      const statuses = await wbClient.fetchOrderStatuses(token, orderIds);
+      // ФИКС 13.09.2026: если сам запрос к WB падает (например битый/просроченный
+      // токен - реальный случай: tenantId=5, WB-GI-264794671, "token contains an
+      // invalid number of segments", 401) - ошибка раньше улетала прямо в общий
+      // catch ниже, и поставка НИКОГДА не доходила до проверки "висит дольше 5
+      // дней", даже если возраст это давно позволял. Токен сам по себе это не
+      // чинит (см. отдельное сообщение пользователю), но поставка хотя бы
+      // перестаёт зомби-висеть в "В пути" бесконечно.
+      let statuses;
+      try {
+        statuses = await wbClient.fetchOrderStatuses(token, orderIds);
+      } catch (apiErr) {
+        if (stuckTooLong) {
+          logger.warn(
+            { tenantId, shipmentId: shipment.id, externalId: shipment.external_id, ageHours: Math.round(ageHours), err: apiErr.message },
+            'syncDeliveryStatusForTenant: WB API упал (см. err) для поставки старше 5 дней - принудительно закрываем, не дожидаясь ответа WB'
+          );
+          await query(`UPDATE wms.shipments SET status='done', wb_accepted_at=NOW(), updated_at=NOW() WHERE id=$1`, [shipment.id]);
+          updated++;
+        } else {
+          logger.warn({ err: apiErr.message, tenantId, shipmentId: shipment.id }, 'WB delivery-status check failed for shipment (non-fatal)');
+        }
+        continue;
+      }
       if (!statuses.length) continue;
 
       const stragglers = statuses.filter(s => !s.wbStatus || s.wbStatus === 'waiting');
