@@ -679,6 +679,34 @@ const REVENUE_GRANULARITIES = ['day', 'week', 'month'];
  * услуги/её стоимости, а не факт оплаты, так что для "сколько зарабатываю"
  * это правильнее, чем ждать выставления счёта.
  */
+/**
+ * Сводит рейтинг клиентов по выручке (billing.service_charges) и по
+ * физически отгруженным штукам (wms.shipments) в один список по client_id.
+ * Источники независимы — клиент может встретиться только в одном из них
+ * (например, ещё не настроен прайс, но уже отгружали, или наоборот), поэтому
+ * объединяем по ключу, а не просто зипуем по индексу. Сортировка по выручке
+ * (как и раньше у by_client), а клиенты без выручки, но с отгрузками,
+ * подставляются в конец.
+ */
+function mergeByClient(revenueRows, shippedQtyRows) {
+  const qtyByClientId = new Map(shippedQtyRows.map(r => [r.client_id, Number(r.qty)]));
+  const seen = new Set();
+  const merged = revenueRows.map(r => {
+    seen.add(r.client_id);
+    return {
+      client_id: r.client_id,
+      client_name: r.client_name,
+      total: Number(r.total),
+      shipped_qty: qtyByClientId.get(r.client_id) || 0,
+    };
+  });
+  for (const r of shippedQtyRows) {
+    if (seen.has(r.client_id)) continue;
+    merged.push({ client_id: r.client_id, client_name: r.client_name, total: 0, shipped_qty: Number(r.qty) });
+  }
+  return merged;
+}
+
 async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo, granularity = 'day' }) {
   if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
   if (!REVENUE_GRANULARITIES.includes(granularity)) {
@@ -761,6 +789,24 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
   // shipped_at проставляются в confirmShipment независимо от того, настроен
   // ли биллинг вообще.
   const shipClientCond = clientId ? ` AND s.client_id=$4` : '';
+
+  // То же самое, но в разрезе клиента (не периода) — чтобы в списке "Выручка
+  // по клиентам" можно было сразу увидеть не только сколько клиент принёс
+  // денег, но и физический объём (сколько штук у него реально отгрузили).
+  // Отдельным запросом, а не JOIN'ом в byClientRes выше, потому что источники
+  // разные (billing.service_charges vs wms.shipments) и клиент может быть
+  // только в одном из двух списков (например, ещё не настроен прайс, но уже
+  // отгружали, или наоборот) — сведение по client_id делаем ниже в JS.
+  const shippedQtyByClientRes = await query(
+    `SELECT s.client_id, c.client_name, SUM(s.total_shipped_qty)::numeric AS qty
+     FROM wms.shipments s
+     JOIN wms.clients c ON c.id = s.client_id
+     WHERE s.tenant_id=$1 AND s.shipped_at IS NOT NULL
+       AND s.shipped_at::date>=$2::date AND s.shipped_at::date<=$3::date${shipClientCond}
+     GROUP BY s.client_id, c.client_name`,
+    baseParams
+  );
+
   const shippedQtyRes = await query(
     `SELECT date_trunc($${baseParams.length + 1}, s.shipped_at)::date AS period,
             SUM(s.total_shipped_qty)::numeric AS qty
@@ -802,7 +848,7 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
       period: r.period, service_type: r.service_type, total: Number(r.total),
     })),
     by_service_type: byTypeRes.rows.map(r => ({ service_type: r.service_type, total: Number(r.total) })),
-    by_client: byClientRes.rows.map(r => ({ client_id: r.client_id, client_name: r.client_name, total: Number(r.total) })),
+    by_client: mergeByClient(byClientRes.rows, shippedQtyByClientRes.rows),
     shipped_qty_series: shippedQtyRes.rows.map(r => ({ period: r.period, qty: Number(r.qty) })),
     shipped_qty_total: shippedQtyTotal,
     storage_series: storageSeriesRes.rows.map(r => ({ period: r.period, total: Number(r.total) })),

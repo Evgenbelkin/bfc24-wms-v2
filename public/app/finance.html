@@ -79,7 +79,7 @@
   </div>
 
   <div class="card" id="revenue-by-client-card" style="display:none;">
-    <div class="card-title">Выручка по клиентам</div>
+    <div class="card-title">Выручка и отгрузки по клиентам</div>
     <div id="revenue-by-client-list"></div>
   </div>
 
@@ -523,7 +523,7 @@ function _loadRevenue() {
           if (!params.client_id && res.by_client.length > 1) {
             document.getElementById('revenue-by-client-card').style.display = 'block';
             document.getElementById('revenue-by-client-list').innerHTML = res.by_client.map(function (c) {
-              return "\n            <div class=\"rank-row\"><span class=\"name\">".concat(UI.escHtml(c.client_name), "</span><span class=\"amt\">").concat(fmtMoney(c.total), "</span></div>\n          ");
+              return "\n            <div class=\"rank-row\"><span class=\"name\">".concat(UI.escHtml(c.client_name), "</span><span class=\"amt\">").concat(fmtMoney(c.total), " <span style=\"color:var(--muted);font-weight:400;\">\xB7 ").concat(fmtInt(c.shipped_qty || 0), " шт</span></span></div>\n          ");
             }).join('');
           }
           _context4.n = 5;
