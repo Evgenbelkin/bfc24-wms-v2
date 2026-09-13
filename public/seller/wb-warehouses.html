@@ -25,9 +25,21 @@
 
   <div class="card">
     <p style="font-size:13px;color:var(--muted);margin:0 0 4px;">
-      Программа сама раскидывает остаток вашего товара по складам WB (FBS) в тех пропорциях,
-      которые вы зададите здесь — не нужно вручную перераспределять остатки в личном кабинете WB.
-      Пересчёт происходит после приёмки нового товара, инвентаризации и после изменения настроек здесь.
+      Программа сама раскидывает остаток вашего товара по складам WB (FBS) в заданных пропорциях —
+      не нужно вручную перераспределять остатки в личном кабинете WB.
+      Пересчёт происходит после приёмки нового товара, инвентаризации и после изменения настроек ниже.
+    </p>
+    <!-- ЗАБЛОКИРОВАНО 13.09.2026: раньше клиент сам включал/выключал склады и
+         менял доли прямо здесь - реальный случай (ИП Макарова С.И.) клиент
+         случайно включил в раздачу 3 склада вместо одного, причём 2 из них
+         физически обслуживает ДРУГОЙ фулфилмент на этом же WB-аккаунте - наша
+         программа стала слать туда остаток поверх того, что реально
+         выставляет другой ФФ. Теперь страница только для просмотра, менять
+         долю/участие склада может только сотрудник склада (см. сообщение
+         ниже) - см. также блокировку в seller.router.js. -->
+    <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
+      Изменить долю склада или включить/выключить его можно только через поддержку —
+      напишите нам, какой склад и в какой пропорции нужен.
     </p>
   </div>
 
@@ -39,13 +51,12 @@
     <div class="card">
       <div class="card-title">Резерв</div>
       <div class="reserve-row">
-        <span style="font-size:13px;">Не раздавать по складам</span>
-        <input id="reserve-input" type="number" min="0" max="90" step="1"/>
-        <span style="font-size:13px;">%</span>
-        <button class="btn-sm btn-back" onclick="saveReserve()">Сохранить</button>
+        <span style="font-size:13px;">Не раздавать по складам:</span>
+        <span id="reserve-value" style="font-size:14px;font-weight:700;"></span>
       </div>
       <p style="font-size:12px;color:var(--muted);margin:8px 0 0;">
         Эта часть остатка держится в буфере и никогда не передаётся в WB — на случай пересорта, брака или ошибки при подсчёте.
+        Изменить — через поддержку.
       </p>
     </div>
 
@@ -112,9 +123,12 @@ function renderWarehouses() {
     list.innerHTML = "<div class=\"empty-state\">\u0421\u043A\u043B\u0430\u0434\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442 \u2014 \u043D\u0430\u0436\u043C\u0438 \xAB\u041E\u0431\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u043F\u0438\u0441\u043E\u043A \u0438\u0437 WB\xBB</div>";
     return;
   }
+  // ЗАБЛОКИРОВАНО 13.09.2026: было input+checkbox с onchange=updateWarehouse(...)
+  // - теперь только просмотр, менять долю/участие клиенту нельзя (см. карточку
+  // с пояснением наверху страницы и seller.router.js).
   list.innerHTML = warehouses.map(function (w) {
     var pct = totalWeight > 0 ? Math.round(Number(w.weight) / totalWeight * 100) : 0;
-    return "\n        <div class=\"wh-row\">\n          <div class=\"wh-name\">".concat(UI.escHtml(w.warehouse_name || w.warehouse_code), "\n            <div class=\"sub\">").concat(w.is_enabled_for_dist ? 'участвует в распределении' : 'выключен', "</div>\n          </div>\n          <div class=\"wh-pct\">").concat(w.is_enabled_for_dist ? pct + '%' : '—', "</div>\n          <input class=\"wh-weight\" type=\"number\" min=\"0\" step=\"1\" value=\"").concat(w.weight, "\"\n            onchange=\"updateWarehouse(").concat(w.id, ", {weight: this.value})\"/>\n          <label style=\"display:flex;align-items:center;gap:4px;font-size:12px;\">\n            <input type=\"checkbox\" ").concat(w.is_enabled_for_dist ? 'checked' : '', "\n              onchange=\"updateWarehouse(").concat(w.id, ", {is_enabled_for_dist: this.checked})\"/> \u0432\u043A\u043B\n          </label>\n        </div>\n      ");
+    return "\n        <div class=\"wh-row\">\n          <div class=\"wh-name\">".concat(UI.escHtml(w.warehouse_name || w.warehouse_code), "\n            <div class=\"sub\">").concat(w.is_enabled_for_dist ? 'участвует в распределении' : 'выключен', "</div>\n          </div>\n          <div class=\"wh-pct\">").concat(w.is_enabled_for_dist ? pct + '%' : '—', "</div>\n          <div class=\"wh-weight\" style=\"text-align:center;\">").concat(UI.escHtml(String(w.weight)), "</div>\n        </div>\n      ");
   }).join('');
 }
 function loadWarehouses() {
@@ -141,7 +155,7 @@ function _loadWarehouses() {
         case 2:
           document.getElementById('no-account-card').style.display = 'none';
           document.getElementById('main-content').style.display = 'block';
-          document.getElementById('reserve-input').value = res.account.reserve_pct;
+          document.getElementById('reserve-value').textContent = res.account.reserve_pct + '%';
           warehouses = res.warehouses || [];
           renderWarehouses();
           _context2.n = 4;
@@ -188,66 +202,11 @@ function _syncWarehouses() {
   }));
   return _syncWarehouses.apply(this, arguments);
 }
-function updateWarehouse(_x, _x2) {
-  return _updateWarehouse.apply(this, arguments);
-}
-function _updateWarehouse() {
-  _updateWarehouse = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(id, data) {
-    var w, _t3;
-    return _regenerator().w(function (_context4) {
-      while (1) switch (_context4.p = _context4.n) {
-        case 0:
-          _context4.p = 0;
-          _context4.n = 1;
-          return window.API.seller.wbWarehouses.update(id, data);
-        case 1:
-          w = warehouses.find(function (x) {
-            return x.id === id;
-          });
-          if (w) Object.assign(w, data);
-          UI.notify.ok('Сохранено');
-          renderWarehouses();
-          _context4.n = 3;
-          break;
-        case 2:
-          _context4.p = 2;
-          _t3 = _context4.v;
-          UI.notify.err(_t3.message);
-        case 3:
-          return _context4.a(2);
-      }
-    }, _callee4, null, [[0, 2]]);
-  }));
-  return _updateWarehouse.apply(this, arguments);
-}
-function saveReserve() {
-  return _saveReserve.apply(this, arguments);
-}
-function _saveReserve() {
-  _saveReserve = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
-    var pct, _t4;
-    return _regenerator().w(function (_context5) {
-      while (1) switch (_context5.p = _context5.n) {
-        case 0:
-          _context5.p = 0;
-          pct = Number(document.getElementById('reserve-input').value);
-          _context5.n = 1;
-          return window.API.seller.wbWarehouses.setReserve(pct);
-        case 1:
-          UI.notify.ok('Резерв сохранён');
-          _context5.n = 3;
-          break;
-        case 2:
-          _context5.p = 2;
-          _t4 = _context5.v;
-          UI.notify.err(_t4.message);
-        case 3:
-          return _context5.a(2);
-      }
-    }, _callee5, null, [[0, 2]]);
-  }));
-  return _saveReserve.apply(this, arguments);
-}
+// ЗАБЛОКИРОВАНО 13.09.2026: updateWarehouse()/saveReserve() убраны целиком -
+// клиент случайно включал лишние склады (в т.ч. чужого фулфилмента на том же
+// WB-аккаунте) и это ломало распределение остатка. Изменение веса/участия
+// склада и резерва теперь только через поддержку (сотрудник меняет напрямую).
+// См. также блок в seller.router.js (PATCH /wb-warehouses/:id и /reserve).
 loadWarehouses();</script>
 </body>
 </html>

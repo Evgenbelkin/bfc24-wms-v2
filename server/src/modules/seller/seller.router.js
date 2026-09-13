@@ -662,50 +662,39 @@ router.post('/wb-warehouses/sync', requireModule('wb_integration'), async (req,r
   } catch(e){ next(e); }
 });
 
-/** PATCH /seller/wb-warehouses/:id — изменить долю склада / включить-выключить участие */
+/** PATCH /seller/wb-warehouses/:id — изменить долю склада / включить-выключить участие.
+ *  ЗАБЛОКИРОВАНО 13.09.2026: раньше клиент сам крутил эти настройки на странице
+ *  /seller/wb-warehouses.html - реальный инцидент (ИП Макарова С.И., 13.09.2026):
+ *  клиент случайно включил в раздачу 3 склада вместо одного, причём 2 из них
+ *  физически обслуживает ДРУГОЙ фулфилмент на этом же WB-аккаунте - наша
+ *  программа стала слать туда остаток поверх того, что реально выставляет
+ *  другой ФФ, а на "своём" складе остаток размазался на троих и выглядел
+ *  заниженным. Фронтенд (wb-warehouses.html) теперь только для просмотра;
+ *  здесь дополнительно блокируем и сам эндпоинт, чтобы это нельзя было
+ *  дёрнуть напрямую через API в обход интерфейса. Менять долю/участие склада
+ *  может только сотрудник (напрямую в БД, пока не появится отдельная
+ *  админ-панель для этого). */
 router.patch('/wb-warehouses/:id', requireModule('wb_integration'), async (req,res,next)=>{
-  try {
-    const clientId = resolveClientScope(req, req.user.clientId);
-    const { weight, is_enabled_for_dist } = req.body;
-    const fields = []; const params = []; let idx = 1;
-    if (weight !== undefined) {
-      const w = Number(weight);
-      if (!Number.isFinite(w) || w < 0) throw new ValidationError('weight must be a non-negative number');
-      fields.push(`weight=$${idx++}`); params.push(w);
-    }
-    if (is_enabled_for_dist !== undefined) { fields.push(`is_enabled_for_dist=$${idx++}`); params.push(!!is_enabled_for_dist); }
-    if (!fields.length) throw new ValidationError('Nothing to update');
-    fields.push(`updated_at=NOW()`);
-    params.push(Number(req.params.id), req.user.tenantId, clientId);
-    const r = await query(
-      `UPDATE wms.wb_seller_warehouses w SET ${fields.join(', ')}
-       FROM wms.mp_accounts ma
-       WHERE w.mp_account_id = ma.id AND w.id=$${idx++} AND w.tenant_id=$${idx++} AND ma.client_id=$${idx++}
-       RETURNING w.id, w.weight, w.is_enabled_for_dist`,
-      params
-    );
-    if (r.rowCount === 0) return res.status(404).json({ ok:false, error:{code:'NOT_FOUND', message:'Warehouse not found'} });
-    wbSvc.triggerRedistributionForClient({ tenantId: req.user.tenantId, clientId });
-    res.json({ ok:true, warehouse: r.rows[0] });
-  } catch(e){ next(e); }
+  return res.status(403).json({
+    ok: false,
+    error: {
+      code: 'FORBIDDEN',
+      message: 'Изменение складов раздачи доступно только сотрудникам склада — напишите в поддержку, какой склад и в какой пропорции нужен.',
+    },
+  });
 });
 
-/** PATCH /seller/wb-warehouses/reserve — изменить % резерва (не раздаётся по складам) */
+/** PATCH /seller/wb-warehouses/reserve — изменить % резерва (не раздаётся по складам).
+ *  ЗАБЛОКИРОВАНО 13.09.2026 — см. комментарий у PATCH /wb-warehouses/:id выше,
+ *  та же причина (клиентские настройки раздачи убраны из самообслуживания). */
 router.patch('/wb-warehouses/settings/reserve', requireModule('wb_integration'), async (req,res,next)=>{
-  try {
-    const clientId = resolveClientScope(req, req.user.clientId);
-    const pct = Number(req.body.reserve_pct);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 90) throw new ValidationError('reserve_pct must be between 0 and 90');
-    const r = await query(
-      `UPDATE wms.mp_accounts SET settings = settings || jsonb_build_object('stock_reserve_pct', $1::numeric), updated_at=NOW()
-       WHERE tenant_id=$2 AND client_id=$3 AND marketplace='wb' AND is_active=TRUE
-       RETURNING id`,
-      [pct, req.user.tenantId, clientId]
-    );
-    if (r.rowCount === 0) throw new ValidationError('Нет подключённого аккаунта WB');
-    wbSvc.triggerRedistributionForClient({ tenantId: req.user.tenantId, clientId });
-    res.json({ ok:true, reserve_pct: pct });
-  } catch(e){ next(e); }
+  return res.status(403).json({
+    ok: false,
+    error: {
+      code: 'FORBIDDEN',
+      message: 'Изменение резерва доступно только сотрудникам склада — напишите в поддержку.',
+    },
+  });
 });
 
 /** GET /seller/stock-by-warehouse — остатки по всем складам FBS в одном окне
