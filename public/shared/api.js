@@ -875,6 +875,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
   var overview = {
     funnel: function funnel() {
       return _get('/overview/funnel');
+    },
+    dispatcherLive: function dispatcherLive() {
+      return _get('/overview/dispatcher-live');
     }
   };
 
