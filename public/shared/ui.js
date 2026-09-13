@@ -327,7 +327,24 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
       };
 
       if (_audioCtx.state === 'suspended') {
-        _audioCtx.resume().then(playTone).catch(function () {});
+        _audioCtx.resume().then(playTone).catch(function (e) {
+          // ЖАЛОБА 13.09.2026 (сборка/picking): "ок" на правильной ячейке
+          // звучит нормально, а "ошибка" на неправильной - тишина. Раз "ок"
+          // играет, звук в принципе не заблокирован политикой браузера -
+          // значит дело в конкретном resume() именно в этот момент. Раньше
+          // отказ тут тихо проглатывался (.catch(()=>{})) - ни звука, ни
+          // единого следа в консоли, почему. Теперь логируем причину и
+          // пробуем один раз пересоздать AudioContext с нуля - если старый
+          // застрял в неведомом состоянии, это иногда лечит; если нет -
+          // хотя бы видно в консоли, что реально произошло.
+          console.warn('[UI.beep] AudioContext.resume() failed, recreating:', e);
+          try {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            playTone();
+          } catch (e2) {
+            console.warn('[UI.beep] AudioContext recreate also failed:', e2);
+          }
+        });
       } else {
         playTone();
       }
