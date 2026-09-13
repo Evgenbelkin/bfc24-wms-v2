@@ -886,7 +886,7 @@ async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, gr
   if (clientRes.rowCount === 0) throw new NotFoundError('Client', clientId);
 
   const [
-    revenue, invoicesRes, receivingRows, pickingRows, shippingRows, packedRes, stockTotalsRes, stockTopRes,
+    revenue, invoicesRes, receivingRows, pickingRows, shippingRows, packingRows, stockTotalsRes, stockTopRes,
   ] = await Promise.all([
     getRevenueAnalytics({ tenantId, clientId, dateFrom, dateTo, granularity }),
     listInvoices({ tenantId, clientId, limit: 20 }),
@@ -897,12 +897,19 @@ async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, gr
     // живёт на wms.shipments (см. комментарий у shippedQtyRes выше), считаем
     // за период по packing_finished_at, а не shipped_at — иначе собранное, но
     // ещё не отгруженное, потерялось бы из "объёмов обработки" за период.
+    // По ДНЯМ (не по periodDate/granularity) — как и у остальных
+    // processing-метрик ниже, чтобы карточка клиента могла показать "какого
+    // числа что приняли/собрали/упаковали/отгрузили" независимо от того, что
+    // выбрано в переключателе (день/неделя/месяц) для самой выручки.
     query(
-      `SELECT COALESCE(SUM(s.total_packed_qty),0)::int AS units,
-              COUNT(*) FILTER (WHERE s.packing_finished_at IS NOT NULL)::int AS shipments
+      `SELECT DATE(s.packing_finished_at)::text AS date,
+              COALESCE(SUM(s.total_packed_qty),0)::int AS units,
+              COUNT(*)::int AS shipments
        FROM wms.shipments s
-       WHERE s.tenant_id=$1 AND s.client_id=$2
-         AND s.packing_finished_at::date>=$3::date AND s.packing_finished_at::date<=$4::date`,
+       WHERE s.tenant_id=$1 AND s.client_id=$2 AND s.packing_finished_at IS NOT NULL
+         AND s.packing_finished_at::date>=$3::date AND s.packing_finished_at::date<=$4::date
+       GROUP BY DATE(s.packing_finished_at)
+       ORDER BY DATE(s.packing_finished_at) DESC`,
       [tenantId, clientId, dateFrom, dateTo]
     ),
     query(
@@ -925,6 +932,28 @@ async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, gr
   ]);
 
   const sumBy = (rows, field) => rows.reduce((s, r) => s + Number(r[field] || 0), 0);
+  const packedDailyRows = packingRows.rows;
+
+  // Сводка по дням (не только итог за весь период) — по каждой из четырёх
+  // операций отдельно свой набор дат (клиенту могли принять 10.09, но собрать/
+  // отгрузить только 12.09), поэтому берём объединение всех встретившихся дат.
+  // Задача пользователя 13.09.2026: "не видно в детализации какого числа
+  // приняли это количество" — до этого отдавали только сумму за весь период.
+  const receivingByDate = new Map(receivingRows.map(r => [r.date, r]));
+  const pickingByDate = new Map(pickingRows.map(r => [r.date, r]));
+  const shippingByDate = new Map(shippingRows.map(r => [r.date, r]));
+  const packingByDate = new Map(packedDailyRows.map(r => [r.date, r]));
+  const allDates = new Set([
+    ...receivingByDate.keys(), ...pickingByDate.keys(), ...shippingByDate.keys(), ...packingByDate.keys(),
+  ]);
+  const processingDaily = Array.from(allDates).sort().map(date => ({
+    date,
+    receiving_units: Number((receivingByDate.get(date) || {}).total_units || 0),
+    receiving_ops: Number((receivingByDate.get(date) || {}).operations_count || 0),
+    picking_units: Number((pickingByDate.get(date) || {}).total_picked || 0),
+    packing_units: Number((packingByDate.get(date) || {}).units || 0),
+    shipping_units: Number((shippingByDate.get(date) || {}).total_units || 0),
+  }));
 
   return {
     client: clientRes.rows[0],
@@ -933,8 +962,9 @@ async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, gr
     processing: {
       receiving: { units: sumBy(receivingRows, 'total_units'), operations: sumBy(receivingRows, 'operations_count') },
       picking:   { units: sumBy(pickingRows, 'total_picked'), tasks_done: sumBy(pickingRows, 'tasks_done'), shipments: sumBy(pickingRows, 'shipments_count') },
-      packing:   { units: packedRes.rows[0].units, shipments: packedRes.rows[0].shipments },
+      packing:   { units: sumBy(packedDailyRows, 'units'), shipments: sumBy(packedDailyRows, 'shipments') },
       shipping:  { units: sumBy(shippingRows, 'total_units'), shipments: sumBy(shippingRows, 'shipments_count') },
+      daily: processingDaily,
     },
     stock: {
       sku_count: stockTotalsRes.rows[0].sku_count,

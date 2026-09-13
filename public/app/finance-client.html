@@ -99,7 +99,14 @@
 
   <div class="card">
     <div class="card-title">По дням и операциям</div>
+    <div class="refresh-note" style="margin-bottom:8px;">Суммы начислений по дням; колонка «Отгружено» — физический объём (шт), а не деньги.</div>
     <div class="table-scroll"><table class="detail-table" id="ops-table"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Приёмка / сборка / упаковка / отгрузка по дням</div>
+    <div class="refresh-note" style="margin-bottom:8px;">Физические объёмы (шт) по каждому дню, когда что-то реально произошло — независимо от выбранной группировки периода выше.</div>
+    <div class="table-scroll"><table class="detail-table" id="processing-table"></table></div>
   </div>
 
   <div class="card">
@@ -211,14 +218,17 @@
       return;
     }
 
+    var qtySeries = revenue.shipped_qty_series || [];
+
     var theadHtml = '<thead><tr><th>Дата</th>';
     typesPresent.forEach(function (t) {
       theadHtml += '<th>' + UI.escHtml(SERVICE_LABELS[t] || t) + '</th>';
     });
-    theadHtml += '<th>Итого</th></tr></thead>';
+    theadHtml += '<th>Итого, ₽</th><th>Отгружено, шт</th></tr></thead>';
 
     var colTotals = typesPresent.map(function () { return 0; });
     var grandTotal = 0;
+    var qtyGrandTotal = 0;
 
     var bodyHtml = '<tbody>';
     periods.forEach(function (p) {
@@ -232,7 +242,9 @@
         cellsHtml += '<td>' + (val ? fmtMoney(val) : '—') + '</td>';
       });
       grandTotal += rowTotal;
-      bodyHtml += '<tr><td>' + UI.escHtml(p) + '</td>' + cellsHtml + '<td><b>' + fmtMoney(rowTotal) + '</b></td></tr>';
+      var qty = qtySeries.filter(function (r) { return r.period === p; }).reduce(function (s, r) { return s + Number(r.qty); }, 0);
+      qtyGrandTotal += qty;
+      bodyHtml += '<tr><td>' + UI.escHtml(p) + '</td>' + cellsHtml + '<td><b>' + fmtMoney(rowTotal) + '</b></td><td>' + (qty ? fmtInt(qty) : '—') + '</td></tr>';
     });
     bodyHtml += '</tbody>';
 
@@ -240,8 +252,35 @@
     colTotals.forEach(function (v) {
       footHtml += '<td>' + fmtMoney(v) + '</td>';
     });
-    footHtml += '<td>' + fmtMoney(grandTotal) + '</td></tr></tfoot>';
+    footHtml += '<td>' + fmtMoney(grandTotal) + '</td><td>' + fmtInt(qtyGrandTotal) + '</td></tr></tfoot>';
 
+    table.innerHTML = theadHtml + bodyHtml + footHtml;
+  }
+
+  function renderProcessingDaily(daily) {
+    var table = document.getElementById('processing-table');
+    if (!daily.length) {
+      table.innerHTML = '<tr><td class="module-off">Нет операций за период</td></tr>';
+      return;
+    }
+    var theadHtml = '<thead><tr><th>Дата</th><th>Принято, шт</th><th>Собрано, шт</th><th>Упаковано, шт</th><th>Отгружено, шт</th></tr></thead>';
+    var totals = { receiving: 0, picking: 0, packing: 0, shipping: 0 };
+    var bodyHtml = '<tbody>';
+    daily.forEach(function (d) {
+      totals.receiving += d.receiving_units;
+      totals.picking += d.picking_units;
+      totals.packing += d.packing_units;
+      totals.shipping += d.shipping_units;
+      bodyHtml += '<tr>' +
+        '<td>' + UI.escHtml(d.date) + '</td>' +
+        '<td>' + (d.receiving_units ? fmtInt(d.receiving_units) + (d.receiving_ops ? ' (' + d.receiving_ops + ' приём.)' : '') : '—') + '</td>' +
+        '<td>' + (d.picking_units ? fmtInt(d.picking_units) : '—') + '</td>' +
+        '<td>' + (d.packing_units ? fmtInt(d.packing_units) : '—') + '</td>' +
+        '<td>' + (d.shipping_units ? fmtInt(d.shipping_units) : '—') + '</td>' +
+        '</tr>';
+    });
+    bodyHtml += '</tbody>';
+    var footHtml = '<tfoot><tr><td>Итого</td><td>' + fmtInt(totals.receiving) + '</td><td>' + fmtInt(totals.picking) + '</td><td>' + fmtInt(totals.packing) + '</td><td>' + fmtInt(totals.shipping) + '</td></tr></tfoot>';
     table.innerHTML = theadHtml + bodyHtml + footHtml;
   }
 
@@ -334,6 +373,7 @@
       document.getElementById('proc-shipping-sub').textContent = fmtInt(res.processing.shipping.shipments) + ' отгрузок';
 
       renderOpsTable(res.revenue);
+      renderProcessingDaily(res.processing.daily || []);
       renderInvoices(res.invoices);
       renderStock(res.stock);
     }).catch(function (e) {
