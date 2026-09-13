@@ -1,6 +1,8 @@
 'use strict';
 
 const { query } = require('../../config/database');
+const analyticsService = require('../analytics/analytics.service');
+const { CHECKIN_VALID_HOURS } = require('../../middleware/requireCheckedIn');
 
 // =============================================================================
 // Overview Service ("Табло")
@@ -229,4 +231,148 @@ async function getStuckOrdersStats(tenantId) {
   return { stuck_supplies: groups.length, stuck_orders: stuckOrders, groups };
 }
 
-module.exports = { getFunnelOverview, getStuckOrdersGroups };
+// =============================================================================
+// Диспетчерская: "живая сводка" (ДОБАВЛЕНО 13.09.2026 по просьбе пользователя -
+// "не нравится наполнение Диспетчерской", страница почти всегда пустая между
+// волнами). Четыре независимых блока:
+//   1. staff       - кто отмечен на смене (employee_checkins, живёт 12ч - см.
+//      CHECKIN_VALID_HOURS) и чем занят ПРЯМО СЕЙЧАС: активная волна сборки
+//      (pick_waves.status='active'), активная упаковка (packing_tasks.
+//      status='in_progress') или просто "на месте" (employee_active_station).
+//   2. printQueue  - застрявшие задания печати (status='new' дольше 3 минут -
+//      если агент/принтер встал, тут это видно раньше, чем сборщики начнут
+//      жаловаться на отсутствие стикеров) и задания с ошибкой.
+//   3. shiftSummary - сводка за СЕГОДНЯ (волн закрыто, строк/штук собрано,
+//      отгрузок/юнитов отгружено) - чтобы страница не выглядела мёртвой,
+//      когда волн прямо сейчас нет.
+//   4. throughput  - выработка по сотрудникам за сегодня (собрано/упаковано),
+//      отдельно от табло/аналитики - тут это сборка ПО КОНКРЕТНОМУ человеку.
+// =============================================================================
+
+async function getDispatcherLive({ tenantId }) {
+  const [staff, printQueue, throughputPicking, throughputPacking, wavesClosedToday, pickStatsToday, shipStatsToday] = await Promise.all([
+    getStaffRoster(tenantId),
+    getPrintQueueHealth(tenantId),
+    getPickingThroughputToday(tenantId),
+    getPackingThroughputToday(tenantId),
+    getWavesClosedToday(tenantId),
+    analyticsService.getPickingStats({ tenantId, dateFrom: todayStr(), dateTo: todayStr() }),
+    analyticsService.getShippingStats({ tenantId, dateFrom: todayStr(), dateTo: todayStr() }),
+  ]);
+
+  const throughputByUser = new Map();
+  for (const row of throughputPicking) {
+    throughputByUser.set(row.user_id, { user_id: row.user_id, username: row.username, full_name: row.full_name, units_picked: row.units_picked, tasks_picked: row.tasks_picked, units_packed: 0, shipments_packed: 0 });
+  }
+  for (const row of throughputPacking) {
+    const existing = throughputByUser.get(row.user_id);
+    if (existing) {
+      existing.units_packed = row.units_packed;
+      existing.shipments_packed = row.shipments_packed;
+    } else {
+      throughputByUser.set(row.user_id, { user_id: row.user_id, username: row.username, full_name: row.full_name, units_picked: 0, tasks_picked: 0, units_packed: row.units_packed, shipments_packed: row.shipments_packed });
+    }
+  }
+
+  return {
+    staff,
+    printQueue,
+    shiftSummary: {
+      waves_closed: wavesClosedToday,
+      tasks_done: pickStatsToday[0]?.tasks_done || 0,
+      units_picked: pickStatsToday[0]?.total_picked || 0,
+      avg_task_minutes: pickStatsToday[0]?.avg_task_minutes || null,
+      shipments_count: shipStatsToday[0]?.shipments_count || 0,
+      units_shipped: shipStatsToday[0]?.total_units || 0,
+    },
+    throughput: Array.from(throughputByUser.values()).sort((a, b) => (b.units_picked + b.units_packed) - (a.units_picked + a.units_packed)),
+  };
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function getStaffRoster(tenantId) {
+  // CHECKIN_VALID_HOURS считаем в JS и передаём готовой границей времени -
+  // "число || ' hours' :: interval" в SQL требует лишнего каста типов и
+  // менее надёжно, чем просто сравнить timestamptz с timestamptz.
+  const sinceTs = new Date(Date.now() - CHECKIN_VALID_HOURS * 3600 * 1000);
+  const r = await query(
+    `SELECT
+       u.id AS user_id, u.username, u.full_name, u.role,
+       ec.checked_in_at,
+       ws.station_name,
+       w.id AS wave_id, w.shipment_code AS wave_shipment_code,
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id) AS wave_task_count,
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id AND t.status='done') AS wave_done_count,
+       pk.shipment_code AS packing_shipment_code
+     FROM wms.employee_checkins ec
+     JOIN wms.users u ON u.id = ec.employee_id
+     LEFT JOIN wms.employee_active_station eas ON eas.employee_id = u.id AND eas.tenant_id = u.tenant_id
+     LEFT JOIN wms.workstations ws ON ws.id = eas.station_id
+     LEFT JOIN wms.pick_waves w ON w.picker_id = u.id AND w.tenant_id = u.tenant_id AND w.status = 'active'
+     LEFT JOIN wms.packing_tasks pk ON pk.packer_id = u.id AND pk.tenant_id = u.tenant_id AND pk.status = 'in_progress'
+     WHERE ec.tenant_id = $1 AND ec.checked_in_at >= $2
+     ORDER BY u.full_name NULLS LAST, u.username`,
+    [tenantId, sinceTs]
+  );
+  return r.rows;
+}
+
+/** Задания печати, застрявшие дольше 3 минут (агент/принтер, скорее всего,
+ *  не в порядке - реальная печать почти всегда забирает задание за секунды),
+ *  плюс явные ошибки печати - за последние сутки, чтобы старый мусор не
+ *  висел в счётчике вечно. */
+async function getPrintQueueHealth(tenantId) {
+  const r = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE status='new' AND created_at < NOW() - INTERVAL '3 minutes')::int AS stuck_new,
+       COUNT(*) FILTER (WHERE status='error')::int AS errors
+     FROM wms.print_jobs
+     WHERE tenant_id=$1 AND created_at > NOW() - INTERVAL '24 hours'`,
+    [tenantId]
+  );
+  return r.rows[0] || { stuck_new: 0, errors: 0 };
+}
+
+async function getPickingThroughputToday(tenantId) {
+  const r = await query(
+    `SELECT pt.picker_id AS user_id, u.username, u.full_name,
+       COUNT(*) FILTER (WHERE pt.status='done')::int AS tasks_picked,
+       COALESCE(SUM(pt.qty_picked),0)::int AS units_picked
+     FROM wms.picking_tasks pt
+     JOIN wms.users u ON u.id = pt.picker_id
+     WHERE pt.tenant_id=$1 AND pt.finished_at >= date_trunc('day', NOW())
+       AND pt.finished_at < date_trunc('day', NOW()) + INTERVAL '1 day'
+     GROUP BY pt.picker_id, u.username, u.full_name`,
+    [tenantId]
+  );
+  return r.rows;
+}
+
+async function getPackingThroughputToday(tenantId) {
+  const r = await query(
+    `SELECT s.packer_id AS user_id, u.username, u.full_name,
+       COUNT(*)::int AS shipments_packed,
+       COALESCE(SUM(s.total_packed_qty),0)::int AS units_packed
+     FROM wms.shipments s
+     JOIN wms.users u ON u.id = s.packer_id
+     WHERE s.tenant_id=$1 AND s.packing_finished_at >= date_trunc('day', NOW())
+       AND s.packing_finished_at < date_trunc('day', NOW()) + INTERVAL '1 day'
+     GROUP BY s.packer_id, u.username, u.full_name`,
+    [tenantId]
+  );
+  return r.rows;
+}
+
+async function getWavesClosedToday(tenantId) {
+  const r = await query(
+    `SELECT COUNT(*)::int AS n FROM wms.pick_waves
+     WHERE tenant_id=$1 AND status='done' AND updated_at >= date_trunc('day', NOW())`,
+    [tenantId]
+  );
+  return r.rows[0]?.n || 0;
+}
+
+module.exports = { getFunnelOverview, getStuckOrdersGroups, getDispatcherLive };

@@ -16,4 +16,13 @@ router.get('/funnel', requireRole('tenant_admin','supervisor'), async (req,res,n
   } catch(e){ next(e); }
 });
 
+/** GET /overview/dispatcher-live — живая сводка для "Диспетчерской" (кто на
+ *  смене и чем занят, очередь печати, сводка за сегодня, выработка) */
+router.get('/dispatcher-live', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const data = await svc.getDispatcherLive({ tenantId: req.user.tenantId });
+    res.json({ ok: true, ...data });
+  } catch(e){ next(e); }
+});
+
 module.exports = router;
