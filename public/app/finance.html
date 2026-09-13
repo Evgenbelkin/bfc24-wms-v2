@@ -144,6 +144,12 @@ function _logout() {
 function isModuleDisabled(e) {
   return e && e.code === 'MODULE_DISABLED';
 }
+function openClientDetail(clientId, dateFrom, dateTo, granularity) {
+  location.href = 'finance-client.html?client_id=' + encodeURIComponent(clientId) +
+    '&date_from=' + encodeURIComponent(dateFrom) +
+    '&date_to=' + encodeURIComponent(dateTo) +
+    '&granularity=' + encodeURIComponent(granularity);
+}
 var SERVICE_LABELS = {
   receiving: 'Приёмка',
   storage: 'Хранение',
@@ -623,7 +629,7 @@ function _loadRevenue() {
           if (!params.client_id && res.by_client.length > 1) {
             document.getElementById('revenue-by-client-card').style.display = 'block';
             document.getElementById('revenue-by-client-list').innerHTML = res.by_client.map(function (c) {
-              return "\n            <div class=\"rank-row\"><span class=\"name\">".concat(UI.escHtml(c.client_name), "</span><span class=\"amt\">").concat(fmtMoney(c.total), " <span style=\"color:var(--muted);font-weight:400;\">\xB7 ").concat(fmtInt(c.shipped_qty || 0), " шт</span></span></div>\n          ");
+              return "\n            <div class=\"rank-row\" style=\"cursor:pointer;\" onclick=\"openClientDetail(".concat(c.client_id, ",'").concat(params.date_from, "','").concat(params.date_to, "','").concat(params.granularity, "')\"><span class=\"name\">").concat(UI.escHtml(c.client_name), " ›</span><span class=\"amt\">").concat(fmtMoney(c.total), " <span style=\"color:var(--muted);font-weight:400;\">\xB7 ").concat(fmtInt(c.shipped_qty || 0), " шт</span></span></div>\n          ");
             }).join('');
           }
           _context4.n = 5;

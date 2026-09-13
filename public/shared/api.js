@@ -1131,6 +1131,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       },
       invoices: function invoices(p) {
         return _get('/billing/analytics/invoices', p);
+      },
+      clientDetail: function clientDetail(p) {
+        return _get('/billing/analytics/client-detail', p);
       }
     },
     invoices: {

@@ -158,6 +158,23 @@ router.get('/analytics/revenue', requireRole('tenant_admin', 'supervisor', 'anal
   } catch (e) { next(e); }
 });
 
+/** GET /billing/analytics/client-detail — детальная карточка клиента (клик
+ *  из списка "Выручка и отгрузки по клиентам" на странице "Финансы"): выручка
+ *  по дням/операциям, объёмы обработки, счета/оплаты, товарные остатки. */
+router.get('/analytics/client-detail', requireRole('tenant_admin', 'supervisor', 'analyst'), async (req, res, next) => {
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const result = await svc.getClientFinanceDetail({
+      tenantId:    req.user.tenantId,
+      clientId,
+      dateFrom:    req.query.date_from,
+      dateTo:      req.query.date_to,
+      granularity: req.query.granularity || 'day',
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 router.get('/analytics/invoices', requireRole('tenant_admin', 'supervisor', 'analyst'), async (req, res, next) => {
   try {
     const clientId = resolveClientScope(req, req.query.client_id);

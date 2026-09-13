@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Клиент — Финансы — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .filters-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+    .filters-row input{flex:1;min-width:140px;padding:12px 14px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;}
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}
+    .kpi-cell{background:var(--card2);border-radius:10px;padding:14px;text-align:center;}
+    .kpi-cell .num{font-size:20px;font-weight:700;}
+    .kpi-cell .lbl{font-size:12px;color:var(--muted);margin-top:4px;}
+    .client-title{font-size:19px;font-weight:800;margin-bottom:2px;}
+    .client-sub{font-size:13px;color:var(--muted);}
+    .proc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
+    .proc-cell{background:var(--card2);border-radius:12px;padding:14px;}
+    .proc-cell .label{font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:6px;}
+    .proc-cell .num{font-size:22px;font-weight:800;}
+    .proc-cell .sub{font-size:12px;color:var(--muted);margin-top:2px;}
+    table.detail-table{width:100%;border-collapse:collapse;font-size:13px;}
+    table.detail-table th, table.detail-table td{padding:7px 8px;text-align:right;white-space:nowrap;}
+    table.detail-table th:first-child, table.detail-table td:first-child{text-align:left;}
+    table.detail-table thead th{border-bottom:2px solid var(--border);color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;}
+    table.detail-table tbody tr{border-bottom:1px solid var(--border);}
+    table.detail-table tfoot td{border-top:2px solid var(--border);font-weight:700;}
+    .table-scroll{overflow-x:auto;}
+    .status-pill{display:inline-block;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700;white-space:nowrap;}
+    .status-draft{background:var(--card2);color:var(--muted);}
+    .status-sent{background:#fef3c7;color:#92400e;}
+    .status-partial{background:#dbeafe;color:#1e40af;}
+    .status-paid{background:#dcfce7;color:#15803d;}
+    .status-cancelled{background:#fee2e2;color:#b91c1c;}
+    .module-off{color:var(--muted);font-size:13px;text-align:center;padding:16px;}
+    .stock-more{display:block;text-align:center;padding:12px;font-size:13px;color:var(--accent);text-decoration:none;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="javascript:void(0)" onclick="history.back()" class="btn-sm btn-back">← Финансы</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg> Клиент</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card">
+    <div class="client-title" id="client-title">—</div>
+    <div class="client-sub" id="client-sub"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Период</div>
+    <div class="filters-row">
+      <input id="f-from" type="date"/>
+      <input id="f-to" type="date"/>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-g="day" onclick="setGranularity('day')">По дням</button>
+      <button class="tab" data-g="week" onclick="setGranularity('week')">По неделям</button>
+      <button class="tab" data-g="month" onclick="setGranularity('month')">По месяцам</button>
+    </div>
+    <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="loadAll()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
+  </div>
+
+  <div class="card">
+    <div class="kpi-grid">
+      <div class="kpi-cell"><div class="num" id="kpi-revenue" style="color:var(--green)">—</div><div class="lbl">Выручка за период</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-storage" style="color:var(--text)">—</div><div class="lbl">Хранение за период</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-shipped-qty" style="color:var(--text)">—</div><div class="lbl">Отгружено, шт</div></div>
+      <div class="kpi-cell"><div class="num" id="kpi-debt" style="color:var(--red)">—</div><div class="lbl">Долг по счетам</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Объёмы обработки за период</div>
+    <div class="proc-grid">
+      <div class="proc-cell">
+        <div class="label">Приёмка</div>
+        <div class="num" id="proc-receiving-units">—</div>
+        <div class="sub" id="proc-receiving-sub"></div>
+      </div>
+      <div class="proc-cell">
+        <div class="label">Сборка</div>
+        <div class="num" id="proc-picking-units">—</div>
+        <div class="sub" id="proc-picking-sub"></div>
+      </div>
+      <div class="proc-cell">
+        <div class="label">Упаковка</div>
+        <div class="num" id="proc-packing-units">—</div>
+        <div class="sub" id="proc-packing-sub"></div>
+      </div>
+      <div class="proc-cell">
+        <div class="label">Отгрузка</div>
+        <div class="num" id="proc-shipping-units">—</div>
+        <div class="sub" id="proc-shipping-sub"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">По дням и операциям</div>
+    <div class="table-scroll"><table class="detail-table" id="ops-table"></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Счета и оплаты</div>
+    <div id="invoices-list"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Товарные остатки сейчас</div>
+    <div class="client-sub" id="stock-summary" style="margin-bottom:10px;"></div>
+    <div class="table-scroll"><table class="detail-table" id="stock-table"></table></div>
+    <a class="stock-more" href="stock-overview.html">Смотреть все остатки на складе →</a>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+  if (!UI.requireAuth()) throw new Error('Not logged in');
+  if (!UI.requireRole(['tenant_admin', 'supervisor', 'analyst'])) {
+    window.location.href = '/app/menu.html';
+  }
+  function logout() {
+    window.API.auth.logout().then(function () {
+      window.location.href = '/app/login.html';
+    });
+  }
+
+  var SERVICE_LABELS = {
+    receiving: 'Приёмка',
+    storage: 'Хранение',
+    placement: 'Размещение',
+    picking: 'Сборка',
+    packing: 'Упаковка',
+    shipping: 'Отгрузка',
+    processing: 'Обработка',
+    returns: 'Возврат',
+    subscription: 'Подписка',
+    materials: 'Расходники'
+  };
+  var INVOICE_STATUS_LABELS = {
+    draft: 'Черновик',
+    sent: 'Выставлен',
+    paid: 'Оплачен',
+    cancelled: 'Отменён'
+  };
+
+  function fmtMoney(n) {
+    n = Number(n || 0);
+    return n.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
+  }
+  function fmtInt(n) {
+    return Number(n || 0).toLocaleString('ru-RU');
+  }
+  function iso(d) {
+    var pad = function (x) { return String(x).padStart(2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  var qs = new URLSearchParams(location.search);
+  var clientId = Number(qs.get('client_id')) || null;
+  var granularity = qs.get('granularity') || 'day';
+
+  if (!clientId) {
+    document.body.innerHTML = '<div class="card"><div class="module-off">Не указан клиент. Вернитесь на страницу «Финансы» и откройте карточку клиента из списка.</div></div>';
+    throw new Error('client_id is required');
+  }
+
+  (function initDates() {
+    var from = qs.get('date_from');
+    var to = qs.get('date_to');
+    if (!to) {
+      var now = new Date();
+      to = iso(now);
+    }
+    if (!from) {
+      var d = new Date();
+      d.setDate(d.getDate() - 29);
+      from = iso(d);
+    }
+    UI.setVal('#f-from', from);
+    UI.setVal('#f-to', to);
+    document.querySelectorAll('.tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.g === granularity);
+    });
+  })();
+
+  function setGranularity(g) {
+    granularity = g;
+    document.querySelectorAll('.tab').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.g === g);
+    });
+    loadAll();
+  }
+
+  function renderOpsTable(revenue) {
+    var periods = revenue.period_grid || [];
+    var byType = revenue.series_by_type || [];
+    var typesPresent = [];
+    Object.keys(SERVICE_LABELS).forEach(function (t) {
+      if (byType.some(function (r) { return r.service_type === t; })) typesPresent.push(t);
+    });
+    byType.forEach(function (r) {
+      if (typesPresent.indexOf(r.service_type) === -1) typesPresent.push(r.service_type);
+    });
+
+    var table = document.getElementById('ops-table');
+    if (!periods.length) {
+      table.innerHTML = '<tr><td class="module-off">Нет данных за период</td></tr>';
+      return;
+    }
+
+    var theadHtml = '<thead><tr><th>Дата</th>';
+    typesPresent.forEach(function (t) {
+      theadHtml += '<th>' + UI.escHtml(SERVICE_LABELS[t] || t) + '</th>';
+    });
+    theadHtml += '<th>Итого</th></tr></thead>';
+
+    var colTotals = typesPresent.map(function () { return 0; });
+    var grandTotal = 0;
+
+    var bodyHtml = '<tbody>';
+    periods.forEach(function (p) {
+      var rowTotal = 0;
+      var cellsHtml = '';
+      typesPresent.forEach(function (t, i) {
+        var row = byType.filter(function (r) { return r.period === p && r.service_type === t; });
+        var val = row.reduce(function (s, r) { return s + Number(r.total); }, 0);
+        colTotals[i] += val;
+        rowTotal += val;
+        cellsHtml += '<td>' + (val ? fmtMoney(val) : '—') + '</td>';
+      });
+      grandTotal += rowTotal;
+      bodyHtml += '<tr><td>' + UI.escHtml(p) + '</td>' + cellsHtml + '<td><b>' + fmtMoney(rowTotal) + '</b></td></tr>';
+    });
+    bodyHtml += '</tbody>';
+
+    var footHtml = '<tfoot><tr><td>Итого</td>';
+    colTotals.forEach(function (v) {
+      footHtml += '<td>' + fmtMoney(v) + '</td>';
+    });
+    footHtml += '<td>' + fmtMoney(grandTotal) + '</td></tr></tfoot>';
+
+    table.innerHTML = theadHtml + bodyHtml + footHtml;
+  }
+
+  function invoiceStatusHtml(inv) {
+    var paid = Number(inv.paid_amount || 0);
+    var total = Number(inv.total_amount || 0);
+    if (inv.status === 'sent' && paid > 0 && paid < total) {
+      return '<span class="status-pill status-partial">Частично оплачен</span>';
+    }
+    var cls = 'status-' + (inv.status || 'draft');
+    var label = INVOICE_STATUS_LABELS[inv.status] || inv.status;
+    return '<span class="status-pill ' + cls + '">' + UI.escHtml(label) + '</span>';
+  }
+
+  function renderInvoices(invoices) {
+    var box = document.getElementById('invoices-list');
+    if (!invoices.length) {
+      box.innerHTML = '<div class="module-off">Счетов пока нет</div>';
+      return;
+    }
+    var html = '<div class="table-scroll"><table class="detail-table"><thead><tr>' +
+      '<th style="text-align:left;">№</th><th style="text-align:left;">Период</th><th>Сумма</th><th>Оплачено</th><th style="text-align:left;">Статус</th><th style="text-align:left;">Создан</th>' +
+      '</tr></thead><tbody>';
+    invoices.forEach(function (inv) {
+      html += '<tr>' +
+        '<td style="text-align:left;">' + UI.escHtml(inv.invoice_number || ('#' + inv.id)) + '</td>' +
+        '<td style="text-align:left;">' + UI.fmtDate(inv.period_from) + ' — ' + UI.fmtDate(inv.period_to) + '</td>' +
+        '<td>' + fmtMoney(inv.total_amount) + '</td>' +
+        '<td>' + fmtMoney(inv.paid_amount) + '</td>' +
+        '<td style="text-align:left;">' + invoiceStatusHtml(inv) + '</td>' +
+        '<td style="text-align:left;">' + UI.fmtDate(inv.created_at) + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+    box.innerHTML = html;
+  }
+
+  function renderStock(stock) {
+    document.getElementById('stock-summary').textContent =
+      'Всего на складе сейчас: ' + fmtInt(stock.total_qty) + ' шт · ' + fmtInt(stock.sku_count) + ' позиций (SKU)';
+    var table = document.getElementById('stock-table');
+    if (!stock.top_items.length) {
+      table.innerHTML = '<tr><td class="module-off">На складе пусто</td></tr>';
+      return;
+    }
+    var html = '<thead><tr><th style="text-align:left;">Товар</th><th style="text-align:left;">Артикул</th><th style="text-align:left;">Размер</th><th>Остаток</th></tr></thead><tbody>';
+    stock.top_items.forEach(function (it) {
+      html += '<tr>' +
+        '<td style="text-align:left;">' + UI.escHtml(it.item_name || '—') + '</td>' +
+        '<td style="text-align:left;">' + UI.escHtml(it.vendor_code || '—') + '</td>' +
+        '<td style="text-align:left;">' + UI.escHtml(it.size || '—') + '</td>' +
+        '<td>' + fmtInt(it.qty) + ' ' + UI.escHtml(it.unit || 'шт') + '</td>' +
+        '</tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+  }
+
+  function loadAll() {
+    var dateFrom = UI.val('#f-from');
+    var dateTo = UI.val('#f-to');
+    if (!dateFrom || !dateTo) { UI.notify.err('Укажите период'); return; }
+
+    window.API.billing.analytics.clientDetail({
+      client_id: clientId,
+      date_from: dateFrom,
+      date_to: dateTo,
+      granularity: granularity
+    }).then(function (res) {
+      document.getElementById('client-title').textContent = res.client.client_name;
+      document.getElementById('client-sub').textContent = res.client.is_active ? 'Активный клиент' : 'Клиент отключён';
+
+      document.getElementById('kpi-revenue').textContent = fmtMoney(res.revenue.grand_total);
+      document.getElementById('kpi-storage').textContent = fmtMoney(res.revenue.storage_total);
+      document.getElementById('kpi-shipped-qty').textContent = fmtInt(res.revenue.shipped_qty_total);
+
+      var debt = res.invoices.reduce(function (s, inv) {
+        if (inv.status === 'sent') return s + Math.max(0, Number(inv.total_amount) - Number(inv.paid_amount));
+        return s;
+      }, 0);
+      document.getElementById('kpi-debt').textContent = fmtMoney(debt);
+
+      document.getElementById('proc-receiving-units').textContent = fmtInt(res.processing.receiving.units) + ' шт';
+      document.getElementById('proc-receiving-sub').textContent = fmtInt(res.processing.receiving.operations) + ' приёмок';
+      document.getElementById('proc-picking-units').textContent = fmtInt(res.processing.picking.units) + ' шт';
+      document.getElementById('proc-picking-sub').textContent = fmtInt(res.processing.picking.tasks_done) + ' позиций · ' + fmtInt(res.processing.picking.shipments) + ' отгр.';
+      document.getElementById('proc-packing-units').textContent = fmtInt(res.processing.packing.units) + ' шт';
+      document.getElementById('proc-packing-sub').textContent = fmtInt(res.processing.packing.shipments) + ' отгрузок';
+      document.getElementById('proc-shipping-units').textContent = fmtInt(res.processing.shipping.units) + ' шт';
+      document.getElementById('proc-shipping-sub').textContent = fmtInt(res.processing.shipping.shipments) + ' отгрузок';
+
+      renderOpsTable(res.revenue);
+      renderInvoices(res.invoices);
+      renderStock(res.stock);
+    }).catch(function (e) {
+      UI.notify.err(e.message);
+    });
+  }
+
+  loadAll();
+  </script>
+</body>
+</html>

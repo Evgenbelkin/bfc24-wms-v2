@@ -3,6 +3,7 @@
 const { query, transaction } = require('../../config/database');
 const { NotFoundError, ValidationError, ConflictError } = require('../../utils/errors');
 const { validatePositiveInt } = require('../../utils/validators');
+const analyticsService = require('../analytics/analytics.service');
 
 // 'Сегодня' по МЕСТНОЙ дате сервера, а не UTC. Date.toISOString() всегда
 // отдаёт UTC-дату независимо от TZ процесса, а сервер поднят с
@@ -864,6 +865,85 @@ async function getRevenueAnalytics({ tenantId, clientId = null, dateFrom, dateTo
   };
 }
 
+/**
+ * Детальная карточка клиента для "Финансы" — всё в одном месте по клиенту за
+ * выбранный период: выручка по дням/операциям (переиспользуем
+ * getRevenueAnalytics с clientId, она уже строит и series, и series_by_type,
+ * и shipped_qty_series/storage_series в этом разрезе), физические объёмы
+ * обработки (приёмка/сборка/упаковка/отгрузка — из analyticsService, тоже
+ * уже умеет фильтровать по клиенту), последние счета/оплаты (listInvoices)
+ * и текущие товарные остатки (топ по количеству + итог). Задача пользователя
+ * 13.09.2026: "хочу провалившись увидеть подробно расписано всё по клиенту".
+ */
+async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, granularity = 'day' }) {
+  if (!clientId) throw new ValidationError('client_id is required');
+  if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
+
+  const clientRes = await query(
+    `SELECT id, client_name, is_active FROM wms.clients WHERE id=$1 AND tenant_id=$2`,
+    [clientId, tenantId]
+  );
+  if (clientRes.rowCount === 0) throw new NotFoundError('Client', clientId);
+
+  const [
+    revenue, invoicesRes, receivingRows, pickingRows, shippingRows, packedRes, stockTotalsRes, stockTopRes,
+  ] = await Promise.all([
+    getRevenueAnalytics({ tenantId, clientId, dateFrom, dateTo, granularity }),
+    listInvoices({ tenantId, clientId, limit: 20 }),
+    analyticsService.getReceivingStats({ tenantId, clientId, dateFrom, dateTo }),
+    analyticsService.getPickingStats({ tenantId, clientId, dateFrom, dateTo }),
+    analyticsService.getShippingStats({ tenantId, clientId, dateFrom, dateTo }),
+    // Упаковано, шт — отдельно от picking/shipping stats: total_packed_qty
+    // живёт на wms.shipments (см. комментарий у shippedQtyRes выше), считаем
+    // за период по packing_finished_at, а не shipped_at — иначе собранное, но
+    // ещё не отгруженное, потерялось бы из "объёмов обработки" за период.
+    query(
+      `SELECT COALESCE(SUM(s.total_packed_qty),0)::int AS units,
+              COUNT(*) FILTER (WHERE s.packing_finished_at IS NOT NULL)::int AS shipments
+       FROM wms.shipments s
+       WHERE s.tenant_id=$1 AND s.client_id=$2
+         AND s.packing_finished_at::date>=$3::date AND s.packing_finished_at::date<=$4::date`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    query(
+      `SELECT COUNT(*)::int AS sku_count, COALESCE(SUM(sb.qty_on_hand),0)::numeric AS total_qty
+       FROM wms.stock_balances sb
+       WHERE sb.tenant_id=$1 AND sb.client_id=$2 AND sb.qty_on_hand > 0`,
+      [tenantId, clientId]
+    ),
+    query(
+      `SELECT i.id AS item_id, i.item_name, i.vendor_code, i.size, i.unit,
+              SUM(sb.qty_on_hand)::numeric AS qty
+       FROM wms.stock_balances sb
+       LEFT JOIN wms.items i ON i.id = sb.item_id
+       WHERE sb.tenant_id=$1 AND sb.client_id=$2 AND sb.qty_on_hand > 0
+       GROUP BY i.id, i.item_name, i.vendor_code, i.size, i.unit
+       ORDER BY qty DESC
+       LIMIT 10`,
+      [tenantId, clientId]
+    ),
+  ]);
+
+  const sumBy = (rows, field) => rows.reduce((s, r) => s + Number(r[field] || 0), 0);
+
+  return {
+    client: clientRes.rows[0],
+    revenue,
+    invoices: invoicesRes.invoices,
+    processing: {
+      receiving: { units: sumBy(receivingRows, 'total_units'), operations: sumBy(receivingRows, 'operations_count') },
+      picking:   { units: sumBy(pickingRows, 'total_picked'), tasks_done: sumBy(pickingRows, 'tasks_done'), shipments: sumBy(pickingRows, 'shipments_count') },
+      packing:   { units: packedRes.rows[0].units, shipments: packedRes.rows[0].shipments },
+      shipping:  { units: sumBy(shippingRows, 'total_units'), shipments: sumBy(shippingRows, 'shipments_count') },
+    },
+    stock: {
+      sku_count: stockTotalsRes.rows[0].sku_count,
+      total_qty: Number(stockTotalsRes.rows[0].total_qty),
+      top_items: stockTopRes.rows.map(r => ({ ...r, qty: Number(r.qty) })),
+    },
+  };
+}
+
 // ─────────────── Invoice analytics (выставлено/оплачено/разбивка по клиентам) ───────────────
 
 const INVOICE_GRANULARITIES = ['day', 'week', 'month'];
@@ -1091,6 +1171,7 @@ module.exports = {
   getClientBalance,
   getRevenueAnalytics,
   getInvoiceAnalytics,
+  getClientFinanceDetail,
   listClientsWithActiveStoragePrice,
   chargeStorageForClientToday,
 };
