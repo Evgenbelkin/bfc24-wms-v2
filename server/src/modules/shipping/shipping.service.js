@@ -52,7 +52,12 @@ async function listShipments({
      WHERE ${conds.join(' AND ')} ORDER BY COALESCE(s.shipped_at, s.created_at) DESC LIMIT $${idx}`,
     params
   );
-  return r.rows;
+  // Табло никогда не показывает QR поставки (это base64-картинка на несколько
+  // КБ на каждую отгрузку) — только getShipmentHeader() отдаёт его отдельно,
+  // когда реально нужно распечатать наклейку конкретной поставки. `s.*` тянул
+  // его в КАЖДУЮ строку табло на каждый автообновляющийся (раз в 15 сек) запрос
+  // и раздувал ответ до нескольких мегабайт — вырезаем перед отдачей наружу.
+  return r.rows.map(({ wb_supply_qr_base64, ...rest }) => rest);
 }
 
 /**
