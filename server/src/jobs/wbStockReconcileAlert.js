@@ -59,7 +59,7 @@ async function buildAndSendAlert(tenantResults) {
   flatRows.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
   const shown = flatRows.slice(0, MAX_ROWS_IN_MESSAGE);
-  for (const r of shown) {
+  shown.forEach((r, i) => {
     const sign = r.diff > 0 ? '+' : '';
     const risk = r.diff > 0 ? 'риск оверселла' : 'не ушло в WB';
     // ФИКС 13.09.2026: раньше показывали ТОЛЬКО имя (а если товара нет в WMS -
@@ -71,11 +71,14 @@ async function buildAndSendAlert(tenantResults) {
     const label = hasRealName
       ? `${escapeHtml(r.name)} (шк ${escapeHtml(r.barcode)})`
       : `шк ${escapeHtml(r.barcode)} (нет остатка в WMS)`;
+    // ФИКС 13.09.2026: убрали название тенанта из строки (сейчас фактически
+    // один тенант в использовании, имя только шумело) - вместо него простая
+    // нумерация строк, так легче ссылаться на конкретную позицию в чате.
     lines.push(
-      `${escapeHtml(r.tenantName)} / ${escapeHtml(r.clientName)}: ${label} — ` +
+      `${i + 1}. ${escapeHtml(r.clientName)}: ${label} — ` +
       `WB ${r.wb_qty} / ожидается ${r.expected_qty} (${sign}${r.diff}, ${risk})`
     );
-  }
+  });
   if (flatRows.length > shown.length) {
     lines.push('');
     lines.push(`…и ещё ${flatRows.length - shown.length} строк. Полный список — в разделе "Сверка остатков" в кабинете.`);
