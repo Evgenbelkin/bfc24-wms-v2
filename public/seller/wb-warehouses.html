@@ -95,8 +95,17 @@ function _logout() {
 }
 var warehouses = [];
 function renderWarehouses() {
+  // ФИКС 13.09.2026: сумму весов для % считали по ВСЕМ складам в списке
+  // (включая выключенные) - у клиента обычно десятки складов WB с дефолтным
+  // весом 1.0 каждый, поэтому включив ровно один склад, программа делила его
+  // вес на общую сумму ~50 складов и показывала "2%", хотя реальный расчёт на
+  // бэкенде (distributeStockForAccount, wb.service.js) берёт в сумму весов
+  // ТОЛЬКО is_enabled_for_dist=TRUE склады - то есть фактически туда уходит
+  // 100% доступного остатка. Цифра на экране вводила клиента в заблуждение
+  // о том, что реально отправляется в WB. Теперь считаем сумму весов только
+  // по включённым складам - ровно как это делает бэкенд.
   var totalWeight = warehouses.reduce(function (s, w) {
-    return s + Number(w.weight || 0);
+    return w.is_enabled_for_dist ? s + Number(w.weight || 0) : s;
   }, 0);
   var list = document.getElementById('wh-list');
   if (!warehouses.length) {
