@@ -151,7 +151,11 @@ async function getShippingStats(tenantId) {
     ФИКС 12.09.2026: 'sorted' (ВБ реально отсканировал заказ у себя на складе -
     в fbsAnalytics.service.js это уже классифицируется как бакет "in_transit",
     т.е. заказ уже поехал дальше) не был в списке исключений - алерт продолжал
-    висеть даже после того, как товар физически отсканировали на стороне ВБ. */
+    висеть даже после того, как товар физически отсканировали на стороне ВБ.
+    ФИКС 13.09.2026: та же история со статусом 'ready_for_pickup' (посылка уже
+    физически лежит на ПВЗ и ждёт покупателя - дальше "стоять на сборке" уже
+    физически не может) - подтверждено реальными данными заказов
+    5674794578/5676799351 в поставке WB-GI-274281627. */
 async function getStuckOrdersGroups(tenantId) {
   const r = await query(
     `SELECT
@@ -172,7 +176,7 @@ async function getStuckOrdersGroups(tenantId) {
      WHERE o.tenant_id = $1
        AND o.status = 'confirm'
        AND o.wb_supply_id IS NOT NULL
-       AND COALESCE(o.wb_status,'') NOT IN ('sorted','sold','canceled','canceled_by_client','declined_by_client','defect')
+       AND COALESCE(o.wb_status,'') NOT IN ('sorted','ready_for_pickup','sold','canceled','canceled_by_client','declined_by_client','defect')
        AND (
          s.id IS NULL
          OR s.status = 'cancelled'

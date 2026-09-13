@@ -118,7 +118,12 @@ function classify(row) {
   }
   if (row.wb_status === 'defect') return 'problem';
   if (row.wb_status === 'sold') return 'purchased';
-  if (row.wb_status === 'sorted') return 'in_transit';
+  // ФИКС 13.09.2026: WB реально отдаёт через orders/status ещё и
+  // 'ready_for_pickup' (посылка физически лежит на ПВЗ, ждёт покупателя) -
+  // старый комментарий выше про "только 7 документированных значений" не
+  // учитывал это. Без этой строки такой заказ падал в 'in_progress' по
+  // status==='confirm', хотя он уже явно доехал, а не "в процессе на складе".
+  if (row.wb_status === 'sorted' || row.wb_status === 'ready_for_pickup') return 'in_transit';
   if (row.status === 'confirm' || row.status === 'shipped') return 'in_progress';
   return 'new';
 }
