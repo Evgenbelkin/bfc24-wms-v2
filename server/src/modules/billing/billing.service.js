@@ -912,8 +912,13 @@ async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, gr
        ORDER BY DATE(s.packing_finished_at) DESC`,
       [tenantId, clientId, dateFrom, dateTo]
     ),
+    // COUNT(DISTINCT item_id), а не COUNT(*) — stock_balances хранит одну
+    // строку на КАЖДУЮ ячейку, где лежит товар, поэтому простой COUNT(*)
+    // считал не количество разных SKU, а количество ячеек с этим товаром
+    // (один и тот же артикул на 5 ячейках даёт 5 строк, а не 1 SKU). Задача
+    // пользователя 13.09.2026: "мне кажется нету у клиента столько скю".
     query(
-      `SELECT COUNT(*)::int AS sku_count, COALESCE(SUM(sb.qty_on_hand),0)::numeric AS total_qty
+      `SELECT COUNT(DISTINCT sb.item_id)::int AS sku_count, COALESCE(SUM(sb.qty_on_hand),0)::numeric AS total_qty
        FROM wms.stock_balances sb
        WHERE sb.tenant_id=$1 AND sb.client_id=$2 AND sb.qty_on_hand > 0`,
       [tenantId, clientId]
