@@ -62,8 +62,17 @@ async function buildAndSendAlert(tenantResults) {
   for (const r of shown) {
     const sign = r.diff > 0 ? '+' : '';
     const risk = r.diff > 0 ? 'риск оверселла' : 'не ушло в WB';
+    // ФИКС 13.09.2026: раньше показывали ТОЛЬКО имя (а если товара нет в WMS -
+    // плейсхолдер "(нет остатка в WMS)"), штрихкод не попадал в сообщение
+    // вообще - по такому алерту нельзя было понять, какой конкретно товар
+    // физически проверять на риск оверселла. Теперь штрихкод показываем
+    // всегда, имя - только если оно реальное.
+    const hasRealName = r.name && r.name !== '(нет остатка в WMS)';
+    const label = hasRealName
+      ? `${escapeHtml(r.name)} (шк ${escapeHtml(r.barcode)})`
+      : `шк ${escapeHtml(r.barcode)} (нет остатка в WMS)`;
     lines.push(
-      `${escapeHtml(r.tenantName)} / ${escapeHtml(r.clientName)}: ${escapeHtml(r.name || r.barcode)} — ` +
+      `${escapeHtml(r.tenantName)} / ${escapeHtml(r.clientName)}: ${label} — ` +
       `WB ${r.wb_qty} / ожидается ${r.expected_qty} (${sign}${r.diff}, ${risk})`
     );
   }
