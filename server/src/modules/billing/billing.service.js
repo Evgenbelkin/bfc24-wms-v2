@@ -979,6 +979,209 @@ async function getClientFinanceDetail({ tenantId, clientId, dateFrom, dateTo, gr
   };
 }
 
+// ─────────────── Клиент: единая хронологическая лента истории ───────────────
+// Не завязана на billing.service_charges — показывает факт операции независимо
+// от того, настроена ли для клиента платная услуга этого типа (см. пояснение
+// пользователю 14.09.2026: "не важно платная она или нет, хочу видеть когда была").
+
+async function getClientHistory({ tenantId, clientId, dateFrom, dateTo }) {
+  if (!clientId) throw new ValidationError('client_id is required');
+  if (!dateFrom || !dateTo) throw new ValidationError('date_from and date_to are required');
+
+  const [
+    receivingRes, pickingRes, packingShippingRes, returnsRes,
+    invoicesRes, paymentsRes, inventoryRes,
+  ] = await Promise.all([
+    // Приёмка — группируем по поставке (inbound_order_id), либо по дню для свободной приёмки,
+    // чтобы не плодить одно событие на каждую строку товара.
+    query(
+      `SELECT COALESCE(rt.inbound_order_id::text, 'free-' || DATE(rt.completed_at)::text) AS grp,
+              MAX(rt.completed_at) AS ts,
+              SUM(rt.qty_received)::int AS units,
+              COUNT(DISTINCT rt.item_id)::int AS sku_count,
+              COUNT(*)::int AS lines
+       FROM wms.receiving_tasks rt
+       WHERE rt.tenant_id=$1 AND rt.client_id=$2 AND rt.status='completed' AND rt.completed_at IS NOT NULL
+         AND rt.completed_at::date >= $3::date AND rt.completed_at::date <= $4::date
+       GROUP BY grp
+       ORDER BY ts DESC`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    // Сборка — по волнам
+    query(
+      `SELECT w.id, w.shipment_code, w.closed_at AS ts,
+              COALESCE(SUM(pt.qty_picked),0)::int AS units,
+              COUNT(pt.id)::int AS lines
+       FROM wms.pick_waves w
+       LEFT JOIN wms.picking_tasks pt ON pt.wave_id = w.id
+       WHERE w.tenant_id=$1 AND w.client_id=$2 AND w.closed_at IS NOT NULL
+         AND w.closed_at::date >= $3::date AND w.closed_at::date <= $4::date
+       GROUP BY w.id, w.shipment_code, w.closed_at
+       ORDER BY w.closed_at DESC`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    // Упаковка/отгрузка — по отгрузкам (два возможных момента на одну запись)
+    query(
+      `SELECT id, external_id, marketplace, packing_finished_at, total_packed_qty,
+              shipped_at, total_shipped_qty
+       FROM wms.shipments
+       WHERE tenant_id=$1 AND client_id=$2
+         AND ((packing_finished_at IS NOT NULL AND packing_finished_at::date >= $3::date AND packing_finished_at::date <= $4::date)
+           OR (shipped_at IS NOT NULL AND shipped_at::date >= $3::date AND shipped_at::date <= $4::date))`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    // Возвраты
+    query(
+      `SELECT r.id, r.created_at AS ts, r.qty, r.disposition, r.barcode, r.marketplace_order_no,
+              i.item_name
+       FROM wms.returns r
+       LEFT JOIN wms.items i ON i.id = r.item_id
+       WHERE r.tenant_id=$1 AND r.client_id=$2
+         AND r.created_at::date >= $3::date AND r.created_at::date <= $4::date
+       ORDER BY r.created_at DESC`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    // Счета выставлены
+    query(
+      `SELECT id, invoice_number, created_at AS ts, total_amount, status
+       FROM billing.invoices
+       WHERE tenant_id=$1 AND client_id=$2
+         AND created_at::date >= $3::date AND created_at::date <= $4::date
+       ORDER BY created_at DESC`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    // Оплаты по счетам
+    query(
+      `SELECT ip.id, ip.paid_at AS ts, ip.amount, i.invoice_number
+       FROM billing.invoice_payments ip
+       JOIN billing.invoices i ON i.id = ip.invoice_id
+       WHERE ip.tenant_id=$1 AND i.client_id=$2
+         AND ip.paid_at >= $3::date AND ip.paid_at <= $4::date
+       ORDER BY ip.paid_at DESC`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+    // Инвентаризация — только реальные расхождения
+    query(
+      `SELECT it.id, it.closed_at AS ts, it.qty_system, it.qty_actual, it.qty_delta,
+              it.barcode, i.item_name, it.location_code
+       FROM wms.inventory_tasks it
+       LEFT JOIN wms.items i ON i.id = it.item_id
+       WHERE it.tenant_id=$1 AND it.client_id=$2 AND it.status='done' AND it.closed_at IS NOT NULL
+         AND it.qty_delta IS NOT NULL AND it.qty_delta <> 0
+         AND it.closed_at::date >= $3::date AND it.closed_at::date <= $4::date
+       ORDER BY it.closed_at DESC`,
+      [tenantId, clientId, dateFrom, dateTo]
+    ),
+  ]);
+
+  const events = [];
+  const inRange = (ts) => {
+    if (!ts) return false;
+    const d = ts instanceof Date ? ts : new Date(ts);
+    const dateStr = d.toISOString().slice(0, 10);
+    return dateStr >= dateFrom && dateStr <= dateTo;
+  };
+
+  receivingRes.rows.forEach(r => {
+    events.push({
+      type: 'receiving',
+      ts: r.ts,
+      title: 'Приёмка',
+      detail: `${Number(r.units)} шт · ${r.sku_count} SKU${r.grp.indexOf('free-') === 0 ? ' · свободная приёмка' : ''}`,
+      qty: Number(r.units),
+      amount: null,
+    });
+  });
+
+  pickingRes.rows.forEach(r => {
+    events.push({
+      type: 'picking',
+      ts: r.ts,
+      title: 'Сборка волны' + (r.shipment_code ? ` ${r.shipment_code}` : ''),
+      detail: `${Number(r.units)} шт · ${r.lines} позиций`,
+      qty: Number(r.units),
+      amount: null,
+    });
+  });
+
+  packingShippingRes.rows.forEach(r => {
+    if (r.packing_finished_at && inRange(r.packing_finished_at)) {
+      events.push({
+        type: 'packing',
+        ts: r.packing_finished_at,
+        title: 'Упаковка ' + r.external_id,
+        detail: `${Number(r.total_packed_qty)} шт`,
+        qty: Number(r.total_packed_qty),
+        amount: null,
+      });
+    }
+    if (r.shipped_at && inRange(r.shipped_at)) {
+      events.push({
+        type: 'shipping',
+        ts: r.shipped_at,
+        title: 'Отгрузка ' + r.external_id,
+        detail: `${Number(r.total_shipped_qty)} шт · ${(r.marketplace || 'wb').toUpperCase()}`,
+        qty: Number(r.total_shipped_qty),
+        amount: null,
+      });
+    }
+  });
+
+  returnsRes.rows.forEach(r => {
+    const dispositionLabel = r.disposition === 'writeoff' ? 'списание (брак)' : 'возврат в продажу';
+    events.push({
+      type: 'return',
+      ts: r.ts,
+      title: 'Возврат товара',
+      detail: `${r.item_name || r.barcode} · ${Number(r.qty)} шт · ${dispositionLabel}` + (r.marketplace_order_no ? ` · заказ ${r.marketplace_order_no}` : ''),
+      qty: Number(r.qty),
+      amount: null,
+    });
+  });
+
+  invoicesRes.rows.forEach(r => {
+    events.push({
+      type: 'invoice',
+      ts: r.ts,
+      title: 'Выставлен счёт ' + (r.invoice_number || ('#' + r.id)),
+      detail: fmtMoneyServer(r.total_amount),
+      qty: null,
+      amount: Number(r.total_amount),
+    });
+  });
+
+  paymentsRes.rows.forEach(r => {
+    events.push({
+      type: 'payment',
+      ts: r.ts,
+      title: 'Оплата по счёту ' + (r.invoice_number || ''),
+      detail: fmtMoneyServer(r.amount),
+      qty: null,
+      amount: Number(r.amount),
+    });
+  });
+
+  inventoryRes.rows.forEach(r => {
+    const sign = Number(r.qty_delta) > 0 ? '+' : '';
+    events.push({
+      type: 'inventory',
+      ts: r.ts,
+      title: 'Инвентаризация',
+      detail: `${r.item_name || r.barcode}${r.location_code ? ' · ' + r.location_code : ''} · было ${Number(r.qty_system)}, стало ${Number(r.qty_actual)} (${sign}${Number(r.qty_delta)})`,
+      qty: Number(r.qty_delta),
+      amount: null,
+    });
+  });
+
+  events.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
+  return { events };
+}
+
+function fmtMoneyServer(n) {
+  return Number(n || 0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
+}
+
 // ─────────────── Invoice analytics (выставлено/оплачено/разбивка по клиентам) ───────────────
 
 const INVOICE_GRANULARITIES = ['day', 'week', 'month'];
@@ -1207,6 +1410,7 @@ module.exports = {
   getRevenueAnalytics,
   getInvoiceAnalytics,
   getClientFinanceDetail,
+  getClientHistory,
   listClientsWithActiveStoragePrice,
   chargeStorageForClientToday,
 };

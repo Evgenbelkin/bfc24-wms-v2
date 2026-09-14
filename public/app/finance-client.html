@@ -34,6 +34,17 @@
     .status-cancelled{background:#fee2e2;color:#b91c1c;}
     .module-off{color:var(--muted);font-size:13px;text-align:center;padding:16px;}
     .stock-more{display:block;text-align:center;padding:12px;font-size:13px;color:var(--accent);text-decoration:none;}
+    .history-feed{max-height:640px;overflow-y:auto;}
+    .history-row{display:flex;gap:12px;padding:10px 4px;border-bottom:1px solid var(--border);}
+    .history-row:last-child{border-bottom:none;}
+    .history-dot{flex:0 0 10px;width:10px;height:10px;border-radius:50%;margin-top:6px;}
+    .history-body{flex:1;min-width:0;}
+    .history-title{font-size:14px;font-weight:700;}
+    .history-detail{font-size:13px;color:var(--muted);margin-top:2px;}
+    .history-time{flex:0 0 auto;font-size:12px;color:var(--muted);white-space:nowrap;text-align:right;}
+    .history-filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+    .history-filters button{padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-size:12px;cursor:pointer;}
+    .history-filters button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
   </style>
 </head>
 <body>
@@ -69,6 +80,13 @@
       <div class="kpi-cell"><div class="num" id="kpi-shipped-qty" style="color:var(--text)">—</div><div class="lbl">Отгружено, шт</div></div>
       <div class="kpi-cell"><div class="num" id="kpi-debt" style="color:var(--red)">—</div><div class="lbl">Долг по счетам</div></div>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">История работы с клиентом</div>
+    <div class="refresh-note" style="margin-bottom:8px;">Вся хронология событий за выбранный период — приёмки, сборки, упаковки, отгрузки, возвраты, инвентаризация, счета и оплаты. Показано независимо от того, начисляется ли за операцию плата.</div>
+    <div class="history-filters" id="history-filters"></div>
+    <div class="history-feed" id="history-feed"></div>
   </div>
 
   <div class="card">
@@ -152,6 +170,74 @@
     paid: 'Оплачен',
     cancelled: 'Отменён'
   };
+
+  var HISTORY_TYPES = {
+    receiving: { label: 'Приёмка', color: '#2563eb' },
+    picking: { label: 'Сборка', color: '#7c3aed' },
+    packing: { label: 'Упаковка', color: '#0891b2' },
+    shipping: { label: 'Отгрузка', color: '#15803d' },
+    return: { label: 'Возврат', color: '#ea580c' },
+    inventory: { label: 'Инвентаризация', color: '#b91c1c' },
+    invoice: { label: 'Счёт', color: '#a16207' },
+    payment: { label: 'Оплата', color: '#16a34a' }
+  };
+  var historyActiveTypes = null; // null = все типы
+  var historyEventsCache = [];
+
+  function fmtDateTime(ts) {
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+    var pad = function (x) { return String(x).padStart(2, '0'); };
+    return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  function renderHistoryFilters() {
+    var box = document.getElementById('history-filters');
+    var html = '<button class="' + (historyActiveTypes === null ? 'active' : '') + '" onclick="setHistoryFilter(null)">Все</button>';
+    Object.keys(HISTORY_TYPES).forEach(function (t) {
+      var active = historyActiveTypes !== null && historyActiveTypes.indexOf(t) !== -1;
+      html += '<button class="' + (active ? 'active' : '') + '" onclick="setHistoryFilter(\'' + t + '\')">' + UI.escHtml(HISTORY_TYPES[t].label) + '</button>';
+    });
+    box.innerHTML = html;
+  }
+
+  function setHistoryFilter(type) {
+    if (type === null) {
+      historyActiveTypes = null;
+    } else if (historyActiveTypes !== null && historyActiveTypes.indexOf(type) !== -1) {
+      historyActiveTypes = historyActiveTypes.filter(function (t) { return t !== type; });
+      if (!historyActiveTypes.length) historyActiveTypes = null;
+    } else {
+      historyActiveTypes = (historyActiveTypes || []).concat([type]);
+    }
+    renderHistoryFilters();
+    renderHistoryFeed();
+  }
+
+  function renderHistoryFeed() {
+    var box = document.getElementById('history-feed');
+    var events = historyEventsCache;
+    if (historyActiveTypes !== null) {
+      events = events.filter(function (e) { return historyActiveTypes.indexOf(e.type) !== -1; });
+    }
+    if (!events.length) {
+      box.innerHTML = '<div class="module-off">Событий за период не найдено</div>';
+      return;
+    }
+    var html = '';
+    events.forEach(function (e) {
+      var cfg = HISTORY_TYPES[e.type] || { label: e.type, color: '#888' };
+      html += '<div class="history-row">' +
+        '<div class="history-dot" style="background:' + cfg.color + ';"></div>' +
+        '<div class="history-body">' +
+        '<div class="history-title">' + UI.escHtml(e.title) + '</div>' +
+        '<div class="history-detail">' + UI.escHtml(e.detail) + '</div>' +
+        '</div>' +
+        '<div class="history-time">' + fmtDateTime(e.ts) + '</div>' +
+        '</div>';
+    });
+    box.innerHTML = html;
+  }
 
   function fmtMoney(n) {
     n = Number(n || 0);
@@ -376,6 +462,18 @@
       renderProcessingDaily(res.processing.daily || []);
       renderInvoices(res.invoices);
       renderStock(res.stock);
+    }).catch(function (e) {
+      UI.notify.err(e.message);
+    });
+
+    window.API.billing.analytics.clientHistory({
+      client_id: clientId,
+      date_from: dateFrom,
+      date_to: dateTo
+    }).then(function (res) {
+      historyEventsCache = res.events || [];
+      renderHistoryFilters();
+      renderHistoryFeed();
     }).catch(function (e) {
       UI.notify.err(e.message);
     });

@@ -175,6 +175,22 @@ router.get('/analytics/client-detail', requireRole('tenant_admin', 'supervisor',
   } catch (e) { next(e); }
 });
 
+/** GET /billing/analytics/client-history — единая хронологическая лента истории
+ *  клиента (приёмка/сборка/упаковка/отгрузка/возвраты/счета/оплаты/инвентаризация),
+ *  независимо от того, настроена ли платная услуга для этого типа операции. */
+router.get('/analytics/client-history', requireRole('tenant_admin', 'supervisor', 'analyst'), async (req, res, next) => {
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const result = await svc.getClientHistory({
+      tenantId: req.user.tenantId,
+      clientId,
+      dateFrom: req.query.date_from,
+      dateTo:   req.query.date_to,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 router.get('/analytics/invoices', requireRole('tenant_admin', 'supervisor', 'analyst'), async (req, res, next) => {
   try {
     const clientId = resolveClientScope(req, req.query.client_id);
