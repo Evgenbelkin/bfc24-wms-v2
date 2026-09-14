@@ -972,6 +972,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     speedByClient: function speedByClient(p) {
       return _get('/fbs-analytics/speed-by-client', p);
     },
+    speedBySupply: function speedBySupply(p) {
+      return _get('/fbs-analytics/speed-by-supply', p);
+    },
     refreshNow: function refreshNow() {
       return post('/fbs-analytics/refresh-now', {});
     },

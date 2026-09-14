@@ -111,6 +111,20 @@
       </table>
       <div class="refresh-note" id="speed-by-client-empty" style="margin-top:8px;display:none;">Нет данных за период (заказы ещё не покинули статус "ожидание").</div>
     </div>
+
+    <div class="card">
+      <div class="card-title">Скорость обработки по поставкам</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Для ручной сверки конкретной поставки с личным кабинетом WB.</div>
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left;">Поставка</th><th style="text-align:left;">Клиент</th><th>Заказов</th><th style="text-align:left;">Принята WB</th><th>Заказ→WB</th><th>Заказ→сортировка</th><th>Отсортировано</th>
+          </tr>
+        </thead>
+        <tbody id="speed-by-supply"></tbody>
+      </table>
+      <div class="refresh-note" id="speed-by-supply-empty" style="margin-top:8px;display:none;">Нет данных за период.</div>
+    </div>
   </div>
 
   <div id="tab-delivery" style="display:none">
@@ -298,6 +312,31 @@ function rateColor(pct) {
   if (pct >= 70) return 'var(--text)';
   return 'var(--red,#c0392b)';
 }
+function loadSpeedBySupply(from, to) {
+  window.API.fbsAnalytics.speedBySupply({ from: from, to: to }).then(function (res) {
+    var tbody = document.getElementById('speed-by-supply');
+    var empty = document.getElementById('speed-by-supply-empty');
+    if (!res.supplies.length) {
+      tbody.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = res.supplies.map(function (s) {
+      return '<tr>' +
+        '<td style="text-align:left;">' + UI.escHtml(s.supply_id) + '</td>' +
+        '<td style="text-align:left;">' + UI.escHtml(s.client_name) + '</td>' +
+        '<td>' + fmtNum(s.orders) + '</td>' +
+        '<td style="text-align:left;">' + UI.fmtDateTime(s.accepted_at) + '</td>' +
+        '<td>' + fmtHours(s.avg_hours_to_wb) + '</td>' +
+        '<td>' + fmtHours(s.avg_hours_to_sorted) + '</td>' +
+        '<td>' + s.sorted_count + '/' + s.orders + '</td>' +
+        '</tr>';
+    }).join('');
+  }).catch(function (e) {
+    UI.toast(e.message || 'Ошибка загрузки по поставкам', 'error');
+  });
+}
 function loadSpeedByClient(_x3, _x4) {
   return _loadSpeedByClient.apply(this, arguments);
 }
@@ -379,6 +418,7 @@ function _load() {
         case 1:
           loadSpeed(from, to);
           loadSpeedByClient(from, to);
+          loadSpeedBySupply(from, to);
           _context3.p = 2;
           _context3.n = 3;
           return window.API.fbsAnalytics.summary({

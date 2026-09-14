@@ -70,6 +70,20 @@ router.get('/speed-by-client', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/** GET /fbs-analytics/speed-by-supply — сроки обработки в разрезе по
+ *  ОТДЕЛЬНЫМ поставкам (не по клиенту целиком) - для ручной сверки с личным
+ *  кабинетом WB на конкретной поставке. */
+router.get('/speed-by-supply', async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req.query);
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const result = await fbsAnalyticsService.getProcessingSpeedBySupply({
+      tenantId: req.user.tenantId, clientId, dateFrom, dateTo,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** POST /fbs-analytics/refresh-now — ручной принудительный опрос wbStatus
  *  (обычно обновляется фоновой джобой раз в 30 минут). */
 router.post('/refresh-now', async (req, res, next) => {

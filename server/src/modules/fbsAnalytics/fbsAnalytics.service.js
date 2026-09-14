@@ -412,6 +412,76 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
   return { clients };
 }
 
+/** Тот же расчёт "заказ->WB" / "заказ->сортировка", но в разрезе по каждой
+ *  ОТДЕЛЬНОЙ поставке - чтобы можно было проверить конкретную поставку
+ *  вручную в личном кабинете WB и убедиться, что мы считаем правильно (см.
+ *  сверку 14.09.2026: WB-GI-277801168, scanDt совпал день-в-день с кабинетом
+ *  продавца). "заказ->WB" на уровне поставки один и тот же для всех её
+ *  заказов (scanDt/wb_accepted_at - честное поле WB на поставку целиком), а
+ *  "заказ->сортировка" - по каждому заказу свой, здесь усредняем по поставке
+ *  и отдельно показываем sorted_count (сколько из заказов поставки уже
+ *  реально получили статус 'sorted' - если не все, значит по остальным пока
+ *  нет данных, это не ошибка, а просто WB ещё не прислал этот статус). */
+async function getProcessingSpeedBySupply({ tenantId, clientId = null, dateFrom, dateTo }) {
+  const params = [tenantId, dateFrom, dateTo];
+  const conds = ['wo.tenant_id=$1', 'wo.created_at >= $2', 'wo.created_at < $3', 's.wb_accepted_at IS NOT NULL'];
+  let idx = 4;
+  if (clientId) { conds.push(`ma.client_id=$${idx++}`); params.push(clientId); }
+
+  const r = await query(
+    `SELECT wo.wb_supply_id AS supply_id, ma.client_id, c.client_name,
+            s.wb_accepted_at AS accepted_at, wo.created_at, sorted.observed_at AS sorted_at
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     JOIN wms.clients c ON c.id = ma.client_id
+     JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e4
+       WHERE e4.mp_account_id = wo.mp_account_id AND e4.wb_order_id = wo.wb_order_id AND e4.wb_status = 'sorted'
+       ORDER BY observed_at ASC LIMIT 1
+     ) sorted ON TRUE
+     WHERE ${conds.join(' AND ')}
+     ORDER BY s.wb_accepted_at DESC`,
+    params
+  );
+
+  const bySupply = new Map();
+  for (const row of r.rows) {
+    if (!bySupply.has(row.supply_id)) {
+      bySupply.set(row.supply_id, {
+        supply_id: row.supply_id,
+        client_id: row.client_id,
+        client_name: row.client_name,
+        accepted_at: row.accepted_at,
+        orders: 0,
+        sumHoursToWb: 0,
+        sumHoursToSorted: 0, cntSorted: 0,
+      });
+    }
+    const agg = bySupply.get(row.supply_id);
+    agg.orders++;
+    agg.sumHoursToWb += (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
+    if (row.sorted_at) {
+      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+      if (hoursToSorted >= 0) { agg.sumHoursToSorted += hoursToSorted; agg.cntSorted++; }
+    }
+  }
+
+  const supplies = [...bySupply.values()].map(a => ({
+    supply_id: a.supply_id,
+    client_id: a.client_id,
+    client_name: a.client_name,
+    accepted_at: a.accepted_at,
+    orders: a.orders,
+    avg_hours_to_wb: a.sumHoursToWb / a.orders,
+    avg_hours_to_sorted: a.cntSorted > 0 ? a.sumHoursToSorted / a.cntSorted : null,
+    sorted_count: a.cntSorted,
+  }));
+  supplies.sort((x, y) => new Date(y.accepted_at) - new Date(x.accepted_at));
+
+  return { supplies };
+}
+
 // =============================================================================
 // Отчёт "время доставки: склад отгрузки (СЦ WB) -> регион покупателя".
 //
@@ -610,4 +680,5 @@ module.exports = {
   getFbsSummary,
   getProcessingSpeed,
   getProcessingSpeedByClient,
+  getProcessingSpeedBySupply,
 };
