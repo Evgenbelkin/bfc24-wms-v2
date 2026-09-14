@@ -867,6 +867,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
         qty: qty,
         location_code: locationCode
       });
+    },
+    stickerImage: function stickerImage(wbOrderId) {
+      return _get("/shipping/sticker-image/".concat(wbOrderId));
     }
   };
 

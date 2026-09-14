@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const svc = require('./shipping.service');
+const packingSvc = require('../packing/packing.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
 const { requireRole } = require('../../middleware/requireRole');
@@ -41,6 +42,17 @@ router.get('/details', async (req,res,next)=>{
   try {
     const { shipment_code } = req.query;
     const result = await svc.getShipmentDetails({ tenantId: req.user.tenantId, shipmentCode: shipment_code });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+// Картинка конкретного стикера ВБ по клику в карточке отгрузки — отдельным
+// запросом, не в общем /details (см. комментарий в shipping.service.js::
+// getShipmentDetails). Переиспользует ту же ручку, что и упаковка —
+// wms.wb_orders общая для обоих модулей, дублировать запрос смысла нет.
+router.get('/sticker-image/:wbOrderId', async (req,res,next)=>{
+  try {
+    const result = await packingSvc.getStickerImage({ tenantId: req.user.tenantId, wbOrderId: req.params.wbOrderId });
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
