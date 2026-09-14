@@ -870,6 +870,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     stickerImage: function stickerImage(wbOrderId) {
       return _get("/shipping/sticker-image/".concat(wbOrderId));
+    },
+    lineUnits: function lineUnits(code, barcode) {
+      return _get('/shipping/line-units', {
+        shipment_code: code,
+        barcode: barcode
+      });
     }
   };
 

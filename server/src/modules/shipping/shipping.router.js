@@ -46,6 +46,17 @@ router.get('/details', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+// Состав ОДНОГО артикула внутри поставки (единицы/стикеры/кизы) — отдельным
+// запросом по клику на строку, см. комментарий в shipping.service.js::
+// getShipmentDetails (список строк теперь сгруппирован по артикулу).
+router.get('/line-units', async (req,res,next)=>{
+  try {
+    const { shipment_code, barcode } = req.query;
+    const result = await svc.getShipmentLineUnits({ tenantId: req.user.tenantId, shipmentCode: shipment_code, barcode });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // Картинка конкретного стикера ВБ по клику в карточке отгрузки — отдельным
 // запросом, не в общем /details (см. комментарий в shipping.service.js::
 // getShipmentDetails). Переиспользует ту же ручку, что и упаковка —

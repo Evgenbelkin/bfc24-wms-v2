@@ -129,7 +129,7 @@
       <div class="card-title">Состав</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>Артикул продавца</th><th>Артикул ВБ</th><th>Штрихкод</th><th>Размер</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Стикер</th><th>Действие</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Артикул продавца</th><th>Артикул ВБ</th><th>Штрихкод</th><th>Размер</th><th>План</th><th>Собрано</th><th>Упаковано</th><th>Фото</th><th>Состав</th></tr></thead>
           <tbody id="lines-body"></tbody>
         </table>
       </div>
@@ -310,7 +310,7 @@ function _openShipmentByCode() {
             shippedBadge.style.display = 'none';
           }
           document.getElementById('d-picked').textContent = "".concat(res.totals.picked, "/").concat(res.totals.plan);
-          document.getElementById('lines-body').innerHTML = "<tr><td colspan=\"11\" style=\"text-align:center;color:var(--muted);padding:16px;\">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043E\u0441\u0442\u0430\u0432\u0430\u2026</td></tr>";
+          document.getElementById('lines-body').innerHTML = "<tr><td colspan=\"10\" style=\"text-align:center;color:var(--muted);padding:16px;\">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043E\u0441\u0442\u0430\u0432\u0430\u2026</td></tr>";
           document.getElementById('qr-result').style.display = 'none';
           document.getElementById('confirm-status').textContent = '';
           renderWbQrCard();
@@ -375,9 +375,9 @@ function _loadShipmentLines() {
           return _context4.a(2);
         case 2:
           currentLines = res.lines || [];
-          UI.renderTable('#lines-body', currentLines, function (l, idx) {
-            return "\n          <tr>\n            <td>".concat(UI.escHtml(l.item_name || l.barcode), "</td>\n            <td>").concat(UI.escHtml(l.vendor_code || '—'), "</td>\n            <td>").concat(l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '—', "</td>\n            <td>").concat(UI.escHtml(l.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(l.size || '—'), "</td>\n            <td>").concat(UI.fmtQty(l.qty), "</td>\n            <td>").concat(UI.fmtQty(l.qty_picked), "</td>\n            <td>").concat(UI.fmtQty(l.qty_packed), "</td>\n            <td>").concat(l.preview_url ? "<a href=\"#\" onclick=\"openLinePhoto(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.wb_sticker_code ? "<a href=\"#\" onclick=\"openLineSticker(".concat(idx, ");return false;\">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>") : '—', "</td>\n            <td>").concat(l.picking_status === 'skipped' ? canRequeue ? "<button class=\"btn-sm btn-back\" onclick=\"requeueLine(".concat(idx, ");return false;\">\u21A9 \u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u0441\u0431\u043E\u0440\u043A\u0443</button>") : "<span class=\"pill pill-red\">\u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E</span>" : '—', l.marking_code ? "<br><button class=\"btn-sm\" onclick=\"reprintLineMarkingCode(".concat(idx, ");return false;\">\u041F\u0435\u0440\u0435\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C \u043A\u0438\u0437</button>") : '', "</td>\n          </tr>\n        ");
-          });
+          lineUnitsCache = {};
+          expandedBarcodes = {};
+          renderLines();
           renderReturnPickedCard(canRequeue ? res.already_picked || [] : []);
           _context4.n = 4;
           break;
@@ -456,43 +456,19 @@ function openLinePhoto(idx) {
   if (!(l && l.preview_url)) return;
   window.open(l.preview_url, '_blank');
 }
-function requeueLine(_x4) {
-  return _requeueLine.apply(this, arguments);
-}
-function _requeueLine() {
-  _requeueLine = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(idx) {
-    var l, _t5;
-    return _regenerator().w(function (_context6) {
-      while (1) switch (_context6.p = _context6.n) {
-        case 0:
-          l = currentLines[idx];
-          if (l && l.task_id) {
-            _context6.n = 1;
-            break;
-          }
-          UI.notify.err('Не найден id задания сборки для этой строки');
-          return _context6.a(2);
-        case 1:
-          _context6.p = 1;
-          _context6.n = 2;
-          return window.API.picking.requeue(l.task_id);
-        case 2:
-          UI.notify.ok("\u0412\u043E\u0437\u0432\u0440\u0430\u0449\u0435\u043D\u043E \u0432 \u0441\u0431\u043E\u0440\u043A\u0443: ".concat(l.item_name || l.barcode));
-          _context6.n = 3;
-          return openShipmentByCode(currentShipment.external_id);
-        case 3:
-          _context6.n = 5;
-          break;
-        case 4:
-          _context6.p = 4;
-          _t5 = _context6.v;
-          UI.notify.err(_t5.message);
-        case 5:
-          return _context6.a(2);
-      }
-    }, _callee6, null, [[1, 4]]);
-  }));
-  return _requeueLine.apply(this, arguments);
+// Возврат в сборку конкретной пропущенной единицы товара (состав артикула,
+// раскрытый по клику на строку в карточке отгрузки - см. renderLines/
+// toggleLineUnits ниже).
+function requeueUnit(barcode, unitIdx) {
+  var state = lineUnitsCache[barcode];
+  var u = state && state.units && state.units[unitIdx];
+  if (!(u && u.task_id)) { UI.notify.err('Не найден id задания сборки для этой единицы'); return; }
+  window.API.picking.requeue(u.task_id).then(function () {
+    UI.notify.ok('Возвращено в сборку');
+    return openShipmentByCode(currentShipment.external_id);
+  }).catch(function (e) {
+    UI.notify.err(e.message);
+  });
 }
 function markDelivered() {
   return _markDelivered.apply(this, arguments);
@@ -585,26 +561,110 @@ function _cancelShipment() {
   }));
   return _cancelShipment.apply(this, arguments);
 }
-function openLineSticker(idx) {
-  var l = currentLines[idx];
-  if (!(l && l.wb_sticker_code)) return;
-  // \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 \u0441\u0442\u0438\u043A\u0435\u0440\u0430 \u041D\u0415 \u043F\u0440\u0438\u0445\u043E\u0434\u0438\u0442 \u0432\u043C\u0435\u0441\u0442\u0435 \u0441\u043E \u0441\u043F\u0438\u0441\u043A\u043E\u043C \u0441\u0442\u0440\u043E\u043A (\u0441\u043C. \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439 \u0432 shipping.service.js::getShipmentDetails \u2014 \u043D\u0430 \u0431\u043E\u043B\u044C\u0448\u043E\u0439 \u043F\u043E\u0441\u0442\u0430\u0432\u043A\u0435 \u044D\u0442\u043E \u0440\u0430\u0437\u0434\u0443\u0432\u0430\u043B\u043E \u043E\u0442\u0432\u0435\u0442 \u0434\u043E \u043C\u0435\u0433\u0430\u0431\u0430\u0439\u0442). \u041F\u043E\u0434\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043E \u043A\u043B\u0438\u043A\u0443 \u0438 \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u043C \u0432 l.wb_sticker \u2014 \u0442\u043E\u0442 \u0436\u0435 \u043F\u0440\u0438\u0451\u043C, \u0447\u0442\u043E \u0438 openStickerChip \u0432 packing.html.
+var lineUnitsCache = {};
+var expandedBarcodes = {};
+
+// Состав отгрузки сгруппирован по артикулу (см. комментарий в
+// shipping.service.js::getShipmentDetails - при большом числе заказов на
+// малое число SKU строка на каждый заказ означает грузить и рисовать тысячи
+// строк без надобности). Состав конкретного артикула (заказы/стикеры/кизы)
+// подгружается отдельно по клику - см. toggleLineUnits ниже.
+function renderLines() {
+  UI.renderTable('#lines-body', currentLines, function (l, idx) {
+    var mainRow = renderLineMainRow(l, idx);
+    if (!expandedBarcodes[l.barcode]) return mainRow;
+    return mainRow + renderLineUnitsRow(l);
+  });
+}
+function renderLineMainRow(l, idx) {
+  var skippedBadge = l.skipped_count ? '<span class="pill pill-red" style="margin-left:6px;">' + l.skipped_count + ' пропущено</span>' : '';
+  var toggleLabel = expandedBarcodes[l.barcode] ? 'Скрыть' : ('Состав (' + UI.fmtQty(l.qty_plan) + ')');
+  var safeBarcode = String(l.barcode || '').replace(/'/g, "\\'");
+  return '<tr>' +
+    '<td>' + UI.escHtml(l.item_name || l.barcode) + '</td>' +
+    '<td>' + UI.escHtml(l.vendor_code || '\u2014') + '</td>' +
+    '<td>' + (l.wb_nm_id ? UI.escHtml(String(l.wb_nm_id)) : '\u2014') + '</td>' +
+    '<td>' + UI.escHtml(l.barcode || '\u2014') + '</td>' +
+    '<td>' + UI.escHtml(l.size || '\u2014') + '</td>' +
+    '<td>' + UI.fmtQty(l.qty_plan) + '</td>' +
+    '<td>' + UI.fmtQty(l.qty_picked) + '</td>' +
+    '<td>' + UI.fmtQty(l.qty_packed) + '</td>' +
+    '<td>' + (l.preview_url ? '<a href="#" onclick="openLinePhoto(' + idx + ');return false;">\u041E\u0442\u043A\u0440\u044B\u0442\u044C</a>' : '\u2014') + '</td>' +
+    '<td><a href="#" onclick="toggleLineUnits(\'' + safeBarcode + '\');return false;">' + toggleLabel + '</a>' + skippedBadge + '</td>' +
+    '</tr>';
+}
+function renderLineUnitsRow(l) {
+  var state = lineUnitsCache[l.barcode];
+  var safeBarcode = String(l.barcode || '').replace(/'/g, "\\'");
+  var body;
+  if (!state || state.loading) {
+    body = '<div style="padding:8px;color:var(--muted);">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u043E\u0441\u0442\u0430\u0432\u0430\u2026</div>';
+  } else if (state.error) {
+    body = '<div style="padding:8px;color:var(--red);">' + UI.escHtml(state.error) + '</div>';
+  } else {
+    body = (state.units || []).map(function (u, ui) {
+      var stickerHtml = u.wb_sticker_code
+        ? '<a href="#" onclick="openUnitSticker(\'' + safeBarcode + '\',' + ui + ');return false;">' + UI.escHtml(u.wb_sticker_code) + '</a>'
+        : '\u2014';
+      var kizHtml = u.marking_code
+        ? '<button type="button" class="btn-sm" onclick="reprintUnitMarkingCode(\'' + safeBarcode + '\',' + ui + ');return false;">\u041F\u0435\u0440\u0435\u043F\u0435\u0447\u0430\u0442\u0430\u0442\u044C \u043A\u0438\u0437</button>'
+        : '\u2014';
+      var statusHtml = u.picking_status === 'skipped'
+        ? (canRequeue
+            ? '<button type="button" class="btn-sm btn-back" onclick="requeueUnit(\'' + safeBarcode + '\',' + ui + ');return false;">\u21A9 \u0412\u0435\u0440\u043D\u0443\u0442\u044C \u0432 \u0441\u0431\u043E\u0440\u043A\u0443</button>'
+            : '<span class="pill pill-red">\u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E</span>')
+        : (u.picking_status === 'done' ? '<span class="pill pill-green">\u0441\u043E\u0431\u0440\u0430\u043D\u043E</span>' : '<span class="pill">' + UI.escHtml(u.picking_status || '') + '</span>');
+      return '<div style="display:flex;gap:16px;align-items:center;padding:6px 4px;border-top:1px solid var(--border);font-size:12px;">' +
+        '<span style="color:var(--muted);min-width:90px;">\u0437\u0430\u043A\u0430\u0437 #' + UI.escHtml(String(u.wb_order_id || '')) + '</span>' +
+        '<span style="min-width:140px;">' + stickerHtml + '</span>' +
+        '<span style="min-width:150px;">' + kizHtml + '</span>' +
+        '<span>' + statusHtml + '</span>' +
+        '</div>';
+    }).join('') || '<div style="padding:8px;color:var(--muted);">\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445</div>';
+  }
+  return '<tr><td colspan="10" style="background:var(--card2);padding:8px 12px;">' + body + '</td></tr>';
+}
+function toggleLineUnits(barcode) {
+  var wasExpanded = !!expandedBarcodes[barcode];
+  expandedBarcodes[barcode] = !wasExpanded;
+  if (wasExpanded) { renderLines(); return; }
+  if (!lineUnitsCache[barcode]) {
+    lineUnitsCache[barcode] = { loading: true };
+    window.API.shipping.lineUnits(currentShipment.external_id, barcode).then(function (res) {
+      lineUnitsCache[barcode] = { units: res.units || [] };
+      renderLines();
+    }).catch(function (e) {
+      lineUnitsCache[barcode] = { error: e.message || '\u041E\u0448\u0438\u0431\u043A\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0438 \u0441\u043E\u0441\u0442\u0430\u0432\u0430' };
+      renderLines();
+    });
+  }
+  renderLines();
+}
+// \u041A\u0430\u0440\u0442\u0438\u043D\u043A\u0430 \u0441\u0442\u0438\u043A\u0435\u0440\u0430 \u041D\u0415 \u043F\u0440\u0438\u0445\u043E\u0434\u0438\u0442 \u0432\u043C\u0435\u0441\u0442\u0435 \u0441 \u0441\u043E\u0441\u0442\u0430\u0432\u043E\u043C (\u0441\u043C. \u043A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439 \u0432 shipping.service.js::getShipmentDetails) - \u043F\u043E\u0434\u0433\u0440\u0443\u0436\u0430\u0435\u043C \u043F\u043E \u043A\u043B\u0438\u043A\u0443 \u0438 \u043A\u044D\u0448\u0438\u0440\u0443\u0435\u043C \u0432 u.wb_sticker - \u0442\u043E\u0442 \u0436\u0435 \u043F\u0440\u0438\u0451\u043C, \u0447\u0442\u043E \u0438 openStickerChip \u0432 packing.html.
+function openUnitSticker(barcode, unitIdx) {
+  var state = lineUnitsCache[barcode];
+  var u = state && state.units && state.units[unitIdx];
+  if (!(u && u.wb_sticker_code)) return;
   var w = window.open('', '_blank');
   if (!w) { UI.notify.err('\u0411\u0440\u0430\u0443\u0437\u0435\u0440 \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u043B \u0432\u0441\u043F\u043B\u044B\u0432\u0430\u044E\u0449\u0435\u0435 \u043E\u043A\u043D\u043E'); return; }
   w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u0441\u0442\u0438\u043A\u0435\u0440\u0430\u2026</p>');
   var render = function () {
     w.document.open();
-    w.document.write("<title>\u0421\u0442\u0438\u043A\u0435\u0440 ".concat(UI.escHtml(l.barcode), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          <img src=\"data:image/svg+xml;base64,").concat(l.wb_sticker, "\" style=\"max-width:90vw;max-height:80vh;\" onload=\"window.print()\"/>\n          ").concat(l.wb_sticker_code ? "<div style=\"font-family:monospace;font-size:14px;color:#333;\">".concat(UI.escHtml(l.wb_sticker_code), "</div>") : '', "\n        </body>"));
+    w.document.write('<title>\u0421\u0442\u0438\u043A\u0435\u0440 ' + UI.escHtml(barcode) + '</title>' +
+      '<body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">' +
+      '<img src="data:image/svg+xml;base64,' + u.wb_sticker + '" style="max-width:90vw;max-height:80vh;" onload="window.print()"/>' +
+      (u.wb_sticker_code ? '<div style="font-family:monospace;font-size:14px;color:#333;">' + UI.escHtml(u.wb_sticker_code) + '</div>' : '') +
+      '</body>');
     w.document.close();
   };
-  if (l.wb_sticker) { render(); return; }
-  if (!l.wb_order_row_id) {
+  if (u.wb_sticker) { render(); return; }
+  if (!u.wb_order_row_id) {
     w.document.write('<p style="font-family:sans-serif;color:red;padding:40px;">\u041D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0434\u043B\u044F \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0438 \u0441\u0442\u0438\u043A\u0435\u0440\u0430</p>');
     return;
   }
-  window.API.shipping.stickerImage(l.wb_order_row_id).then(function (res) {
-    l.wb_sticker = res.image;
-    if (!l.wb_sticker_code && res.code) l.wb_sticker_code = res.code;
+  window.API.shipping.stickerImage(u.wb_order_row_id).then(function (res) {
+    u.wb_sticker = res.image;
+    if (!u.wb_sticker_code && res.code) u.wb_sticker_code = res.code;
     render();
   }).catch(function (e) {
     w.document.open();
@@ -612,24 +672,22 @@ function openLineSticker(idx) {
     w.document.close();
   });
 }
-// Перепечать киз (двойная маркировка) прямо из карточки отгрузки — уходит
-// заданием на физический принтер (wms.print_jobs), так же как и перепечатка
-// киза в модуле упаковки. ДОПОЛНИТЕЛЬНО (08-09.09.2026, реальный инцидент —
-// задание тихо легло в очередь, т.к. принтер-агент на рабочем месте не был
-// настроен, а посмотреть код было негде) открываем SVG в новой вкладке как
-// аварийный фолбэк — окно открываем СРАЗУ, синхронно по клику (иначе браузер
-// может заблокировать всплывающее окно, открытое уже после ответа сервера),
-// см. тот же приём в openStickerChip (packing.html).
-function reprintLineMarkingCode(idx) {
-  var l = currentLines[idx];
-  if (!(l && l.marking_code)) return;
+// \u041F\u0435\u0440\u0435\u043F\u0435\u0447\u0430\u0442\u044C \u043A\u0438\u0437 (\u0434\u0432\u043E\u0439\u043D\u0430\u044F \u043C\u0430\u0440\u043A\u0438\u0440\u043E\u0432\u043A\u0430) \u043F\u0440\u044F\u043C\u043E \u0438\u0437 \u0441\u043E\u0441\u0442\u0430\u0432\u0430 \u0430\u0440\u0442\u0438\u043A\u0443\u043B\u0430 \u0432 \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0435 \u043E\u0442\u0433\u0440\u0443\u0437\u043A\u0438 - \u0443\u0445\u043E\u0434\u0438\u0442 \u0437\u0430\u0434\u0430\u043D\u0438\u0435\u043C \u043D\u0430 \u0444\u0438\u0437\u0438\u0447\u0435\u0441\u043A\u0438\u0439 \u043F\u0440\u0438\u043D\u0442\u0435\u0440 (wms.print_jobs), \u0442\u0430\u043A \u0436\u0435 \u043A\u0430\u043A \u0438 \u043F\u0435\u0440\u0435\u043F\u0435\u0447\u0430\u0442\u043A\u0430 \u043A\u0438\u0437\u0430 \u0432 \u043C\u043E\u0434\u0443\u043B\u0435 \u0443\u043F\u0430\u043A\u043E\u0432\u043A\u0438. \u041E\u043A\u043D\u043E \u043E\u0442\u043A\u0440\u044B\u0432\u0430\u0435\u043C \u0421\u0420\u0410\u0417\u0423, \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u043D\u043E \u043F\u043E \u043A\u043B\u0438\u043A\u0443 - \u0438\u043D\u0430\u0447\u0435 \u0431\u0440\u0430\u0443\u0437\u0435\u0440 \u043C\u043E\u0436\u0435\u0442 \u0437\u0430\u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0432\u0441\u043F\u043B\u044B\u0432\u0430\u044E\u0449\u0435\u0435 \u043E\u043A\u043D\u043E, \u043E\u0442\u043A\u0440\u044B\u0442\u043E\u0435 \u0443\u0436\u0435 \u043F\u043E\u0441\u043B\u0435 \u043E\u0442\u0432\u0435\u0442\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0430.
+function reprintUnitMarkingCode(barcode, unitIdx) {
+  var state = lineUnitsCache[barcode];
+  var u = state && state.units && state.units[unitIdx];
+  if (!(u && u.marking_code)) return;
   var w = window.open('', '_blank');
-  if (w) w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">Печать киза…</p>');
-  window.API.marking.reprintCode(l.marking_code).then(function (res) {
-    UI.notify.ok('Этикетка киза отправлена на печать ещё раз.');
+  if (w) w.document.write('<p style="font-family:sans-serif;text-align:center;padding:40px;">\u041F\u0435\u0447\u0430\u0442\u044C \u043A\u0438\u0437\u0430\u2026</p>');
+  window.API.marking.reprintCode(u.marking_code).then(function (res) {
+    UI.notify.ok('\u042D\u0442\u0438\u043A\u0435\u0442\u043A\u0430 \u043A\u0438\u0437\u0430 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0430 \u043D\u0430 \u043F\u0435\u0447\u0430\u0442\u044C \u0435\u0449\u0451 \u0440\u0430\u0437.');
     if (w && res && res.svg) {
       w.document.open();
-      w.document.write("<title>Киз ".concat(UI.escHtml(res.code || ''), "</title>\n        <body style=\"margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;\">\n          ").concat(res.svg, "\n          <div style=\"font-family:monospace;font-size:14px;color:#333;\">").concat(UI.escHtml(res.code || ''), "</div>\n        </body>"));
+      w.document.write('<title>\u041A\u0438\u0437 ' + UI.escHtml(res.code || '') + '</title>' +
+        '<body style="margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#fff;gap:12px;">' +
+        res.svg +
+        '<div style="font-family:monospace;font-size:14px;color:#333;">' + UI.escHtml(res.code || '') + '</div>' +
+        '</body>');
       w.document.close();
     } else if (w) {
       w.close();

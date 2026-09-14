@@ -111,51 +111,36 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
   const shipment = shipRes.rows[0];
 
   // Строки
-  // ВАЖНО: джойн на wms.wb_orders раньше матчился по (wb_supply_id, barcode) —
-  // если в ОДНОЙ поставке два разных заказа брали один и тот же штрихкод
-  // (обычное дело, ничего страшного), такой join фанаутил одну строку
-  // picking_tasks в несколько результатов (по числу совпавших заказов),
-  // и "Собрано X/Y" на карточке отгрузки завышалось. У picking_tasks уже
-  // есть точный wb_order_id конкретного заказа, под который создана
-  // задача — джойним по нему, а не по штрихкоду, чтобы строго 1:1.
-  // ФИКС (пользователь сообщил о тормозах уже на 70 заказах в отгрузке,
-  // 14.09.2026): раньше сюда тянули wo.wb_sticker — base64 SVG, десятки КБ
-  // НА КАЖДУЮ строку — тот же баг, что чинили в packing (см. getStickerImage
-  // и комментарий в packing.service.js::getPackingTaskDetails, задача #65).
-  // На большой поставке это раздувало ОДИН ответ до мегабайт и тормозило
-  // открытие карточки целиком. Код стикера (крошечная строка) оставляем
-  // сразу — этого достаточно, чтобы показать кнопку "Открыть". Саму
-  // картинку теперь подгружаем по клику через GET /shipping/sticker-image/
-  // :wbOrderId (переиспользует ту же ручку, что и упаковка).
-  // Заодно заменили LATERAL-подзапрос по stock_movements (выполнялся ОТДЕЛЬНО
-  // на каждую строку) на один агрегат с GROUP BY, посчитанный один раз и
-  // подключённый обычным JOIN — при тысячах строк это ощутимо дешевле.
+  // ФИКС (пользователь указал верно, 14.09.2026 — "зачем нам их тянуть
+  // сотнями строк, реально у клиента всего 90 SKU, а заказов с них 10000"):
+  // строка на каждый ЗАКАЗ означает грузить и рисовать столько строк,
+  // сколько заказов в поставке, хотя реально показать нужно по одной на
+  // артикул. Группируем по штрихкоду — тот же приём, что уже использует
+  // упаковка (packing.service.js::getPackingTaskDetails). Стикеры/кизы
+  // отдельных единиц СЮДА НЕ тянем вообще — иначе просто переносим те же
+  // тысячи строк внутрь чипов на 90 строк, ничего не выиграв по объёму.
+  // Состав конкретного артикула (единицы, стикеры, кизы, пропуски) —
+  // отдельный лёгкий запрос по клику на строку, см. getShipmentLineUnits
+  // ниже и GET /shipping/line-units.
   const linesRes = await query(
     `SELECT
-       pt.id AS task_id, pt.barcode, pt.qty, pt.status AS picking_status,
-       pt.qty_picked, pt.location_code,
+       pt.barcode,
+       MAX(pt.item_id) AS item_id,
+       SUM(pt.qty)::int AS qty_plan,
+       SUM(pt.qty_picked)::int AS qty_picked,
+       COUNT(*) FILTER (WHERE pt.status='skipped')::int AS skipped_count,
        i.item_name, i.vendor_code, i.wb_nm_id, i.size, i.preview_url,
-       wo.id AS wb_order_row_id, wo.wb_sticker_code,
-       COALESCE(pm.packed_qty, 0)::int AS qty_packed,
-       mc.code AS marking_code
+       COALESCE(pm.packed_qty, 0)::int AS qty_packed
      FROM wms.picking_tasks pt
      LEFT JOIN wms.items i ON i.id=pt.item_id
-     LEFT JOIN wms.wb_orders wo ON wo.tenant_id=$1 AND wo.wb_order_id=pt.wb_order_id AND wo.wb_sticker IS NOT NULL
      LEFT JOIN (
        SELECT barcode, SUM(qty)::int AS packed_qty
        FROM wms.stock_movements
        WHERE tenant_id=$1 AND movement_type='packing' AND ref_type='shipment' AND ref_id=$3
        GROUP BY barcode
      ) pm ON pm.barcode = pt.barcode
-     -- Код "Честный знак", реально ушедший на печать/привязку для ЭТОЙ
-     -- конкретной единицы этой отгрузки (used_ref_id=shipment.id + тот же
-     -- wb_order_id, что у picking-задачи) - нужен для кнопки "Перепечатать
-     -- киз" в карточке отгрузки (обсуждение с пользователем 05.09.2026:
-     -- если стикер/QR поставки можно перепечатать отсюда, то и киз тоже).
-     -- 1:1 по построению (один заказ WB - максимум один выданный код).
-     LEFT JOIN wms.marking_codes mc ON mc.tenant_id=$1 AND mc.used_ref_type='packing'
-       AND mc.used_ref_id=$3 AND mc.wb_order_id=pt.wb_order_id
      WHERE pt.tenant_id=$1 AND pt.shipment_code=$2
+     GROUP BY pt.barcode, i.item_name, i.vendor_code, i.wb_nm_id, i.size, i.preview_url, pm.packed_qty
      ORDER BY i.item_name, pt.barcode`,
     [tenantId, shipmentCode, shipment.id]
   );
@@ -192,6 +177,40 @@ async function getShipmentDetails({ tenantId, shipmentCode }) {
   }
 
   return { shipment, lines: linesRes.rows, already_picked: alreadyPicked };
+}
+
+/**
+ * Состав ОДНОГО артикула внутри поставки — по заказу на строку (task_id,
+ * стикер ВБ, код "Честный знак", статус сборки). Раньше это было частью
+ * общего /details, теперь отдельная лёгкая ручка по клику на строку в
+ * getShipmentDetails (см. комментарий там же) — на большой поставке (тысячи
+ * заказов, десятки SKU) грузим и рисуем только состав ТОГО артикула, на
+ * который кликнули, а не всей поставки разом.
+ */
+async function getShipmentLineUnits({ tenantId, shipmentCode, barcode }) {
+  const shipRes = await query(
+    `SELECT id FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 ORDER BY id DESC LIMIT 1`,
+    [tenantId, shipmentCode]
+  );
+  if (shipRes.rowCount === 0) throw new NotFoundError(`Shipment '${shipmentCode}'`);
+  const shipmentId = shipRes.rows[0].id;
+
+  // ВАЖНО (см. тот же комментарий в getShipmentDetails выше): джойн на
+  // wb_orders по wb_order_id, а не по штрихкоду — иначе при нескольких
+  // заказах на один и тот же товар строка размножится некорректно.
+  const r = await query(
+    `SELECT pt.id AS task_id, pt.wb_order_id, pt.status AS picking_status,
+            wo.id AS wb_order_row_id, wo.wb_sticker_code,
+            mc.code AS marking_code
+     FROM wms.picking_tasks pt
+     LEFT JOIN wms.wb_orders wo ON wo.tenant_id=$1 AND wo.wb_order_id=pt.wb_order_id
+     LEFT JOIN wms.marking_codes mc ON mc.tenant_id=$1 AND mc.used_ref_type='packing'
+       AND mc.used_ref_id=$4 AND mc.wb_order_id=pt.wb_order_id
+     WHERE pt.tenant_id=$1 AND pt.shipment_code=$2 AND pt.barcode=$3
+     ORDER BY pt.id`,
+    [tenantId, shipmentCode, barcode, shipmentId]
+  );
+  return { units: r.rows };
 }
 
 /** Подтверждение отгрузки (скан QR поставки) */
@@ -667,4 +686,4 @@ async function returnPickedStock({ tenantId, shipmentCode, barcode, qty, locatio
   return result;
 }
 
-module.exports = { listShipments, getShipmentHeader, getShipmentDetails, confirmShipment, markDelivered, cancelShipment, returnPickedStock };
+module.exports = { listShipments, getShipmentHeader, getShipmentDetails, getShipmentLineUnits, confirmShipment, markDelivered, cancelShipment, returnPickedStock };
