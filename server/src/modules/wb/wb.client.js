@@ -298,6 +298,27 @@ async function deliverSupply(token, supplyId) {
   });
 }
 
+/** Получить детали поставки, включая scanDt - момент, когда WB отсканировал
+ *  QR-код поставки на приёмке (у самой WB это отдельное, честное поле, а не
+ *  выведенное из статусов заказов - см. GET /api/v3/supplies/{supplyId} в
+ *  доке dev.wildberries.ru, раздел "Get Supply Details": { id, done,
+ *  createdAt, closedAt, scanDt, name, cargoType, destinationOfficeId }).
+ *  Добавлено 14.09.2026 - пользователь сверил наш wb_accepted_at (выведенный
+ *  из опроса статусов всех заказов поставки, ждёт самого медленного) с
+ *  реальным временем скана QR на воротах WB в своём личном кабинете и
+ *  усомнился в точности - scanDt должен быть куда более прямым и надёжным
+ *  источником именно этого момента. См. scripts/check-supply-scan-dt.js для
+ *  сверки на реальной поставке перед тем, как заменять или дополнять этим
+ *  полем существующую логику. */
+async function getSupplyDetails(token, supplyId) {
+  const fullId = normalizeShipmentCode(supplyId);
+  const data = await wbRequest({
+    token,
+    path: `/api/v3/supplies/${encodeURIComponent(fullId)}`,
+  });
+  return data; // { id, done, createdAt, closedAt, scanDt, name, cargoType, destinationOfficeId }
+}
+
 /** Получить реальный статус приёмки заказов у WB (не наш локальный supplierStatus,
  *  а именно wbStatus — статус на стороне WB: 'waiting' значит подтверждён
  *  продавцом, но WB ещё физически не принял; 'sorted'/'sold'/и т.п. — уже принят
@@ -485,6 +506,7 @@ module.exports = {
   fetchOrderStickers, fetchSupplyBarcode,
   deliverSupply,
   fetchOrderStatuses,
+  getSupplyDetails,
   fetchFbsStocks, updateFbsStocks,
   fetchReturnClaims,
   setOrderKiz,
