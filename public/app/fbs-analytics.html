@@ -114,7 +114,10 @@
 
     <div class="card">
       <div class="card-title">Скорость обработки по поставкам</div>
-      <div class="refresh-note" style="margin-bottom:8px;">Для ручной сверки конкретной поставки с личным кабинетом WB.</div>
+      <div class="refresh-note" style="margin-bottom:8px;">Для ручной сверки конкретной поставки с личным кабинетом WB. Даты берутся из фильтра выше (период обзора).</div>
+      <div class="toolbar" style="margin-bottom:10px;">
+        <select id="supply-client"><option value="">Все клиенты</option></select>
+      </div>
       <table>
         <thead>
           <tr>
@@ -313,7 +316,10 @@ function rateColor(pct) {
   return 'var(--red,#c0392b)';
 }
 function loadSpeedBySupply(from, to) {
-  window.API.fbsAnalytics.speedBySupply({ from: from, to: to }).then(function (res) {
+  var params = { from: from, to: to };
+  var supplyClientId = document.getElementById('supply-client').value;
+  if (supplyClientId) params.client_id = supplyClientId;
+  window.API.fbsAnalytics.speedBySupply(params).then(function (res) {
     var tbody = document.getElementById('speed-by-supply');
     var empty = document.getElementById('speed-by-supply-empty');
     if (!res.supplies.length) {
@@ -659,6 +665,20 @@ document.getElementById('d-client').addEventListener('change', loadDelivery);
 document.getElementById('d-warehouse').addEventListener('change', loadDelivery);
 document.getElementById('d-region').addEventListener('change', loadDelivery);
 document.getElementById('d-okrug').addEventListener('change', loadDelivery);
+function loadSupplyClientFilter() {
+  window.API.clients.short().then(function (res) {
+    var sel = document.getElementById('supply-client');
+    sel.innerHTML = '<option value="">Все клиенты</option>' + (res.clients || []).map(function (c) {
+      return '<option value="' + c.id + '">' + UI.escHtml(c.client_name) + '</option>';
+    }).join('');
+  }).catch(function () {});
+}
+document.getElementById('supply-client').addEventListener('change', function () {
+  var from = document.getElementById('f-from').value;
+  var to = document.getElementById('f-to').value;
+  if (from && to) loadSpeedBySupply(from, to);
+});
+loadSupplyClientFilter();
 setPreset(7);</script>
 </body>
 </html>
