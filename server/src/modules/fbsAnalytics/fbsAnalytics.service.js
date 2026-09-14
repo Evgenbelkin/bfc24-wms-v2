@@ -247,8 +247,21 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   // надёжный, честно проверенный на реальных данных статус, см. диагностику
   // 28.08.2026 - в отличие от "какой статус означает именно приёмку", тут
   // сомнений не было).
+  //
+  // sorted_at (добавлено 14.09.2026) - момент статуса 'sorted' по данным WB
+  // (wms.wb_order_status_events), то же самое "Отсортирован", что WB честно
+  // показывает покупателю в своём трекинге заказа. Раньше (28.08.2026) от
+  // отдельной метрики по 'sorted' отказались как от ненадёжной - но сверка на
+  // реальной поставке WB-GI-277801168 (14.09.2026, см.
+  // scripts/check-shipment-speed.js) показала, что событие приходит и хорошо
+  // бьётся по времени с wb_accepted_at (расхождение - единицы-десятки минут,
+  // объясняется просто разным временем опроса двух независимых фоновых джоб,
+  // не смысловой разницей). Оставляем как ДОПОЛНИТЕЛЬНУЮ метрику рядом с
+  // основной (avg_hours_to_wb) - если у части заказов 'sorted' так и не
+  // пришёл, они просто не участвуют в её расчёте (как и sold_at ниже),
+  // остальные метрики это не задевает.
   const r = await query(
-    `SELECT wo.created_at, s.wb_accepted_at AS accepted_at, sold.observed_at AS sold_at
+    `SELECT wo.created_at, s.wb_accepted_at AS accepted_at, sold.observed_at AS sold_at, sorted.observed_at AS sorted_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
@@ -257,6 +270,11 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
        WHERE e2.mp_account_id = wo.mp_account_id AND e2.wb_order_id = wo.wb_order_id AND e2.wb_status = 'sold'
        ORDER BY observed_at ASC LIMIT 1
      ) sold ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e3
+       WHERE e3.mp_account_id = wo.mp_account_id AND e3.wb_order_id = wo.wb_order_id AND e3.wb_status = 'sorted'
+       ORDER BY observed_at ASC LIMIT 1
+     ) sorted ON TRUE
      WHERE ${conds.join(' AND ')}`,
     params
   );
@@ -267,6 +285,7 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
   let sumToWb = 0, cntToWb = 0;
   let sumWbToSold = 0, cntWbToSold = 0;
   let sumToSold = 0, cntToSold = 0;
+  let sumToSorted = 0, cntToSorted = 0;
 
   for (const row of r.rows) {
     if (row.accepted_at) {
@@ -283,6 +302,10 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
         sumToSold += hoursToSold; cntToSold++;
       }
     }
+    if (row.sorted_at) {
+      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+      if (hoursToSorted >= 0) { sumToSorted += hoursToSorted; cntToSorted++; }
+    }
   }
 
   return {
@@ -291,6 +314,8 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
     avg_hours_to_wb:      cntToWb > 0     ? sumToWb / cntToWb          : null,
     avg_hours_wb_to_sold: cntWbToSold > 0 ? sumWbToSold / cntWbToSold  : null,
     avg_hours_to_sold:    cntToSold > 0   ? sumToSold / cntToSold      : null,
+    avg_hours_to_sorted:  cntToSorted > 0 ? sumToSorted / cntToSorted  : null,
+    sorted_count: cntToSorted,
     buckets: SPEED_BUCKETS.map(b => ({
       key: b.key, label: b.label, qty: buckets[b.key],
       pct: processed > 0 ? (buckets[b.key] / processed) * 100 : 0,
@@ -306,38 +331,56 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
 async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
   // wb_accepted_at поставки - см. подробное объяснение в getProcessingSpeed()
   // выше про то, почему считаем именно так (а не по wbStatus заказа).
+  // sorted_at - см. комментарий про 'sorted' там же (добавлено 14.09.2026,
+  // сверено на реальной поставке).
   const r = await query(
-    `SELECT ma.client_id, c.client_name, wo.created_at, s.wb_accepted_at AS accepted_at
+    `SELECT ma.client_id, c.client_name, wo.created_at, s.wb_accepted_at AS accepted_at, sorted.observed_at AS sorted_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
      LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e3
+       WHERE e3.mp_account_id = wo.mp_account_id AND e3.wb_order_id = wo.wb_order_id AND e3.wb_status = 'sorted'
+       ORDER BY observed_at ASC LIMIT 1
+     ) sorted ON TRUE
      WHERE wo.tenant_id=$1 AND wo.created_at >= $2 AND wo.created_at < $3`,
     [tenantId, dateFrom, dateTo]
   );
 
   const byClient = new Map();
   for (const row of r.rows) {
-    if (!row.accepted_at) continue; // поставка ещё не принята WB - в сроки пока не считаем
-    const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
     if (!byClient.has(row.client_id)) {
       const buckets = {};
       for (const b of SPEED_BUCKETS) buckets[b.key] = 0;
-      byClient.set(row.client_id, { client_id: row.client_id, client_name: row.client_name, processed: 0, onTime: 0, sumHours: 0, buckets });
+      byClient.set(row.client_id, {
+        client_id: row.client_id, client_name: row.client_name,
+        processed: 0, onTime: 0, sumHours: 0, buckets,
+        sumHoursSorted: 0, cntSorted: 0,
+      });
     }
     const agg = byClient.get(row.client_id);
+
+    if (row.sorted_at) {
+      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+      if (hoursToSorted >= 0) { agg.sumHoursSorted += hoursToSorted; agg.cntSorted++; }
+    }
+
+    if (!row.accepted_at) continue; // поставка ещё не принята WB - в сроки "до WB" пока не считаем
+    const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
     agg.processed++;
     agg.sumHours += hoursToWb;
     if (hoursToWb <= 48) agg.onTime++;
     agg.buckets[bucketForHours(hoursToWb)]++;
   }
 
-  const clients = [...byClient.values()].map(a => ({
+  const clients = [...byClient.values()].filter(a => a.processed > 0).map(a => ({
     client_id: a.client_id,
     client_name: a.client_name,
     processed: a.processed,
     on_time_rate: (a.onTime / a.processed) * 100,
     avg_hours_to_wb: a.sumHours / a.processed,
+    avg_hours_to_sorted: a.cntSorted > 0 ? a.sumHoursSorted / a.cntSorted : null,
     buckets: SPEED_BUCKETS.map(b => ({
       key: b.key, label: b.label, qty: a.buckets[b.key],
       pct: (a.buckets[b.key] / a.processed) * 100,

@@ -91,6 +91,7 @@
       <div class="total-row" style="margin-bottom:12px;">
         <div class="total-card"><div class="num" id="speed-ontime">—</div><div class="label">Вовремя (≤48ч), %</div></div>
         <div class="total-card"><div class="num" id="speed-avg-towb">—</div><div class="label">Ср. время заказ→WB</div></div>
+        <div class="total-card"><div class="num" id="speed-avg-tosorted">—</div><div class="label">Ср. время заказ→сортировка</div><div class="hint">статус WB «Отсортирован» на складе</div></div>
         <div class="total-card"><div class="num" id="speed-avg-tosold">—</div><div class="label">Ср. время заказ→выкуп</div></div>
       </div>
       <div id="speed-buckets"></div>
@@ -102,7 +103,7 @@
       <table>
         <thead>
           <tr>
-            <th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th>
+            <th>Клиент</th><th>Заказов</th><th>Вовремя (≤48ч)</th><th>Ср. время → WB</th><th>Ср. время → сортировка</th>
             <th>0–13ч</th><th>13–42ч</th><th>42–48ч</th><th>48–54ч</th><th>54–60ч</th><th>&gt;60ч</th>
           </tr>
         </thead>
@@ -270,6 +271,7 @@ function _loadSpeed() {
           res = _context.v;
           document.getElementById('speed-ontime').textContent = res.on_time_rate === null ? '—' : res.on_time_rate.toFixed(1) + '%';
           document.getElementById('speed-avg-towb').textContent = fmtHours(res.avg_hours_to_wb);
+          document.getElementById('speed-avg-tosorted').textContent = fmtHours(res.avg_hours_to_sorted);
           document.getElementById('speed-avg-tosold').textContent = fmtHours(res.avg_hours_to_sold);
           document.getElementById('speed-meta').textContent = "\u0423\u0447\u0442\u0435\u043D\u043E \u0437\u0430\u043A\u0430\u0437\u043E\u0432 (\u0443\u0436\u0435 \u043F\u0435\u0440\u0435\u0434\u0430\u043D\u044B \u0432 WB): ".concat(fmtNum(res.processed));
           maxPct = Math.max.apply(Math, _toConsumableArray(res.buckets.map(function (b) {
@@ -343,7 +345,7 @@ function _loadSpeedByClient() {
               var cls = b.qty === 0 ? 'zero' : bucketClass(key);
               return "<td><span class=\"bc ".concat(cls, "\">").concat(b.pct.toFixed(0), "%</span></td>");
             };
-            return "\n          <tr>\n            <td>".concat(UI.escHtml(c.client_name), "</td>\n            <td>").concat(fmtNum(c.processed), "</td>\n            <td style=\"color:").concat(rateColor(c.on_time_rate), ";font-weight:600;\">").concat(c.on_time_rate.toFixed(1), "%</td>\n            <td>").concat(fmtHours(c.avg_hours_to_wb), "</td>\n            ").concat(bucketCell('h0_13')).concat(bucketCell('h13_42')).concat(bucketCell('h42_48')).concat(bucketCell('h48_54')).concat(bucketCell('h54_60')).concat(bucketCell('h60plus'), "\n          </tr>\n        ");
+            return "\n          <tr>\n            <td>".concat(UI.escHtml(c.client_name), "</td>\n            <td>").concat(fmtNum(c.processed), "</td>\n            <td style=\"color:").concat(rateColor(c.on_time_rate), ";font-weight:600;\">").concat(c.on_time_rate.toFixed(1), "%</td>\n            <td>").concat(fmtHours(c.avg_hours_to_wb), "</td>\n            <td>").concat(fmtHours(c.avg_hours_to_sorted), "</td>\n            ").concat(bucketCell('h0_13')).concat(bucketCell('h13_42')).concat(bucketCell('h42_48')).concat(bucketCell('h48_54')).concat(bucketCell('h54_60')).concat(bucketCell('h60plus'), "\n          </tr>\n        ");
           }).join('');
           _context2.n = 4;
           break;
