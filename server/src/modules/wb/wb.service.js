@@ -415,18 +415,24 @@ async function syncDeliveryStatusForTenant(tenantId) {
 
       // Поставка всегда привязана к одному WB-аккаунту, поэтому один токен на все её заказы.
       const token = ordersRes.rows[0].api_token;
-      const orderIds = ordersRes.rows.map(r => Number(r.wb_order_id));
 
-      // ФИКС 13.09.2026: если сам запрос к WB падает (например битый/просроченный
-      // токен - реальный случай: tenantId=5, WB-GI-264794671, "token contains an
-      // invalid number of segments", 401) - ошибка раньше улетала прямо в общий
-      // catch ниже, и поставка НИКОГДА не доходила до проверки "висит дольше 5
-      // дней", даже если возраст это давно позволял. Токен сам по себе это не
-      // чинит (см. отдельное сообщение пользователю), но поставка хотя бы
-      // перестаёт зомби-висеть в "В пути" бесконечно.
-      let statuses;
+      // ФИКС 14.09.2026 (правка второй версии этой проверки - см. историю в
+      // git для первой): раньше опрашивали статус КАЖДОГО заказа поставки
+      // (POST /api/v3/orders/status) и ждали, пока ВСЕ они выйдут из
+      // 'waiting' - надёжно, но а) N запросов вместо одного и б) даёт только
+      // косвенный момент "приёмки" (когда САМЫЙ МЕДЛЕННЫЙ заказ партии
+      // наконец вышел из waiting - не факт что это точный момент, когда WB
+      // реально принял поставку). У WB есть прямой честный метод для этого -
+      // GET /api/v3/supplies/{supplyId} - отдаёт scanDt (момент скана QR
+      // поставки на приёмке) напрямую. Сверено пользователем 14.09.2026 на
+      // реальной поставке WB-GI-277801168: scanDt (00:14:36 МСК) совпал день-
+      // в-день с личным кабинетом продавца на WB, а старый способ давал
+      // 00:32:54 - на 18 минут позже (не ошибка, а просто менее точный
+      // косвенный сигнал). Теперь используем scanDt как основной источник
+      // wb_accepted_at, один запрос на поставку вместо одного на заказ.
+      let details;
       try {
-        statuses = await wbClient.fetchOrderStatuses(token, orderIds);
+        details = await wbClient.getSupplyDetails(token, shipment.external_id);
       } catch (apiErr) {
         if (stuckTooLong) {
           logger.warn(
@@ -440,24 +446,24 @@ async function syncDeliveryStatusForTenant(tenantId) {
         }
         continue;
       }
-      if (!statuses.length) continue;
 
-      const stragglers = statuses.filter(s => !s.wbStatus || s.wbStatus === 'waiting');
-      const allAccepted = stragglers.length === 0;
-      const forceClose = !allAccepted && stuckTooLong;
-      if (allAccepted || forceClose) {
+      const isDone = !!(details && details.done);
+      const forceClose = !isDone && stuckTooLong;
+      if (isDone || forceClose) {
         if (forceClose) {
           logger.warn(
-            {
-              tenantId, shipmentId: shipment.id, externalId: shipment.external_id,
-              ageHours: Math.round(ageHours), stuckOrders: stragglers.length, totalOrders: statuses.length,
-            },
-            'syncDeliveryStatusForTenant: часть заказов поставки навсегда осталась waiting/без статуса дольше 5 дней - принудительно закрываем поставку'
+            { tenantId, shipmentId: shipment.id, externalId: shipment.external_id, ageHours: Math.round(ageHours) },
+            'syncDeliveryStatusForTenant: поставка не закрылась у WB (done=false) дольше 5 дней - принудительно закрываем'
           );
         }
+        // scanDt - честный момент скана QR на приёмке (см. комментарий выше).
+        // Может отсутствовать даже при done=true (например, поставка
+        // отклонена - см. rejectDt/rejectReason в ответе WB) - тогда берём
+        // NOW() как раньше, лучшего сигнала для этого случая у нас нет.
+        const acceptedAt = (isDone && details.scanDt) ? new Date(details.scanDt) : new Date();
         await query(
-          `UPDATE wms.shipments SET status='done', wb_accepted_at=NOW(), updated_at=NOW() WHERE id=$1`,
-          [shipment.id]
+          `UPDATE wms.shipments SET status='done', wb_accepted_at=$2, updated_at=NOW() WHERE id=$1`,
+          [shipment.id, acceptedAt]
         );
         // Закрываем цепочку статусов заказа: 'confirm' выставляется один раз при
         // добавлении в поставку (см. /generate-wave) и без этого шага НИКОГДА не
