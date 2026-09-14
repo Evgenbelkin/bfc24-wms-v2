@@ -447,20 +447,30 @@ async function syncDeliveryStatusForTenant(tenantId) {
         continue;
       }
 
-      const isDone = !!(details && details.done);
-      const forceClose = !isDone && stuckTooLong;
-      if (isDone || forceClose) {
+      // БАГ (найден пользователем 14.09.2026 на реальных поставках, у которых
+      // wb_accepted_at выставился ещё до фактического приезда на склад WB):
+      // details.done=TRUE НЕ означает "WB принял поставку" - это поле
+      // становится true и тогда, когда поставку просто ЗАКРЫЛИ для сборки и
+      // сдали в доставку (см. доку WB: "scanning its QR code OR accepting the
+      // first product... will automatically close the supply" - то есть
+      // закрытие может произойти от НАШЕГО собственного действия, до того как
+      // WB физически что-либо отсканировал). done=true почти всегда совпадает
+      // с нашим же closedAt/shipped_at, а не с приёмкой на складе WB.
+      // Единственный надёжный признак именно приёмки - наличие scanDt.
+      // Поэтому закрываем поставку ТОЛЬКО когда scanDt реально пришёл (или
+      // когда поставка зависла дольше 5 дней - тогда, как и раньше, берём
+      // NOW() за неимением лучшего сигнала, например при отклонённой
+      // поставке, где scanDt никогда не появится - см. rejectDt/rejectReason).
+      const scanned = !!(details && details.scanDt);
+      const forceClose = !scanned && stuckTooLong;
+      if (scanned || forceClose) {
         if (forceClose) {
           logger.warn(
             { tenantId, shipmentId: shipment.id, externalId: shipment.external_id, ageHours: Math.round(ageHours) },
-            'syncDeliveryStatusForTenant: поставка не закрылась у WB (done=false) дольше 5 дней - принудительно закрываем'
+            'syncDeliveryStatusForTenant: поставка не получила scanDt от WB дольше 5 дней - принудительно закрываем'
           );
         }
-        // scanDt - честный момент скана QR на приёмке (см. комментарий выше).
-        // Может отсутствовать даже при done=true (например, поставка
-        // отклонена - см. rejectDt/rejectReason в ответе WB) - тогда берём
-        // NOW() как раньше, лучшего сигнала для этого случая у нас нет.
-        const acceptedAt = (isDone && details.scanDt) ? new Date(details.scanDt) : new Date();
+        const acceptedAt = scanned ? new Date(details.scanDt) : new Date();
         await query(
           `UPDATE wms.shipments SET status='done', wb_accepted_at=$2, updated_at=NOW() WHERE id=$1`,
           [shipment.id, acceptedAt]
