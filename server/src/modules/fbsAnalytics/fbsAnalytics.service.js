@@ -301,10 +301,27 @@ async function getProcessingSpeed({ tenantId, clientId = null, mpAccountId = nul
         const hoursToSold = (new Date(row.sold_at) - new Date(row.created_at)) / 3600000;
         sumToSold += hoursToSold; cntToSold++;
       }
-    }
-    if (row.sorted_at) {
-      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
-      if (hoursToSorted >= 0) { sumToSorted += hoursToSorted; cntToSorted++; }
+
+      // ВАЖНО (фикс 14.09.2026, найдено пользователем на реальных цифрах):
+      // 'заказ->сортировка' считаем ТОЛЬКО среди заказов, у которых уже есть
+      // accepted_at (та же выборка, что и 'заказ->WB') - иначе получается
+      // некорректное на вид сравнение "сортировка быстрее приёмки", хотя
+      // физически сортировка не может случиться раньше приёмки. Причина была
+      // не в данных, а в выборке: accepted_at ставится НА ВСЮ поставку
+      // целиком и ждёт САМЫЙ медленный заказ партии (значение общее у всех
+      // заказов поставки), а sorted_at брался НЕЗАВИСИМО по каждому заказу -
+      // из-за этого в среднее по 'сортировке' попадали в том числе заказы из
+      // поставок, которые WB ещё официально не подтвердил (и не факт что
+      // подтвердит быстро - в основном как раз "быстрые" заказы), а среднее
+      // по 'WB' считалось только по УЖЕ подтверждённым (в т.ч. медленным,
+      // "застрявшим") поставкам - это две разные выборки, а не два реальных
+      // этапа одного и того же пути. Теперь sorted_at учитывается только внутри
+      // if (row.accepted_at) - те же поставки, та же выборка, числа снова
+      // логически согласованы (сортировка >= приёмки).
+      if (row.sorted_at) {
+        const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+        if (hoursToSorted >= 0) { sumToSorted += hoursToSorted; cntToSorted++; }
+      }
     }
   }
 
@@ -361,17 +378,20 @@ async function getProcessingSpeedByClient({ tenantId, dateFrom, dateTo }) {
     }
     const agg = byClient.get(row.client_id);
 
-    if (row.sorted_at) {
-      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
-      if (hoursToSorted >= 0) { agg.sumHoursSorted += hoursToSorted; agg.cntSorted++; }
-    }
-
     if (!row.accepted_at) continue; // поставка ещё не принята WB - в сроки "до WB" пока не считаем
     const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
     agg.processed++;
     agg.sumHours += hoursToWb;
     if (hoursToWb <= 48) agg.onTime++;
     agg.buckets[bucketForHours(hoursToWb)]++;
+
+    // 'сортировка' - та же выборка, что и 'WB' (см. подробное объяснение
+    // фикса 14.09.2026 в getProcessingSpeed() выше), иначе среднее по
+    // сортировке некорректно получалось МЕНЬШЕ среднего по приёмке.
+    if (row.sorted_at) {
+      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+      if (hoursToSorted >= 0) { agg.sumHoursSorted += hoursToSorted; agg.cntSorted++; }
+    }
   }
 
   const clients = [...byClient.values()].filter(a => a.processed > 0).map(a => ({
