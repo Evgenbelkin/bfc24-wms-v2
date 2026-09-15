@@ -3,6 +3,7 @@
 const { query } = require('../../../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../../../utils/errors');
 const { validateNonEmptyString, parseBool, validatePositiveInt } = require('../../../utils/validators');
+const { resolveStockKey } = require('../items/items.service');
 
 // =============================================================================
 // Locations Service
@@ -408,6 +409,13 @@ async function getLocationFillReport({ tenantId, warehouseId = null, pickOnly = 
  *  (сначала самая "нетронутая" = самая старая), остаток - только как
  *  вторичный критерий при равных датах. */
 async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId }) {
+  // Пул остатков (миграция 061) — если товар связан с пулом, физический
+  // остаток и ячейка ищутся у пул-клиента, а не у клиента заказа. Для
+  // тенантов без пулинга resolveStockKey возвращает itemId/clientId как есть.
+  const stockKey = await resolveStockKey({ tenantId, itemId, clientId });
+  itemId = stockKey.stockItemId;
+  clientId = stockKey.stockClientId;
+
   const res = await query(
     `SELECT
        l.id AS location_id, l.location_code, sb.qty_on_hand, sb.qty_available

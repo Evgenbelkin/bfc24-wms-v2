@@ -12,7 +12,7 @@ const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenan
 const { requireRole } = require('../../middleware/requireRole');
 const { requireModule } = require('../../middleware/tenant');
 const { ValidationError, NotFoundError } = require('../../utils/errors');
-const { resolveOrCreateItem, findItemIdByBarcode } = require('../masterdata/items/items.service');
+const { resolveOrCreateItem, findItemIdByBarcode, resolveStockKey } = require('../masterdata/items/items.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const logger = require('../../utils/logger');
 
@@ -328,28 +328,56 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
       if (found && found.is_active) itemIdByBarcode.set(b, found.id);
     }
     const involvedItemIds = [...new Set(itemIdByBarcode.values())];
-    const availByItem = new Map();
-    if (involvedItemIds.length) {
+
+    // Пул остатков (миграция 061) — физический остаток нужно смотреть у
+    // пул-клиента, если товар с ним связан, иначе поведение как раньше.
+    // resolveStockKey для тенантов без пулинга просто возвращает те же
+    // itemId/clientId, что и переданы — без этого товары, чей остаток лежит
+    // в пуле, ложно считались бы отсутствующими и заказ вечно не попадал бы
+    // в волну (поймано пользователем в обсуждении фичи).
+    const stockKeyByItemId = new Map();
+    for (const itemId of involvedItemIds) {
+      stockKeyByItemId.set(itemId, await resolveStockKey({ tenantId: req.user.tenantId, itemId, clientId: acc.client_id }));
+    }
+    // Группируем по (реальному) client_id остатка — обычно один и тот же для
+    // всех (acc.client_id, если пулинга нет вовсе), но пулинг может увести
+    // часть товаров под client_id пула, а часть оставить как есть.
+    const itemIdsByStockClient = new Map();
+    for (const [itemId, key] of stockKeyByItemId) {
+      if (!itemIdsByStockClient.has(key.stockClientId)) itemIdsByStockClient.set(key.stockClientId, []);
+      itemIdsByStockClient.get(key.stockClientId).push(key.stockItemId);
+    }
+    const availByStockKey = new Map(); // `${stockClientId}:${stockItemId}` -> qty
+    for (const [stockClientId, stockItemIds] of itemIdsByStockClient) {
       const availRes = await query(
         `SELECT item_id, COALESCE(SUM(qty_available),0)::int AS qty
          FROM wms.stock_balances
          WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=ANY($4::int[])
          GROUP BY item_id`,
-        [req.user.tenantId, wh.id, acc.client_id, involvedItemIds]
+        [req.user.tenantId, wh.id, stockClientId, [...new Set(stockItemIds)]]
       );
-      for (const row of availRes.rows) availByItem.set(row.item_id, row.qty);
+      for (const row of availRes.rows) availByStockKey.set(`${stockClientId}:${row.item_id}`, row.qty);
     }
     // Заказы уже отсортированы по created_at ASC (см. запрос выше) — при
     // нехватке остатка на несколько заказов одного товара в волну попадают
     // более старые, остальные ждут следующего раза (справедливо по очереди).
+    //
+    // ВАЖНО про пул: несколько РАЗНЫХ original item_id (разных клиентов)
+    // могут резолвиться в ОДИН и тот же пуловый stock-ключ — расход обязан
+    // списываться из ОБЩЕГО availByStockKey (а не из копии на каждый
+    // original item_id по отдельности), иначе заказы двух клиентов на один
+    // пуловый товар в одном запуске формирования волны задвоили бы остаток
+    // (каждый "видел" бы полный пуловый остаток независимо от другого).
     const stockFilteredRows = [];
     const stockShortageByBarcode = new Map(); // barcode -> {count, itemName}
     for (const row of ordersRes.rows) {
       const b = String(row.barcode||'').trim();
       const itemId = itemIdByBarcode.get(b);
-      const remaining = itemId != null ? (availByItem.get(itemId) ?? 0) : 0;
+      const stockKey = itemId != null ? stockKeyByItemId.get(itemId) : null;
+      const stockMapKey = stockKey ? `${stockKey.stockClientId}:${stockKey.stockItemId}` : null;
+      const remaining = stockMapKey != null ? (availByStockKey.get(stockMapKey) ?? 0) : 0;
       if (itemId != null && remaining > 0) {
-        availByItem.set(itemId, remaining - 1);
+        availByStockKey.set(stockMapKey, remaining - 1);
         stockFilteredRows.push(row);
       } else {
         const cur = stockShortageByBarcode.get(b) || 0;

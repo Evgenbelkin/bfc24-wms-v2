@@ -11,7 +11,7 @@ const { chargeForOperation } = require('../billing/billing.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
 const { locationWalkKey } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
-const { findItemIdByBarcode } = require('../masterdata/items/items.service');
+const { findItemIdByBarcode, resolveStockKey } = require('../masterdata/items/items.service');
 
 // =============================================================================
 // Placement Service
@@ -359,6 +359,14 @@ async function listPlacementHistory({ tenantId, clientId = null, warehouseId = n
 async function suggestTargetLocation({ tenantId, warehouseId, itemId, clientId, qty = 1 }) {
   const q = Math.max(1, Number(qty) || 1);
 
+  // Пул остатков (миграция 061, опционально по тенанту) — если этот item
+  // связан с пулом, "родная" ячейка/остаток ищутся у ПУЛ-клиента, а не у
+  // клиента, который физически принёс товар на приёмку. Для тенантов без
+  // пулинга resolveStockKey возвращает itemId/clientId без изменений.
+  const stockKey = await resolveStockKey({ tenantId, itemId, clientId });
+  const stockItemId = stockKey.stockItemId;
+  const stockClientId = stockKey.stockClientId;
+
   const itemRes = await query(
     `SELECT COALESCE(volume_liters, 1) AS vol FROM wms.items WHERE id=$1 AND tenant_id=$2`,
     [itemId, tenantId]
@@ -382,7 +390,7 @@ async function suggestTargetLocation({ tenantId, warehouseId, itemId, clientId, 
      WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.item_id=$3 AND sb.client_id=$4
        AND l.location_type IN ('rack','floor') AND sb.qty_on_hand>0 AND l.is_active=TRUE
      ORDER BY sb.qty_on_hand DESC`,
-    [tenantId, warehouseId, itemId, clientId]
+    [tenantId, warehouseId, stockItemId, stockClientId]
   );
 
   for (const row of existing.rows) {

@@ -492,9 +492,54 @@ async function resolveExistingItem({ tenantId, clientId, barcode, dbClient = nul
   return found.id;
 }
 
+/**
+ * Пул остатков (см. миграцию 061, таски #113-122): опциональная фича,
+ * позволяющая нескольким клиентам ОДНОГО тенанта физически делить остаток
+ * одного и того же товара (один производитель продаёт один и тот же товар
+ * через несколько ИП/ООО = несколько разных wms.clients). По умолчанию
+ * выключено и ничего не меняет: если у тенанта нет флага item_pooling_enabled
+ * ИЛИ у конкретного item нет явной связки в wms.item_pool_links — функция
+ * возвращает переданные itemId/clientId БЕЗ ИЗМЕНЕНИЙ, то есть весь код,
+ * который её вызывает, ведёт себя ровно как раньше для всех, кто пулинг не
+ * использует.
+ *
+ * Если связка есть — возвращает item/client ПУЛ-КЛИЕНТА: именно туда нужно
+ * писать/читать физический остаток (stock_balances, stock_movements,
+ * резервы, подбор ячейки). Это НЕ подменяет item_id/client_id у самой заявки
+ * на сборку (picking_tasks) — та, как и раньше, должна указывать на
+ * настоящего клиента (иначе сломается проверка владения товаром в упаковке
+ * и биллинг/личный кабинет клиента, см. обсуждение фичи) — резолвер
+ * подключается ТОЛЬКО в местах чтения/записи физического остатка.
+ *
+ * @returns {{ stockItemId: number, stockClientId: number, pooled: boolean }}
+ */
+async function resolveStockKey({ tenantId, itemId, clientId, dbClient = null }) {
+  const db = dbClient || { query: (sql, params) => query(sql, params) };
+
+  const res = await db.query(
+    `SELECT ipl.pool_item_id, pi.client_id AS pool_client_id
+     FROM wms.item_pool_links ipl
+     JOIN wms.items pi ON pi.id = ipl.pool_item_id
+     JOIN platform.tenants t ON t.id = ipl.tenant_id AND t.item_pooling_enabled = TRUE
+     WHERE ipl.tenant_id = $1 AND ipl.item_id = $2
+     LIMIT 1`,
+    [tenantId, itemId]
+  );
+
+  if (res.rowCount === 0) {
+    return { stockItemId: itemId, stockClientId: clientId, pooled: false };
+  }
+  return {
+    stockItemId: res.rows[0].pool_item_id,
+    stockClientId: res.rows[0].pool_client_id,
+    pooled: true,
+  };
+}
+
 module.exports = {
   listItems, getItemById, getItemByBarcode, findItemByKizCode,
   createItem, updateItem, deleteItem, bulkDeleteItems,
   resolveOrCreateItem, resolveExistingItem, findItemIdByBarcode,
+  resolveStockKey,
   getItemPackagingMaterials, setItemPackagingMaterials,
 };
