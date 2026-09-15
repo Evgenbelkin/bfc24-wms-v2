@@ -809,8 +809,20 @@ async function listCodesForShipment({ tenantId, shipmentExternalId }) {
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
      LEFT JOIN LATERAL (
+       -- ВАЖНО: один и тот же wb_order_id может встречаться в wms.wb_orders
+       -- НЕСКОЛЬКО раз под разными mp_account_id одного тенанта - это
+       -- бывает, когда два "разных" аккаунта в WMS на самом деле указывают
+       -- на один и тот же WB-кабинет (например, обнаруженный случай
+       -- Космопроф/ИП Самушия - см. диагностику 15.09.2026): синк по
+       -- каждому аккаунту подтягивает одни и те же чужие заказы со статусом
+       -- 'external' и пустыми стикерами. Без явной сортировки LIMIT 1 мог
+       -- случайно взять именно такую пустую дублирующую строку вместо
+       -- настоящей 'shipped' - отсюда рандомно пропадающие стикеры в
+       -- выгрузке. Явно предпочитаем не-'external' строку, а внутри неё - ту,
+       -- где стикер вообще есть.
        SELECT wo2.wb_sticker_code FROM wms.wb_orders wo2
        WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       ORDER BY (wo2.status = 'external'), (wo2.wb_sticker_code IS NULL)
        LIMIT 1
      ) wo ON mc.wb_order_id IS NOT NULL
      WHERE mc.tenant_id=$1 AND mc.used_ref_type='packing' AND mc.used_ref_id=$2
@@ -849,8 +861,20 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
      LEFT JOIN wms.clients c ON c.id = s.client_id
      LEFT JOIN LATERAL (
+       -- ВАЖНО: один и тот же wb_order_id может встречаться в wms.wb_orders
+       -- НЕСКОЛЬКО раз под разными mp_account_id одного тенанта - это
+       -- бывает, когда два "разных" аккаунта в WMS на самом деле указывают
+       -- на один и тот же WB-кабинет (например, обнаруженный случай
+       -- Космопроф/ИП Самушия - см. диагностику 15.09.2026): синк по
+       -- каждому аккаунту подтягивает одни и те же чужие заказы со статусом
+       -- 'external' и пустыми стикерами. Без явной сортировки LIMIT 1 мог
+       -- случайно взять именно такую пустую дублирующую строку вместо
+       -- настоящей 'shipped' - отсюда рандомно пропадающие стикеры в
+       -- выгрузке. Явно предпочитаем не-'external' строку, а внутри неё - ту,
+       -- где стикер вообще есть.
        SELECT wo2.wb_sticker_code FROM wms.wb_orders wo2
        WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       ORDER BY (wo2.status = 'external'), (wo2.wb_sticker_code IS NULL)
        LIMIT 1
      ) wo ON mc.wb_order_id IS NOT NULL
      WHERE ${conds.join(' AND ')}
@@ -903,8 +927,20 @@ async function getCodesJournal({
      LEFT JOIN wms.clients c ON c.id = i.client_id
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
      LEFT JOIN LATERAL (
+       -- ВАЖНО: один и тот же wb_order_id может встречаться в wms.wb_orders
+       -- НЕСКОЛЬКО раз под разными mp_account_id одного тенанта - это
+       -- бывает, когда два "разных" аккаунта в WMS на самом деле указывают
+       -- на один и тот же WB-кабинет (например, обнаруженный случай
+       -- Космопроф/ИП Самушия - см. диагностику 15.09.2026): синк по
+       -- каждому аккаунту подтягивает одни и те же чужие заказы со статусом
+       -- 'external' и пустыми стикерами. Без явной сортировки LIMIT 1 мог
+       -- случайно взять именно такую пустую дублирующую строку вместо
+       -- настоящей 'shipped' - отсюда рандомно пропадающие стикеры в
+       -- выгрузке. Явно предпочитаем не-'external' строку, а внутри неё - ту,
+       -- где стикер вообще есть.
        SELECT wo2.wb_sticker_code FROM wms.wb_orders wo2
        WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       ORDER BY (wo2.status = 'external'), (wo2.wb_sticker_code IS NULL)
        LIMIT 1
      ) wo ON mc.wb_order_id IS NOT NULL
      WHERE ${conds.join(' AND ')}
@@ -975,7 +1011,18 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
      -- INNER (не LEFT) специально: заказ должен реально существовать и иметь
      -- событие 'sold', иначе строка отсеивается - это и есть фильтр "только
      -- выкупленное", а не просто отгруженное.
-     JOIN wms.wb_orders wo ON wo.tenant_id = mc.tenant_id AND wo.wb_order_id = mc.wb_order_id
+     -- LATERAL+ORDER BY (не плоский JOIN) - та же причина, что и в выгрузках
+     -- выше: wb_order_id может дублироваться под несколькими mp_account_id
+     -- одного тенанта (два "разных" аккаунта WMS на один и тот же WB-кабинет).
+     -- Плоский JOIN тут дал бы ДВЕ строки на один и тот же киз - опасно
+     -- именно в этом отчёте (сроки вывода из оборота), поэтому выбираем
+     -- детерминированно одну реальную (не 'external') запись.
+     JOIN LATERAL (
+       SELECT wo2.mp_account_id FROM wms.wb_orders wo2
+       WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       ORDER BY (wo2.status = 'external')
+       LIMIT 1
+     ) wo ON TRUE
      JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e
        WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = mc.wb_order_id AND e.wb_status = 'sold'
@@ -1107,7 +1154,14 @@ async function getCodeTimeline({ tenantId, code }) {
      JOIN wms.items i ON i.id = mc.item_id
      LEFT JOIN wms.users u1 ON u1.id = mc.used_by
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
-     LEFT JOIN wms.wb_orders wo ON wo.tenant_id = mc.tenant_id AND wo.wb_order_id = mc.wb_order_id
+     -- LATERAL+ORDER BY, не плоский LEFT JOIN - см. комментарий у аналогичного
+     -- места в listCodesForShipment выше (дубли wb_order_id между mp_account).
+     LEFT JOIN LATERAL (
+       SELECT wo2.mp_account_id, wo2.wb_sticker_code FROM wms.wb_orders wo2
+       WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
+       ORDER BY (wo2.status = 'external'), (wo2.wb_sticker_code IS NULL)
+       LIMIT 1
+     ) wo ON mc.wb_order_id IS NOT NULL
      WHERE mc.tenant_id=$1 AND mc.code=$2`,
     [tenantId, codeStr]
   );
