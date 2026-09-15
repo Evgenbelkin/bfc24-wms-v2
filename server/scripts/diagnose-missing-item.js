@@ -40,13 +40,13 @@ async function main() {
 
   const client = await pool.connect();
   try {
-    const tRes = await client.query(`SELECT id, tenant_name, tenant_code FROM platform.tenants WHERE tenant_code=$1`, [tenantCode]);
+    const tRes = await client.query(`SELECT id, company_name, tenant_code FROM platform.tenants WHERE tenant_code=$1`, [tenantCode]);
     if (tRes.rowCount === 0) {
       console.log(`Тенант с кодом '${tenantCode}' не найден. Проверьте написание (обычно нижний регистр, дефисы).`);
       return;
     }
     const tenant = tRes.rows[0];
-    console.log(`Тенант: ${tenant.tenant_name} (id=${tenant.id}, code=${tenant.tenant_code})\n`);
+    console.log(`Тенант: ${tenant.company_name} (id=${tenant.id}, code=${tenant.tenant_code})\n`);
 
     const accRes = await client.query(
       `SELECT ma.id, ma.client_id, c.client_name, ma.account_name, ma.is_active,
