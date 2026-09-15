@@ -245,6 +245,7 @@ async function main() {
         await client.query(`DELETE FROM wms.stock_movements WHERE tenant_id=$1`, [ids.tenantId]);
         await client.query(`DELETE FROM wms.stock_balances WHERE tenant_id=$1`, [ids.tenantId]);
         await client.query(`DELETE FROM wms.item_pool_links WHERE tenant_id=$1`, [ids.tenantId]);
+        await client.query(`DELETE FROM wms.sku_registry WHERE tenant_id=$1`, [ids.tenantId]);
         await client.query(`DELETE FROM wms.items WHERE tenant_id=$1`, [ids.tenantId]);
         await client.query(`DELETE FROM wms.locations WHERE tenant_id=$1`, [ids.tenantId]);
         await client.query(`DELETE FROM wms.clients WHERE tenant_id=$1`, [ids.tenantId]);
