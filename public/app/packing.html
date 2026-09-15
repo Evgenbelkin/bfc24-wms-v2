@@ -733,6 +733,15 @@ function _handleScan() {
           if (!ok) {
             document.getElementById('pack-dm-card').style.display = 'block';
             UI.setVal('#pack-dm-input', scanned);
+            // Карточка была скрыта (display:none) весь прошлый шаг - фокус
+            // физически оставался на #scan-barcode (туда прилетел прямой
+            // скан киза). Без явного переброса фокуса сюда сканер ТСД будет
+            // и дальше слать повторный скан в #scan-barcode - беп есть,
+            // а в это поле ничего не попадает (см. фикс checkin.html,
+            // коммит 6930a36 - та же причина, тот же класс бага).
+            setTimeout(function () {
+              return UI.focusNoKeyboard(document.getElementById('pack-dm-input'));
+            }, 100);
           }
           return _context7.a(2);
         case 5:
@@ -865,6 +874,13 @@ function _submitScan() {
             errEl.textContent = _t5.message;
             errEl.style.display = 'block';
             overrideBtn.style.display = 'block';
+            // Тот же фикс, что и выше в submitDataMatrixScanOrBarcode(4): если
+            // карточка была скрыта, фокус остался на #scan-barcode - повторный
+            // скан киза сканером ТСД пойдёт туда же и снова "потеряется"
+            // (беп есть, в поле ничего). Явно перефокусируем на видимое поле.
+            setTimeout(function () {
+              return UI.focusNoKeyboard(document.getElementById('pack-dm-input'));
+            }, 100);
           } else {
             statusEl.textContent = '';
             UI.notify.err(_t5.message);
