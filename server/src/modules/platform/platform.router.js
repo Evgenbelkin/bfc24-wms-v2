@@ -297,7 +297,7 @@ router.post('/tenants', async (req, res, next) => {
 router.patch('/tenants/:id', async (req, res, next) => {
   try {
     const id = validatePositiveInt(req.params.id, 'id');
-    const { status, company_name, contact_email, plan_id, notes, max_users_override, picking_batch_mode_enabled } = req.body;
+    const { status, company_name, contact_email, plan_id, notes, max_users_override, picking_batch_mode_enabled, item_pooling_enabled } = req.body;
     const fields = []; const params = []; let idx = 1;
     if (company_name) { fields.push(`company_name=$${idx++}`); params.push(company_name); }
     if (contact_email) { fields.push(`contact_email=$${idx++}`); params.push(validateEmail(contact_email)); }
@@ -320,6 +320,14 @@ router.patch('/tenants/:id', async (req, res, next) => {
     if (picking_batch_mode_enabled !== undefined) {
       fields.push(`settings=COALESCE(settings,'{}'::jsonb) || jsonb_build_object('picking_batch_mode_enabled',$${idx++}::boolean)`);
       params.push(!!picking_batch_mode_enabled);
+    }
+    // Пул остатков (миграция 061) — настоящая колонка platform.tenants.item_pooling_enabled,
+    // не settings-JSONB (см. items.service.js::resolveStockKey). Раньше включался
+    // только через scripts/item-pool-admin.js enable - вынесли в панель тенантов
+    // по тому же поводу, что и "сборка пачкой" выше.
+    if (item_pooling_enabled !== undefined) {
+      fields.push(`item_pooling_enabled=$${idx++}`);
+      params.push(!!item_pooling_enabled);
     }
     if (!fields.length) throw new ValidationError('No fields to update');
     fields.push(`updated_at=NOW()`); params.push(id);
