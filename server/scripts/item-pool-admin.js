@@ -23,6 +23,13 @@ const { Pool } = require('pg');
 //     самого пул-клиента) - для каждого создаёт/находит item пул-клиента
 //     с этим штрихкодом и прописывает wms.item_pool_links.
 //
+//   link-all <tenant_code> <pool_client_code>
+//     То же самое, но СРАЗУ ДЛЯ ВСЕХ штрихкодов, которые вообще есть у
+//     обычных клиентов тенанта (для случая "у нас все товары общие, нет
+//     эксклюзивных ни у кого") - плюс сразу переносит остаток по каждому
+//     (как transfer, но по кругу). Удобно, когда у клиента десятки/сотни SKU
+//     и все нужно связать разом, а не по одному через link+transfer.
+//
 //   transfer <tenant_code> <barcode>
 //     Разовый перенос уже существующего остатка (stock_balances) по всем
 //     СВЯЗАННЫМ в пул items этого штрихкода - на баланс пул-клиента,
@@ -83,27 +90,24 @@ async function cmdCreatePool(client, [tenantCode, poolClientCode, ...nameParts])
   console.log(`Не забудь: enable ${tenantCode} (если ещё не делал) и link ${tenantCode} ${poolClientCode} <barcode> для каждого общего товара.`);
 }
 
-async function cmdLink(client, [tenantCode, poolClientCode, barcode]) {
-  if (!barcode) throw new Error('Использование: link <tenant_code> <pool_client_code> <barcode>');
-  const tenant = await getTenant(client, tenantCode);
-
+async function resolvePoolClient(client, tenant, poolClientCode) {
   const poolClientRes = await client.query(
     `SELECT id, client_name FROM wms.clients WHERE tenant_id=$1 AND client_code=$2 AND is_pool=TRUE`,
     [tenant.id, poolClientCode]
   );
   if (poolClientRes.rowCount === 0) throw new Error(`Пул-клиент с кодом '${poolClientCode}' не найден (сначала create-pool)`);
-  const poolClientId = poolClientRes.rows[0].id;
+  return poolClientRes.rows[0];
+}
 
-  // items этого штрихкода у ВСЕХ клиентов тенанта, кроме самого пул-клиента
+/** Связать в пул все items данного штрихкода. Возвращает {linked, poolItemId} или null, если штрихкода нет ни у кого. */
+async function linkOneBarcode(client, tenant, poolClientId, barcode) {
   const itemsRes = await client.query(
     `SELECT i.id, i.client_id, c.client_name, c.is_pool
      FROM wms.items i JOIN wms.clients c ON c.id=i.client_id
      WHERE i.tenant_id=$1 AND i.barcode=$2`,
     [tenant.id, barcode]
   );
-  if (itemsRes.rowCount === 0) {
-    throw new Error(`Штрихкод '${barcode}' не найден ни у одного клиента этого тенанта - сначала заведите товар в каталоге хотя бы у одного клиента`);
-  }
+  if (itemsRes.rowCount === 0) return null;
 
   // Пуловый item — находим существующий у пул-клиента, либо создаём (копируя
   // название/вендор-код с первого попавшегося реального item для удобства).
@@ -123,7 +127,7 @@ async function cmdLink(client, [tenantCode, poolClientCode, barcode]) {
       [tenant.id, poolClientId, barcode, s?.item_name || barcode, s?.vendor_code || null, s?.unit || 'шт', s?.volume_liters || null]
     );
     poolItemId = insPoolItem.rows[0].id;
-    console.log(`Создан item пул-клиента для штрихкода '${barcode}': id=${poolItemId}`);
+    console.log(`  Создан item пул-клиента для штрихкода '${barcode}': id=${poolItemId}`);
   }
 
   let linked = 0;
@@ -138,13 +142,59 @@ async function cmdLink(client, [tenantCode, poolClientCode, barcode]) {
     console.log(`  Связан: item_id=${row.id} (клиент "${row.client_name}") -> пуловый item_id=${poolItemId}`);
     linked++;
   }
-  console.log(`Готово: связано ${linked} item(ов) со штрихкодом '${barcode}' в пул "${poolClientRes.rows[0].client_name}".`);
+  return { linked, poolItemId };
 }
 
-async function cmdTransfer(client, [tenantCode, barcode]) {
-  if (!barcode) throw new Error('Использование: transfer <tenant_code> <barcode>');
+async function cmdLink(client, [tenantCode, poolClientCode, barcode]) {
+  if (!barcode) throw new Error('Использование: link <tenant_code> <pool_client_code> <barcode>');
   const tenant = await getTenant(client, tenantCode);
+  const poolClient = await resolvePoolClient(client, tenant, poolClientCode);
 
+  const result = await linkOneBarcode(client, tenant, poolClient.id, barcode);
+  if (!result) {
+    throw new Error(`Штрихкод '${barcode}' не найден ни у одного клиента этого тенанта - сначала заведите товар в каталоге хотя бы у одного клиента`);
+  }
+  console.log(`Готово: связано ${result.linked} item(ов) со штрихкодом '${barcode}' в пул "${poolClient.client_name}".`);
+}
+
+/**
+ * Связать в пул ВСЕ штрихкоды, которые вообще есть у обычных (не-пуловых)
+ * клиентов тенанта - для случая "у нас вообще все товары общие между
+ * клиентами, отдельных нет" (обсуждение с пользователем 15.09.2026). Сразу
+ * следом переносит и существующий остаток (как отдельная команда transfer,
+ * но по каждому штрихкоду по кругу) - чтобы не гонять вручную по одной.
+ */
+async function cmdLinkAll(client, [tenantCode, poolClientCode]) {
+  if (!poolClientCode) throw new Error('Использование: link-all <tenant_code> <pool_client_code>');
+  const tenant = await getTenant(client, tenantCode);
+  const poolClient = await resolvePoolClient(client, tenant, poolClientCode);
+
+  const barcodesRes = await client.query(
+    `SELECT DISTINCT i.barcode
+     FROM wms.items i JOIN wms.clients c ON c.id=i.client_id
+     WHERE i.tenant_id=$1 AND c.is_pool=FALSE AND i.barcode IS NOT NULL AND i.barcode <> ''
+     ORDER BY i.barcode`,
+    [tenant.id]
+  );
+  console.log(`Найдено ${barcodesRes.rowCount} уникальных штрихкодов у обычных клиентов тенанта "${tenant.company_name}".\n`);
+
+  let linkedBarcodes = 0, totalLinks = 0, transferredBarcodes = 0, totalTransferred = 0;
+  for (const row of barcodesRes.rows) {
+    const barcode = row.barcode;
+    console.log(`--- ${barcode} ---`);
+    const linkResult = await linkOneBarcode(client, tenant, poolClient.id, barcode);
+    if (linkResult) {
+      linkedBarcodes++;
+      totalLinks += linkResult.linked;
+    }
+    const moved = await transferOneBarcode(client, tenant, barcode);
+    if (moved > 0) { transferredBarcodes++; totalTransferred += moved; }
+  }
+  console.log(`\nГотово: связано ${linkedBarcodes} штрихкодов (${totalLinks} item-связей), перенесён остаток по ${transferredBarcodes} штрихкодам (всего ${totalTransferred} шт.).`);
+}
+
+/** Перенести существующий остаток всех связанных в пул items данного штрихкода. Возвращает суммарно перенесённое количество. */
+async function transferOneBarcode(client, tenant, barcode) {
   const linksRes = await client.query(
     `SELECT ipl.item_id, ipl.pool_item_id, i.client_id AS src_client_id, pi.client_id AS pool_client_id
      FROM wms.item_pool_links ipl
@@ -153,10 +203,7 @@ async function cmdTransfer(client, [tenantCode, barcode]) {
      WHERE ipl.tenant_id=$1 AND i.barcode=$2`,
     [tenant.id, barcode]
   );
-  if (linksRes.rowCount === 0) {
-    console.log(`Нет связанных в пул items для штрихкода '${barcode}' - сначала link.`);
-    return;
-  }
+  if (linksRes.rowCount === 0) return 0;
 
   let totalMoved = 0;
   for (const row of linksRes.rows) {
@@ -195,6 +242,17 @@ async function cmdTransfer(client, [tenantCode, barcode]) {
       console.log(`  Перенесено ${qty} шт. (item_id=${row.item_id} -> pool_item_id=${row.pool_item_id}, ячейка_id=${bal.location_id})`);
       totalMoved += qty;
     }
+  }
+  return totalMoved;
+}
+
+async function cmdTransfer(client, [tenantCode, barcode]) {
+  if (!barcode) throw new Error('Использование: transfer <tenant_code> <barcode>');
+  const tenant = await getTenant(client, tenantCode);
+  const totalMoved = await transferOneBarcode(client, tenant, barcode);
+  if (totalMoved === 0) {
+    console.log(`Нет связанных в пул items для штрихкода '${barcode}' (или переносить нечего - остаток уже 0) - сначала link.`);
+    return;
   }
   console.log(`Готово: перенесено всего ${totalMoved} шт. по штрихкоду '${barcode}'.`);
 }
@@ -235,7 +293,7 @@ async function cmdStatus(client, [tenantCode, barcode]) {
 
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
-  const commands = { enable: cmdEnable, 'create-pool': cmdCreatePool, link: cmdLink, transfer: cmdTransfer, status: cmdStatus };
+  const commands = { enable: cmdEnable, 'create-pool': cmdCreatePool, link: cmdLink, 'link-all': cmdLinkAll, transfer: cmdTransfer, status: cmdStatus };
   if (!cmd || !commands[cmd]) {
     console.error('Использование: node scripts/item-pool-admin.js <enable|create-pool|link|transfer|status> ...');
     console.error('См. комментарий в начале файла для точных аргументов каждой подкоманды.');
