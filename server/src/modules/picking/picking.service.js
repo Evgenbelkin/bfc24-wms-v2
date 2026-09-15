@@ -2,7 +2,7 @@
 
 const { query, transaction } = require('../../config/database');
 const ledger = require('../stock/stock.ledger');
-const { resolveOrCreateItem, findItemIdByBarcode } = require('../masterdata/items/items.service');
+const { resolveOrCreateItem, findItemIdByBarcode, resolveStockKey } = require('../masterdata/items/items.service');
 const { findBestPickLocation, getLocationByCode } = require('../masterdata/locations/locations.service');
 const { NotFoundError, ValidationError, ForbiddenError, ConflictError, InsufficientStockError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt, isValidKizCode } = require('../../utils/validators');
@@ -14,6 +14,22 @@ const { locationWalkKey, compareWalkKeys } = require('../../utils/warehouseLayou
 const logger = require('../../utils/logger');
 
 const QUARANTINE_LOCATION_CODE = 'КАРАНТИН';
+
+/**
+ * Пул остатков (миграция 061) — короткий хелпер для мест этого файла, которые
+ * читают/пишут wms.stock_balances НАПРЯМУЮ (не через wms.stock.ledger, тот уже
+ * сам резолвит пул внутри себя). Возвращает {itemId, clientId}, куда физически
+ * нужно смотреть/писать остаток — пуловые, если item с пулом связан, иначе
+ * ровно то же task.item_id/task.client_id, что и раньше (для тенантов без
+ * пулинга — поведение не меняется). НЕ использовать для полей самой задачи
+ * (picking_tasks.item_id/client_id, биллинг, inventory_tasks для отображения
+ * "чей это заказ") — там по-прежнему нужен настоящий клиент.
+ */
+async function _stockScope(tenantId, itemId, clientId, dbClient) {
+  if (!itemId) return { itemId, clientId };
+  const k = await resolveStockKey({ tenantId, itemId, clientId, dbClient });
+  return { itemId: k.stockItemId, clientId: k.stockClientId };
+}
 
 // =============================================================================
 // Picking Service — Waves + Tasks + Scan flows
@@ -436,6 +452,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
         // задача инвентаризации из-за "не найден" (пусть и по другой задаче
         // этой же волны), пин на неё доверять нельзя, даже если сам остаток
         // формально ещё не обнулился.
+        const pinnedScope = await _stockScope(tenantId, c.item_id, c.client_id);
         const pinnedStockRes = await query(
           `SELECT sb.qty_available FROM wms.stock_balances sb
            JOIN wms.locations l ON l.id = sb.location_id
@@ -446,7 +463,7 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
                WHERE it.tenant_id=sb.tenant_id AND it.item_id=sb.item_id AND it.location_id=l.id
                  AND it.status IN ('open','in_progress') AND it.reason='picker_not_found'
              )`,
-          [tenantId, c.warehouse_id, c.item_id, c.client_id, pinned]
+          [tenantId, c.warehouse_id, pinnedScope.itemId, pinnedScope.clientId, pinned]
         );
         const pinnedHasStock = pinnedStockRes.rowCount > 0 && Number(pinnedStockRes.rows[0].qty_available) > 0;
         if (pinnedHasStock) { resolvedById.set(c.id, { code: pinned, id: null }); return; }
@@ -562,10 +579,11 @@ async function scanLocation({ tenantId, pickerId, taskId, scannedLocationCode })
         );
         let availAtLoc = 0;
         if (locRes.rowCount > 0) {
+          const batchScope = await _stockScope(tenantId, task.item_id, task.client_id, client);
           const balRes = await client.query(
             `SELECT qty_on_hand FROM wms.stock_balances
              WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
+            [tenantId, task.warehouse_id, batchScope.clientId, batchScope.itemId, locRes.rows[0].id]
           );
           // Берём qty_on_hand (физический остаток по этой ячейке+товару), а не
           // qty_available — под эту же задачу здесь уже стоит собственный
@@ -698,11 +716,12 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
     // "прикрепляются" к одной ячейке без учёта суммарной потребности всех
     // сразу). Теперь, когда собственный резерв уже снят, эта проверка
     // отражает истинную доступность, а не искажённую своим же резервом.
+    const confirmScope = await _stockScope(tenantId, task.item_id, task.client_id, client);
     const availRes = await client.query(
       `SELECT qty_available FROM wms.stock_balances
        WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
        FOR UPDATE`,
-      [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
+      [tenantId, task.warehouse_id, confirmScope.clientId, confirmScope.itemId, locRes.rows[0].id]
     );
     const availAtLoc = availRes.rowCount > 0 ? Number(availRes.rows[0].qty_available) : 0;
 
@@ -727,7 +746,7 @@ async function scanItem({ tenantId, pickerId, taskId, scannedBarcode, comment })
             `SELECT qty_available FROM wms.stock_balances
              WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
              FOR UPDATE`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, altLocId]
+            [tenantId, task.warehouse_id, confirmScope.clientId, confirmScope.itemId, altLocId]
           );
           altAvail = altAvailRes.rowCount > 0 ? Number(altAvailRes.rows[0].qty_available) : 0;
         }
@@ -926,11 +945,12 @@ async function scanItemQty({ tenantId, pickerId, taskId, scannedBarcode, qty, co
     );
     if (locRes.rowCount === 0) throw new ValidationError(`Location '${locCode}' not found or inactive`);
 
+    const qtyScope = await _stockScope(tenantId, task.item_id, task.client_id, client);
     const availRes = await client.query(
       `SELECT qty_available FROM wms.stock_balances
        WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
        FOR UPDATE`,
-      [tenantId, task.warehouse_id, task.client_id, task.item_id, locRes.rows[0].id]
+      [tenantId, task.warehouse_id, qtyScope.clientId, qtyScope.itemId, locRes.rows[0].id]
     );
     const availAtLoc = availRes.rowCount > 0 ? Number(availRes.rows[0].qty_available) : 0;
 
@@ -1122,6 +1142,13 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
         : null;
       const origLocId = origLoc?.id || null;
 
+      // Пул остатков — карантин физически трогает тот же баланс, что и любая
+      // другая операция с остатком, поэтому резолвим один раз и используем
+      // везде ниже вместо task.item_id/task.client_id напрямую.
+      const quarScope = task.item_id
+        ? await _stockScope(tenantId, task.item_id, task.client_id, client)
+        : { itemId: task.item_id, clientId: task.client_id };
+
       if (task.item_id && origLocId) {
         // qty_available (= qty_on_hand - qty_reserved) — а не весь qty_on_hand.
         // Часть остатка в этой же ячейке может быть уже зарезервирована под
@@ -1134,7 +1161,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
           `SELECT qty_on_hand, qty_available FROM wms.stock_balances
            WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
            FOR UPDATE`,
-          [tenantId, task.warehouse_id, task.client_id, task.item_id, origLocId]
+          [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId, origLocId]
         );
         const qtyFree = balRes.rowCount > 0 ? Number(balRes.rows[0].qty_available) : 0;
 
@@ -1147,13 +1174,13 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
                 from_location_id,from_location_code,to_location_id,to_location_code,
                 ref_type,ref_id,user_id,comment)
              VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'picking_task',$11,$12,$13)`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, -qtyFree,
+            [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId, task.barcode, -qtyFree,
              origLocId, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
              taskId, pickerId, 'Карантин: сборщик не нашёл товар']
           );
           await client.query(
             `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, origLocId, task.barcode, -qtyFree, null]
+            [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId, origLocId, task.barcode, -qtyFree, null]
           );
           await client.query(
             `INSERT INTO wms.stock_movements
@@ -1161,13 +1188,13 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
                 from_location_id,from_location_code,to_location_id,to_location_code,
                 ref_type,ref_id,user_id,comment)
              VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'picking_task',$11,$12,$13)`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, qtyFree,
+            [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId, task.barcode, qtyFree,
              origLocId, task.location_code, quarantineLoc.id, quarantineLoc.location_code,
              taskId, pickerId, 'Карантин: сборщик не нашёл товар']
           );
           const quarBal = await client.query(
             `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, quarantineLoc.id, task.barcode, qtyFree, null]
+            [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId, quarantineLoc.id, task.barcode, qtyFree, null]
           );
           movedQty = Number(quarBal.rows[0].qty_on_hand);
           quarantined = true;
@@ -1175,7 +1202,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
           const existingQuar = await client.query(
             `SELECT id FROM wms.inventory_tasks
              WHERE tenant_id=$1 AND item_id=$2 AND location_id=$3 AND status IN ('open','in_progress') LIMIT 1`,
-            [tenantId, task.item_id, quarantineLoc.id]
+            [tenantId, quarScope.itemId, quarantineLoc.id]
           );
           if (existingQuar.rowCount === 0) {
             const inv = await client.query(
@@ -1184,7 +1211,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
                   qty_system,status,priority,reason,comment,created_by)
                VALUES($1,$2,$3,$4,$5,$6,$7,$8,'open',1,'picker_not_found',$9,$10)
                RETURNING id`,
-              [tenantId, task.warehouse_id, task.client_id, task.item_id,
+              [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId,
                task.barcode, quarantineLoc.location_code, quarantineLoc.id, movedQty,
                `${comment || 'Picker не нашёл товар'} (исходная ячейка: ${task.location_code})`, pickerId]
             );
@@ -1214,7 +1241,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
           const balRes2 = await client.query(
             `SELECT qty_on_hand FROM wms.stock_balances
              WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id, origLocId]
+            [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId, origLocId]
           );
           fallbackQtySystem = balRes2.rowCount > 0 ? Number(balRes2.rows[0].qty_on_hand) : 0;
         }
@@ -1230,7 +1257,7 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
                 qty_system,status,priority,reason,comment,created_by)
              VALUES($1,$2,$3,$4,$5,$6,$7,$8,'open',1,'picker_not_found',$9,$10)
              RETURNING id`,
-            [tenantId, task.warehouse_id, task.client_id, task.item_id,
+            [tenantId, task.warehouse_id, quarScope.clientId, quarScope.itemId,
              task.barcode, task.location_code, origLocId, fallbackQtySystem,
              comment||'Picker не нашёл товар', pickerId]
           );

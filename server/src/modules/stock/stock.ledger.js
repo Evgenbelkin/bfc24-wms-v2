@@ -1,7 +1,7 @@
 'use strict';
 
 const { query, transaction } = require('../../config/database');
-const { resolveOrCreateItem } = require('../masterdata/items/items.service');
+const { resolveOrCreateItem, resolveStockKey } = require('../masterdata/items/items.service');
 const { getLocationByCode } = require('../masterdata/locations/locations.service');
 const { InsufficientStockError, ValidationError, NotFoundError } = require('../../utils/errors');
 const { validateBarcode, validateQty, validatePositiveInt } = require('../../utils/validators');
@@ -78,6 +78,17 @@ async function _writeLedgerEntry(client, {
 // =============================================================================
 // Высокоуровневые операции
 // =============================================================================
+//
+// Пул остатков (миграция 061, опционально по тенанту, см. items.service.js::
+// resolveStockKey) — единая точка подключения для ВСЕХ операций с остатком:
+// если итоговый item_id связан с пулом, физический остаток (stock_balances/
+// stock_movements) читается и пишется под item/client ПУЛА, а не того
+// клиента, что передан в параметрах вызова. Возвращаемое значение функций
+// (result.itemId) при этом остаётся ОРИГИНАЛЬНЫМ item_id — вызывающий код
+// (picking_tasks, receiving-строки и т.п.) продолжает ссылаться на настоящий
+// item клиента, как и раньше; подменяется только то, ГДЕ физически лежит и
+// списывается остаток. Для тенантов без пулинга resolveStockKey возвращает
+// itemId/clientId без изменений — поведение не меняется вообще.
 
 /**
  * ПРИЁМКА: оприходовать товар на ячейку
@@ -97,6 +108,10 @@ async function receiveStock({
     // Резолвим itemId
     const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
 
+    // Пул остатков — см. комментарий выше. Физически кладём на баланс пула,
+    // если этот item с ним связан.
+    const stockKey = await resolveStockKey({ tenantId, itemId, clientId, dbClient: client });
+
     // Резолвим locationId если передан только код
     let locId = locationId;
     let locCode = locationCode;
@@ -108,7 +123,7 @@ async function receiveStock({
     if (!locId) throw new ValidationError('locationId or locationCode is required');
 
     const balance = await _writeLedgerEntry(client, {
-      tenantId, warehouseId, clientId, itemId, barcode: b,
+      tenantId, warehouseId, clientId: stockKey.stockClientId, itemId: stockKey.stockItemId, barcode: b,
       // movementType можно передать явно (например 'return' для возвратов,
       // см. returns.service.js) — если не передан, прежнее поведение
       // ('inbound' для приёмки по заявке, иначе 'receiving').
@@ -119,7 +134,7 @@ async function receiveStock({
       refType, refId, unitCost, userId, comment,
     });
 
-    logger.info({ tenantId, clientId, barcode: b, qty: q, locationCode: locCode }, 'Stock received');
+    logger.info({ tenantId, clientId, barcode: b, qty: q, locationCode: locCode, pooled: stockKey.pooled }, 'Stock received');
     return { itemId, barcode: b, qty: q, locationId: locId, locationCode: locCode, balance };
   };
 
@@ -145,6 +160,11 @@ async function moveStock({
 
   const exec = async (client) => {
     const iid = itemId || await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
+
+    // Пул остатков — см. комментарий в начале секции "Высокоуровневые операции".
+    const stockKey = await resolveStockKey({ tenantId, itemId: iid, clientId, dbClient: client });
+    const balItemId = stockKey.stockItemId;
+    const balClientId = stockKey.stockClientId;
 
     // Резолвим from-ячейку
     let fromLocId = fromLocationId;
@@ -173,14 +193,14 @@ async function moveStock({
       `SELECT qty_available FROM wms.stock_balances
        WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
        FOR UPDATE`,
-      [tenantId, warehouseId, clientId, iid, fromLocId]
+      [tenantId, warehouseId, balClientId, balItemId, fromLocId]
     );
     const available = stockCheck.rowCount > 0 ? Number(stockCheck.rows[0].qty_available) : 0;
     if (available < q) throw new InsufficientStockError(available, q, iid, fromLocId);
 
     // Расход с FROM
     await _writeLedgerEntry(client, {
-      tenantId, warehouseId, clientId, itemId: iid, barcode: b,
+      tenantId, warehouseId, clientId: balClientId, itemId: balItemId, barcode: b,
       movementType, qty: -q,
       fromLocationId: fromLocId, fromLocationCode: fromLocCode,
       refType, refId, userId, comment,
@@ -188,7 +208,7 @@ async function moveStock({
 
     // Приход на TO
     await _writeLedgerEntry(client, {
-      tenantId, warehouseId, clientId, itemId: iid, barcode: b,
+      tenantId, warehouseId, clientId: balClientId, itemId: balItemId, barcode: b,
       movementType, qty: q,
       toLocationId: toLocId, toLocationCode: toLocCode,
       refType, refId, userId, comment,
@@ -223,6 +243,11 @@ async function consumeStock({
   const exec = async (client) => {
     const iid = itemId || await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
 
+    // Пул остатков — см. комментарий в начале секции "Высокоуровневые операции".
+    const stockKey = await resolveStockKey({ tenantId, itemId: iid, clientId, dbClient: client });
+    const balItemId = stockKey.stockItemId;
+    const balClientId = stockKey.stockClientId;
+
     let locId = locationId;
     let locCode = locationCode;
     if (!locId && locCode) {
@@ -237,7 +262,7 @@ async function consumeStock({
       `SELECT qty_on_hand, qty_available FROM wms.stock_balances
        WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
        FOR UPDATE`,
-      [tenantId, warehouseId, clientId, iid, locId]
+      [tenantId, warehouseId, balClientId, balItemId, locId]
     );
 
     const onHand    = stockCheck.rowCount > 0 ? Number(stockCheck.rows[0].qty_on_hand) : 0;
@@ -250,7 +275,7 @@ async function consumeStock({
     if (available < q) throw new InsufficientStockError(available, q, iid, locId);
 
     const balance = await _writeLedgerEntry(client, {
-      tenantId, warehouseId, clientId, itemId: iid, barcode: b,
+      tenantId, warehouseId, clientId: balClientId, itemId: balItemId, barcode: b,
       movementType, qty: -q,
       fromLocationId:   locId,
       fromLocationCode: locCode,
@@ -282,6 +307,11 @@ async function adjustStock({
   const exec = async (client) => {
     const iid = itemId || await resolveOrCreateItem({ tenantId, clientId, barcode: b, dbClient: client });
 
+    // Пул остатков — см. комментарий в начале секции "Высокоуровневые операции".
+    const stockKey = await resolveStockKey({ tenantId, itemId: iid, clientId, dbClient: client });
+    const balItemId = stockKey.stockItemId;
+    const balClientId = stockKey.stockClientId;
+
     let locId = locationId;
     let locCode = locationCode;
     if (!locId && locCode) {
@@ -296,7 +326,7 @@ async function adjustStock({
       `SELECT qty_on_hand, qty_reserved FROM wms.stock_balances
        WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
        FOR UPDATE`,
-      [tenantId, warehouseId, clientId, iid, locId]
+      [tenantId, warehouseId, balClientId, balItemId, locId]
     );
     const currentQty  = cur.rowCount > 0 ? Number(cur.rows[0].qty_on_hand)  : 0;
     const reservedQty = cur.rowCount > 0 ? Number(cur.rows[0].qty_reserved)  : 0;
@@ -315,7 +345,7 @@ async function adjustStock({
     }
 
     await _writeLedgerEntry(client, {
-      tenantId, warehouseId, clientId, itemId: iid, barcode: b,
+      tenantId, warehouseId, clientId: balClientId, itemId: balItemId, barcode: b,
       movementType: 'inventory', qty: delta,
       fromLocationId: delta < 0 ? locId : null,
       fromLocationCode: delta < 0 ? locCode : null,
@@ -352,11 +382,15 @@ async function reserveStock({
 }) {
   if (!dbClient) throw new ValidationError('reserveStock requires dbClient (must run inside a transaction)');
   const client = dbClient;
+
+  // Пул остатков — см. комментарий в начале секции "Высокоуровневые операции".
+  const stockKey = await resolveStockKey({ tenantId, itemId, clientId, dbClient: client });
+
   await client.query('SAVEPOINT reserve_stock_sp');
   try {
     const r = await client.query(
       `SELECT * FROM wms.reserve_stock($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [tenantId, warehouseId, clientId, itemId, locationId, barcode, qty, refType, refId]
+      [tenantId, warehouseId, stockKey.stockClientId, stockKey.stockItemId, locationId, barcode, qty, refType, refId]
     );
     await client.query('RELEASE SAVEPOINT reserve_stock_sp');
     return r.rows[0];
