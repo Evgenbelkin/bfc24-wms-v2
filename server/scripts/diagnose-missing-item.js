@@ -18,8 +18,15 @@ const { Pool } = require('pg');
 //    ЗНАЕТ про товар, но по какой-то причине не завёл сам wms.items,
 //    например card.title оказался пустым — см. importItemsForAccount)
 //
+// ДОПОЛНЕНО (тот же день): если штрихкода нет даже в сыром зеркале WB
+// (wms.wb_item_barcodes) - значит fetchItems вообще не вернул эту карточку.
+// Проверяем ещё и по nm_id (артикул WB с этикетки) - надёжнее, чем штрихкод,
+// плюс печатаем общие счётчики по каждому WB-аккаунту (сколько карточек и
+// штрихкодов вообще долетело) - чтобы понять, импорт вообще пустой (токен/
+// права) или просто конкретных SKU не хватает (лимит страниц/новая карточка).
+//
 // Использование:
-//   cd server && node scripts/diagnose-missing-item.js <tenant_code> <barcode1> [barcode2 ...]
+//   cd server && node scripts/diagnose-missing-item.js <tenant_code> [--barcodes b1,b2] [--nmids n1,n2]
 // =============================================================================
 
 const pool = new Pool({
@@ -30,11 +37,31 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD || '',
 });
 
+function parseArgs(argv) {
+  const tenantCode = argv[2];
+  let barcodes = [];
+  let nmids = [];
+  const rest = argv.slice(3);
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === '--barcodes') {
+      barcodes = (rest[i + 1] || '').split(',').map(s => s.trim()).filter(Boolean);
+      i++;
+    } else if (rest[i] === '--nmids') {
+      nmids = (rest[i + 1] || '').split(',').map(s => s.trim()).filter(Boolean);
+      i++;
+    } else if (rest[i]) {
+      // старый вызов без флагов - считаем позиционные аргументы штрихкодами
+      barcodes.push(rest[i]);
+    }
+  }
+  return { tenantCode, barcodes, nmids };
+}
+
 async function main() {
-  const tenantCode = process.argv[2];
-  const barcodes = process.argv.slice(3);
-  if (!tenantCode || !barcodes.length) {
-    console.error('Использование: node scripts/diagnose-missing-item.js <tenant_code> <barcode1> [barcode2 ...]');
+  const { tenantCode, barcodes, nmids } = parseArgs(process.argv);
+  if (!tenantCode || (!barcodes.length && !nmids.length)) {
+    console.error('Использование: node scripts/diagnose-missing-item.js <tenant_code> --barcodes b1,b2 [--nmids n1,n2]');
+    console.error('   или старый вариант: node scripts/diagnose-missing-item.js <tenant_code> <barcode1> [barcode2 ...]');
     process.exit(1);
   }
 
@@ -62,6 +89,55 @@ async function main() {
       console.log(`  #${a.id} "${a.account_name}" -> клиент "${a.client_name}" (client_id=${a.client_id}), активен=${a.is_active}, токен=${a.has_token ? 'есть' : 'НЕТ'}`);
     }
     console.log('');
+
+    console.log('Объём импортированного каталога по каждому WB-аккаунту:');
+    for (const a of accRes.rows) {
+      const cnt = await client.query(
+        `SELECT
+           (SELECT COUNT(*) FROM wms.wb_items wi WHERE wi.tenant_id=$1 AND wi.mp_account_id=$2) AS items_cnt,
+           (SELECT COUNT(*) FROM wms.wb_item_barcodes wib WHERE wib.tenant_id=$1 AND wib.mp_account_id=$2) AS barcodes_cnt,
+           (SELECT MAX(wi.updated_at) FROM wms.wb_items wi WHERE wi.tenant_id=$1 AND wi.mp_account_id=$2) AS last_updated`,
+        [tenant.id, a.id]
+      );
+      const c = cnt.rows[0];
+      console.log(`  #${a.id} "${a.account_name}": карточек=${c.items_cnt}, штрихкодов=${c.barcodes_cnt}, последнее обновление=${c.last_updated ? c.last_updated.toISOString() : '—'}`);
+    }
+    console.log('');
+
+    for (const nmId of nmids) {
+      console.log(`=== nm_id ${nmId} ===`);
+      const nmRes = await client.query(
+        `SELECT wi.mp_account_id, wi.nm_id, wi.title, wi.vendor_code, wi.brand, wi.updated_at,
+                array_agg(DISTINCT wib.barcode) FILTER (WHERE wib.barcode IS NOT NULL) AS barcodes
+         FROM wms.wb_items wi
+         LEFT JOIN wms.wb_item_barcodes wib ON wib.tenant_id=wi.tenant_id AND wib.mp_account_id=wi.mp_account_id AND wib.nm_id=wi.nm_id
+         WHERE wi.tenant_id=$1 AND wi.nm_id=$2
+         GROUP BY wi.mp_account_id, wi.nm_id, wi.title, wi.vendor_code, wi.brand, wi.updated_at`,
+        [tenant.id, nmId]
+      );
+      if (nmRes.rowCount > 0) {
+        for (const r of nmRes.rows) {
+          console.log(`  wms.wb_items: mp_account_id=${r.mp_account_id}, title="${r.title}", vendor_code="${r.vendor_code}", штрихкоды=[${(r.barcodes || []).join(', ')}], обновлено=${r.updated_at ? r.updated_at.toISOString() : '—'}`);
+        }
+      } else {
+        console.log('  wms.wb_items: НЕТ - эта карточка не долетела ни по одному WB-аккаунту этого тенанта (fetchItems её не вернул)');
+      }
+
+      const realItemRes = await client.query(
+        `SELECT i.id, i.client_id, c.client_name, i.item_name, i.is_active
+         FROM wms.items i JOIN wms.clients c ON c.id=i.client_id
+         WHERE i.tenant_id=$1 AND i.wb_nm_id=$2`,
+        [tenant.id, nmId]
+      );
+      if (realItemRes.rowCount > 0) {
+        for (const r of realItemRes.rows) {
+          console.log(`  wms.items (по wb_nm_id): id=${r.id}, клиент="${r.client_name}" (${r.client_id}), название="${r.item_name}", активен=${r.is_active}`);
+        }
+      } else {
+        console.log('  wms.items (по wb_nm_id): НЕТ');
+      }
+      console.log('');
+    }
 
     for (const barcode of barcodes) {
       console.log(`=== Штрихкод ${barcode} ===`);
