@@ -56,6 +56,20 @@ async function main() {
     }
     console.log(`Аккаунт #${acc.id} "${acc.account_name}" (tenant_id=${acc.tenant_id}, client_id=${acc.client_id}), токен: ...${acc.api_token.slice(-8)}\n`);
 
+    // Узнаём у самого WB, какому продавцу (юрлицу/кабинету) принадлежит
+    // ЭТОТ токен - прямое доказательство того, "тот" ли это кабинет.
+    console.log('--- Информация о продавце по этому токену (common-api/seller-info) ---');
+    try {
+      const seller = await wbClient.wbRequest({
+        token: acc.api_token, method: 'GET',
+        baseUrl: 'https://common-api.wildberries.ru',
+        path: '/api/v1/seller-info',
+      });
+      console.log(`  Название: "${seller?.name}", trademark: "${seller?.tradeMark}", sid: ${seller?.sid}\n`);
+    } catch (e) {
+      console.log(`  Не удалось получить: ${e.message}\n`);
+    }
+
     // 1) Живой полный список (без фильтра) - считаем, сколько реально WB отдаёт
     //    постранично, и сверяем с cursor.total на первой странице.
     console.log('--- Живой полный список карточек (cards/list, без текстового фильтра) ---');
