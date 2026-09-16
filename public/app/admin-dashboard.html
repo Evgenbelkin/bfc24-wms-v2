@@ -517,7 +517,7 @@ function exportSkippedStickers(mode) {
 }
 function _exportSkippedStickers() {
   _exportSkippedStickers = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4b(mode) {
-    var res, blob, url, _t3;
+    var res, blob, url, a, _t3;
     return _regenerator().w(function (_context4b) {
       while (1) switch (_context4b.p = _context4b.n) {
         case 0:
@@ -528,7 +528,11 @@ function _exportSkippedStickers() {
           res = _context4b.v;
           blob = new Blob([res.html], { type: 'text/html' });
           url = URL.createObjectURL(blob);
-          window.open(url, '_blank');
+          a = document.createElement('a');
+          a.href = url;
+          a.download = (mode === 'thermal' ? 'termoetiketki-58x40-' : 'stikery-') + new Date().toISOString().slice(0, 10) + '.html';
+          a.click();
+          URL.revokeObjectURL(url);
           _context4b.n = 3;
           break;
         case 2:
