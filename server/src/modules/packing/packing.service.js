@@ -34,7 +34,7 @@ async function getOrTakePackingTask({ tenantId, packerId }) {
       const task = active.rows[0];
       if (task.status === 'new') {
         await client.query(
-          `UPDATE wms.packing_tasks SET status='in_progress', updated_at=NOW() WHERE id=$1`,
+          `UPDATE wms.packing_tasks SET status='in_progress', started_at=COALESCE(started_at, NOW()), updated_at=NOW() WHERE id=$1`,
           [task.id]
         );
         task.status = 'in_progress';
@@ -42,9 +42,9 @@ async function getOrTakePackingTask({ tenantId, packerId }) {
       return task;
     }
 
-    // Берём свободную
+    // Берём свободную (started_at — для диспетчерской: "сколько отгрузка уже в упаковке")
     const free = await client.query(
-      `UPDATE wms.packing_tasks SET packer_id=$1, status='in_progress', updated_at=NOW()
+      `UPDATE wms.packing_tasks SET packer_id=$1, status='in_progress', started_at=COALESCE(started_at, NOW()), updated_at=NOW()
        WHERE id=(
          SELECT id FROM wms.packing_tasks
          WHERE tenant_id=$2 AND status='new' AND packer_id IS NULL

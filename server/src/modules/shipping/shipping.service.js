@@ -38,17 +38,24 @@ async function listShipments({
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
        (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
-       (SELECT pt.status FROM wms.packing_tasks pt
-        WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
-        ORDER BY pt.id DESC LIMIT 1) AS packing_status,
-       (SELECT u.username FROM wms.packing_tasks pt
-        LEFT JOIN wms.users u ON u.id=pt.packer_id
-        WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
-        ORDER BY pt.id DESC LIMIT 1) AS packer_name
+       (SELECT COALESCE(SUM(t.qty_picked),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_picked,
+       -- Диспетчерская (16.09.2026): кто сейчас собирает/упаковывает, и с какого
+       -- момента — для карточки "Отгрузки в работе" (остаток + время в работе).
+       pw.picker_id, pu.username AS picker_name, pw.accepted_at AS picking_started_at,
+       pk.status AS packing_status, pk.packer_name, pk.started_at AS packing_started_at
      FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
      JOIN wms.warehouses w ON w.id=s.warehouse_id
      LEFT JOIN wms.users su ON su.id=s.shipper_id
+     LEFT JOIN wms.pick_waves pw ON pw.tenant_id=s.tenant_id AND pw.shipment_code=s.external_id
+     LEFT JOIN wms.users pu ON pu.id=pw.picker_id
+     LEFT JOIN LATERAL (
+       SELECT pt.status, pt.started_at, u.username AS packer_name
+       FROM wms.packing_tasks pt
+       LEFT JOIN wms.users u ON u.id=pt.packer_id
+       WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
+       ORDER BY pt.id DESC LIMIT 1
+     ) pk ON true
      WHERE ${conds.join(' AND ')} ORDER BY COALESCE(s.shipped_at, s.created_at) DESC LIMIT $${idx}`,
     params
   );

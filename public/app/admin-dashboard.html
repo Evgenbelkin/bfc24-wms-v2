@@ -35,6 +35,7 @@
     .stage-bar-fill.picking{background:var(--accent);}
     .stage-bar-fill.packing{background:var(--amber);}
     .stage-bar-fill.shipping{background:var(--green2);}
+    .stage-bar-meta{font-size:10px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .ship-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
     .ship-filter-btn{background:var(--card2);border:none;color:var(--muted);font-size:12px;font-weight:600;padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;}
     .ship-filter-btn.active{background:var(--accent);color:#fff;}
@@ -278,6 +279,19 @@ function stageOf(pickingPct, packingPct, shippingPct, tasksTotal) {
   return 'shipped';
 }
 
+// Диспетчерская (16.09.2026): "сколько уже в работе" для карточки отгрузки —
+// от pick_waves.accepted_at / packing_tasks.started_at до текущего момента.
+function formatElapsed(iso) {
+  if (!iso) return '';
+  var ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return '';
+  var min = Math.floor(ms / 60000);
+  if (min < 1) return '<1 мин';
+  if (min < 60) return min + ' мин';
+  var h = Math.floor(min / 60), m = min % 60;
+  return h + ' ч' + (m ? ' ' + m + ' мин' : '');
+}
+
 // Раньше, чтобы посмотреть детали конкретной зависшей отгрузки (состав,
 // кто собирал/упаковывал, QR, фото/стикер), приходилось отдельно идти в
 // модуль "Отгрузка" и искать её там заново. Теперь строка кликабельна и
@@ -317,6 +331,7 @@ function _loadShipments() {
           });
           allShipments = raw.map(function (s) {
             var qtyPlan = Number(s.qty_plan || 0);
+            var qtyPicked = Number(s.qty_picked || 0);
             var packedQty = Math.min(Number(s.total_packed_qty || 0), qtyPlan || Number(s.total_packed_qty || 0));
             var pickingPct = s.tasks_total ? Math.round((s.tasks_done || 0) / s.tasks_total * 100) : 0;
             var packingPct = qtyPlan ? Math.round(packedQty / qtyPlan * 100) : 0;
@@ -325,6 +340,9 @@ function _loadShipments() {
               pickingPct: pickingPct,
               packingPct: packingPct,
               shippingPct: shippingPct,
+              qtyPlan: qtyPlan,
+              qtyPicked: qtyPicked,
+              packedQty: packedQty,
               stage: stageOf(pickingPct, packingPct, shippingPct, s.tasks_total)
             });
           });
@@ -361,7 +379,19 @@ function renderShipmentsList() {
   } else {
     list.innerHTML = items.map(function (s) {
       var packingNote = s.packing_status ? "".concat(PACKING_STATUS_LABELS[s.packing_status] || s.packing_status).concat(s.packer_name ? ' · упаковщик: ' + UI.escHtml(s.packer_name) : '') : 'ещё не в очереди на упаковку';
-      return "\n          <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;cursor:pointer;\" onclick=\"openShipmentDetail('".concat(s.external_id, "')\">\n            <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n              <div>\n                <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0442\u0440\u043E\u043A ").concat(s.tasks_total || 0, "</div>\n                <div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> ").concat(packingNote, "</div>\n              </div>\n              <span class=\"pill ").concat(SHIP_STATUS_PILL[s.status] || 'pill-gray', "\">").concat(SHIP_STATUS_LABELS[s.status] || s.status, "</span>\n            </div>\n            <div class=\"stage-bars\">\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0421\u0431\u043E\u0440\u043A\u0430</span><span>").concat(s.pickingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill picking\" style=\"width:").concat(s.pickingPct, "%\"></div></div>\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430</span><span>").concat(s.packingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill packing\" style=\"width:").concat(s.packingPct, "%\"></div></div>\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u041E\u0442\u0433\u0440\u0443\u0437\u043A\u0430</span><span>").concat(s.shippingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill shipping\" style=\"width:").concat(s.shippingPct, "%\"></div></div>\n              </div>\n            </div>\n          </div>\n        ");
+      var pickingMetaParts = [];
+      if (s.picker_name) pickingMetaParts.push('Сборщик: ' + UI.escHtml(s.picker_name));
+      if (s.qtyPlan) pickingMetaParts.push('осталось ' + Math.max(s.qtyPlan - s.qtyPicked, 0) + ' из ' + s.qtyPlan);
+      var pickingElapsed = formatElapsed(s.picking_started_at);
+      if (pickingElapsed) pickingMetaParts.push(pickingElapsed);
+      var pickingMetaHtml = pickingMetaParts.length ? '<div class="stage-bar-meta">' + pickingMetaParts.join(' \xB7 ') + '</div>' : '';
+      var packingMetaParts = [];
+      if (s.packer_name) packingMetaParts.push('Упаковщик: ' + UI.escHtml(s.packer_name));
+      if (s.qtyPlan) packingMetaParts.push('осталось ' + Math.max(s.qtyPlan - s.packedQty, 0) + ' из ' + s.qtyPlan);
+      var packingElapsed = formatElapsed(s.packing_started_at);
+      if (packingElapsed) packingMetaParts.push(packingElapsed);
+      var packingMetaHtml = packingMetaParts.length ? '<div class="stage-bar-meta">' + packingMetaParts.join(' \xB7 ') + '</div>' : '';
+      return "\n          <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;cursor:pointer;\" onclick=\"openShipmentDetail('".concat(s.external_id, "')\">\n            <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n              <div>\n                <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0442\u0440\u043E\u043A ").concat(s.tasks_total || 0, "</div>\n                <div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> ").concat(packingNote, "</div>\n              </div>\n              <span class=\"pill ").concat(SHIP_STATUS_PILL[s.status] || 'pill-gray', "\">").concat(SHIP_STATUS_LABELS[s.status] || s.status, "</span>\n            </div>\n            <div class=\"stage-bars\">\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0421\u0431\u043E\u0440\u043A\u0430</span><span>").concat(s.pickingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill picking\" style=\"width:").concat(s.pickingPct, "%\"></div></div>").concat(pickingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430</span><span>").concat(s.packingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill packing\" style=\"width:").concat(s.packingPct, "%\"></div></div>").concat(packingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u041E\u0442\u0433\u0440\u0443\u0437\u043A\u0430</span><span>").concat(s.shippingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill shipping\" style=\"width:").concat(s.shippingPct, "%\"></div></div>\n              </div>\n            </div>\n          </div>\n        ");
     }).join('');
   }
   return {
