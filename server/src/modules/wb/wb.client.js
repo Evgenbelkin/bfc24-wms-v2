@@ -244,6 +244,57 @@ async function createSupply(token, name) {
   return data;
 }
 
+// WB принимает не более 100 заказов за один запрос — и на "добавить в
+// поставку", и на "получить стикеры" (см. комментарии у соответствующих
+// функций ниже). Обе функции сами бьют вход на пачки такого размера —
+// вызывающий код (wb.router.js generate-wave) может передавать сколько
+// угодно заказов за раз (нужно было поднять волну с ~100 до 1000 —
+// обсуждение с пользователем 16.09.2026).
+const WB_BATCH_SIZE = 100;
+
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Достать из тела ошибки WB (addOrdersToSupply, 409 FailedToAddSupplyOrder и
+ * подобные) конкретные order_id, которые WB явно назвал отклонёнными —
+ * best-effort разбор нескольких встречавшихся форм ответа, т.к. официальная
+ * схема этой ошибки WB нигде не задокументирована жёстко. Возвращает [] (а
+ * не бросает), если распознать ничего не удалось.
+ */
+function extractRejectedOrderIds(wbBody) {
+  const ids = new Set();
+  const collectNumeric = (val) => {
+    const n = Number(val);
+    if (Number.isFinite(n) && n > 0) ids.add(n);
+  };
+  const visit = (node) => {
+    if (node == null) return;
+    if (Array.isArray(node)) {
+      for (const el of node) {
+        if (typeof el === 'number' || typeof el === 'string') collectNumeric(el);
+        else if (el && typeof el === 'object') {
+          const cand = el.orderId ?? el.order_id ?? el.id ?? el.odid;
+          if (cand != null) collectNumeric(cand);
+        }
+      }
+      return;
+    }
+    if (typeof node === 'object') {
+      if (node.orderId != null) collectNumeric(node.orderId);
+      if (node.order_id != null) collectNumeric(node.order_id);
+      for (const key of ['data', 'orders', 'errors', 'additionalErrors', 'reasons']) {
+        if (node[key] != null) visit(node[key]);
+      }
+    }
+  };
+  try { visit(wbBody); } catch (_) { /* best-effort */ }
+  return [...ids];
+}
+
 /** Добавить заказы в поставку.
  *  Четыре бага здесь были по очереди:
  *  1) префикс WB-GI- не срезался при походе на устаревший /api/v3 путь.
@@ -259,24 +310,88 @@ async function createSupply(token, name) {
  *     dev.wildberries.ru пример path-параметра для ВСЕХ supply-эндпоинтов
  *     показан именно как "WB-GI-1234567" (с префиксом) — значит срезать
  *     его не нужно нигде, это был неверный фикс с самого начала.
+ *
+ *  Обновление 16.09.2026 (волна на 1000 заказов): "до 100 заказов сразу" —
+ *  это ЖЁСТКИЙ потолок одного запроса, не всей поставки в целом. WB
+ *  нормально принимает несколько последовательных PATCH на одну и ту же
+ *  поставку — поэтому здесь орайд заказов режется на пачки по WB_BATCH_SIZE
+ *  и отправляется по очереди. Если WB отклонит конкретную пачку (409
+ *  FailedToAddSupplyOrder и т.п. — например, заказ пропал из "новых"),
+ *  пытаемся один раз убрать из НЕЁ конкретно названные отклонёнными id
+ *  (extractRejectedOrderIds) и повторить только эту пачку; если не
+ *  помогло — вся пачка считается отвалившейся, но СЛЕДУЮЩИЕ пачки всё
+ *  равно отправляются (одна плохая пачка не должна рушить всю волну).
+ *  Системные ошибки (нет токена/сети, 5xx после исчерпанных ретраев внутри
+ *  wbRequest) — не пытаемся угадывать, кого убрать, пробрасываем сразу
+ *  наверх, чтобы это осталось видимой ошибкой, а не тихим "все заказы
+ *  пачки отклонены".
+ *
+ *  Возвращает { addedCount, droppedOrderIds } — НЕ бросает исключение
+ *  при частичном отказе (только при системном, см. выше).
  */
 async function addOrdersToSupply(token, supplyId, orderIds) {
   const fullId = normalizeShipmentCode(supplyId);
-  await wbRequest({
-    token, method: 'PATCH',
-    path: `/api/marketplace/v3/supplies/${encodeURIComponent(fullId)}/orders`,
-    data: { orders: orderIds.map(Number) },
-  });
+  const chunks = chunk(orderIds.map(Number), WB_BATCH_SIZE);
+  const droppedOrderIds = [];
+  let addedCount = 0;
+
+  for (let batch of chunks) {
+    for (let attempt = 0; attempt < 2 && batch.length; attempt++) {
+      try {
+        await wbRequest({
+          token, method: 'PATCH',
+          path: `/api/marketplace/v3/supplies/${encodeURIComponent(fullId)}/orders`,
+          data: { orders: batch },
+        });
+        addedCount += batch.length;
+        batch = [];
+        break;
+      } catch (e) {
+        // Системная ошибка — не заказ-специфичная. Пробрасываем сразу.
+        if (!e.wbStatus || e.wbStatus === 401 || e.wbStatus >= 500) throw e;
+
+        if (attempt === 0) {
+          const rejected = extractRejectedOrderIds(e.wbBody);
+          const survivors = rejected.length ? batch.filter(id => !rejected.includes(id)) : [];
+          if (survivors.length && survivors.length < batch.length) {
+            droppedOrderIds.push(...batch.filter(id => !survivors.includes(id)));
+            batch = survivors;
+            continue; // повторяем эту же (урезанную) пачку
+          }
+        }
+        // Не удалось распознать, кого убрать (или вторая попытка тоже
+        // упала) — вся пачка отваливается, идём к следующей.
+        logger.warn({ err: e, supplyId: fullId, batch, wbBody: e.wbBody }, 'WB addOrdersToSupply: batch rejected, dropping');
+        droppedOrderIds.push(...batch);
+        batch = [];
+      }
+    }
+  }
+
+  return { addedCount, droppedOrderIds };
 }
 
-/** Получить стикеры для заказов */
+/** Получить стикеры для заказов. Тот же батч-лимит WB (100 за запрос, см.
+ *  addOrdersToSupply выше) — бьём на пачки и объединяем результат, иначе
+ *  для волны больше ~100 заказов стикеры на "хвост" молча не пришли бы.
+ *  Один упавший запрос за стикерами — не повод рушить всю волну (стикеры
+ *  можно перезапросить позже, см. "Перепечатать" в карточке отгрузки), так
+ *  что ошибка отдельной пачки просто логируется и пропускается. */
 async function fetchOrderStickers(token, orderIds, { type = 'svg', width = 58, height = 40 } = {}) {
-  const data = await wbRequest({
-    token, method: 'POST',
-    path: `/api/v3/orders/stickers?type=${type}&width=${width}&height=${height}`,
-    data: { orders: orderIds },
-  });
-  return data?.stickers || [];
+  const stickers = [];
+  for (const batch of chunk(orderIds, WB_BATCH_SIZE)) {
+    try {
+      const data = await wbRequest({
+        token, method: 'POST',
+        path: `/api/v3/orders/stickers?type=${type}&width=${width}&height=${height}`,
+        data: { orders: batch },
+      });
+      if (data?.stickers) stickers.push(...data.stickers);
+    } catch (e) {
+      logger.warn({ err: e, batch }, 'WB fetchOrderStickers: batch failed, skipping (can be reprinted later)');
+    }
+  }
+  return stickers;
 }
 
 /** Получить QR-код поставки */
@@ -502,7 +617,7 @@ module.exports = {
   fetchOrders, fetchNewOrders,
   fetchStatisticsOrders,
   fetchSellerWarehouses,
-  createSupply, addOrdersToSupply,
+  createSupply, addOrdersToSupply, extractRejectedOrderIds,
   fetchOrderStickers, fetchSupplyBarcode,
   deliverSupply,
   fetchOrderStatuses,
