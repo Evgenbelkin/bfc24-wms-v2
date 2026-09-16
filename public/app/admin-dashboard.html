@@ -62,7 +62,6 @@
     <button class="ship-filter-btn" id="main-tab-skipped" onclick="setMainTab('skipped')">Пропущенные позиции</button>
   </div>
 
-<<<<<<< HEAD
   <div id="view-overview">
     <div class="card">
       <div class="card-title">Сотрудники на смене</div>
@@ -95,17 +94,6 @@
           <option value="packing_pct">По % упаковки ↑</option>
           <option value="shipping_pct">По % отгрузки ↑</option>
         </select>
-=======
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-      <div class="card-title">Пропущенные позиции (сборка)</div>
-      <div>
-        <button class="ship-filter-btn active" id="skip-tab-skipped" onclick="setSkipTab('skipped')">Пропущенные</button>
-        <button class="ship-filter-btn" id="skip-tab-cancelled" onclick="setSkipTab('cancelled')">Отменённые</button>
-        <button class="ship-filter-btn" onclick="exportSkippedStickers('reference')">🖨 Стикеры (лист A4)</button>
-        <button class="ship-filter-btn" onclick="exportSkippedStickers('thermal')">🏷 Термоэтикетки 58×40</button>
-        <button class="ship-filter-btn" onclick="exportSkippedXlsx()">📊 Excel для сканирования КИЗ</button>
->>>>>>> 5d56644 (feat(picking): термоэтикетки 58x40 + excel-выгрузка  для пропущенных позиций)
       </div>
       <div id="shipments-list"></div>
     </div>
@@ -118,6 +106,9 @@
         <div>
           <button class="ship-filter-btn active" id="skip-tab-skipped" onclick="setSkipTab('skipped')">Пропущенные</button>
           <button class="ship-filter-btn" id="skip-tab-cancelled" onclick="setSkipTab('cancelled')">Отменённые</button>
+          <button class="ship-filter-btn" onclick="exportSkippedStickers('reference')">🖨 Стикеры (лист A4)</button>
+          <button class="ship-filter-btn" onclick="exportSkippedStickers('thermal')">🏷 Термоэтикетки 58×40</button>
+          <button class="ship-filter-btn" onclick="exportSkippedXlsx()">📊 Excel для сканирования КИЗ</button>
         </div>
       </div>
       <div id="skipped-list"></div>
