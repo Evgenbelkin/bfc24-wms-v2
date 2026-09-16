@@ -403,6 +403,71 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
       );
       for (const row of availRes.rows) availByStockKey.set(`${stockClientId}:${row.item_id}`, row.qty);
     }
+
+    // Уже "занято" другими волнами/сборками, которые ещё физически не
+    // выполнены (picking_tasks не в 'done'/'cancelled'), но остаток на
+    // складе ЕЩЁ не списан — списание происходит только в момент реального
+    // скана на сборке (см. picking.service.js consumeStock), а не в момент
+    // создания задачи. Раньше проверка видела только заказы ВНУТРИ ТЕКУЩЕГО
+    // запроса (decrement availByStockKey был чисто in-memory и терялся между
+    // HTTP-вызовами) — если "Сформировать волну" вызывали несколько раз
+    // подряд (например, из-за лимита в 100 заказов за раз, или два разных
+    // магазина одного пула кликали примерно одновременно), каждый вызов
+    // видел один и тот же ещё не уменьшенный stock_balances и независимо
+    // решал, что товара хватает на ЕГО заказы — на деле хватало только на
+    // один из вызовов (инцидент 16.09.2026: WB-GI-278867012/057/120 у ООО
+    // Эсэндди, три волны созданы за 18 секунд, часть задач осталась без
+    // остатка и ушла в 'skipped').
+    //
+    // Полноценное резервирование (wms.stock_reservations/qty_reserved) здесь
+    // сознательно не заводим — это бы потребовало согласованных правок и в
+    // picking.service.js (учёт и снятие резерва при реальном скане), а трогать
+    // боевой флоу сборки без тестирования на отдельной ветке рискованно (см.
+    // недавний случай с фокусом на ТСД в этом же чате). Вместо этого просто
+    // вычитаем из остатка то, что уже "числится" в НЕзавершённых задачах
+    // сборки по ЛЮБЫМ item_id, резолвящимся в тот же пуловый stock-ключ (не
+    // только по original item_id текущего аккаунта) — это не защищает от
+    // двух truly-одновременных запросов день-в-день до миллисекунды, но
+    // полностью закрывает наблюдаемый сценарий (повторные вызовы с разницей
+    // в секунды), и не меняет ничего в самой сборке/списании.
+    const allStockItemIds = [...new Set([...itemIdsByStockClient.values()].flat())];
+    if (allStockItemIds.length) {
+      const poolSourcesRes = await query(
+        `SELECT item_id, pool_item_id FROM wms.item_pool_links
+         WHERE tenant_id=$1 AND pool_item_id = ANY($2::int[])`,
+        [req.user.tenantId, allStockItemIds]
+      );
+      // stockItemId -> список item_id, чьи незавершённые задачи сборки
+      // расходуют именно этот физический остаток: сам stockItemId (напрямую,
+      // без пула) + все original item_id, связанные с ним через пул.
+      const sourceItemIdsByStockItemId = new Map();
+      for (const id of allStockItemIds) sourceItemIdsByStockItemId.set(id, [id]);
+      for (const row of poolSourcesRes.rows) {
+        sourceItemIdsByStockItemId.get(row.pool_item_id)?.push(row.item_id);
+      }
+      const allSourceItemIds = [...new Set([...sourceItemIdsByStockItemId.values()].flat())];
+
+      const pendingRes = await query(
+        `SELECT item_id, COALESCE(SUM(qty - qty_picked),0)::int AS pending
+         FROM wms.picking_tasks
+         WHERE tenant_id=$1 AND item_id=ANY($2::int[]) AND status NOT IN ('done','cancelled')
+         GROUP BY item_id`,
+        [req.user.tenantId, allSourceItemIds]
+      );
+      const pendingByItemId = new Map(pendingRes.rows.map(r => [r.item_id, r.pending]));
+
+      for (const [stockClientId, stockItemIds] of itemIdsByStockClient) {
+        for (const stockItemId of new Set(stockItemIds)) {
+          const sources = sourceItemIdsByStockItemId.get(stockItemId) || [stockItemId];
+          const pending = sources.reduce((s, id) => s + (pendingByItemId.get(id) || 0), 0);
+          if (pending <= 0) continue;
+          const mapKey = `${stockClientId}:${stockItemId}`;
+          const cur = availByStockKey.get(mapKey) ?? 0;
+          availByStockKey.set(mapKey, Math.max(0, cur - pending));
+        }
+      }
+    }
+
     // Заказы уже отсортированы по created_at ASC (см. запрос выше) — при
     // нехватке остатка на несколько заказов одного товара в волну попадают
     // более старые, остальные ждут следующего раза (справедливо по очереди).
