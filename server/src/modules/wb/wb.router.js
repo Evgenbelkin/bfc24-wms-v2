@@ -22,6 +22,51 @@ router.use(authRequired, tenantMiddleware, requireModule('wb_integration'));
 
 const getMpAccount = wbService.getMpAccount;
 
+/**
+ * Достать из тела ошибки WB (addOrdersToSupply, 409 FailedToAddSupplyOrder и
+ * подобные) конкретные order_id, которые WB явно назвал отклонёнными —
+ * best-effort разбор нескольких встречавшихся форм ответа, т.к. официальная
+ * схема этой ошибки WB нигде не задокументирована жёстко. Возвращает [] (а
+ * не бросает), если распознать ничего не удалось — вызывающий код в этом
+ * случае просто падает обратно на старую эвристику (сверка со свежим
+ * списком "новых" заказов), см. generate-wave ниже.
+ *
+ * Введено после инцидента 15-16.09.2026 (WB-GI-278465437) — WB отклонил
+ * заказ 5770391750, который при этом НЕ пропал из списка "новых", поэтому
+ * старая эвристика ничего не убрала из пачки, повторная попытка упала с той
+ * же ошибкой, и это исключение раньше было некому ловить.
+ */
+function extractRejectedOrderIds(wbBody) {
+  const ids = new Set();
+  const collectNumeric = (val) => {
+    const n = Number(val);
+    if (Number.isFinite(n) && n > 0) ids.add(n);
+  };
+  const visit = (node) => {
+    if (node == null) return;
+    if (Array.isArray(node)) {
+      for (const el of node) {
+        if (typeof el === 'number' || typeof el === 'string') collectNumeric(el);
+        else if (el && typeof el === 'object') {
+          const cand = el.orderId ?? el.order_id ?? el.id ?? el.odid;
+          if (cand != null) collectNumeric(cand);
+        }
+      }
+      return;
+    }
+    if (typeof node === 'object') {
+      if (node.orderId != null) collectNumeric(node.orderId);
+      if (node.order_id != null) collectNumeric(node.order_id);
+      // Известные поля-контейнеры в разных вариантах ответов WB
+      for (const key of ['data', 'orders', 'errors', 'additionalErrors', 'reasons']) {
+        if (node[key] != null) visit(node[key]);
+      }
+    }
+  };
+  try { visit(wbBody); } catch (_) { /* best-effort */ }
+  return [...ids];
+}
+
 // ─────────────── MP Accounts ───────────────
 
 router.get('/accounts', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
@@ -410,28 +455,141 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
 
       // Даже после ресинка выше остаётся микроскопическое окно гонки (пока мы
       // создаём поставку и готовим этот запрос, клиент теоретически успевает
-      // забрать заказ вручную в ЛК WB). Если WB отклонит пачку целиком — не
-      // теряем всю группу: перепроверяем актуальный список "новых" заказов и
-      // повторяем без тех, что уже отвалились, помечая их как 'external'.
+      // забрать заказ вручную в ЛК WB) — а иногда WB отклоняет конкретный
+      // заказ совсем по другой причине, из-за которой он НЕ пропадает из
+      // списка "новых" (несовместимость с этой конкретной поставкой и т.п.).
+      // Раньше повторная попытка убирала из пачки только заказы, пропавшие
+      // из свежего списка "новых" — если причина была другой, финальный
+      // список не менялся, повторная попытка падала с ТОЙ ЖЕ ошибкой, и это
+      // исключение было некому ловить: оно пробрасывалось наверх уже ПОСЛЕ
+      // того, как WB.createSupply() выше успел создать поставку на своей
+      // стороне — а локальная транзакция (shipments/picking_tasks) так и не
+      // выполнялась. Поставка оставалась существовать в кабинете WB, будучи
+      // полностью невидимой в ВМС (реальный инцидент 15-16.09.2026,
+      // WB-GI-278465437 — WB отклонил заказ 5770391750, который остался в
+      // списке "новых").
+      //
+      // Теперь: до 3 попыток, на каждой неудаче убираем и заказы, которые WB
+      // явно назвал отклонёнными в теле ошибки (extractRejectedOrderIds —
+      // разбирает несколько известных форм ответа WB), и — как раньше —
+      // заказы, пропавшие из свежего списка "новых". Если конкретную причину
+      // распознать не удалось (не выявлено ни одного отклонённого id, а
+      // список "новых" не изменился) — дальше повторять бессмысленно
+      // (упадёт идентично), сдаёмся. Но, в отличие от старого поведения,
+      // если после всего этого не осталось НИ ОДНОГО заказа — исключение
+      // наверх больше не пробрасывается: пишем shipment с status='error'
+      // (миграция 062), чтобы уже созданная на WB стороне поставка осталась
+      // видна в ВМС, а не терялась молча так же, как в прошлый раз.
       let finalOrderIds = orderIds;
       let droppedOrderIds = [];
-      try {
-        await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, orderIds);
-      } catch (e) {
-        logger.warn({ err: e, accountId, rawSupplyId, orderIds }, 'WB addOrdersToSupply failed, re-checking against fresh WB state');
-        const freshOrders = await wbClient.fetchNewOrders(acc.api_token).catch(()=>null);
-        if (!freshOrders) throw e; // не смогли даже перепроверить — пробрасываем исходную ошибку
-        const freshIdSet = new Set(freshOrders.map(o => Number(o.id||o.odid||o.orderId)).filter(Boolean));
-        finalOrderIds = orderIds.filter(id => freshIdSet.has(id));
-        droppedOrderIds = orderIds.filter(id => !freshIdSet.has(id));
-        if (!finalOrderIds.length) throw e; // ни один заказ группы не актуален — исходная ошибка честнее
-        await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, finalOrderIds);
+      let lastAddError = null;
+      let addSucceeded = false;
+      // Ограничение по числу ИТЕРАЦИЙ ПОДРЕЗКИ (не "попыток отправить, что
+      // есть") — цикл всегда завершается ЛИБО успешным addOrdersToSupply с
+      // ТЕКУЩИМ (уже подрезанным) списком, ЛИБО явной сдачей (см. ниже).
+      // Раньше эта грань была смазана: после последней подрезки список мог
+      // просто ни разу не быть переотправлен внутри лимита попыток, и код
+      // ниже принял бы недобавленные заказы за успешно добавленные.
+      const MAX_TRIM_ROUNDS = 5;
+
+      for (let round = 0; round <= MAX_TRIM_ROUNDS; round++) {
+        if (!finalOrderIds.length) break;
+        try {
+          await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, finalOrderIds);
+          addSucceeded = true;
+          lastAddError = null;
+          break;
+        } catch (e) {
+          lastAddError = e;
+          logger.warn(
+            { err: e, accountId, rawSupplyId, round, orderIds: finalOrderIds, wbBody: e.wbBody },
+            'WB addOrdersToSupply failed, re-checking against fresh WB state'
+          );
+
+          if (round === MAX_TRIM_ROUNDS) {
+            // Лимит подрезок исчерпан, а WB всё ещё отклоняет — дальше не
+            // выясняем, сдаёмся с тем, что осталось непосланным.
+            droppedOrderIds.push(...finalOrderIds);
+            finalOrderIds = [];
+            break;
+          }
+
+          const rejectedByBody = extractRejectedOrderIds(e.wbBody);
+          let survivors;
+          if (rejectedByBody.length) {
+            survivors = finalOrderIds.filter(id => !rejectedByBody.includes(id));
+          } else {
+            const freshOrders = await wbClient.fetchNewOrders(acc.api_token).catch(() => null);
+            if (freshOrders) {
+              const freshIdSet = new Set(freshOrders.map(o => Number(o.id||o.odid||o.orderId)).filter(Boolean));
+              survivors = finalOrderIds.filter(id => freshIdSet.has(id));
+            } else {
+              survivors = finalOrderIds; // не смогли перепроверить — состав не меняем на этом шаге
+            }
+          }
+
+          if (survivors.length === finalOrderIds.length) {
+            // Ни явно отклонённых id, ни расхождений со свежим списком —
+            // причину распознать не удалось, повтор с тем же списком упадёт
+            // идентично. Сдаёмся: весь оставшийся список считаем отвалившимся.
+            droppedOrderIds.push(...finalOrderIds);
+            finalOrderIds = [];
+            break;
+          }
+          droppedOrderIds.push(...finalOrderIds.filter(id => !survivors.includes(id)));
+          finalOrderIds = survivors; // цикл идёт на следующий round и ОТПРАВЛЯЕТ этот подрезанный список
+        }
+      }
+
+      // Страховка: если по каким-то причинам вышли из цикла с непустым
+      // списком, но без подтверждённого успеха (не должно происходить при
+      // такой структуре цикла выше, но лучше не молчать, если всё же
+      // случится) — считаем это неуспехом, а не тихим "как будто добавили".
+      if (finalOrderIds.length && !addSucceeded) {
+        droppedOrderIds.push(...finalOrderIds);
+        finalOrderIds = [];
+      }
+
+      if (droppedOrderIds.length) {
         await query(
           `UPDATE wms.wb_orders SET status='external', fetched_at=NOW()
            WHERE tenant_id=$1 AND mp_account_id=$2 AND wb_order_id=ANY($3::bigint[])`,
           [req.user.tenantId, accountId, droppedOrderIds]
         );
       }
+
+      if (!finalOrderIds.length) {
+        // Ничего добавить не удалось вообще — поставка на стороне WB уже
+        // создана (rawSupplyId) и осталась пустой. Раньше здесь бросалось
+        // исключение, и поставка терялась молча (см. комментарий выше) —
+        // теперь вместо этого фиксируем её в ВМС явным статусом 'error',
+        // чтобы диспетчер сразу увидел зависшую поставку и разобрался
+        // руками (отменить в кабинете WB либо, если причина временная,
+        // добавить заказы в неё вручную позже), а не узнавал о ней
+        // постфактум, когда она уже "зависла на сборке".
+        await query(
+          `INSERT INTO wms.shipments(tenant_id,warehouse_id,client_id,external_id,marketplace,status,created_by)
+           VALUES($1,$2,$3,$4,'wb','error',$5)
+           ON CONFLICT(tenant_id,external_id) DO NOTHING`,
+          [req.user.tenantId, wh.id, acc.client_id, shipmentCode, req.user.id]
+        );
+        logger.error(
+          { accountId, rawSupplyId, shipmentCode, orderIds, lastErr: lastAddError && lastAddError.message, wbBody: lastAddError && lastAddError.wbBody },
+          'generate-wave: could not add any orders to WB supply — recorded as shipment status=error for visibility instead of throwing'
+        );
+        suppliesResult.push({
+          supply_id:      rawSupplyId,
+          shipment_code:  shipmentCode,
+          orders_count:   0,
+          tasks_inserted: 0,
+          stickers_saved: 0,
+          dropped_count:  droppedOrderIds.length,
+          dropped_orders: droppedOrderIds,
+          error: lastAddError ? lastAddError.message : 'WB отклонил все заказы группы',
+        });
+        continue;
+      }
+
       const keptRows = droppedOrderIds.length
         ? group.orders.filter(o => finalOrderIds.includes(Number(o.wb_order_id)))
         : group.orders;
