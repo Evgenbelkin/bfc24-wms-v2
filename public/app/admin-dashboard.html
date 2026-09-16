@@ -87,6 +87,7 @@
         <button class="ship-filter-btn" data-filter="packing" onclick="setShipFilter('packing')">Упаковка</button>
         <button class="ship-filter-btn" data-filter="ready" onclick="setShipFilter('ready')">Готовы к отгрузке</button>
         <button class="ship-filter-btn" data-filter="shipped" onclick="setShipFilter('shipped')">В пути</button>
+        <button class="ship-filter-btn" onclick="openCollectedExportModal()">📊 Все собранные в Excel</button>
         <select class="ship-sort-select" id="ship-sort" onchange="setShipSort(this.value)">
           <option value="new_first">Сначала новые</option>
           <option value="old_first">Сначала старые (зависшие)</option>
@@ -589,6 +590,117 @@ function _exportSkippedXlsx() {
     }, _callee4c, null, [[0, 2]]);
   }));
   return _exportSkippedXlsx.apply(this, arguments);
+}
+// Сводный Excel по всем отгрузкам, где сборка уже закончена, но ещё не уехали
+// (не в пути/не сданы) — все волны сразу в одном файле (обсуждение
+// 16.09.2026), с возможностью отметить галочками, какие именно отгрузки
+// включить в файл (обсуждение 16.09.2026: "можно сделать выбор галочкой
+// какие отгрузки добавить в эту выгрузку? так было бы точнее").
+function openCollectedExportModal() {
+  if (document.getElementById('ce-modal-overlay')) return; // уже открыта
+  var overlay = document.createElement('div');
+  overlay.id = 'ce-modal-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML =
+    '<div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:640px;max-height:82vh;box-sizing:border-box;display:flex;flex-direction:column;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<div style="font-size:16px;font-weight:700;color:var(--text,#0f172a);">Все собранные — выбор отгрузок</div>' +
+        '<button id="ce-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted,#64748b);line-height:1;">&times;</button>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--muted,#64748b);margin-bottom:10px;">Только те, где сборка полностью завершена и которые ещё не уехали. Отметьте нужные и выгрузите файл.</div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">' +
+        '<button class="ship-filter-btn" id="ce-select-all">Выбрать все</button>' +
+        '<button class="ship-filter-btn" id="ce-select-none">Снять все</button>' +
+        '<div id="ce-count" style="font-size:12px;color:var(--muted,#64748b);margin-left:auto;"></div>' +
+      '</div>' +
+      '<div id="ce-list" style="overflow-y:auto;border:1px solid var(--border,#e2e8f0);border-radius:10px;flex:1;min-height:120px;">' +
+        '<div style="padding:16px;color:var(--muted,#64748b);font-size:13px;">Загрузка…</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:10px;margin-top:14px;">' +
+        '<button id="ce-export" style="flex:1;padding:13px;background:var(--accent,#0284c7);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;" disabled>Выгрузить выбранное</button>' +
+        '<button id="ce-cancel" style="flex:1;padding:13px;background:var(--card2,#f1f5f9);color:var(--text,#0f172a);border:2px solid var(--border,#e2e8f0);border-radius:10px;font-weight:700;font-size:15px;cursor:pointer;">Отмена</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  var close = function () { overlay.remove(); };
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  document.getElementById('ce-close').addEventListener('click', close);
+  document.getElementById('ce-cancel').addEventListener('click', close);
+
+  var listEl = document.getElementById('ce-list');
+  var countEl = document.getElementById('ce-count');
+  var exportBtn = document.getElementById('ce-export');
+
+  function updateCount() {
+    var checked = listEl.querySelectorAll('input[type=checkbox]:checked').length;
+    var total = listEl.querySelectorAll('input[type=checkbox]').length;
+    countEl.textContent = checked + ' из ' + total + ' выбрано';
+    exportBtn.disabled = checked === 0;
+  }
+
+  window.API.shipping.collectedCandidates({}).then(function (res) {
+    var rows = res.rows || [];
+    if (!rows.length) {
+      listEl.innerHTML = '<div style="padding:16px;color:var(--muted,#64748b);font-size:13px;">Нет отгрузок с завершённой сборкой, которые ещё не уехали</div>';
+      countEl.textContent = '0 из 0 выбрано';
+      return;
+    }
+    listEl.innerHTML = rows.map(function (r, i) {
+      var meta = [r.client, r.warehouse, r.marketplace].filter(Boolean).join(' · ');
+      var extra = r.lines + ' стр · ' + r.qtyPlan + ' шт' + (r.picker ? ' · ' + UI.escHtml(r.picker) : '') + ' · ' + UI.escHtml(r.packStatus || '');
+      return '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--border,#e2e8f0);cursor:pointer;">' +
+        '<input type="checkbox" class="ce-row-cb" data-code="' + UI.escHtml(r.shipmentCode) + '" checked style="margin-top:3px;">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div style="font-size:13px;font-weight:600;color:var(--text,#0f172a);">' + UI.escHtml(r.shipmentCode) + '</div>' +
+          '<div style="font-size:11px;color:var(--muted,#64748b);">' + UI.escHtml(meta) + '</div>' +
+          '<div style="font-size:11px;color:var(--muted,#64748b);">' + extra + '</div>' +
+        '</div>' +
+      '</label>';
+    }).join('');
+    updateCount();
+    listEl.addEventListener('change', function (e) {
+      if (e.target.classList.contains('ce-row-cb')) updateCount();
+    });
+  }).catch(function (e) {
+    listEl.innerHTML = '<div style="padding:16px;color:#dc2626;font-size:13px;">' + UI.escHtml(e.message) + '</div>';
+  });
+
+  document.getElementById('ce-select-all').addEventListener('click', function () {
+    listEl.querySelectorAll('.ce-row-cb').forEach(function (cb) { cb.checked = true; });
+    updateCount();
+  });
+  document.getElementById('ce-select-none').addEventListener('click', function () {
+    listEl.querySelectorAll('.ce-row-cb').forEach(function (cb) { cb.checked = false; });
+    updateCount();
+  });
+
+  exportBtn.addEventListener('click', function () {
+    var codes = Array.prototype.slice.call(listEl.querySelectorAll('.ce-row-cb:checked')).map(function (cb) { return cb.getAttribute('data-code'); });
+    if (!codes.length) return;
+    exportBtn.disabled = true;
+    exportBtn.textContent = 'Готовим файл…';
+    window.API.shipping.collectedExport({ shipment_codes: codes }).then(function (res) {
+      var binary = atob(res.xlsxBase64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+      var blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = res.filename || 'sobrano.xlsx';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      UI.notify.ok('Файл скачан (' + res.count + ' отгрузок) — смотри загрузки браузера');
+      close();
+    }).catch(function (e) {
+      UI.notify.err(e.message);
+      exportBtn.disabled = false;
+      exportBtn.textContent = 'Выгрузить выбранное';
+    });
+  });
 }
 function cancelSkippedTaskUi(id) {
   if (!UI.confirm('Отменить эту позицию? Она уйдёт из списка «Пропущенные» в «Отменённые» — вернуть в сборку после этого будет нельзя.')) return;

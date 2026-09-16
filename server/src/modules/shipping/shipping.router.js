@@ -28,6 +28,50 @@ router.get('/board', requireRole('tenant_admin','supervisor','picker','packer','
   } catch(e){ next(e); }
 });
 
+/**
+ * GET /shipping/collected-candidates — список отгрузок-кандидатов для
+ * сводного файла (сборка завершена, ещё не уехали), для UI с чекбоксами
+ * (обсуждение 16.09.2026: "можно сделать выбор галочкой какие отгрузки
+ * добавить в эту выгрузку? так было бы точнее"). Лёгкий JSON, без файла.
+ */
+router.get('/collected-candidates', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const rows = await svc.listCollectedCandidates({
+      tenantId: req.user.tenantId,
+      clientId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+    });
+    res.json({ ok: true, rows });
+  } catch(e){ next(e); }
+});
+
+/**
+ * POST /shipping/collected-export — сводный Excel по отгрузкам, где сборка
+ * уже завершена, но ещё не уехали (не shipping/in_transit/done/cancelled/
+ * error). shipment_codes — отобранные галочками в модалке (см.
+ * collected-candidates выше); если не передан/пуст — идут все кандидаты.
+ * Файл — base64 в JSON, как и другие xlsx-экспорты в этом проекте. POST (а
+ * не GET), т.к. список кодов может быть длинным для query-строки.
+ */
+router.post('/collected-export', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.body.client_id);
+    const { buffer, count } = await svc.exportCollectedXlsx({
+      tenantId: req.user.tenantId,
+      clientId,
+      warehouseId: req.body.warehouse_id ? Number(req.body.warehouse_id) : null,
+      shipmentCodes: Array.isArray(req.body.shipment_codes) ? req.body.shipment_codes : null,
+    });
+    res.json({
+      ok: true,
+      count,
+      filename: `sobrano-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      xlsxBase64: buffer.toString('base64'),
+    });
+  } catch(e){ next(e); }
+});
+
 // Лёгкая шапка (для мгновенного открытия карточки под скан) — см. комментарий
 // у getShipmentHeader() в shipping.service.js.
 router.get('/header', async (req,res,next)=>{

@@ -68,6 +68,146 @@ async function listShipments({
 }
 
 /**
+ * Excel-выгрузка "всё собранное, но ещё не в пути" одним файлом (обсуждение
+ * с пользователем 16.09.2026): волн много, по одной смотреть неудобно, нужен
+ * общий список, который дальше сами отфильтруют в Excel. "Собрано" считаем
+ * по факту (все picking_tasks по отгрузке завершены), а не по полю
+ * shipments.status — оно у части отгрузок отстаёт от реального состояния
+ * задач. Исключаем shipping/in_transit/done/cancelled/error — то, что уже
+ * уехало или не должно тут быть в принципе.
+ */
+const PACKING_STATUS_LABELS_RU = {
+  new: 'ждёт упаковщика', in_progress: 'упаковывается', done: 'упаковано', cancelled: 'отменено',
+};
+
+/**
+ * Общая выборка кандидатов для "сводного файла собранного" — отгрузки, где
+ * сборка уже полностью завершена (по факту задач, см. комментарий ниже), но
+ * которые ещё не уехали. Используется и для списка с чекбоксами (см.
+ * listCollectedCandidates), и для самой выгрузки (exportCollectedXlsx), чтобы
+ * не разъезжались критерии между "что показали" и "что выгрузили".
+ */
+async function _getCollectedCandidates({ tenantId, clientId = null, warehouseId = null }) {
+  const params = [tenantId];
+  const conds = ['s.tenant_id=$1', `s.status NOT IN ('shipping','in_transit','done','cancelled','error')`];
+  let idx = 2;
+  if (clientId)    { conds.push(`s.client_id=$${idx++}`); params.push(clientId); }
+  if (warehouseId) { conds.push(`s.warehouse_id=$${idx++}`); params.push(warehouseId); }
+
+  const r = await query(
+    `SELECT s.external_id, s.status, s.created_at, s.marketplace, s.total_packed_qty,
+       c.client_name, w.warehouse_name,
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
+       (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
+       (SELECT MAX(t.finished_at) FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS picking_finished_at,
+       pu.username AS picker_name,
+       pk.status AS packing_status, pk.packer_name
+     FROM wms.shipments s
+     JOIN wms.clients c ON c.id=s.client_id
+     JOIN wms.warehouses w ON w.id=s.warehouse_id
+     LEFT JOIN wms.pick_waves pw ON pw.tenant_id=s.tenant_id AND pw.shipment_code=s.external_id
+     LEFT JOIN wms.users pu ON pu.id=pw.picker_id
+     LEFT JOIN LATERAL (
+       SELECT pt.status, u.username AS packer_name
+       FROM wms.packing_tasks pt
+       LEFT JOIN wms.users u ON u.id=pt.packer_id
+       WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
+       ORDER BY pt.id DESC LIMIT 1
+     ) pk ON true
+     WHERE ${conds.join(' AND ')}
+     ORDER BY c.client_name, s.external_id`,
+    params
+  );
+
+  // "Собрано" — только те, где реально все задачи сборки завершены (а не по
+  // текущему полю статуса, см. комментарий к функции выше).
+  return r.rows.filter((row) => row.tasks_total > 0 && row.tasks_done === row.tasks_total);
+}
+
+/**
+ * Список кандидатов для UI с чекбоксами (обсуждение 16.09.2026: "можно
+ * сделать выбор галочкой какие отгрузки добавить в эту выгрузку? так было бы
+ * точнее") — та же выборка, что и в exportCollectedXlsx, но в виде JSON без
+ * построения файла.
+ */
+async function listCollectedCandidates({ tenantId, clientId = null, warehouseId = null }) {
+  const rows = await _getCollectedCandidates({ tenantId, clientId, warehouseId });
+  return rows.map((row) => ({
+    shipmentCode: row.external_id,
+    status: row.status,
+    createdAt: row.created_at,
+    marketplace: row.marketplace,
+    client: row.client_name,
+    warehouse: row.warehouse_name,
+    lines: row.tasks_total,
+    qtyPlan: row.qty_plan,
+    qtyPacked: row.total_packed_qty || 0,
+    picker: row.picker_name || null,
+    pickedAt: row.picking_finished_at,
+    packStatus: PACKING_STATUS_LABELS_RU[row.packing_status] || 'ещё не в очереди',
+    packer: row.packer_name || null,
+  }));
+}
+
+/**
+ * Строит сам xlsx. shipmentCodes — необязательный список отобранных
+ * галочками кодов отгрузок (public/app/admin-dashboard.html::openCollectedExportModal);
+ * если не передан/пуст — идут все кандидаты (обратная совместимость).
+ */
+async function exportCollectedXlsx({ tenantId, clientId = null, warehouseId = null, shipmentCodes = null }) {
+  let rows = await _getCollectedCandidates({ tenantId, clientId, warehouseId });
+  if (Array.isArray(shipmentCodes) && shipmentCodes.length > 0) {
+    const wanted = new Set(shipmentCodes);
+    rows = rows.filter((row) => wanted.has(row.external_id));
+  }
+
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet('Собрано');
+  sheet.columns = [
+    { header: '#', key: 'idx', width: 5 },
+    { header: 'Отгрузка', key: 'shipment', width: 22 },
+    { header: 'Клиент', key: 'client', width: 22 },
+    { header: 'Склад', key: 'warehouse', width: 20 },
+    { header: 'Маркетплейс', key: 'mp', width: 14 },
+    { header: 'Строк', key: 'lines', width: 8 },
+    { header: 'Штук план', key: 'qtyPlan', width: 10 },
+    { header: 'Штук упаковано', key: 'qtyPacked', width: 14 },
+    { header: 'Сборщик', key: 'picker', width: 18 },
+    { header: 'Сборка завершена', key: 'pickedAt', width: 20 },
+    { header: 'Статус упаковки', key: 'packStatus', width: 16 },
+    { header: 'Упаковщик', key: 'packer', width: 18 },
+    { header: 'Статус отгрузки', key: 'status', width: 16 },
+    { header: 'Создана', key: 'createdAt', width: 20 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+  rows.forEach((row, idx2) => {
+    sheet.addRow({
+      idx: idx2 + 1,
+      shipment: row.external_id,
+      client: row.client_name || '',
+      warehouse: row.warehouse_name || '',
+      mp: row.marketplace || '',
+      lines: row.tasks_total,
+      qtyPlan: row.qty_plan,
+      qtyPacked: row.total_packed_qty || 0,
+      picker: row.picker_name || '',
+      pickedAt: row.picking_finished_at ? new Date(row.picking_finished_at).toLocaleString('ru-RU') : '',
+      packStatus: PACKING_STATUS_LABELS_RU[row.packing_status] || 'ещё не в очереди',
+      packer: row.packer_name || '',
+      status: row.status,
+      createdAt: row.created_at ? new Date(row.created_at).toLocaleString('ru-RU') : '',
+    });
+  });
+  sheet.autoFilter = { from: 'A1', to: 'N1' };
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  const buffer = await wb.xlsx.writeBuffer();
+  return { buffer, count: rows.length };
+}
+
+/**
  * Лёгкая "шапка" отгрузки — без полного состава (без join на items/wb_orders
  * и без LATERAL по stock_movements на каждую строку picking_tasks). Только
  * сам shipment + план/собрано агрегатом.
@@ -693,4 +833,4 @@ async function returnPickedStock({ tenantId, shipmentCode, barcode, qty, locatio
   return result;
 }
 
-module.exports = { listShipments, getShipmentHeader, getShipmentDetails, getShipmentLineUnits, confirmShipment, markDelivered, cancelShipment, returnPickedStock };
+module.exports = { listShipments, listCollectedCandidates, exportCollectedXlsx, getShipmentHeader, getShipmentDetails, getShipmentLineUnits, confirmShipment, markDelivered, cancelShipment, returnPickedStock };

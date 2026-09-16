@@ -882,6 +882,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
         shipment_code: code,
         barcode: barcode
       });
+    },
+    collectedCandidates: function collectedCandidates(p) {
+      return _get('/shipping/collected-candidates', p);
+    },
+    collectedExport: function collectedExport(d) {
+      return post('/shipping/collected-export', d);
     }
   };
 
