@@ -109,62 +109,111 @@ async function listCollectedCandidates({ tenantId, clientId = null, warehouseId 
 }
 
 /**
- * Строит сам xlsx из той же выборки, что и listCollectedCandidates.
- * shipmentCodes — список отобранных галочками кодов отгрузок (см.
- * public/app/admin-dashboard.html::openCollectedExportModal); если не
- * передан/пуст — идут вообще все отгрузки диспетчерской (обратная
- * совместимость на случай прямого вызова без модалки).
+ * Строит xlsx с разбивкой ПО ШТРИХКОДАМ внутри каждой выбранной отгрузки
+ * (правка 16.09.2026: "мне нужна информация какие и сколько конкретных
+ * баркодов в отгрузках а не строки и шт" — одна строка на отгрузку с общим
+ * количеством была недостаточно точной). shipmentCodes — список отобранных
+ * галочками кодов отгрузок (см.
+ * public/app/admin-dashboard.html::openCollectedExportModal); обязателен —
+ * без выбора отгрузок строить нечего.
+ *
+ * Группировка по штрихкоду, а не по заказу — тот же приём, что и в
+ * getShipmentDetails (иначе на отгрузку с сотнями заказов будут сотни строк
+ * вместо десятка артикулов).
  */
-async function exportCollectedXlsx({ tenantId, clientId = null, warehouseId = null, shipmentCodes = null }) {
-  let rows = await listShipments({ tenantId, clientId, warehouseId, limit: 500 });
-  if (Array.isArray(shipmentCodes) && shipmentCodes.length > 0) {
-    const wanted = new Set(shipmentCodes);
-    rows = rows.filter((row) => wanted.has(row.external_id));
+async function exportCollectedXlsx({ tenantId, warehouseId = null, shipmentCodes = null }) {
+  if (!Array.isArray(shipmentCodes) || shipmentCodes.length === 0) {
+    return { buffer: await (async () => {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      wb.addWorksheet('Отгрузки');
+      return wb.xlsx.writeBuffer();
+    })(), count: 0, lines: 0 };
   }
+
+  const params = [tenantId, shipmentCodes];
+  let warehouseCond = '';
+  if (warehouseId) { params.push(warehouseId); warehouseCond = ` AND ls.warehouse_id=$${params.length}`; }
+
+  const r = await query(
+    `WITH latest_ship AS (
+       SELECT DISTINCT ON (s.external_id) s.*
+       FROM wms.shipments s
+       WHERE s.tenant_id=$1 AND s.external_id = ANY($2::text[])
+       ORDER BY s.external_id, s.id DESC
+     )
+     SELECT
+       ls.external_id AS shipment_code, ls.status,
+       c.client_name, w.warehouse_name,
+       pt.barcode,
+       SUM(pt.qty)::int AS qty_plan,
+       SUM(pt.qty_picked)::int AS qty_picked,
+       COUNT(*) FILTER (WHERE pt.status='skipped')::int AS skipped_count,
+       i.item_name, i.vendor_code, i.wb_nm_id, i.size,
+       COALESCE(pm.packed_qty, 0)::int AS qty_packed
+     FROM latest_ship ls
+     JOIN wms.clients c ON c.id=ls.client_id
+     JOIN wms.warehouses w ON w.id=ls.warehouse_id
+     JOIN wms.picking_tasks pt ON pt.tenant_id=ls.tenant_id AND pt.shipment_code=ls.external_id
+     LEFT JOIN wms.items i ON i.id=pt.item_id
+     LEFT JOIN LATERAL (
+       SELECT SUM(sm.qty)::int AS packed_qty
+       FROM wms.stock_movements sm
+       WHERE sm.tenant_id=ls.tenant_id AND sm.movement_type='packing' AND sm.ref_type='shipment'
+         AND sm.ref_id=ls.id AND sm.barcode=pt.barcode
+     ) pm ON true
+     WHERE ls.tenant_id=$1${warehouseCond}
+     GROUP BY ls.external_id, ls.status, c.client_name, w.warehouse_name, pt.barcode,
+       i.item_name, i.vendor_code, i.wb_nm_id, i.size, pm.packed_qty
+     ORDER BY ls.external_id, i.item_name, pt.barcode`,
+    params
+  );
+  const rows = r.rows;
 
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
-  const sheet = wb.addWorksheet('Отгрузки');
+  const sheet = wb.addWorksheet('Баркоды');
   sheet.columns = [
     { header: '#', key: 'idx', width: 5 },
     { header: 'Отгрузка', key: 'shipment', width: 22 },
     { header: 'Клиент', key: 'client', width: 22 },
-    { header: 'Склад', key: 'warehouse', width: 20 },
-    { header: 'Маркетплейс', key: 'mp', width: 14 },
-    { header: 'Строк', key: 'lines', width: 8 },
-    { header: 'Штук план', key: 'qtyPlan', width: 10 },
-    { header: 'Штук собрано', key: 'qtyPicked', width: 12 },
-    { header: 'Штук упаковано', key: 'qtyPacked', width: 14 },
-    { header: 'Сборщик', key: 'picker', width: 18 },
-    { header: 'Статус упаковки', key: 'packStatus', width: 16 },
-    { header: 'Упаковщик', key: 'packer', width: 18 },
+    { header: 'Склад', key: 'warehouse', width: 18 },
+    { header: 'Штрихкод', key: 'barcode', width: 16 },
+    { header: 'Товар', key: 'item', width: 32 },
+    { header: 'Артикул', key: 'vendorCode', width: 16 },
+    { header: 'Размер', key: 'size', width: 10 },
+    { header: 'WB nmID', key: 'nmId', width: 12 },
+    { header: 'Кол-во план', key: 'qtyPlan', width: 11 },
+    { header: 'Кол-во собрано', key: 'qtyPicked', width: 13 },
+    { header: 'Кол-во упаковано', key: 'qtyPacked', width: 14 },
+    { header: 'Пропущено', key: 'skipped', width: 10 },
     { header: 'Статус отгрузки', key: 'status', width: 16 },
-    { header: 'Создана', key: 'createdAt', width: 20 },
   ];
   sheet.getRow(1).font = { bold: true };
   sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
   rows.forEach((row, idx2) => {
     sheet.addRow({
       idx: idx2 + 1,
-      shipment: row.external_id,
+      shipment: row.shipment_code,
       client: row.client_name || '',
       warehouse: row.warehouse_name || '',
-      mp: row.marketplace || '',
-      lines: row.tasks_total,
+      barcode: row.barcode,
+      item: row.item_name || '',
+      vendorCode: row.vendor_code || '',
+      size: row.size || '',
+      nmId: row.wb_nm_id || '',
       qtyPlan: row.qty_plan,
       qtyPicked: row.qty_picked,
-      qtyPacked: row.total_packed_qty || 0,
-      picker: row.picker_name || '',
-      packStatus: PACKING_STATUS_LABELS_RU[row.packing_status] || 'ещё не в очереди',
-      packer: row.packer_name || '',
+      qtyPacked: row.qty_packed,
+      skipped: row.skipped_count,
       status: row.status,
-      createdAt: row.created_at ? new Date(row.created_at).toLocaleString('ru-RU') : '',
     });
   });
   sheet.autoFilter = { from: 'A1', to: 'N1' };
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   const buffer = await wb.xlsx.writeBuffer();
-  return { buffer, count: rows.length };
+  const shipmentCount = new Set(rows.map((row) => row.shipment_code)).size;
+  return { buffer, count: shipmentCount, lines: rows.length };
 }
 
 /**

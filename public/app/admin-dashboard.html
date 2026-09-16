@@ -701,7 +701,7 @@ function openCollectedExportModal() {
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-      UI.notify.ok('Файл скачан (' + res.count + ' отгрузок) — смотри загрузки браузера');
+      UI.notify.ok('Файл скачан (' + res.count + ' отгрузок, ' + res.lines + ' баркодов) — смотри загрузки браузера');
       close();
     }).catch(function (e) {
       UI.notify.err(e.message);

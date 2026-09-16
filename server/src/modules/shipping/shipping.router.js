@@ -47,25 +47,24 @@ router.get('/collected-candidates', requireRole('tenant_admin','supervisor'), as
 });
 
 /**
- * POST /shipping/collected-export — сводный Excel по отгрузкам, где сборка
- * уже завершена, но ещё не уехали (не shipping/in_transit/done/cancelled/
- * error). shipment_codes — отобранные галочками в модалке (см.
- * collected-candidates выше); если не передан/пуст — идут все кандидаты.
- * Файл — base64 в JSON, как и другие xlsx-экспорты в этом проекте. POST (а
- * не GET), т.к. список кодов может быть длинным для query-строки.
+ * POST /shipping/collected-export — Excel с разбивкой ПО ШТРИХКОДАМ внутри
+ * каждой выбранной галочками отгрузки (правка 16.09.2026: "нужна информация
+ * какие и сколько конкретных баркодов в отгрузках а не строки и шт").
+ * shipment_codes — обязателен, отобранные в модалке коды (см.
+ * collected-candidates выше). Файл — base64 в JSON, как и другие
+ * xlsx-экспорты в этом проекте. POST, т.к. список кодов может быть длинным.
  */
 router.post('/collected-export', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
-    const clientId = resolveClientScope(req, req.body.client_id);
-    const { buffer, count } = await svc.exportCollectedXlsx({
+    const { buffer, count, lines } = await svc.exportCollectedXlsx({
       tenantId: req.user.tenantId,
-      clientId,
       warehouseId: req.body.warehouse_id ? Number(req.body.warehouse_id) : null,
       shipmentCodes: Array.isArray(req.body.shipment_codes) ? req.body.shipment_codes : null,
     });
     res.json({
       ok: true,
       count,
+      lines,
       filename: `sobrano-${new Date().toISOString().slice(0, 10)}.xlsx`,
       xlsxBase64: buffer.toString('base64'),
     });
