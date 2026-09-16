@@ -468,8 +468,16 @@ async function getNextTask({ tenantId, pickerId, shipmentCode }) {
         const pinnedHasStock = pinnedStockRes.rowCount > 0 && Number(pinnedStockRes.rows[0].qty_available) > 0;
         if (pinnedHasStock) { resolvedById.set(c.id, { code: pinned, id: null }); return; }
       }
+      // afterCode=pinned (обсуждение с пользователем 16.09.2026) — если у
+      // этого товара в волне УЖЕ была запиненная ячейка (просто в ней кончился
+      // остаток на этот добор), новую ячейку ищем предпочтительно ВПЕРЕДИ неё
+      // по маршруту, а не где попало по чистому FIFO — иначе добор мог
+      // отправить сборщика на более старую, но уже пройденную ячейку сзади
+      // (см. findBestPickLocation). Если pinned не было вообще (первая задача
+      // на этот товар в волне) - afterCode=null, поведение как раньше.
       const best = await findBestPickLocation({
         tenantId, warehouseId: c.warehouse_id, itemId: c.item_id, clientId: c.client_id,
+        afterCode: pinned || null,
       });
       resolvedById.set(c.id, best ? { code: best.location_code, id: best.location_id } : { code: null, id: null });
     }));

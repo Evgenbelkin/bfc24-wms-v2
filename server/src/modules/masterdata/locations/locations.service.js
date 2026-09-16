@@ -4,6 +4,7 @@ const { query } = require('../../../config/database');
 const { NotFoundError, ConflictError, ValidationError } = require('../../../utils/errors');
 const { validateNonEmptyString, parseBool, validatePositiveInt } = require('../../../utils/validators');
 const { resolveStockKey } = require('../items/items.service');
+const { locationWalkKey, compareWalkKeys } = require('../../../utils/warehouseLayout');
 
 // =============================================================================
 // Locations Service
@@ -408,7 +409,7 @@ async function getLocationFillReport({ tenantId, warehouseId = null, pickOnly = 
  *  почти наверняка содержит старый товар. Сортируем по ней по возрастанию
  *  (сначала самая "нетронутая" = самая старая), остаток - только как
  *  вторичный критерий при равных датах. */
-async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId }) {
+async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId, afterCode = null }) {
   // Пул остатков (миграция 061) — если товар связан с пулом, физический
   // остаток и ячейка ищутся у пул-клиента, а не у клиента заказа. Для
   // тенантов без пулинга resolveStockKey возвращает itemId/clientId как есть.
@@ -416,6 +417,18 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId })
   itemId = stockKey.stockItemId;
   clientId = stockKey.stockClientId;
 
+  // afterCode (обсуждение с пользователем 16.09.2026, "добор товара должен
+  // идти вперёд по маршруту, а не назад") — используется ТОЛЬКО когда
+  // getNextTask перевыбирает ячейку для товара, у которого "запиненная"
+  // ячейка в этой волне уже исчерпана (см. picking.service.js). Без afterCode
+  // (обычный вызов — первая ячейка для товара, приёмка, ручной подбор и т.п.)
+  // поведение не меняется вообще: LIMIT 1, чистый FIFO по last_movement_at.
+  // С afterCode — тянем ВСЕ подходящие по остатку ячейки (тот же порядок:
+  // сначала самая старая), и в JS предпочитаем те, что по коду ячейки не
+  // ПОЗАДИ уже пройденного места (compareWalkKeys >= 0). Если среди них нет
+  // ни одной с остатком - откатываемся к глобально самой старой по складу,
+  // как раньше (лучше отправить назад, чем вообще не найти, чем нарушить
+  // FIFO по всему складу молча).
   const res = await query(
     `SELECT
        l.id AS location_id, l.location_code, sb.qty_on_hand, sb.qty_available
@@ -445,10 +458,15 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId })
            AND it.reason = 'picker_not_found'
        )
      ORDER BY sb.last_movement_at ASC NULLS FIRST, sb.qty_available DESC, l.location_code
-     LIMIT 1`,
+     ${afterCode ? '' : 'LIMIT 1'}`,
     [tenantId, warehouseId, itemId, clientId]
   );
-  return res.rowCount > 0 ? res.rows[0] : null;
+  if (res.rowCount === 0) return null;
+  if (!afterCode) return res.rows[0];
+
+  const afterKey = locationWalkKey(afterCode);
+  const ahead = res.rows.find(r => compareWalkKeys(locationWalkKey(r.location_code), afterKey) >= 0);
+  return ahead || res.rows[0];
 }
 
 module.exports = {
