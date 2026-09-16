@@ -531,8 +531,11 @@ function _exportSkippedStickers() {
           a = document.createElement('a');
           a.href = url;
           a.download = (mode === 'thermal' ? 'termoetiketki-58x40-' : 'stikery-') + new Date().toISOString().slice(0, 10) + '.html';
+          a.style.display = 'none';
+          document.body.appendChild(a);
           a.click();
-          URL.revokeObjectURL(url);
+          setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+          UI.notify.ok('Файл скачан (' + (res.html.match(/class="label"/g) || []).length + ' стикеров) — смотри загрузки браузера');
           _context4b.n = 3;
           break;
         case 2:
@@ -570,8 +573,10 @@ function _exportSkippedXlsx() {
           a = document.createElement('a');
           a.href = url;
           a.download = res.filename || 'skipped-kiz.xlsx';
+          a.style.display = 'none';
+          document.body.appendChild(a);
           a.click();
-          URL.revokeObjectURL(url);
+          setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
           _context4c.n = 3;
           break;
         case 2:
