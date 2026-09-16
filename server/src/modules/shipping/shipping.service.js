@@ -17,10 +17,11 @@ const ledger = require('../stock/stock.ledger');
 async function listShipments({
   tenantId, clientId = null, status = null, marketplace = null,
   dateFrom = null, dateTo = null, shippedFrom = null, shippedTo = null,
-  limit = 100,
+  warehouseId = null, limit = 100,
 }) {
   const params = [tenantId]; const conds = ['s.tenant_id=$1']; let idx = 2;
   if (clientId)   { conds.push(`s.client_id=$${idx++}`); params.push(clientId); }
+  if (warehouseId){ conds.push(`s.warehouse_id=$${idx++}`); params.push(warehouseId); }
   if (status)     { conds.push(`s.status=$${idx++}`); params.push(status); }
   if (marketplace){ conds.push(`s.marketplace=$${idx++}`); params.push(marketplace); }
   if (dateFrom)   { conds.push(`s.created_at>=$${idx++}::date`); params.push(dateFrom); }
@@ -68,71 +69,27 @@ async function listShipments({
 }
 
 /**
- * Excel-выгрузка "всё собранное, но ещё не в пути" одним файлом (обсуждение
- * с пользователем 16.09.2026): волн много, по одной смотреть неудобно, нужен
- * общий список, который дальше сами отфильтруют в Excel. "Собрано" считаем
- * по факту (все picking_tasks по отгрузке завершены), а не по полю
- * shipments.status — оно у части отгрузок отстаёт от реального состояния
- * задач. Исключаем shipping/in_transit/done/cancelled/error — то, что уже
- * уехало или не должно тут быть в принципе.
+ * Excel-выгрузка отгрузок одним файлом (обсуждение с пользователем
+ * 16.09.2026): волн много, по одной смотреть неудобно, нужен общий список.
+ * ПРАВКА того же дня: сначала список кандидатов был жёстко ограничен только
+ * полностью собранными и ещё не уехавшими — пользователь попросил показывать
+ * ВСЕ отгрузки, что сейчас в диспетчерской (та же выборка, что питает карточку
+ * "Отгрузки в работе", см. listShipments выше), а какие включить в файл —
+ * решает сам галочками в модалке.
  */
 const PACKING_STATUS_LABELS_RU = {
   new: 'ждёт упаковщика', in_progress: 'упаковывается', done: 'упаковано', cancelled: 'отменено',
 };
 
 /**
- * Общая выборка кандидатов для "сводного файла собранного" — отгрузки, где
- * сборка уже полностью завершена (по факту задач, см. комментарий ниже), но
- * которые ещё не уехали. Используется и для списка с чекбоксами (см.
- * listCollectedCandidates), и для самой выгрузки (exportCollectedXlsx), чтобы
- * не разъезжались критерии между "что показали" и "что выгрузили".
- */
-async function _getCollectedCandidates({ tenantId, clientId = null, warehouseId = null }) {
-  const params = [tenantId];
-  const conds = ['s.tenant_id=$1', `s.status NOT IN ('shipping','in_transit','done','cancelled','error')`];
-  let idx = 2;
-  if (clientId)    { conds.push(`s.client_id=$${idx++}`); params.push(clientId); }
-  if (warehouseId) { conds.push(`s.warehouse_id=$${idx++}`); params.push(warehouseId); }
-
-  const r = await query(
-    `SELECT s.external_id, s.status, s.created_at, s.marketplace, s.total_packed_qty,
-       c.client_name, w.warehouse_name,
-       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
-       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
-       (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
-       (SELECT MAX(t.finished_at) FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS picking_finished_at,
-       pu.username AS picker_name,
-       pk.status AS packing_status, pk.packer_name
-     FROM wms.shipments s
-     JOIN wms.clients c ON c.id=s.client_id
-     JOIN wms.warehouses w ON w.id=s.warehouse_id
-     LEFT JOIN wms.pick_waves pw ON pw.tenant_id=s.tenant_id AND pw.shipment_code=s.external_id
-     LEFT JOIN wms.users pu ON pu.id=pw.picker_id
-     LEFT JOIN LATERAL (
-       SELECT pt.status, u.username AS packer_name
-       FROM wms.packing_tasks pt
-       LEFT JOIN wms.users u ON u.id=pt.packer_id
-       WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
-       ORDER BY pt.id DESC LIMIT 1
-     ) pk ON true
-     WHERE ${conds.join(' AND ')}
-     ORDER BY c.client_name, s.external_id`,
-    params
-  );
-
-  // "Собрано" — только те, где реально все задачи сборки завершены (а не по
-  // текущему полю статуса, см. комментарий к функции выше).
-  return r.rows.filter((row) => row.tasks_total > 0 && row.tasks_done === row.tasks_total);
-}
-
-/**
  * Список кандидатов для UI с чекбоксами (обсуждение 16.09.2026: "можно
  * сделать выбор галочкой какие отгрузки добавить в эту выгрузку? так было бы
- * точнее") — та же выборка, что и в exportCollectedXlsx, но в виде JSON без
- * построения файла.
+ * точнее" → позже: "нужен список всех отгрузок которые находятся в
+ * диспетчерской а не только собранных 100%"). Переиспользует listShipments —
+ * тот же набор, что виден на карточке "Отгрузки в работе".
  */
 async function listCollectedCandidates({ tenantId, clientId = null, warehouseId = null }) {
-  const rows = await _getCollectedCandidates({ tenantId, clientId, warehouseId });
+  const rows = await listShipments({ tenantId, clientId, warehouseId, limit: 500 });
   return rows.map((row) => ({
     shipmentCode: row.external_id,
     status: row.status,
@@ -142,21 +99,24 @@ async function listCollectedCandidates({ tenantId, clientId = null, warehouseId 
     warehouse: row.warehouse_name,
     lines: row.tasks_total,
     qtyPlan: row.qty_plan,
+    qtyPicked: row.qty_picked,
     qtyPacked: row.total_packed_qty || 0,
     picker: row.picker_name || null,
-    pickedAt: row.picking_finished_at,
+    pickingDone: row.tasks_total > 0 && row.tasks_done === row.tasks_total,
     packStatus: PACKING_STATUS_LABELS_RU[row.packing_status] || 'ещё не в очереди',
     packer: row.packer_name || null,
   }));
 }
 
 /**
- * Строит сам xlsx. shipmentCodes — необязательный список отобранных
- * галочками кодов отгрузок (public/app/admin-dashboard.html::openCollectedExportModal);
- * если не передан/пуст — идут все кандидаты (обратная совместимость).
+ * Строит сам xlsx из той же выборки, что и listCollectedCandidates.
+ * shipmentCodes — список отобранных галочками кодов отгрузок (см.
+ * public/app/admin-dashboard.html::openCollectedExportModal); если не
+ * передан/пуст — идут вообще все отгрузки диспетчерской (обратная
+ * совместимость на случай прямого вызова без модалки).
  */
 async function exportCollectedXlsx({ tenantId, clientId = null, warehouseId = null, shipmentCodes = null }) {
-  let rows = await _getCollectedCandidates({ tenantId, clientId, warehouseId });
+  let rows = await listShipments({ tenantId, clientId, warehouseId, limit: 500 });
   if (Array.isArray(shipmentCodes) && shipmentCodes.length > 0) {
     const wanted = new Set(shipmentCodes);
     rows = rows.filter((row) => wanted.has(row.external_id));
@@ -164,7 +124,7 @@ async function exportCollectedXlsx({ tenantId, clientId = null, warehouseId = nu
 
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
-  const sheet = wb.addWorksheet('Собрано');
+  const sheet = wb.addWorksheet('Отгрузки');
   sheet.columns = [
     { header: '#', key: 'idx', width: 5 },
     { header: 'Отгрузка', key: 'shipment', width: 22 },
@@ -173,9 +133,9 @@ async function exportCollectedXlsx({ tenantId, clientId = null, warehouseId = nu
     { header: 'Маркетплейс', key: 'mp', width: 14 },
     { header: 'Строк', key: 'lines', width: 8 },
     { header: 'Штук план', key: 'qtyPlan', width: 10 },
+    { header: 'Штук собрано', key: 'qtyPicked', width: 12 },
     { header: 'Штук упаковано', key: 'qtyPacked', width: 14 },
     { header: 'Сборщик', key: 'picker', width: 18 },
-    { header: 'Сборка завершена', key: 'pickedAt', width: 20 },
     { header: 'Статус упаковки', key: 'packStatus', width: 16 },
     { header: 'Упаковщик', key: 'packer', width: 18 },
     { header: 'Статус отгрузки', key: 'status', width: 16 },
@@ -192,9 +152,9 @@ async function exportCollectedXlsx({ tenantId, clientId = null, warehouseId = nu
       mp: row.marketplace || '',
       lines: row.tasks_total,
       qtyPlan: row.qty_plan,
+      qtyPicked: row.qty_picked,
       qtyPacked: row.total_packed_qty || 0,
       picker: row.picker_name || '',
-      pickedAt: row.picking_finished_at ? new Date(row.picking_finished_at).toLocaleString('ru-RU') : '',
       packStatus: PACKING_STATUS_LABELS_RU[row.packing_status] || 'ещё не в очереди',
       packer: row.packer_name || '',
       status: row.status,

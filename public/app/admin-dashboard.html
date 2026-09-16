@@ -642,15 +642,23 @@ function openCollectedExportModal() {
   window.API.shipping.collectedCandidates({}).then(function (res) {
     var rows = res.rows || [];
     if (!rows.length) {
-      listEl.innerHTML = '<div style="padding:16px;color:var(--muted,#64748b);font-size:13px;">Нет отгрузок с завершённой сборкой, которые ещё не уехали</div>';
+      listEl.innerHTML = '<div style="padding:16px;color:var(--muted,#64748b);font-size:13px;">Нет отгрузок в диспетчерской</div>';
       countEl.textContent = '0 из 0 выбрано';
       return;
     }
     listEl.innerHTML = rows.map(function (r, i) {
       var meta = [r.client, r.warehouse, r.marketplace].filter(Boolean).join(' · ');
-      var extra = r.lines + ' стр · ' + r.qtyPlan + ' шт' + (r.picker ? ' · ' + UI.escHtml(r.picker) : '') + ' · ' + UI.escHtml(r.packStatus || '');
+      var statusLabel = SHIP_STATUS_LABELS[r.status] || r.status;
+      var doneBadge = r.pickingDone
+        ? '<span style="color:#16a34a;font-weight:600;">собрано ✓</span>'
+        : '<span>собрано ' + (r.qtyPicked || 0) + '/' + (r.qtyPlan || 0) + '</span>';
+      var extra = r.lines + ' стр · ' + doneBadge + (r.picker ? ' · ' + UI.escHtml(r.picker) : '') + ' · ' + UI.escHtml(r.packStatus || '') + ' · ' + UI.escHtml(statusLabel);
+      // По умолчанию отмечаем только те, где сборка реально завершена — но
+      // виден весь список диспетчерской, остальные можно доотметить руками
+      // (обсуждение 16.09.2026: "нужен список всех отгрузок ... а не только
+      // собранных 100%").
       return '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--border,#e2e8f0);cursor:pointer;">' +
-        '<input type="checkbox" class="ce-row-cb" data-code="' + UI.escHtml(r.shipmentCode) + '" checked style="margin-top:3px;">' +
+        '<input type="checkbox" class="ce-row-cb" data-code="' + UI.escHtml(r.shipmentCode) + '"' + (r.pickingDone ? ' checked' : '') + ' style="margin-top:3px;">' +
         '<div style="flex:1;min-width:0;">' +
           '<div style="font-size:13px;font-weight:600;color:var(--text,#0f172a);">' + UI.escHtml(r.shipmentCode) + '</div>' +
           '<div style="font-size:11px;color:var(--muted,#64748b);">' + UI.escHtml(meta) + '</div>' +
