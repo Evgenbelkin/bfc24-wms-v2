@@ -168,6 +168,47 @@ router.get('/tasks/skipped', requireRole('tenant_admin','supervisor'), async (re
 });
 
 /**
+ * GET /picking/tasks/skipped/stickers-export — стикеры ВБ по пропущенным
+ * позициям одним HTML-файлом для ручной сборки (обсуждение 16.09.2026).
+ * Возвращает готовый HTML в JSON (не raw text/html), потому что фронтенд
+ * ходит через общий API-клиент с Bearer-токеном — страница открывается на
+ * клиенте через Blob+window.open (как printer-panel.html делает с PDF).
+ */
+router.get('/tasks/skipped/stickers-export', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const html = await svc.exportSkippedStickers({
+      tenantId:    req.user.tenantId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      clientId:    req.query.client_id ? Number(req.query.client_id) : null,
+      mode:        req.query.mode === 'thermal' ? 'thermal' : 'reference',
+    });
+    res.json({ ok: true, html });
+  } catch(e){ next(e); }
+});
+
+/**
+ * GET /picking/tasks/skipped/xlsx-export — тот же набор пропущенных позиций
+ * в Excel с пустой колонкой "КИЗ" под ручное сканирование (обсуждение
+ * 16.09.2026). Файл возвращается как base64 в JSON (тот же приём, что и
+ * html-версия) — фронтенд сам конвертирует его в Blob и скачивает через <a download>.
+ */
+router.get('/tasks/skipped/xlsx-export', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { buffer, count } = await svc.exportSkippedXlsx({
+      tenantId:    req.user.tenantId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      clientId:    req.query.client_id ? Number(req.query.client_id) : null,
+    });
+    res.json({
+      ok: true,
+      count,
+      filename: `skipped-kiz-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      xlsxBase64: buffer.toString('base64'),
+    });
+  } catch(e){ next(e); }
+});
+
+/**
  * POST /picking/tasks/:id/requeue — вернуть пропущенное задание обратно в сборку.
  * Намеренно НЕ доступно роли 'picker' — иначе сборщик мог бы сам себе тут же
  * вернуть то, что только что пропустил, без реальной проверки остатка супервайзером.

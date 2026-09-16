@@ -10,6 +10,7 @@ const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
 const { triggerRedistributionForClient } = require('../wb/wb.service');
+const wbClient = require('../wb/wb.client');
 const { locationWalkKey, compareWalkKeys } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
 
@@ -1417,6 +1418,212 @@ async function listSkippedTasks({ tenantId, warehouseId = null, limit = 100 }) {
   return r.rows;
 }
 
+function _escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Общая часть экспорта пропущенных позиций (стикеры ВБ + справочные поля) —
+ * используется и для печатной HTML-страницы, и для Excel-выгрузки под ручное
+ * сканирование КИЗ (обсуждение с пользователем 16.09.2026). Стикер (base64
+ * svg) обычно уже закэширован в wms.wb_orders при формировании волны — если
+ * по какой-то задаче его там нет (старое/восстановленное вручную задание),
+ * дотягиваем его живьём у ВБ по api_token нужного кабинета и заодно
+ * сохраняем в кэш тем же способом, что и generate-wave (wb.router.js).
+ */
+async function _getSkippedForExport({ tenantId, warehouseId = null, clientId = null }) {
+  const r = await query(
+    `SELECT t.id, t.barcode, t.qty, t.location_code, t.shipment_code, t.wb_order_id,
+       i.item_name, i.vendor_code,
+       c.client_name,
+       wo.wb_sticker, wo.wb_sticker_code, wo.mp_account_id
+     FROM wms.picking_tasks t
+     LEFT JOIN wms.items i ON i.id = t.item_id
+     LEFT JOIN wms.clients c ON c.id = t.client_id
+     LEFT JOIN wms.wb_orders wo ON wo.tenant_id = t.tenant_id AND wo.wb_order_id = t.wb_order_id
+     WHERE t.tenant_id=$1 AND t.status='skipped' AND t.wb_order_id IS NOT NULL
+       AND ($2::int IS NULL OR t.warehouse_id=$2)
+       AND ($3::int IS NULL OR t.client_id=$3)
+     ORDER BY c.client_name, i.item_name`,
+    [tenantId, warehouseId, clientId]
+  );
+  const rows = r.rows;
+
+  // Дотягиваем недостающие стикеры живьём у ВБ, группируя по кабинету —
+  // на всякий случай (обычно все уже есть из generate-wave).
+  const missing = rows.filter((row) => !row.wb_sticker && row.mp_account_id);
+  if (missing.length) {
+    const byAccount = new Map();
+    for (const row of missing) {
+      if (!byAccount.has(row.mp_account_id)) byAccount.set(row.mp_account_id, []);
+      byAccount.get(row.mp_account_id).push(row);
+    }
+    for (const [mpAccountId, accRows] of byAccount) {
+      const accRes = await query(`SELECT api_token FROM wms.mp_accounts WHERE id=$1 AND tenant_id=$2`, [mpAccountId, tenantId]);
+      const token = accRes.rows[0] && accRes.rows[0].api_token;
+      if (!token) continue;
+      let stickers = [];
+      try {
+        stickers = await wbClient.fetchOrderStickers(token, accRows.map((row) => Number(row.wb_order_id)));
+      } catch (e) {
+        logger.warn({ err: e, mpAccountId }, '_getSkippedForExport: fetchOrderStickers failed, skipping account');
+        continue;
+      }
+      const byOrderId = new Map(stickers.map((st) => [Number(st.orderId), st]));
+      for (const row of accRows) {
+        const st = byOrderId.get(Number(row.wb_order_id));
+        if (!st || !st.file) continue;
+        const code = wbClient.extractStickerCode(st.file);
+        row.wb_sticker = st.file;
+        row.wb_sticker_code = code;
+        await query(
+          `UPDATE wms.wb_orders SET wb_sticker=$1, wb_sticker_code=$2 WHERE tenant_id=$3 AND mp_account_id=$4 AND wb_order_id=$5`,
+          [st.file, code, tenantId, mpAccountId, Number(row.wb_order_id)]
+        );
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * mode='reference' (по умолчанию) — обычная A4-страница: таблица-справочник
+ * (найти товар на складе) + превью стикеров с подписью, на обычном принтере.
+ * mode='thermal' — ЧИСТЫЕ стикеры ВБ без каких-либо подписей, ровно один на
+ * страницу размером 58×40мм (@page), под настоящий термопринтер этикеток —
+ * подпись поверх могла бы наехать на штрихкод/код ВБ, поэтому в этом режиме
+ * её нет вообще; для сверки "какой стикер к какому товару" используется
+ * порядок — он тот же, что и в справочной таблице режима reference.
+ * В диалоге печати браузера нужно выбрать бумагу/этикетку 58×40мм и поля "0".
+ */
+async function exportSkippedStickers({ tenantId, warehouseId = null, clientId = null, mode = 'reference' }) {
+  const rows = await _getSkippedForExport({ tenantId, warehouseId, clientId });
+  const withSticker = rows.filter((row) => row.wb_sticker);
+  const withoutSticker = rows.filter((row) => !row.wb_sticker);
+
+  if (mode === 'thermal') {
+    const pages = withSticker.map((row) => `
+      <div class="label"><img src="data:image/svg+xml;base64,${row.wb_sticker}" /></div>`).join('');
+    return `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>Термоэтикетки 58×40 — пропущенные позиции</title>
+<style>
+  @page { size: 58mm 40mm; margin: 0; }
+  html,body{margin:0;padding:0;}
+  .label{width:58mm;height:40mm;page-break-after:always;display:flex;align-items:center;justify-content:center;}
+  .label img{width:58mm;height:40mm;display:block;}
+  .no-print{padding:10px;font-family:Arial,sans-serif;}
+  @media print { .no-print{display:none;} }
+</style>
+</head><body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨 Печать (${withSticker.length} шт., в диалоге печати выбрать этикетку 58×40мм, поля 0)</button>
+    ${withoutSticker.length ? `<p style="color:#dc2626">Без стикера (распечатать вручную из ЛК ВБ): ${withoutSticker.map((row) => _escHtml(row.wb_order_id)).join(', ')}</p>` : ''}
+  </div>
+  ${pages}
+</body></html>`;
+  }
+
+  const tableRows = rows.map((row, idx) => `
+    <tr>
+      <td>${idx + 1}</td>
+      <td>${_escHtml(row.client_name || '—')}</td>
+      <td>${_escHtml(row.item_name || row.barcode || '—')}</td>
+      <td>${_escHtml(row.vendor_code || '—')}</td>
+      <td>${_escHtml(row.barcode || '—')}</td>
+      <td>${_escHtml(row.location_code || '—')}</td>
+      <td>${_escHtml(row.wb_order_id)}</td>
+      <td>${row.wb_sticker ? 'есть' : '<b style="color:#dc2626">нет</b>'}</td>
+    </tr>`).join('');
+
+  const labelBlocks = withSticker.map((row) => `
+    <div class="label">
+      <img class="label-svg" src="data:image/svg+xml;base64,${row.wb_sticker}" />
+      <div class="label-caption">
+        <div class="label-item">${_escHtml(row.item_name || row.barcode)}</div>
+        <div class="label-sub">${_escHtml(row.vendor_code || '')} · ${_escHtml(row.client_name || '')}</div>
+      </div>
+    </div>`).join('');
+
+  const missingNote = withoutSticker.length
+    ? `<p style="color:#dc2626">Не удалось получить стикер для ${withoutSticker.length} заказ(ов) — распечатайте их вручную из личного кабинета ВБ: ${withoutSticker.map((row) => _escHtml(row.wb_order_id)).join(', ')}.</p>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>Стикеры на печать — пропущенные позиции</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:20px;color:#111;}
+  h1{font-size:18px;margin-bottom:4px;}
+  .meta{color:#666;font-size:13px;margin-bottom:16px;}
+  table{border-collapse:collapse;width:100%;margin-bottom:24px;font-size:13px;}
+  th,td{border:1px solid #ddd;padding:6px 8px;text-align:left;}
+  th{background:#f4f4f4;}
+  .labels{display:flex;flex-wrap:wrap;gap:8px;}
+  .label{width:58mm;min-height:44mm;border:1px dashed #bbb;padding:2mm;box-sizing:border-box;page-break-inside:avoid;}
+  .label-svg{width:100%;height:auto;display:block;}
+  .label-caption{font-size:7pt;line-height:1.2;margin-top:1mm;}
+  .label-item{font-weight:bold;}
+  @media print { .no-print{display:none;} .label{border:none;} }
+</style>
+</head><body>
+  <h1>Стикеры ВБ — пропущенные позиции сборки</h1>
+  <div class="meta">Сформировано: ${new Date().toLocaleString('ru-RU')} · позиций: ${rows.length}, стикеров получено: ${withSticker.length}</div>
+  <p class="no-print"><button onclick="window.print()">🖨 Печать</button></p>
+  ${missingNote}
+  <table>
+    <thead><tr><th>#</th><th>Клиент</th><th>Товар</th><th>Артикул</th><th>Баркод</th><th>Последняя ячейка</th><th>Заказ ВБ</th><th>Стикер</th></tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="labels">${labelBlocks}</div>
+</body></html>`;
+}
+
+/**
+ * Excel-выгрузка тех же пропущенных позиций с пустой колонкой "КИЗ" — чтобы
+ * физически собирая товар вручную, сразу сканировать код Честного знака
+ * прямо в файл (сканер работает как клавиатура + Enter), без ТСД и без
+ * обычного экрана упаковки. Порядок строк совпадает с порядком стикеров в
+ * exportSkippedStickers(mode='thermal') — так проще сверять по ходу сборки.
+ */
+async function exportSkippedXlsx({ tenantId, warehouseId = null, clientId = null }) {
+  const rows = await _getSkippedForExport({ tenantId, warehouseId, clientId });
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet('Пропущено');
+  sheet.columns = [
+    { header: '#', key: 'idx', width: 5 },
+    { header: 'Клиент', key: 'client', width: 22 },
+    { header: 'Товар', key: 'item', width: 40 },
+    { header: 'Артикул', key: 'vendor', width: 16 },
+    { header: 'Баркод', key: 'barcode', width: 18 },
+    { header: 'Последняя ячейка', key: 'loc', width: 16 },
+    { header: 'Заказ ВБ', key: 'order', width: 14 },
+    { header: 'Код стикера', key: 'stickerCode', width: 18 },
+    { header: 'КИЗ (отсканировать)', key: 'kiz', width: 45 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+  rows.forEach((row, idx) => {
+    sheet.addRow({
+      idx: idx + 1,
+      client: row.client_name || '',
+      item: row.item_name || row.barcode || '',
+      vendor: row.vendor_code || '',
+      barcode: row.barcode || '',
+      loc: row.location_code || '',
+      order: row.wb_order_id,
+      stickerCode: row.wb_sticker_code || '',
+      kiz: '',
+    });
+  });
+  sheet.autoFilter = { from: 'A1', to: 'I1' };
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  const buffer = await wb.xlsx.writeBuffer();
+  return { buffer, count: rows.length };
+}
+
 /**
  * Отменить (снять) пропущенное задание — не возвращать в сборку, а окончательно
  * убрать из списка "Пропущенные позиции" супервайзера, потому что недостача уже
@@ -1724,7 +1931,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
 module.exports = {
   listWaves, getWaveByShipmentCode, getWaveDetail, takeWave, resetWave,
   getNextTask, scanLocation, scanItem, scanItemQty, skipTask,
-  listSkippedTasks, requeueSkippedTask, cancelSkippedTask, listCancelledTasks,
+  listSkippedTasks, exportSkippedStickers, exportSkippedXlsx, requeueSkippedTask, cancelSkippedTask, listCancelledTasks,
   closeWave, getWaveStatus,
   createManualWave,
 };

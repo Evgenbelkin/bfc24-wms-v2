@@ -797,6 +797,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     skipped: function skipped(p) {
       return _get('/picking/tasks/skipped', p);
     },
+    skippedStickersExport: function skippedStickersExport(p) {
+      return _get('/picking/tasks/skipped/stickers-export', p);
+    },
+    skippedXlsxExport: function skippedXlsxExport(p) {
+      return _get('/picking/tasks/skipped/xlsx-export', p);
+    },
     requeue: function requeue(id) {
       return post("/picking/tasks/".concat(id, "/requeue"));
     },
