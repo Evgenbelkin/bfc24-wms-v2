@@ -300,6 +300,19 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     // (is_enabled_for_picking=FALSE — «этот склад обслуживает другой ФФ»),
     // из выборки исключаем. Склад без настройки (ещё не засинкан/неизвестен)
     // остаётся включённым — обратная совместимость с прежним поведением.
+    //
+    // ВАЖНО (обсуждение с пользователем 16.09.2026): лимит из запроса
+    // (limitOrders, «сколько заказов в волну») здесь НЕ применяем - раньше
+    // LIMIT стоял прямо в этом SQL, то есть отбирались limitOrders САМЫХ
+    // СТАРЫХ заказов-кандидатов ДО проверки остатка, и только потом их
+    // фильтровали по наличию (см. ниже). Если среди этих первых N по дате
+    // заказов преобладал дефицитный товар - волна не формировалась вообще
+    // (0 заказов проходило фильтр), хотя дальше по очереди могли быть сотни
+    // нормальных заказов с реальным остатком. Правильно: тянуть кандидатов с
+    // большим запасом (CANDIDATE_POOL_LIMIT), фильтровать по остатку в
+    // порядке created_at ASC и ТОЛЬКО тогда останавливаться на limitOrders
+    // УЖЕ ГОТОВЫХ к сборке заказов (см. stockFilteredRows ниже).
+    const CANDIDATE_POOL_LIMIT = 5000;
     const ordersRes = await query(
       `SELECT o.wb_order_id, o.barcode, o.warehouse_id, o.warehouse_name
        FROM wms.wb_orders o
@@ -311,7 +324,7 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
              AND w.is_enabled_for_picking=FALSE
          )
        ORDER BY o.created_at ASC LIMIT $3`,
-      [req.user.tenantId, accountId, limitOrders]
+      [req.user.tenantId, accountId, CANDIDATE_POOL_LIMIT]
     );
     if (ordersRes.rowCount === 0) return res.json({ ok:true, message:'No orders without supply', supplies:[] });
 
@@ -441,6 +454,10 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     const stockFilteredRows = [];
     const stockShortageByBarcode = new Map(); // barcode -> {count, itemName}
     for (const row of ordersRes.rows) {
+      // Набрали запрошенное лимитом кол-во ГОТОВЫХ к сборке заказов - дальше
+      // по списку кандидатов не идём (они либо тоже в наличии и уйдут в
+      // следующий запуск волны, либо дефицитные - тоже неважно сейчас).
+      if (stockFilteredRows.length >= limitOrders) break;
       const b = String(row.barcode||'').trim();
       const itemId = itemIdByBarcode.get(b);
       const stockKey = itemId != null ? stockKeyByItemId.get(itemId) : null;
