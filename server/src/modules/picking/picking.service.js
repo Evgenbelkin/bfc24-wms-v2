@@ -1459,21 +1459,26 @@ async function _getSkippedForExport({ tenantId, warehouseId = null, clientId = n
       if (!byAccount.has(row.mp_account_id)) byAccount.set(row.mp_account_id, []);
       byAccount.get(row.mp_account_id).push(row);
     }
-    for (const [mpAccountId, accRows] of byAccount) {
+    // Кабинеты — параллельно, и внутри кабинета UPDATE-ы тоже параллельно
+    // (обсуждение с пользователем 16.09.2026: раньше ходили к ВБ и писали в
+    // базу строго по одному, на 20+ пропущенных позиций скачивание растягивалось
+    // на минуту+; между разными кабинетами и между отдельными строками
+    // зависимостей нет, так что ждать друг друга незачем).
+    await Promise.all(Array.from(byAccount.entries()).map(async ([mpAccountId, accRows]) => {
       const accRes = await query(`SELECT api_token FROM wms.mp_accounts WHERE id=$1 AND tenant_id=$2`, [mpAccountId, tenantId]);
       const token = accRes.rows[0] && accRes.rows[0].api_token;
-      if (!token) continue;
+      if (!token) return;
       let stickers = [];
       try {
         stickers = await wbClient.fetchOrderStickers(token, accRows.map((row) => Number(row.wb_order_id)));
       } catch (e) {
         logger.warn({ err: e, mpAccountId }, '_getSkippedForExport: fetchOrderStickers failed, skipping account');
-        continue;
+        return;
       }
       const byOrderId = new Map(stickers.map((st) => [Number(st.orderId), st]));
-      for (const row of accRows) {
+      await Promise.all(accRows.map(async (row) => {
         const st = byOrderId.get(Number(row.wb_order_id));
-        if (!st || !st.file) continue;
+        if (!st || !st.file) return;
         const code = wbClient.extractStickerCode(st.file);
         row.wb_sticker = st.file;
         row.wb_sticker_code = code;
@@ -1481,8 +1486,8 @@ async function _getSkippedForExport({ tenantId, warehouseId = null, clientId = n
           `UPDATE wms.wb_orders SET wb_sticker=$1, wb_sticker_code=$2 WHERE tenant_id=$3 AND mp_account_id=$4 AND wb_order_id=$5`,
           [st.file, code, tenantId, mpAccountId, Number(row.wb_order_id)]
         );
-      }
-    }
+      }));
+    }));
   }
   return rows;
 }
