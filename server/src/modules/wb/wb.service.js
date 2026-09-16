@@ -528,7 +528,19 @@ async function syncDeliveryStatusForTenant(tenantId) {
  *  проценты вручную (веса нормализуются по сумме при расчёте, не обязаны
  *  быть именно процентами). Склад, который клиент убрал у себя в WB, помечаем
  *  is_active=false, а не удаляем - настройки (weight/is_enabled_for_dist) не
- *  теряются, если он вернётся. */
+ *  теряются, если он вернётся.
+ *
+ *  is_enabled_for_picking — ЯВНО FALSE при первой вставке (обсуждение с
+ *  пользователем 16.09.2026). В миграции 035 у этой колонки DEFAULT TRUE, но
+ *  это было сделано только для одноразового backfill уже существовавших на
+ *  тот момент складов (обратная совместимость при накатке миграции) - для
+ *  НОВЫХ складов, появляющихся здесь при каждом синке, тот же DEFAULT
+ *  подставлялся ошибочно: склад чужого ФФ (например, обслуживаемый другим
+ *  фулфилментом) тут же попадал в набор "наших" складов для /generate-wave -
+ *  волна начинала подбирать заказы с этого склада, для которых у нас
+ *  физически нет остатка ("едут" не наши товары, остатки сбиваются).
+ *  ON CONFLICT ничего не меняет по is_enabled_for_picking - уже настроенные
+ *  тенантом склады (включённые или явно выключенные) не трогаем. */
 async function syncSellerWarehouses({ tenantId, mpAccountId }) {
   const acc = await getMpAccount(tenantId, mpAccountId);
   const warehouses = await wbClient.fetchSellerWarehouses(acc.api_token);
@@ -539,8 +551,8 @@ async function syncSellerWarehouses({ tenantId, mpAccountId }) {
     const warehouseCode = String(w.id);
     await query(
       `INSERT INTO wms.wb_seller_warehouses
-         (tenant_id, mp_account_id, wb_warehouse_id, warehouse_code, warehouse_name, is_active, source, last_synced_at)
-       VALUES ($1,$2,$3,$4,$5,TRUE,'wb_api',NOW())
+         (tenant_id, mp_account_id, wb_warehouse_id, warehouse_code, warehouse_name, is_active, is_enabled_for_picking, source, last_synced_at)
+       VALUES ($1,$2,$3,$4,$5,TRUE,FALSE,'wb_api',NOW())
        ON CONFLICT (mp_account_id, warehouse_code)
        DO UPDATE SET warehouse_name=$5, is_active=TRUE, wb_warehouse_id=$3, last_synced_at=NOW(), updated_at=NOW()`,
       [tenantId, mpAccountId, w.id, warehouseCode, w.name || null]
