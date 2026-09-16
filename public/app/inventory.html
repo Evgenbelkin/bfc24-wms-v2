@@ -251,7 +251,9 @@ function _loadTasks() {
           return _context4.a(2);
         case 2:
           list.innerHTML = tasks.map(function (t, idx) {
-            return "\n          <div class=\"list-row task-row\" onclick=\"openTask(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(UI.escHtml(t.item_name || t.barcode || 'Проверка ячейки'), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(t.location_code), " \xB7 ").concat(UI.escHtml(t.client_name || ''), " ").concat(t.reason ? '· ' + UI.escHtml(t.reason) : '', "</div>\n            </div>\n            <span class=\"pill ").concat(t.status === 'in_progress' ? 'pill-blue' : 'pill-gray', "\">").concat(t.status === 'in_progress' ? 'в работе' : 'открыта', "</span>\n          </div>\n        ");
+            var srcMatch = t.comment ? /исходная ячейка:\s*([^)]+)\)/.exec(t.comment) : null;
+            var cellLabel = srcMatch ? srcMatch[1].trim() : (t.location_code || '—');
+            return "\n          <div class=\"list-row task-row\" onclick=\"openTask(".concat(idx, ")\">\n            <div class=\"main\">\n              <div class=\"title\">").concat(idx + 1, ". ").concat(UI.escHtml(t.item_name || t.barcode || 'Проверка ячейки'), "</div>\n              <div class=\"sub\">Ячейка: <b>").concat(UI.escHtml(cellLabel), "</b> \xB7 ").concat(UI.escHtml(t.client_name || ''), " ").concat(t.reason ? '· ' + UI.escHtml(t.reason) : '', "</div>\n            </div>\n            <span class=\"pill ").concat(t.status === 'in_progress' ? 'pill-blue' : 'pill-gray', "\">").concat(t.status === 'in_progress' ? 'в работе' : 'открыта', "</span>\n          </div>\n        ");
           }).join('');
           _context4.n = 4;
           break;
