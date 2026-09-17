@@ -20,6 +20,7 @@ router.use(authRequired, tenantMiddleware, requireCheckedIn);
 // GET  /inventory/tasks/:id          — детальная задача
 // POST /inventory/tasks              — создать задачу
 // POST /inventory/tasks/batch        — создать задачи по ячейке (bulk)
+// POST /inventory/adhoc/scan         — инвентаризация без задания (скан ячейки, picker)
 // POST /inventory/tasks/:id/assign   — назначить исполнителя
 // POST /inventory/tasks/:id/count    — внести фактический счёт
 // POST /inventory/tasks/:id/close    — закрыть задачу
@@ -133,7 +134,28 @@ router.post('/tasks/:id/assign', requireRole('tenant_admin','supervisor','invent
   } catch (e) { next(e); }
 });
 
-router.post('/tasks/:id/count', requireRole('tenant_admin','supervisor','inventory_manager'), async (req, res, next) => {
+/** POST /inventory/adhoc/scan { location_code, warehouse_id? } — инвентаризация
+ *  БЕЗ предварительного задания: сотрудник на ТСД сам сканирует ячейку,
+ *  открыт для picker (см. inventory.service.js::createAdhocLocationCheck и
+ *  комментарий там же про 17.09.2026). */
+router.post('/adhoc/scan', requireRole('tenant_admin','supervisor','inventory_manager','picker'), async (req, res, next) => {
+  try {
+    const { location_code, warehouse_id } = req.body;
+    const wh = warehouse_id
+      ? { id: Number(warehouse_id) }
+      : await getDefaultWarehouse(req.user.tenantId);
+
+    const result = await svc.createAdhocLocationCheck({
+      tenantId:     req.user.tenantId,
+      warehouseId:  wh.id,
+      locationCode: location_code,
+      userId:       req.user.id,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+router.post('/tasks/:id/count', requireRole('tenant_admin','supervisor','inventory_manager','picker'), async (req, res, next) => {
   try {
     const { qty_actual, comment } = req.body;
     const task = await svc.submitCount({

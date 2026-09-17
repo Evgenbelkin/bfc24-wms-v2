@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Инвентаризация ячейки — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,sans-serif;background:#f8fafc;color:#0f172a;min-height:100vh;padding:12px;}
+    .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+    .header h1{font-size:20px;font-weight:700;color:#0284c7;display:flex;align-items:center;gap:8px;}
+    .header h1 svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+    .btn-sm{padding:8px 14px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+    .btn-back{background:#ffffff;color:#334155;border:1px solid #e2e8f0;}
+    .btn-logout{background:#fee2e2;color:#b91c1c;}
+    .card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:12px;}
+    .card-title{font-size:13px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
+    .scan-input{width:100%;padding:18px;background:#f1f5f9;border:3px solid #e2e8f0;border-radius:12px;color:#0f172a;font-size:20px;outline:none;font-weight:700;text-align:center;}
+    .scan-input:focus{border-color:#0ea5e9;}
+    .btn-big{width:100%;padding:16px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;margin-top:10px;}
+    .btn-blue{background:#2563eb;color:#fff;}
+    .btn-green{background:#16a34a;color:#fff;}
+    .btn-green:disabled{background:#a7f3d0;color:#166534;cursor:default;}
+    .badge{background:#f1f5f9;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;display:inline-block;}
+    .badge span{color:#64748b;font-size:12px;display:block;}
+    #status-msg{text-align:center;color:#64748b;font-size:14px;min-height:20px;margin-top:8px;}
+    .empty-note{text-align:center;color:#64748b;padding:20px 0;}
+    .inv-row{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:10px;}
+    .inv-row.done{background:#f0fdf4;border-color:#bbf7d0;}
+    .inv-row.locked{background:#fef2f2;border-color:#fecaca;opacity:.8;}
+    .inv-row.mismatch{background:#fffbeb;border-color:#fde68a;}
+    .inv-row-name{font-size:15px;font-weight:700;color:#0f172a;}
+    .inv-row-client{font-size:12px;color:#0284c7;font-weight:600;margin-top:2px;}
+    .inv-row-barcode{font-size:12px;color:#94a3b8;margin-top:2px;font-family:monospace;}
+    .inv-row-body{display:flex;align-items:center;gap:8px;margin-top:10px;}
+    .inv-row-sys{font-size:12px;color:#64748b;white-space:nowrap;}
+    .inv-qty-input{flex:1;min-width:0;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-size:18px;font-weight:700;text-align:center;}
+    .inv-row-status{font-size:12px;margin-top:8px;font-weight:600;}
+    .inv-row-status.ok{color:#16a34a;}
+    .inv-row-status.warn{color:#b45309;}
+    .inv-row-status.locked{color:#b91c1c;}
+    .top-actions{display:flex;gap:8px;margin-top:14px;}
+    .top-actions .btn-big{margin-top:0;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Инвентаризация</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <div class="card" id="scan-card">
+    <div class="card-title">Отсканируйте ячейку</div>
+    <input type="text" id="loc-input" class="scan-input" placeholder="Скан ячейки..." inputmode="none" autocomplete="off"/>
+    <div id="status-msg"></div>
+  </div>
+
+  <div class="card" id="result-card" style="display:none">
+    <div class="card-title">Ячейка <span id="result-loc-code">—</span></div>
+    <div id="empty-note" class="empty-note" style="display:none">Ячейка пуста по системе — остатков нет.</div>
+    <div id="rows-root"></div>
+    <div class="top-actions" id="top-actions" style="display:none">
+      <button class="btn-big btn-green" id="confirm-all-btn" onclick="confirmAllMatching()">Всё совпадает — подтвердить</button>
+    </div>
+    <button class="btn-big btn-blue" onclick="resetScan()">Следующая ячейка</button>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) { throw new Error('Not logged in'); }
+    if (!UI.requireRole(['picker', 'supervisor', 'tenant_admin', 'inventory_manager'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    var currentRows = []; // [{id, barcode, item_name, vendor_code, unit, client_name, qty_system, locked, done}]
+
+    function logout() {
+      window.API.auth.logout().then(function () {
+        window.location.href = '/app/login.html';
+      }).catch(function () {
+        window.location.href = '/app/login.html';
+      });
+    }
+
+    function setStatus(msg, isError) {
+      var e = document.getElementById('status-msg');
+      e.textContent = msg || '';
+      e.style.color = isError ? '#dc2626' : '#64748b';
+    }
+
+    function resetScan() {
+      currentRows = [];
+      document.getElementById('result-card').style.display = 'none';
+      document.getElementById('scan-card').style.display = '';
+      setStatus('');
+      var input = document.getElementById('loc-input');
+      input.value = '';
+      input.focus();
+    }
+
+    function escHtml(s) {
+      return UI.escHtml ? UI.escHtml(s) : String(s == null ? '' : s);
+    }
+
+    function renderRows() {
+      var root = document.getElementById('rows-root');
+      var html = '';
+      for (var i = 0; i < currentRows.length; i++) {
+        var r = currentRows[i];
+        var cls = 'inv-row';
+        if (r.locked) cls += ' locked';
+        else if (r.done) cls += (r.mismatch ? ' mismatch done' : ' done');
+
+        html += '<div class="' + cls + '" data-idx="' + i + '">';
+        html += '  <div class="inv-row-name">' + escHtml(r.item_name || '(товар без карточки)') + '</div>';
+        if (r.client_name) html += '  <div class="inv-row-client">' + escHtml(r.client_name) + '</div>';
+        html += '  <div class="inv-row-barcode">' + escHtml(r.barcode) + (r.vendor_code ? ' · ' + escHtml(r.vendor_code) : '') + '</div>';
+
+        if (r.locked) {
+          html += '  <div class="inv-row-status locked">Занято другим сотрудником — пересчитывается сейчас</div>';
+        } else if (r.done) {
+          var st = r.mismatch
+            ? 'Сохранено: ' + r.qty_actual + ' ' + (r.unit || 'шт') + ' (было по системе ' + r.qty_system + ')'
+            : 'Подтверждено: ' + r.qty_actual + ' ' + (r.unit || 'шт');
+          html += '  <div class="inv-row-status ' + (r.mismatch ? 'warn' : 'ok') + '">' + st + '</div>';
+        } else {
+          html += '  <div class="inv-row-body">';
+          html += '    <div class="inv-row-sys">По системе:<br/>' + r.qty_system + ' ' + (r.unit || 'шт') + '</div>';
+          html += '    <input type="number" class="inv-qty-input" id="qty-input-' + i + '" value="' + r.qty_system + '" min="0" inputmode="numeric"/>';
+          html += '    <button class="btn-sm btn-green" onclick="submitRow(' + i + ')">Подтвердить</button>';
+          html += '  </div>';
+        }
+        html += '</div>';
+      }
+      root.innerHTML = html;
+
+      var anyPending = false;
+      for (var j = 0; j < currentRows.length; j++) {
+        if (!currentRows[j].done && !currentRows[j].locked) { anyPending = true; break; }
+      }
+      document.getElementById('top-actions').style.display = anyPending ? '' : 'none';
+    }
+
+    function submitRow(idx) {
+      var r = currentRows[idx];
+      if (!r || r.done || r.locked) return Promise.resolve();
+      var input = document.getElementById('qty-input-' + idx);
+      var qtyActual = input ? Number(input.value) : r.qty_system;
+      if (!Number.isFinite(qtyActual) || qtyActual < 0) {
+        UI.notify.err('Введите корректное количество');
+        return Promise.resolve();
+      }
+      return window.API.inventory.count(r.id, { qty_actual: qtyActual }).then(function () {
+        r.done = true;
+        r.qty_actual = qtyActual;
+        r.mismatch = qtyActual !== r.qty_system;
+        renderRows();
+      }).catch(function (e) {
+        UI.notify.err(e && e.message || 'Не удалось сохранить пересчёт');
+      });
+    }
+
+    // "Всё совпадает" — последовательно подтверждаем (qty_actual=qty_system)
+    // все ещё не сохранённые и не занятые чужим сотрудником строки. Идём
+    // строго по очереди (не Promise.all), чтобы не забрасывать сервер пачкой
+    // параллельных запросов с ТСД со слабой сетью.
+    function confirmAllMatching() {
+      var idxs = [];
+      for (var i = 0; i < currentRows.length; i++) {
+        if (!currentRows[i].done && !currentRows[i].locked) idxs.push(i);
+      }
+      if (!idxs.length) return;
+
+      var chain = Promise.resolve();
+      idxs.forEach(function (idx) {
+        chain = chain.then(function () { return submitRow(idx); });
+      });
+      chain.then(function () {
+        UI.notify.ok('Ячейка пересчитана');
+      });
+    }
+
+    function scanLocation(code) {
+      var loc = String(code || '').trim().toUpperCase();
+      if (!loc) return;
+      setStatus('Загрузка...');
+      window.API.inventory.adhocScan({ location_code: loc }).then(function (res) {
+        setStatus('');
+        document.getElementById('scan-card').style.display = 'none';
+        document.getElementById('result-card').style.display = '';
+        document.getElementById('result-loc-code').textContent = res.location_code;
+
+        if (res.empty) {
+          document.getElementById('empty-note').style.display = '';
+          document.getElementById('rows-root').innerHTML = '';
+          document.getElementById('top-actions').style.display = 'none';
+          currentRows = [];
+          return;
+        }
+        document.getElementById('empty-note').style.display = 'none';
+        currentRows = (res.tasks || []).map(function (t) {
+          return {
+            id: t.id, barcode: t.barcode, item_name: t.item_name, vendor_code: t.vendor_code,
+            unit: t.unit, client_name: t.client_name, qty_system: Number(t.qty_system) || 0,
+            locked: !!t.locked, done: false, mismatch: false,
+          };
+        });
+        renderRows();
+      }).catch(function (e) {
+        setStatus(e && e.message || 'Не удалось прочитать ячейку', true);
+      });
+    }
+
+    var locInput = document.getElementById('loc-input');
+    locInput.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        scanLocation(locInput.value);
+      }
+    });
+    locInput.focus();
+  </script>
+</body>
+</html>

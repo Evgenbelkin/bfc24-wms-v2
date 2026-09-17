@@ -246,6 +246,113 @@ async function createBatchTasksMulti({ tenantId, warehouseId, clientId, location
 }
 
 /**
+ * Инвентаризация БЕЗ предварительного задания ("выборочная инвентаризация") —
+ * 17.09.2026. Сотрудник на ТСД сканирует ячейку прямо на месте, без того
+ * чтобы кто-то заранее создавал задачу через createTask/createBatchTasks.
+ * Показываем ему, что должно лежать в ячейке (по всем клиентам сразу — одна
+ * физическая ячейка может хранить остатки НЕСКОЛЬКИХ клиентов одновременно,
+ * см. UNIQUE(tenant_id,warehouse_id,client_id,item_id,location_id) в
+ * stock_balances), он пересчитывает и подтверждает/поправляет каждую позицию
+ * обычным submitCount (см. ниже).
+ *
+ * В отличие от createBatchTasks (используется диспетчером для плановой
+ * инвентаризации): здесь НЕТ отдельного clientId "сверху" — clientId всегда
+ * берётся из самой строки остатка. Задачи сразу создаются в статусе
+ * in_progress с assignee_id=userId (сотрудник и создал, он и считает — не
+ * нужен отдельный шаг "назначить"). Если по ячейке уже пусто — просто
+ * возвращаем empty:true, НЕ создаём задачу-пустышку (в отличие от
+ * createBatchTasks) - у неё client_id NOT NULL, а тут привязывать пустую
+ * ячейку не к кому.
+ */
+async function createAdhocLocationCheck({ tenantId, warehouseId, locationCode, userId }) {
+  const loc = String(locationCode || '').trim().toUpperCase();
+  if (!loc) throw new ValidationError('location_code is required');
+
+  return transaction(async (client) => {
+    const locRes = await client.query(
+      `SELECT id, location_code FROM wms.locations
+       WHERE tenant_id=$1 AND warehouse_id=$2 AND location_code=$3 AND is_active=TRUE LIMIT 1`,
+      [tenantId, warehouseId, loc]
+    );
+    if (locRes.rowCount === 0) throw new NotFoundError(`Location '${loc}'`);
+    const location = locRes.rows[0];
+
+    const balRes = await client.query(
+      `SELECT sb.barcode, sb.qty_on_hand, sb.item_id, sb.client_id,
+              i.item_name, i.vendor_code, i.unit, c.client_name
+       FROM wms.stock_balances sb
+       LEFT JOIN wms.items i ON i.id = sb.item_id
+       LEFT JOIN wms.clients c ON c.id = sb.client_id
+       WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.location_id=$3
+         AND sb.qty_on_hand>0
+       ORDER BY c.client_name NULLS LAST, i.item_name NULLS LAST`,
+      [tenantId, warehouseId, location.id]
+    );
+
+    if (balRes.rowCount === 0) {
+      return { location_code: loc, empty: true, tasks: [] };
+    }
+
+    const tasks = [];
+    for (const bal of balRes.rows) {
+      // Уже есть открытая задача на эту позицию (например, диспетчер заранее
+      // поставил плановую инвентаризацию на эту же ячейку) — если она ещё
+      // никем не взята (open) или уже взята этим же сотрудником, просто
+      // используем/забираем её себе. Если её ведёт кто-то другой — не лезем,
+      // отдаём во фронт как "занято", чтобы не было двух людей, считающих
+      // одно и то же одновременно.
+      const dup = await client.query(
+        `SELECT id, assignee_id FROM wms.inventory_tasks
+         WHERE tenant_id=$1 AND barcode=$2 AND location_code=$3
+           AND status IN ('open','in_progress')
+         LIMIT 1`,
+        [tenantId, bal.barcode, loc]
+      );
+
+      if (dup.rowCount > 0 && dup.rows[0].assignee_id && dup.rows[0].assignee_id !== userId) {
+        tasks.push({
+          id: dup.rows[0].id, barcode: bal.barcode, item_name: bal.item_name,
+          vendor_code: bal.vendor_code, unit: bal.unit, client_name: bal.client_name,
+          qty_system: bal.qty_on_hand, locked: true,
+        });
+        continue;
+      }
+
+      let taskRow;
+      if (dup.rowCount > 0) {
+        const r = await client.query(
+          `UPDATE wms.inventory_tasks
+           SET assignee_id=$1, status='in_progress', qty_system=$2, updated_at=NOW()
+           WHERE id=$3
+           RETURNING id, qty_system`,
+          [userId, bal.qty_on_hand, dup.rows[0].id]
+        );
+        taskRow = r.rows[0];
+      } else {
+        const r = await client.query(
+          `INSERT INTO wms.inventory_tasks
+             (tenant_id,warehouse_id,client_id,item_id,barcode,location_id,location_code,
+              qty_system,status,priority,reason,assignee_id,created_by)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,'in_progress',3,'adhoc',$9,$9)
+           RETURNING id, qty_system`,
+          [tenantId, warehouseId, bal.client_id, bal.item_id, bal.barcode,
+           location.id, loc, bal.qty_on_hand, userId]
+        );
+        taskRow = r.rows[0];
+      }
+
+      tasks.push({
+        id: taskRow.id, barcode: bal.barcode, item_name: bal.item_name,
+        vendor_code: bal.vendor_code, unit: bal.unit, client_name: bal.client_name,
+        qty_system: taskRow.qty_system, locked: false,
+      });
+    }
+
+    return { location_code: loc, empty: false, tasks };
+  });
+}
+
+/**
  * Список задач инвентаризации
  */
 async function listTasks({
@@ -685,6 +792,7 @@ module.exports = {
   createTask,
   createBatchTasks,
   createBatchTasksMulti,
+  createAdhocLocationCheck,
   listTasks,
   getTask,
   assignTask,

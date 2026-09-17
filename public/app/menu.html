@@ -148,6 +148,15 @@ var ALL_TILES = [{
   label: 'Инвентаризация',
   roles: ['tenant_admin', 'supervisor', 'inventory_manager']
 }, {
+  // 17.09.2026: "выборочная инвентаризация" без предварительного задания —
+  // сотрудник сам сканирует ячейку на месте (см. inventory-scan.html и
+  // inventory.service.js::createAdhocLocationCheck). Доступно picker-у в
+  // отличие от inventory.html (плановая, только для админов/инв.менеджера).
+  href: 'inventory-scan.html',
+  icon: 'search',
+  label: 'Пересчёт ячейки',
+  roles: ['tenant_admin', 'supervisor', 'inventory_manager', 'picker']
+}, {
   href: 'admin-dashboard.html',
   icon: 'activity',
   label: 'Диспетчерская',

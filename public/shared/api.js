@@ -756,6 +756,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     createBatchMulti: function createBatchMulti(d) {
       return post('/inventory/tasks/batch-multi', d);
     },
+    adhocScan: function adhocScan(d) {
+      return post('/inventory/adhoc/scan', d);
+    },
     assign: function assign(id, d) {
       return post("/inventory/tasks/".concat(id, "/assign"), d);
     },
