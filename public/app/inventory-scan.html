@@ -35,7 +35,10 @@
     .inv-row-barcode{font-size:12px;color:#94a3b8;margin-top:2px;font-family:monospace;}
     .inv-row-body{display:flex;align-items:center;gap:8px;margin-top:10px;}
     .inv-row-sys{font-size:12px;color:#64748b;white-space:nowrap;}
-    .inv-qty-input{flex:1;min-width:0;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-size:18px;font-weight:700;text-align:center;}
+    .inv-qty-input{flex:1;min-width:0;padding:10px;border:2px solid #e2e8f0;border-radius:8px;font-size:22px;font-weight:700;text-align:center;}
+    .inv-qty-input.changed{border-color:#f59e0b;background:#fffbeb;}
+    .inv-qty-live{font-size:13px;color:#64748b;text-align:center;margin-top:6px;}
+    .inv-qty-live.changed{color:#b45309;font-weight:700;}
     .inv-row-status{font-size:12px;margin-top:8px;font-weight:600;}
     .inv-row-status.ok{color:#16a34a;}
     .inv-row-status.warn{color:#b45309;}
@@ -132,6 +135,7 @@
           html += '    <input type="number" class="inv-qty-input" id="qty-input-' + i + '" value="' + r.qty_system + '" min="0" inputmode="numeric"/>';
           html += '    <button class="btn-sm btn-green" onclick="submitRow(' + i + ')">Подтвердить</button>';
           html += '  </div>';
+          html += '  <div class="inv-qty-live" id="qty-live-' + i + '">Вы вводите: ' + r.qty_system + ' ' + (r.unit || 'шт') + '</div>';
         }
         html += '</div>';
       }
@@ -139,9 +143,44 @@
 
       var anyPending = false;
       for (var j = 0; j < currentRows.length; j++) {
-        if (!currentRows[j].done && !currentRows[j].locked) { anyPending = true; break; }
+        if (!currentRows[j].done && !currentRows[j].locked) {
+          anyPending = true;
+          wireQtyInput(j);
+        }
       }
       document.getElementById('top-actions').style.display = anyPending ? '' : 'none';
+    }
+
+    // Баг 17.09.2026: на ТСД поле было предзаполнено количеством "по системе"
+    // (например 3839), сотрудник печатал "3" НЕ выделяя старое значение —
+    // курсор вставил цифру в начало, получилось "33839", и это ушло на
+    // сервер как реальный пересчёт (испортило остаток). Чиним с двух сторон:
+    // 1) при фокусе/тапе выделяем весь текст в поле, чтобы первая же цифра
+    //    печаталась вместо старого значения, а не перед/после него;
+    // 2) явно показываем под полем крупным текстом "Вы вводите: N", чтобы
+    //    несовпадение было видно ДО нажатия "Подтвердить" (см. submitRow —
+    //    там дополнительно всплывает предупреждение при расхождении).
+    function wireQtyInput(idx) {
+      var input = document.getElementById('qty-input-' + idx);
+      var live = document.getElementById('qty-live-' + idx);
+      if (!input || !live) return;
+      var r = currentRows[idx];
+      var selectAll = function () {
+        input.select();
+        if (input.setSelectionRange) {
+          try { input.setSelectionRange(0, String(input.value).length); } catch (e) {}
+        }
+      };
+      input.addEventListener('focus', selectAll);
+      input.addEventListener('click', selectAll);
+      input.addEventListener('input', function () {
+        var v = input.value;
+        var num = Number(v);
+        var changed = v !== '' && Number.isFinite(num) && num !== r.qty_system;
+        live.textContent = 'Вы вводите: ' + (v === '' ? '—' : v) + ' ' + (r.unit || 'шт');
+        live.className = 'inv-qty-live' + (changed ? ' changed' : '');
+        input.className = 'inv-qty-input' + (changed ? ' changed' : '');
+      });
     }
 
     function submitRow(idx) {
@@ -152,6 +191,17 @@
       if (!Number.isFinite(qtyActual) || qtyActual < 0) {
         UI.notify.err('Введите корректное количество');
         return Promise.resolve();
+      }
+      // Доп. проверка перед отправкой при любом расхождении с системой — явно
+      // показываем оба числа и разницу, чтобы опечатка (например задвоенная
+      // цифра из-за невыделенного поля) была видна ДО сохранения, а не после.
+      if (qtyActual !== r.qty_system) {
+        var delta = qtyActual - r.qty_system;
+        var sign = delta > 0 ? '+' : '';
+        var msg = 'Сохранить факт: ' + qtyActual + ' ' + (r.unit || 'шт') +
+          ' (по системе было ' + r.qty_system + ', расхождение ' + sign + delta + ').\n\nТовар: ' + (r.item_name || r.barcode) +
+          '\n\nВсё верно?';
+        if (!UI.confirm(msg)) return Promise.resolve();
       }
       return window.API.inventory.count(r.id, { qty_actual: qtyActual }).then(function () {
         r.done = true;
