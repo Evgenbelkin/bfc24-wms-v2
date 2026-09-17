@@ -362,7 +362,14 @@ function autoPrintScannedSticker() {
   var area = document.getElementById('silent-print-area');
   if (!area) return;
   fetchScannedStickerImage().then(function (image) {
-    area.innerHTML = '<img id="silent-print-img" src="data:image/svg+xml;base64,' + image + '" style="width:100%;"/>';
+    // ВАЖНО: max-width, а НЕ width:100% — width:100% растягивал картинку по
+    // ширине предполагаемой страницы печати (auto-размер страницы у разных
+    // принтеров/этикеток отличается), из-за чего итоговая высота могла чуть
+    // превысить высоту ФИЗИЧЕСКОЙ этикетки — и на некоторых принтерах/
+    // размерах этикеток вылезала вторая, пустая. Без width:100% картинка
+    // печатается в своём естественном размере (SVG уже сгенерирован под
+    // размер этикетки на сервере) — max-width только страхует от переполнения.
+    area.innerHTML = '<img id="silent-print-img" src="data:image/svg+xml;base64,' + image + '" style="max-width:100%;"/>';
     var img = document.getElementById('silent-print-img');
     var clearArea = function () { area.innerHTML = ''; };
     var doPrint = function () {
