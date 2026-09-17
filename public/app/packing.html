@@ -56,8 +56,17 @@
        и прячет весь обычный интерфейс одним селектором. */
     #silent-print-area{display:none;}
     @media print{
+      /* size:auto — берём размер листа/ленты как настроено у принтера по
+         умолчанию (не навязываем A4/Letter); margin:0 и обнуление отступов
+         body/html — иначе за счёт полей страницы + небольшой "хвостовой"
+         пустоты под картинкой (inline-элемент, строчный зазор) контент
+         вылезал на доли миллиметра за один "лист", и рулонный принтер
+         допечатывал следом ещё одну, почти пустую, этикетку. */
+      @page{size:auto;margin:0;}
+      html, body{margin:0 !important;padding:0 !important;height:auto !important;}
       body > *:not(#silent-print-area){display:none !important;}
-      #silent-print-area{display:block !important;}
+      #silent-print-area{display:block !important;margin:0;padding:0;}
+      #silent-print-area img{display:block;margin:0;padding:0;}
     }
   </style>
 </head>
