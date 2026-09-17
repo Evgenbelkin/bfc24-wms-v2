@@ -451,9 +451,20 @@ function insertPickingNote(rowEl, s) {
   var subEls = rowEl.querySelectorAll('.sub');
   var packingNoteEl = subEls[1]; // [0] — клиент/склад/строк, [1] — статус упаковки
   if (!packingNoteEl) return;
-  var text = s.picker_name
-    ? 'на сборке \xB7 сборщик: ' + s.picker_name
-    : (s.pickingPct >= 100 ? 'собрано' : 'ещё не в очереди на сборку');
+  // 17.09.2026: раньше показывали "на сборке · сборщик: X" всегда, когда
+  // известен picker_name, даже если сборка давно на 100% (и волна вообще
+  // уже закрыта/отгружена) — пользователь заметил, что строки со статусом
+  // "готова к отгрузке" всё равно подписаны как "на сборке", что выглядит
+  // так, будто они ещё не собраны до конца. Сначала проверяем прогресс, и
+  // только потом picker_name.
+  var text;
+  if (s.pickingPct >= 100) {
+    text = s.picker_name ? 'собрано \xB7 сборщик: ' + s.picker_name : 'собрано';
+  } else if (s.picker_name) {
+    text = 'на сборке \xB7 сборщик: ' + s.picker_name;
+  } else {
+    text = 'ещё не в очереди на сборку';
+  }
   var div = document.createElement('div');
   div.className = 'sub';
   div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M3 8.5 12 3l9 5.5v7L12 21l-9-5.5v-7z"/><path d="M12 3v9"/><path d="M3 8.5 12 13l9-4.5"/></svg> ' + UI.escHtml(text);
