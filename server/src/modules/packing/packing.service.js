@@ -140,7 +140,7 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
   // запросом (см. GET /packing/sticker-image/:wbOrderId и openStickerChip
   // на фронте) — тот же приём, что уже применяли для списка заказов ВБ.
   const stickersRes = await query(
-    `SELECT wo.id, wo.barcode, wo.wb_sticker_code
+    `SELECT wo.id, wo.wb_order_id, wo.barcode, wo.wb_sticker_code
      FROM wms.wb_orders wo
      WHERE wo.tenant_id=$1 AND wo.wb_supply_id=$2 AND wo.wb_sticker_code IS NOT NULL
      ORDER BY wo.barcode, wo.id`,
@@ -148,7 +148,16 @@ async function getPackingTaskDetails({ tenantId, shipmentCode, shipmentId = null
   );
   const stickersByBarcode = {};
   for (const r of stickersRes.rows) {
-    (stickersByBarcode[r.barcode] ||= []).push({ code: r.wb_sticker_code, order_id: r.id });
+    // ВАЖНО: order_id тут — это wo.wb_order_id (внешний ID заказа ВБ), а НЕ
+    // внутренний serial id. Фронт дальше шлёт это значение как есть в
+    // GET /packing/sticker-image/:wbOrderId (см. openStickerChip/
+    // preloadLineStickers в packing.html) — getStickerImage() ищет именно по
+    // wb_order_id (правка 17.09.2026, см. её комментарий). Раньше тут был
+    // r.id — работало только потому что getStickerImage тогда (ошибочно)
+    // тоже искал по id; когда её поправили на wb_order_id, этот путь
+    // (перепечатка стикера по клику на чип из списка строк, а не только что
+    // отсканированного) сломался — теперь оба пути согласованы.
+    (stickersByBarcode[r.barcode] ||= []).push({ code: r.wb_sticker_code, order_id: r.wb_order_id });
   }
 
   const lines = planRes.rows.map(row => {

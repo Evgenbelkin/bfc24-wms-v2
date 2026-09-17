@@ -354,9 +354,16 @@ async function getShipmentLineUnits({ tenantId, shipmentCode, barcode }) {
   // ВАЖНО (см. тот же комментарий в getShipmentDetails выше): джойн на
   // wb_orders по wb_order_id, а не по штрихкоду — иначе при нескольких
   // заказах на один и тот же товар строка размножится некорректно.
+  // wb_order_row_id — несмотря на название, отдаём сюда wo.wb_order_id
+  // (внешний ID заказа ВБ), НЕ внутренний serial id — фронт шлёт это значение
+  // как есть в GET /sticker-image/:wbOrderId (см. openStickerChip в
+  // shipping.html), а packingSvc.getStickerImage() (правка 17.09.2026) ищет
+  // именно по wb_order_id. Раньше тут был wo.id — совпадало со старой
+  // (ошибочной) версией getStickerImage; когда её поправили, это место чуть
+  // не сломали заодно (нашли и поправили в тот же заход).
   const r = await query(
     `SELECT pt.id AS task_id, pt.wb_order_id, pt.status AS picking_status,
-            wo.id AS wb_order_row_id, wo.wb_sticker_code,
+            wo.wb_order_id AS wb_order_row_id, wo.wb_sticker_code,
             mc.code AS marking_code
      FROM wms.picking_tasks pt
      LEFT JOIN wms.wb_orders wo ON wo.tenant_id=$1 AND wo.wb_order_id=pt.wb_order_id
