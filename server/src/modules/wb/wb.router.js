@@ -490,9 +490,45 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
       if (!orderIds.length) continue;
 
       const supplyName = `WMS2-${accountId}-${group.warehouse_name||'WH'}-${Date.now()}`;
-      const supplyBody = await wbClient.createSupply(acc.api_token, supplyName);
+      let supplyBody;
+      try {
+        supplyBody = await wbClient.createSupply(acc.api_token, supplyName);
+      } catch (e) {
+        // 17.09.2026 (ИП Макарова С.И., инцидент): createSupply() раньше не
+        // был обёрнут в try/catch - системная ошибка на ЭТОМ вызове (сеть,
+        // временный 5xx/рейт-лимит WB) рушила ВЕСЬ запрос /generate-wave
+        // целиком ("An unexpected error occurred" в UI), и даже группы
+        // заказов, которые шли бы дальше по циклу без проблем, вообще не
+        // обрабатывались. Как и у addOrdersToSupply ниже - одна неудачная
+        // группа (обычно это последняя пара "хвостовых" заказов) не должна
+        // рушить остальные и не должна ронять весь клик "Сформировать
+        // волну": фиксируем ошибку по этой группе и идём дальше по циклу.
+        logger.error(
+          { err: e, accountId, warehouseId: group.warehouse_id, warehouseName: group.warehouse_name, orderIds },
+          'generate-wave: WB createSupply failed for group - skipping this group, others continue'
+        );
+        suppliesResult.push({
+          supply_id: null, shipment_code: null, warehouse_name: group.warehouse_name,
+          orders_count: 0, tasks_inserted: 0, stickers_saved: 0,
+          dropped_count: orderIds.length, dropped_orders: orderIds,
+          error: `Не удалось создать поставку в WB: ${e.message}`,
+        });
+        continue;
+      }
       const rawSupplyId = String(supplyBody.id||supplyBody.supplyId||'').trim();
-      if (!rawSupplyId) throw new Error('WB did not return supply ID');
+      if (!rawSupplyId) {
+        logger.error(
+          { accountId, warehouseId: group.warehouse_id, warehouseName: group.warehouse_name, orderIds, supplyBody },
+          'generate-wave: WB createSupply returned no id - skipping this group, others continue'
+        );
+        suppliesResult.push({
+          supply_id: null, shipment_code: null, warehouse_name: group.warehouse_name,
+          orders_count: 0, tasks_inserted: 0, stickers_saved: 0,
+          dropped_count: orderIds.length, dropped_orders: orderIds,
+          error: 'WB не вернул ID поставки',
+        });
+        continue;
+      }
       const shipmentCode = wbClient.normalizeShipmentCode(rawSupplyId);
 
       // addOrdersToSupply сама бьёт список на пачки по WB-лимиту (100 за
