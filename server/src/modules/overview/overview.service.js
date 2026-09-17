@@ -250,7 +250,7 @@ async function getStuckOrdersStats(tenantId) {
 // =============================================================================
 
 async function getDispatcherLive({ tenantId }) {
-  const [staff, printQueue, throughputPicking, throughputPacking, wavesClosedToday, pickStatsToday, shipStatsToday, workload] = await Promise.all([
+  const [staff, printQueue, throughputPicking, throughputPacking, wavesClosedToday, pickStatsToday, shipStatsToday, workload, waveBacklog] = await Promise.all([
     getStaffRoster(tenantId),
     getPrintQueueHealth(tenantId),
     getPickingThroughputToday(tenantId),
@@ -259,6 +259,13 @@ async function getDispatcherLive({ tenantId }) {
     analyticsService.getPickingStats({ tenantId, dateFrom: todayStr(), dateTo: todayStr() }),
     analyticsService.getShippingStats({ tenantId, dateFrom: todayStr(), dateTo: todayStr() }),
     getWorkloadBreakdown(tenantId),
+    // 17.09.2026, "круто ещё добавить сколько не запущено на сборку (новые
+    // заказы), всё в одном месте" — это те же самые заказы WB, что уже
+    // считает "Табло" (getWaveBacklogStats), просто раньше эта цифра была
+    // видна только там, а не в Диспетчерской, где дальше по конвейеру
+    // отслеживается собственно сборка/упаковка. Переиспользуем ту же
+    // функцию, а не дублируем запрос.
+    getWaveBacklogStats(tenantId),
   ]);
 
   const throughputByUser = new Map();
@@ -288,6 +295,7 @@ async function getDispatcherLive({ tenantId }) {
     },
     throughput: Array.from(throughputByUser.values()).sort((a, b) => (b.units_picked + b.units_packed) - (a.units_picked + a.units_packed)),
     workload,
+    newOrdersBacklog: waveBacklog.backlog_orders,
   };
 }
 

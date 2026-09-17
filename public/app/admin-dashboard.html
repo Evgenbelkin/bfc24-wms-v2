@@ -609,6 +609,7 @@ function openAssignModal(shipmentCode, role, currentId) {
 var lastWaveStats = null;
 var lastShipStats = null;
 var lastWorkload = null;
+var lastNewOrdersBacklog = null;
 function renderKpis(waveStats, shipStats) {
   if (waveStats) lastWaveStats = waveStats;
   if (shipStats) lastShipStats = shipStats;
@@ -621,6 +622,11 @@ function renderKpis(waveStats, shipStats) {
   var packQueued = w && w.packing.queued;
   var packActive = w && w.packing.active;
   var kpis = [{
+    num: lastNewOrdersBacklog != null ? lastNewOrdersBacklog : '—',
+    sub: '',
+    label: 'Новые заказы (без волны)',
+    cls: lastNewOrdersBacklog > 0 ? 'warn' : ''
+  }, {
     num: pickQueued ? pickQueued.wave_count : '—',
     sub: pickQueued ? (pickQueued.items_remaining + ' шт') : '',
     label: 'В очереди на сборку',
@@ -1185,6 +1191,7 @@ function loadDispatcherLive() {
     }
     if (res.workload) {
       lastWorkload = res.workload;
+      lastNewOrdersBacklog = res.newOrdersBacklog;
       renderKpis(); // перерисовать KPI сразу, не дожидаясь следующего основного цикла
     }
   }).catch(function (e) {
