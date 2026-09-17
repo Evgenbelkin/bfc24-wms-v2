@@ -25,6 +25,7 @@ router.use(authRequired, tenantMiddleware, requireCheckedIn);
 // POST /inventory/tasks/:id/count    — внести фактический счёт
 // POST /inventory/tasks/:id/close    — закрыть задачу
 // GET  /inventory/discrepancies      — отчёт по расхождениям
+// GET  /inventory/history            — полная история пересчётов (кто/когда/что)
 // =============================================================================
 
 router.get('/tasks', requireRole('tenant_admin','supervisor','inventory_manager'), async (req, res, next) => {
@@ -196,6 +197,28 @@ router.get('/discrepancies', requireRole('tenant_admin','supervisor','analyst'),
       offset: Number(req.query.offset) || 0,
     });
     res.json({ ok: true, rows });
+  } catch (e) { next(e); }
+});
+
+/** GET /inventory/history — полная история пересчётов (не только расхождения,
+ *  см. inventory.service.js::getCountHistory) — кто и когда пересчитывал,
+ *  что изменил или подтвердил "как есть". */
+router.get('/history', requireRole('tenant_admin','supervisor','inventory_manager','analyst'), async (req, res, next) => {
+  try {
+    const clientId = resolveClientScope(req, req.query.client_id);
+    const result = await svc.getCountHistory({
+      tenantId:     req.user.tenantId,
+      warehouseId:  req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      clientId,
+      reason:       req.query.reason       || null,
+      employeeId:   req.query.employee_id  ? Number(req.query.employee_id) : null,
+      onlyMismatch: req.query.only_mismatch === 'true',
+      dateFrom:     req.query.date_from    || null,
+      dateTo:       req.query.date_to      || null,
+      limit:  Number(req.query.limit)  || 200,
+      offset: Number(req.query.offset) || 0,
+    });
+    res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
 

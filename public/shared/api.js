@@ -771,6 +771,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     discrepancies: function discrepancies(p) {
       return _get('/inventory/discrepancies', p);
     },
+    history: function history(p) {
+      return _get('/inventory/history', p);
+    },
     assembleKit: function assembleKit(d) {
       return post('/inventory/assemble-kit', d);
     }

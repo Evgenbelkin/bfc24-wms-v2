@@ -35,6 +35,7 @@
     <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">Задачи</button>
     <button class="tab" data-tab="new" onclick="switchTab('new')">Новая проверка</button>
     <button class="tab" data-tab="discrepancies" onclick="switchTab('discrepancies')">Расхождения</button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">История пересчётов</button>
   </div>
 
   <!-- ============ Список задач ============ -->
@@ -107,6 +108,44 @@
     <button class="btn-sm btn-back" onclick="loadDiscrepancies()">↻ Обновить</button>
   </div>
 
+  <!-- ============ История пересчётов ============ -->
+  <div id="tab-history" style="display:none">
+    <div class="card">
+      <div class="card-title">Фильтры</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="flex:1;min-width:130px;">
+          <div class="refresh-note">С даты</div>
+          <input type="date" id="history-date-from" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);"/>
+        </div>
+        <div style="flex:1;min-width:130px;">
+          <div class="refresh-note">По дату</div>
+          <input type="date" id="history-date-to" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);"/>
+        </div>
+        <div style="flex:1;min-width:160px;">
+          <div class="refresh-note">Источник</div>
+          <select id="history-reason" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);">
+            <option value="">Все</option>
+            <option value="adhoc">Выборочная (без задания)</option>
+            <option value="picker_not_found">Карантин (сборщик не нашёл)</option>
+            <option value="empty_check">Проверка пустой ячейки</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:10px;">
+        <input type="checkbox" id="history-only-mismatch" style="width:18px;height:18px;"/> Показывать только расхождения
+      </label>
+      <button class="btn-sm btn-back" onclick="loadHistory()">↻ Применить / обновить</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Когда</th><th>Сотрудник</th><th>Товар</th><th>Клиент</th><th>Ячейка</th><th>Источник</th><th>Система</th><th>Факт</th><th>Δ</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <script src="/shared/api.js"></script>
   <script src="/shared/ui.js"></script>
   <script src="/shared/scanner.js"></script>
@@ -154,12 +193,52 @@ function _logout() {
   return _logout.apply(this, arguments);
 }
 function switchTab(name) {
-  ['tasks', 'new', 'discrepancies'].forEach(function (t) {
+  ['tasks', 'new', 'discrepancies', 'history'].forEach(function (t) {
     document.getElementById('tab-' + t).style.display = t === name ? 'block' : 'none';
     document.querySelector(".tab[data-tab=\"".concat(t, "\"]")).classList.toggle('active', t === name);
   });
   if (name === 'discrepancies') loadDiscrepancies();
   if (name === 'tasks') loadTasks();
+  if (name === 'history') loadHistory();
+}
+
+// ---------- История пересчётов (17.09.2026) ----------
+// Написано без async/await (обычные Promise .then/.catch) - остальной код
+// этого файла собран babel'ем под старый WebView ТСД, а этот блок добавлен
+// вручную поверх готовой сборки, см. заведённый в сессии приём "безопасных"
+// добавок к уже транспилированным экранам.
+var HISTORY_REASON_LABELS = {
+  'adhoc': 'Выборочная (без задания)',
+  'picker_not_found': 'Карантин (сборщик не нашёл)',
+  'empty_check': 'Проверка пустой ячейки'
+};
+function reasonLabel(reason) {
+  if (!reason) return 'Плановая';
+  return HISTORY_REASON_LABELS[reason] || UI.escHtml(reason);
+}
+function loadHistory() {
+  var clientId = getClientId();
+  var params = { limit: 300 };
+  if (clientId) params.client_id = clientId;
+  var dateFrom = UI.val('#history-date-from');
+  var dateTo = UI.val('#history-date-to');
+  var reason = UI.val('#history-reason');
+  if (dateFrom) params.date_from = dateFrom;
+  if (dateTo) params.date_to = dateTo;
+  if (reason) params.reason = reason;
+  if (document.getElementById('history-only-mismatch').checked) params.only_mismatch = 'true';
+
+  return window.API.inventory.history(params).then(function (res) {
+    UI.renderTable('#history-body', res.rows, function (r) {
+      var deltaCell = (r.qty_delta === null || r.qty_delta === undefined)
+        ? '—'
+        : '<span class="' + (r.qty_delta > 0 ? 'delta-pos' : (r.qty_delta < 0 ? 'delta-neg' : '')) + '">' +
+          (r.qty_delta > 0 ? '+' : '') + r.qty_delta + '</span>';
+      return '\n          <tr>\n            <td>' + UI.fmtDateTime(r.closed_at) + '</td>\n            <td>' + UI.escHtml(r.closed_by_name || '—') + '</td>\n            <td>' + UI.escHtml(r.item_name || r.barcode || '(вся ячейка)') + '</td>\n            <td>' + UI.escHtml(r.client_name || '—') + '</td>\n            <td>' + UI.escHtml(r.location_code || '—') + '</td>\n            <td>' + reasonLabel(r.reason) + '</td>\n            <td>' + UI.fmtQty(r.qty_system) + '</td>\n            <td>' + UI.fmtQty(r.qty_actual) + '</td>\n            <td>' + deltaCell + '</td>\n          </tr>\n        ';
+    });
+  }).catch(function (e) {
+    UI.notify.err(e && e.message || 'Не удалось загрузить историю');
+  });
 }
 var LAST_CLIENT_KEY = 'wms2_last_client_id';
 function loadClients() {

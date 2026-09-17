@@ -678,7 +678,7 @@ async function getDiscrepancyReport({
        i.cost_price,
        it.qty_delta * COALESCE(i.cost_price, 0) AS cost_delta,
        c.client_name,
-       u.username AS closed_by_name,
+       COALESCE(u.full_name, u.username) AS closed_by_name,
        w.warehouse_name
      FROM wms.inventory_tasks it
      LEFT JOIN wms.items i ON i.id=it.item_id
@@ -691,6 +691,70 @@ async function getDiscrepancyReport({
     params
   );
   return r.rows;
+}
+
+/**
+ * Полная история пересчётов (17.09.2026) — в отличие от getDiscrepancyReport
+ * (только расхождения) сюда попадают ВСЕ завершённые задачи инвентаризации,
+ * включая "всё совпало" (qty_delta=0) — чтобы видеть не только ошибки, но и
+ * кто вообще и сколько пересчитывал (нагрузку/активность по сотрудникам), и
+ * из какого источника пришла проверка: reason='adhoc' — выборочная без
+ * задания (см. createAdhocLocationCheck), reason='picker_not_found' — из
+ * карантина при сборке, NULL/другое — обычная плановая задача диспетчера.
+ */
+async function getCountHistory({
+  tenantId,
+  warehouseId  = null,
+  clientId     = null,
+  reason       = null,
+  employeeId   = null,
+  onlyMismatch = false,
+  dateFrom     = null,
+  dateTo       = null,
+  limit  = 200,
+  offset = 0,
+}) {
+  const params = [tenantId];
+  const conds  = ["it.tenant_id=$1", "it.status='done'"];
+  let idx = 2;
+
+  if (warehouseId)  { conds.push(`it.warehouse_id=$${idx++}`); params.push(warehouseId); }
+  if (clientId)     { conds.push(`it.client_id=$${idx++}`);    params.push(clientId); }
+  if (reason)       { conds.push(`it.reason=$${idx++}`);       params.push(reason); }
+  if (employeeId)   { conds.push(`it.closed_by=$${idx++}`);    params.push(employeeId); }
+  if (onlyMismatch) { conds.push(`it.qty_delta IS NOT NULL AND it.qty_delta<>0`); }
+  if (dateFrom)     { conds.push(`it.closed_at>=$${idx++}::date`); params.push(dateFrom); }
+  if (dateTo)       { conds.push(`it.closed_at<($${idx++}::date+interval '1 day')`); params.push(dateTo); }
+
+  const total = (await query(
+    `SELECT COUNT(*)::int AS n FROM wms.inventory_tasks it WHERE ${conds.join(' AND ')}`,
+    params
+  )).rows[0].n;
+
+  params.push(Math.min(limit, 2000), Math.max(offset, 0));
+  const r = await query(
+    `SELECT
+       it.id AS task_id,
+       it.barcode, it.location_code, it.reason, it.comment,
+       it.qty_system, it.qty_actual, it.qty_delta,
+       it.created_at, it.closed_at,
+       i.item_name, i.vendor_code, i.unit,
+       c.client_name,
+       COALESCE(cb.full_name, cb.username) AS closed_by_name,
+       COALESCE(a.full_name, a.username)   AS assignee_name,
+       w.warehouse_name
+     FROM wms.inventory_tasks it
+     LEFT JOIN wms.items i ON i.id=it.item_id
+     LEFT JOIN wms.clients c ON c.id=it.client_id
+     LEFT JOIN wms.users cb ON cb.id=it.closed_by
+     LEFT JOIN wms.users a ON a.id=it.assignee_id
+     LEFT JOIN wms.warehouses w ON w.id=it.warehouse_id
+     WHERE ${conds.join(' AND ')}
+     ORDER BY it.closed_at DESC
+     LIMIT $${idx++} OFFSET $${idx}`,
+    params
+  );
+  return { rows: r.rows, total, limit, offset };
 }
 
 /**
@@ -799,5 +863,6 @@ module.exports = {
   submitCount,
   closeTask,
   getDiscrepancyReport,
+  getCountHistory,
   assembleKit,
 };
