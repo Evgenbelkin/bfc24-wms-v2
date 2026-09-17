@@ -11,6 +11,7 @@
     .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
     .kpi .num{font-size:28px;font-weight:800;}
     .kpi .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    .kpi .submetric{font-size:12px;color:var(--muted2,var(--muted));margin-top:2px;}
     .kpi.warn .num{color:var(--amber);}
     .kpi.danger .num{color:var(--red);}
     .kpi.ok .num{color:var(--green2);}
@@ -587,30 +588,65 @@ function openAssignModal(shipmentCode, role, currentId) {
     listEl.innerHTML = '<div style="padding:16px;color:#dc2626;font-size:13px;">' + UI.escHtml(e.message) + '</div>';
   });
 }
-function renderKpis(_ref2, shipStats) {
-  var activeCount = _ref2.activeCount,
-    idleCount = _ref2.idleCount,
-    readyCount = _ref2.readyCount,
-    openCount = _ref2.openCount;
+// Кэш последних данных для KPI-плашек (17.09.2026, "хочу сразу понять объём
+// работы") — waveStats/shipStats приходят из основного цикла loadAll(),
+// workload — из отдельного (тоже раз в 15 сек) опроса loadDispatcherLive().
+// Оба источника независимы друг от друга по времени ответа, поэтому рендерим
+// KPI из общих кэшей при ПРИХОДЕ ЛЮБОГО из них, а не только из основного
+// цикла — иначе после обновления страницы блок про сборку/упаковку неделю
+// провисит пустым, пока не придёт следующий dispatcher-live.
+var lastWaveStats = null;
+var lastShipStats = null;
+var lastWorkload = null;
+function renderKpis(waveStats, shipStats) {
+  if (waveStats) lastWaveStats = waveStats;
+  if (shipStats) lastShipStats = shipStats;
+  waveStats = lastWaveStats || { activeCount: 0, idleCount: 0, readyCount: 0, openCount: 0 };
+  shipStats = lastShipStats || { readyToShip: 0 };
+  var w = lastWorkload; // может ещё не прийти при самом первом рендере — тогда просто не показываем связанные плашки штук
+  var pickQueued = w && w.picking.queued;
+  var pickActive = w && w.picking.active;
+  var pickReady = w && w.picking.readyNotBuffered;
+  var packQueued = w && w.packing.queued;
+  var packActive = w && w.packing.active;
   var kpis = [{
-    num: activeCount,
-    label: 'Волн в работе',
+    num: pickQueued ? pickQueued.wave_count : '—',
+    sub: pickQueued ? (pickQueued.items_remaining + ' шт') : '',
+    label: 'В очереди на сборку',
+    cls: pickQueued && pickQueued.wave_count > 0 ? 'warn' : ''
+  }, {
+    num: pickActive ? pickActive.wave_count : waveStats.activeCount,
+    sub: pickActive ? (pickActive.items_remaining + ' шт') : '',
+    label: 'В сборке (в работе)',
     cls: ''
   }, {
-    num: idleCount,
+    num: w ? w.picking.idleActive : waveStats.idleCount,
+    sub: '',
     label: 'Простаивают >10 мин',
-    cls: idleCount > 0 ? 'danger' : 'ok'
+    cls: (w ? w.picking.idleActive : waveStats.idleCount) > 0 ? 'danger' : 'ok'
   }, {
-    num: readyCount,
-    label: 'Собраны, ждут упаковки',
-    cls: readyCount > 0 ? 'warn' : ''
+    num: packQueued ? packQueued.task_count : '—',
+    sub: packQueued ? (packQueued.items_remaining + ' шт') : '',
+    label: 'В очереди на упаковку',
+    cls: packQueued && packQueued.task_count > 0 ? 'warn' : ''
+  }, {
+    num: packActive ? packActive.task_count : '—',
+    sub: packActive ? (packActive.items_remaining + ' шт') : '',
+    label: 'В упаковке (в работе)',
+    cls: ''
+  }, {
+    num: pickReady ? pickReady.wave_count : waveStats.readyCount,
+    sub: '',
+    label: 'Собрано, ждёт буфера',
+    cls: ''
   }, {
     num: shipStats.readyToShip,
+    sub: '',
     label: 'Готовы к отгрузке',
     cls: shipStats.readyToShip > 0 ? 'ok' : ''
   }];
   document.getElementById('kpi-grid').innerHTML = kpis.map(function (k) {
-    return "\n        <div class=\"kpi ".concat(k.cls, "\"><div class=\"num\">").concat(k.num, "</div><div class=\"label\">").concat(k.label, "</div></div>\n      ");
+    return '\n        <div class="kpi ' + k.cls + '"><div class="num">' + k.num + '</div><div class="label">' + k.label + '</div>' + (k.sub ? '<div class="submetric">' + k.sub + '</div>' : '') + '</div>\n      ';
   }).join('');
 }
 
@@ -1100,6 +1136,10 @@ function loadDispatcherLive() {
     lastShiftSummary = res.shiftSummary || null;
     if (wavesAreEmpty) {
       document.getElementById('waves-list').innerHTML = buildEmptyWavesHtml();
+    }
+    if (res.workload) {
+      lastWorkload = res.workload;
+      renderKpis(); // перерисовать KPI сразу, не дожидаясь следующего основного цикла
     }
   }).catch(function (e) {
     console.warn('[dispatcher-live] failed to load', e);

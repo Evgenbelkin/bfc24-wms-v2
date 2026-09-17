@@ -250,7 +250,7 @@ async function getStuckOrdersStats(tenantId) {
 // =============================================================================
 
 async function getDispatcherLive({ tenantId }) {
-  const [staff, printQueue, throughputPicking, throughputPacking, wavesClosedToday, pickStatsToday, shipStatsToday] = await Promise.all([
+  const [staff, printQueue, throughputPicking, throughputPacking, wavesClosedToday, pickStatsToday, shipStatsToday, workload] = await Promise.all([
     getStaffRoster(tenantId),
     getPrintQueueHealth(tenantId),
     getPickingThroughputToday(tenantId),
@@ -258,6 +258,7 @@ async function getDispatcherLive({ tenantId }) {
     getWavesClosedToday(tenantId),
     analyticsService.getPickingStats({ tenantId, dateFrom: todayStr(), dateTo: todayStr() }),
     analyticsService.getShippingStats({ tenantId, dateFrom: todayStr(), dateTo: todayStr() }),
+    getWorkloadBreakdown(tenantId),
   ]);
 
   const throughputByUser = new Map();
@@ -286,6 +287,79 @@ async function getDispatcherLive({ tenantId }) {
       units_shipped: shipStatsToday[0]?.total_units || 0,
     },
     throughput: Array.from(throughputByUser.values()).sort((a, b) => (b.units_picked + b.units_packed) - (a.units_picked + a.units_packed)),
+    workload,
+  };
+}
+
+/**
+ * Диспетчерская (17.09.2026, "хочу сразу понять объём работы") — сколько
+ * ВОЛН сборки в очереди (открыты, никто не взял в работу) против уже
+ * взятых в работу, и сколько штук осталось собрать в каждой группе; то же
+ * для упаковки — сколько ЗАДАЧ в очереди (никто не начал) против уже
+ * упаковываемых, и сколько штук осталось. Раньше на табло был счётчик
+ * "Собраны, ждут упаковки" (pick_waves.status='ready'), который на самом
+ * деле считает совсем другое — "полностью собрано, но короб ещё физически
+ * не поставлен в буфер" (задача на упаковку появляется только ПОСЛЕ этого,
+ * см. picking.service.js::closeWave, где 'ready'→'done' и создание
+ * wms.packing_tasks происходят одной транзакцией) — поэтому он почти всегда
+ * показывает 0, даже когда очередь на упаковку реально большая, и путает
+ * пользователя. Оставляем его отдельно под точным названием (readyNotBuffered),
+ * а очередь на упаковку считаем по-настоящему, из wms.packing_tasks.
+ */
+async function getWorkloadBreakdown(tenantId) {
+  const [pickingRes, pickingIdleRes, packingRes] = await Promise.all([
+    query(
+      `SELECT pw.status,
+         COUNT(*)::int AS wave_count,
+         COALESCE(SUM(pt.qty_remaining),0)::int AS items_remaining
+       FROM wms.pick_waves pw
+       JOIN LATERAL (
+         SELECT COALESCE(SUM(t.qty - t.qty_picked),0) AS qty_remaining
+         FROM wms.picking_tasks t WHERE t.wave_id = pw.id
+       ) pt ON TRUE
+       WHERE pw.tenant_id=$1 AND pw.status IN ('open','active','ready')
+       GROUP BY pw.status`,
+      [tenantId]
+    ),
+    query(
+      `SELECT COUNT(*)::int AS n FROM wms.pick_waves
+       WHERE tenant_id=$1 AND status='active' AND updated_at < NOW() - INTERVAL '10 minutes'`,
+      [tenantId]
+    ),
+    query(
+      `SELECT pt.status,
+         COUNT(*)::int AS task_count,
+         COALESCE(SUM(GREATEST(pl.qty_plan - COALESCE(s.total_packed_qty,0), 0)),0)::int AS items_remaining
+       FROM wms.packing_tasks pt
+       JOIN wms.shipments s ON s.tenant_id=pt.tenant_id AND s.external_id=pt.shipment_code
+       JOIN LATERAL (
+         SELECT COALESCE(SUM(t.qty),0) AS qty_plan
+         FROM wms.picking_tasks t WHERE t.tenant_id=pt.tenant_id AND t.shipment_code=pt.shipment_code
+       ) pl ON TRUE
+       WHERE pt.tenant_id=$1 AND pt.status IN ('new','in_progress')
+       GROUP BY pt.status`,
+      [tenantId]
+    ),
+  ]);
+
+  const zeroWave = { wave_count: 0, items_remaining: 0 };
+  const zeroTask = { task_count: 0, items_remaining: 0 };
+  const pickBy = {};
+  for (const row of pickingRes.rows) pickBy[row.status] = row;
+  const packBy = {};
+  for (const row of packingRes.rows) packBy[row.status] = row;
+
+  return {
+    picking: {
+      queued: pickBy.open || zeroWave,
+      active: pickBy.active || zeroWave,
+      readyNotBuffered: pickBy.ready || zeroWave,
+      idleActive: pickingIdleRes.rows[0]?.n || 0,
+    },
+    packing: {
+      queued: packBy.new || zeroTask,
+      active: packBy.in_progress || zeroTask,
+    },
   };
 }
 
