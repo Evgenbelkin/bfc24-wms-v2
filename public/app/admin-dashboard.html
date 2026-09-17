@@ -404,7 +404,9 @@ function renderShipmentsList() {
     // рискованно) — см. appendDispatchControls().
     Array.prototype.forEach.call(list.querySelectorAll('.list-row'), function (rowEl, i) {
       var s = items[i];
-      if (s) appendDispatchControls(rowEl, s);
+      if (!s) return;
+      insertPickingNote(rowEl, s);
+      appendDispatchControls(rowEl, s);
     });
   }
   return {
@@ -437,6 +439,24 @@ function loadPackersCached() {
     packersCache = res.packers || [];
     return packersCache;
   });
+}
+// Заметили (17.09.2026): для упаковки строка карточки всегда показывает
+// заметный статус ("ещё не в очереди на упаковку" / "упаковывается" и т.п.,
+// см. packingNote в renderShipmentsList выше), а для сборки такой же строки
+// не было — кто собирает, было видно только мелким текстом внутри полосы
+// прогресса. Дописываем симметричную строку для сборки тем же DOM-проходом,
+// что и остальные новые элементы карточки.
+function insertPickingNote(rowEl, s) {
+  var subEls = rowEl.querySelectorAll('.sub');
+  var packingNoteEl = subEls[1]; // [0] — клиент/склад/строк, [1] — статус упаковки
+  if (!packingNoteEl) return;
+  var text = s.picker_name
+    ? 'на сборке \xB7 сборщик: ' + s.picker_name
+    : (s.pickingPct >= 100 ? 'собрано' : 'ещё не в очереди на сборку');
+  var div = document.createElement('div');
+  div.className = 'sub';
+  div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M3 8.5 12 3l9 5.5v7L12 21l-9-5.5v-7z"/><path d="M12 3v9"/><path d="M3 8.5 12 13l9-4.5"/></svg> ' + UI.escHtml(text);
+  packingNoteEl.parentNode.insertBefore(div, packingNoteEl);
 }
 function appendDispatchControls(rowEl, s) {
   var bar = document.createElement('div');
