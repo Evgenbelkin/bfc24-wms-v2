@@ -359,6 +359,20 @@ function autoPrintScannedSticker() {
     area.innerHTML = '<img src="data:image/svg+xml;base64,' + image + '" style="width:100%;"/>';
     try { window.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
     area.innerHTML = '';
+    // window.print() — системное/ОС-действие (диалог или тихий kiosk-print),
+    // оно ненадолго забирает фокус ДАЖЕ без наших собственных .focus()-
+    // вызовов. Картинка стикера грузится в фоне (см. fetchScannedStickerImage
+    // выше) - к моменту, когда print() реально вызывается, обычный
+    // автовозврат фокуса в ui.js (см. scheduleRefocus, разовая попытка через
+    // 300мс после самого скана) обычно уже отработал и печать его "перебивает"
+    // без второй попытки. Возвращаем фокус сюда сами, туда же, куда обычный
+    // ход скана (см. _submitScan: window.__packingRefocusTarget).
+    var targetId = window.__packingRefocusTarget || 'scan-barcode';
+    var input = document.getElementById(targetId);
+    if (input) {
+      UI.focusNoKeyboard(input);
+      setTimeout(function () { UI.focusNoKeyboard(input); }, 150);
+    }
   }).catch(function (e) {
     UI.notify.err('Не удалось загрузить стикер для печати: ' + e.message);
   });
@@ -908,8 +922,13 @@ function _submitScan() {
           // Если этим сканом закрыли последнюю строку - сканировать в поле
           // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
           // отгрузки (туда сканируют физически следующим шагом), а не оставаться
-          // в уже неактуальном поле товара.
-          UI.focusNoKeyboard(document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode'));
+          // в уже неактуальном поле товара. Запоминаем в window.__packingRefocusTarget —
+          // autoPrintScannedSticker() печатает АСИНХРОННО, позже (ждёт картинку
+          // стикера с сервера), и должна знать, куда вернуть фокус уже ПОСЛЕ
+          // печати, когда обычный автовозврат fокуса (ui.js, разовая попытка
+          // через 300мс) уже отработал и печать успела его перебить.
+          window.__packingRefocusTarget = allPackedNow ? 'pack-location' : 'scan-barcode';
+          UI.focusNoKeyboard(document.getElementById(window.__packingRefocusTarget));
           return _context8.a(2, true);
         case 3:
           _context8.p = 3;
