@@ -69,6 +69,9 @@
     <button class="btn-sm btn-back" style="margin-top:10px;" onclick="loadMore()">↓ Ещё</button>
   </div>
 
+  <div id="import-btn-wrap" style="display:none;margin-bottom:8px;">
+    <button class="btn-big btn-back btn-full" onclick="openImportModal()"><svg class="i" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg> Импорт из Excel</button>
+  </div>
   <button class="btn-big btn-green btn-full" id="add-btn" style="display:none" onclick="openModal(null)"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Новый товар</button>
 
   <div id="modal-root"></div>
@@ -87,6 +90,7 @@ if (!UI.requireRole(['supervisor', 'tenant_admin', 'receiver', 'picker', 'packer
 var user = window.API.getUser();
 var canEdit = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
 if (canEdit) document.getElementById('add-btn').style.display = 'block';
+if (canEdit) document.getElementById('import-btn-wrap').style.display = 'block';
 function logout() {
   return _logout.apply(this, arguments);
 }
@@ -321,6 +325,56 @@ function _loadItems() {
 function loadMore() {
   itemOffset += PAGE_SIZE;
   loadItems(true);
+}
+// ─────────────── Импорт товаров из Excel (17.09.2026) ───────────────
+// Для новых клиентов без подключения к маркетплейсу (штрихкоды уже
+// известны заранее, идут с производства) — массовая загрузка справочника
+// из выгрузки 1С (.xlsx: Штрихкод/Артикул/Наименование), см.
+// items.service.js::importItemsFromExcel. Повторная загрузка безопасна —
+// апсерт по штрихкоду, ничего не дублирует.
+function openImportModal() {
+  var clientOptions = clientsList.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.escHtml(c.client_name) + '</option>';
+  }).join('');
+  document.getElementById('modal-root').innerHTML =
+    '<div class="modal-overlay" onclick="if(event.target===this) closeModal()">' +
+      '<div class="modal-card">' +
+        '<div class="card-title">Импорт товаров из Excel</div>' +
+        '<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">' +
+          'Файл .xlsx с колонками «Штрихкод», «Артикул», «Наименование» (например, выгрузка из 1С). ' +
+          'Повторная загрузка того же файла безопасна — существующие товары обновятся по штрихкоду, новые добавятся, дублей не будет.' +
+        '</p>' +
+        '<div class="field"><label>Клиент</label><select id="im-client"><option value="">— выберите клиента —</option>' + clientOptions + '</select></div>' +
+        '<div class="field"><label>Файл</label><input type="file" id="im-file" accept=".xlsx"/></div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:4px;" id="im-status"></div>' +
+        '<div class="btn-row" style="margin-top:14px;">' +
+          '<button class="btn-big btn-green" onclick="submitImportExcel()">Загрузить</button>' +
+          '<button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+function submitImportExcel() {
+  var clientId = UI.val('#im-client');
+  var fileInput = document.getElementById('im-file');
+  var file = fileInput && fileInput.files && fileInput.files[0];
+  var statusEl = document.getElementById('im-status');
+  if (!clientId) { UI.notify.err('Выберите клиента'); return; }
+  if (!file) { UI.notify.err('Выберите файл .xlsx'); return; }
+  if (statusEl) statusEl.textContent = 'Загрузка и обработка…';
+  window.API.items.importExcel(clientId, file).then(function (res) {
+    var msg = 'Готово: строк ' + res.total_rows + ', создано ' + res.created + ', обновлено ' + res.updated;
+    if (res.skipped_count) msg += ', пропущено ' + res.skipped_count + ' (см. консоль)';
+    if (res.skipped_count && res.skipped && res.skipped.length) {
+      console.warn('Импорт товаров — пропущенные строки:', res.skipped);
+    }
+    UI.notify.ok(msg);
+    closeModal();
+    loadItems();
+  }).catch(function (e) {
+    if (statusEl) statusEl.textContent = '';
+    UI.notify.err(e.message);
+  });
 }
 // idleSubmit:false - это поле для поиска руками набирают текст (не только
 // сканируют штрихкод), а подстраховка "нет терминатора 200мс" рассчитана на

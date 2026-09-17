@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const svc = require('./items.service');
 const { authRequired } = require('../../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../../middleware/tenant');
@@ -80,6 +81,33 @@ router.delete('/:id', requireRole('tenant_admin','supervisor'), async (req,res,n
     const result = await svc.deleteItem({ tenantId: req.user.tenantId, itemId: validatePositiveInt(req.params.id,'id') });
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }
+});
+
+/** POST /items/import-excel { client_id, file } — массовая загрузка товаров
+ *  из .xlsx (штрихкод/артикул/наименование, например выгрузка из 1С) —
+ *  17.09.2026, для клиентов без подключения к маркетплейсу, у которых
+ *  штрихкоды известны заранее (идут с производства). Апсерт по штрихкоду,
+ *  см. items.service.js::importItemsFromExcel. */
+const uploadItemsFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('file');
+
+router.post('/import-excel', requireRole('tenant_admin','supervisor'), (req, res, next) => {
+  uploadItemsFile(req, res, async (uploadErr) => {
+    try {
+      if (uploadErr) {
+        if (uploadErr.code === 'LIMIT_FILE_SIZE') throw new ValidationError('Файл слишком большой (максимум 10 МБ)');
+        throw new ValidationError(`Не удалось загрузить файл: ${uploadErr.message}`);
+      }
+      if (!req.file) throw new ValidationError('Файл не передан');
+      if (!/\.xlsx$/i.test(req.file.originalname || '')) throw new ValidationError('Поддерживаются только файлы .xlsx');
+      const clientId = resolveClientScope(req, req.body.client_id);
+      if (!clientId) throw new ValidationError('client_id is required');
+      const result = await svc.importItemsFromExcel({
+        tenantId: req.user.tenantId, clientId, createdById: req.user.id,
+        fileBuffer: req.file.buffer,
+      });
+      res.json({ ok: true, ...result });
+    } catch (e) { next(e); }
+  });
 });
 
 /** POST /items/bulk-delete { item_ids } — то же самое пачкой (для чистки

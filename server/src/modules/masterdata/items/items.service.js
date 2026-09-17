@@ -266,6 +266,102 @@ async function updateItem({ tenantId, itemId, data }) {
 }
 
 /**
+ * Импорт товаров из Excel-файла (17.09.2026, клиент ЭсЭнДи — новый клиент
+ * "Бьюти" без подключения к WB, товары приходят с производства с уже
+ * готовыми штрихкодами, справочник ведём заранее выгрузкой из 1С).
+ * Ожидаемые колонки — "Штрихкод" / "Артикул" / "Наименование" (ищем по
+ * заголовку первой строки без учёта регистра; если заголовок не распознан —
+ * считаем, что порядок колонок как в шаблоне 1С: штрихкод, артикул,
+ * наименование, и читаем со строки 1).
+ *
+ * Апсерт по (tenant_id, client_id, barcode) — тот же уникальный ключ, что у
+ * wms.items. Повторная загрузка того же файла (или файла с исправлениями)
+ * безопасна: существующие товары обновляются, новые добавляются, ничего не
+ * дублируется. source='manual' — это НЕ WB-синк (см. importItemsForAccount
+ * в wb.service.js), поэтому сюда же безопасно попадают товары клиентов,
+ * которых на маркетплейсы вообще не подключали.
+ */
+async function importItemsFromExcel({ tenantId, clientId, createdById, fileBuffer }) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  try {
+    await wb.xlsx.load(fileBuffer);
+  } catch (e) {
+    throw new ValidationError('Не удалось прочитать файл — убедитесь, что это корректный .xlsx');
+  }
+  const sheet = wb.worksheets[0];
+  if (!sheet) throw new ValidationError('В файле нет ни одного листа');
+
+  const cellText = (cell) => {
+    const v = cell ? cell.value : null;
+    if (v == null) return '';
+    if (typeof v === 'object') {
+      if (Array.isArray(v.richText)) return v.richText.map((r) => r.text).join('').trim();
+      if (v.text != null) return String(v.text).trim();
+      if (v.result != null) return String(v.result).trim();
+      return '';
+    }
+    return String(v).trim();
+  };
+
+  let colBarcode = 1, colVendor = 2, colName = 3;
+  let headerMatched = false;
+  const headerRow = sheet.getRow(1);
+  headerRow.eachCell((cell, colNumber) => {
+    const t = cellText(cell).toLowerCase();
+    if (!t) return;
+    if (t.includes('штрихкод') || t.includes('barcode') || t === 'шк') { colBarcode = colNumber; headerMatched = true; }
+    else if (t.includes('артикул') || t.includes('vendor')) { colVendor = colNumber; headerMatched = true; }
+    else if (t.includes('наимен') || t.includes('назв') || t.includes('name')) { colName = colNumber; headerMatched = true; }
+  });
+
+  const rows = [];
+  const startRow = headerMatched ? 2 : 1;
+  for (let r = startRow; r <= sheet.rowCount; r++) {
+    const row = sheet.getRow(r);
+    const barcode = cellText(row.getCell(colBarcode));
+    const vendorCode = cellText(row.getCell(colVendor));
+    const itemName = cellText(row.getCell(colName));
+    if (!barcode && !vendorCode && !itemName) continue;
+    rows.push({ barcode, vendorCode, itemName, rowNumber: r });
+  }
+
+  if (!rows.length) throw new ValidationError('В файле не нашлось ни одной заполненной строки');
+  if (rows.length > 5000) throw new ValidationError('Слишком много строк за один раз (максимум 5000) — разбейте файл');
+
+  let created = 0, updated = 0;
+  const skipped = [];
+  await transaction(async (client) => {
+    for (const row of rows) {
+      let barcode;
+      try {
+        barcode = validateBarcode(row.barcode);
+      } catch (e) {
+        skipped.push({ row: row.rowNumber, reason: 'нет штрихкода' });
+        continue;
+      }
+      if (!row.itemName) {
+        skipped.push({ row: row.rowNumber, barcode, reason: 'нет названия' });
+        continue;
+      }
+      const res = await client.query(
+        `INSERT INTO wms.items(tenant_id, client_id, barcode, item_name, vendor_code, unit, source, created_by)
+         VALUES($1,$2,$3,$4,$5,'шт','manual',$6)
+         ON CONFLICT (tenant_id, client_id, barcode) DO UPDATE SET
+           item_name = EXCLUDED.item_name,
+           vendor_code = COALESCE(EXCLUDED.vendor_code, wms.items.vendor_code),
+           updated_at = NOW()
+         RETURNING (xmax = 0) AS inserted`,
+        [tenantId, clientId, barcode, row.itemName, row.vendorCode || null, createdById]
+      );
+      if (res.rows[0].inserted) created++; else updated++;
+    }
+  });
+
+  return { total_rows: rows.length, created, updated, skipped_count: skipped.length, skipped: skipped.slice(0, 50) };
+}
+
+/**
  * Удалить товар — только если по нему сейчас нет остатка (qty_on_hand=0 по
  * всем ячейкам/складам). Если товар когда-либо использовался (почти всегда
  * так — даже у авто-созданных "левых" товаров от кривой приёмки уже есть
@@ -538,7 +634,7 @@ async function resolveStockKey({ tenantId, itemId, clientId, dbClient = null }) 
 
 module.exports = {
   listItems, getItemById, getItemByBarcode, findItemByKizCode,
-  createItem, updateItem, deleteItem, bulkDeleteItems,
+  createItem, updateItem, deleteItem, bulkDeleteItems, importItemsFromExcel,
   resolveOrCreateItem, resolveExistingItem, findItemIdByBarcode,
   resolveStockKey,
   getItemPackagingMaterials, setItemPackagingMaterials,

@@ -452,6 +452,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       return put("/items/".concat(id, "/packaging-materials"), {
         materials: materials
       });
+    },
+    importExcel: function importExcel(clientId, file) {
+      var fd = new FormData();
+      fd.append('client_id', clientId);
+      fd.append('file', file);
+      return postFile('/items/import-excel', fd);
     }
   };
 
