@@ -42,6 +42,12 @@
           <input id="f-barcode" placeholder="Штрихкод"/>
           <input id="f-location" placeholder="Код ячейки"/>
         </div>
+        <div class="filters-row">
+          <select id="f-subwh">
+            <option value="">Все под-склады</option>
+            <option value="none">Без под-склада</option>
+          </select>
+        </div>
         <label class="check-row">
           <input type="checkbox" id="f-only-stock" checked/> Только с остатком &gt; 0
         </label>
@@ -65,7 +71,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Товар</th><th>Артикул</th><th>Размер</th><th>Ячейка</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Объём</th><th>Стоимость</th></tr></thead>
+          <thead><tr><th>Товар</th><th>Артикул</th><th>Размер</th><th>Ячейка</th><th>Под-склад</th><th>Клиент</th><th>На руках</th><th>Резерв</th><th>Доступно</th><th>Объём</th><th>Стоимость</th></tr></thead>
           <tbody id="stock-body"></tbody>
         </table>
       </div>
@@ -175,18 +181,19 @@ function loadFilters() {
 }
 function _loadFilters() {
   _loadFilters = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
-    var _yield$Promise$all, _yield$Promise$all2, clientsRes, whRes, _t;
+    var _yield$Promise$all, _yield$Promise$all2, clientsRes, whRes, swRes, subwhSelect, _t;
     return _regenerator().w(function (_context3) {
       while (1) switch (_context3.p = _context3.n) {
         case 0:
           _context3.p = 0;
           _context3.n = 1;
-          return Promise.all([window.API.clients.short(), window.API.warehouses.list()]);
+          return Promise.all([window.API.clients.short(), window.API.warehouses.list(), window.API.locations.subWarehouses({})]);
         case 1:
           _yield$Promise$all = _context3.v;
-          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 2);
+          _yield$Promise$all2 = _slicedToArray(_yield$Promise$all, 3);
           clientsRes = _yield$Promise$all2[0];
           whRes = _yield$Promise$all2[1];
+          swRes = _yield$Promise$all2[2];
           UI.populateSelect('#f-client', clientsRes.clients || [], {
             valueKey: 'id',
             labelKey: 'client_name',
@@ -197,6 +204,19 @@ function _loadFilters() {
             labelKey: 'warehouse_name',
             emptyLabel: 'Все склады'
           });
+          // Под-склады (17.09.2026) — фильтр держит два зарезервированных
+          // значения из разметки ("" = все, "none" = без под-склада), поэтому
+          // дописываем варианты, а не используем populateSelect (он бы стёр их).
+          subwhSelect = document.getElementById('f-subwh');
+          if (subwhSelect && (swRes.sub_warehouses || []).length) {
+            (swRes.sub_warehouses || []).forEach(function (sw) {
+              if (!sw.is_active) return;
+              var opt = document.createElement('option');
+              opt.value = sw.id;
+              opt.textContent = sw.warehouse_name + ': ' + sw.name;
+              subwhSelect.appendChild(opt);
+            });
+          }
           _context3.n = 3;
           break;
         case 2:
@@ -246,6 +266,7 @@ function _loadStock() {
           if (barcode) params.barcode = barcode;
           location = UI.val('#f-location');
           if (location) params.location_code = location;
+          if (UI.val('#f-subwh')) params.sub_warehouse_id = UI.val('#f-subwh');
           _context4.n = 2;
           return window.API.stock.list(params);
         case 2:
@@ -266,6 +287,17 @@ function _loadStock() {
             return "\n          <tr>\n            <td>".concat(UI.escHtml(r.item_name || r.barcode), "<div style=\"color:var(--muted);font-size:11px;\">").concat(UI.escHtml(r.barcode), "</div></td>\n            <td>").concat(UI.escHtml(r.vendor_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.size || '—'), "</td>\n            <td>").concat(UI.escHtml(r.location_code), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.fmtQty(r.qty_on_hand), "</td>\n            <td>").concat(UI.fmtQty(r.qty_reserved), "</td>\n            <td><strong>").concat(UI.fmtQty(r.qty_available), "</strong></td>\n            <td>").concat(r.volume_liters != null ? (Number(r.volume_liters) * Number(r.qty_on_hand)).toFixed(2) + ' л' : '—', "</td>\n            <td>").concat(r.cost_value > 0 ? Number(r.cost_value).toLocaleString('ru-RU', {
               maximumFractionDigits: 0
             }) + ' ₽' : '—', "</td>\n          </tr>\n        ");
+          });
+          // Под-склад (17.09.2026) — отдельной DOM-вставкой ПОСЛЕ рендера
+          // строк, той же ячейкой в позицию после "Ячейка" (4-й <td>, индекс 3)
+          // — не трогаем плотный шаблон выше.
+          Array.prototype.forEach.call(document.querySelectorAll('#stock-body tr'), function (tr, i) {
+            var r = stockRowsCache[i];
+            if (!r) return;
+            var td = document.createElement('td');
+            td.textContent = r.sub_warehouse_name || '—';
+            var cells = tr.children;
+            if (cells[3]) tr.insertBefore(td, cells[4] || null);
           });
           _context4.n = 4;
           break;

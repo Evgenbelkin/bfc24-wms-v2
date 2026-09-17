@@ -21,6 +21,7 @@ router.get('/', async (req,res,next)=>{
       clientId,
       barcode:      req.query.barcode || null,
       locationCode: req.query.location_code || null,
+      subWarehouseId: req.query.sub_warehouse_id === 'none' ? 'none' : (req.query.sub_warehouse_id ? Number(req.query.sub_warehouse_id) : null),
       onlyWithStock: req.query.only_with_stock !== 'false',
       limit:   Number(req.query.limit) || 500,
       offset:  Number(req.query.offset) || 0,

@@ -20,8 +20,53 @@ router.get('/', async (req,res,next)=>{
       locationType: req.query.location_type || null,
       isActive:     req.query.is_active !== undefined ? req.query.is_active === 'true' : null,
       search:       req.query.search || null,
+      subWarehouseId: req.query.sub_warehouse_id === 'none' ? 'none' : (req.query.sub_warehouse_id ? Number(req.query.sub_warehouse_id) : null),
       limit:        Number(req.query.limit) || 200,
       offset:       Number(req.query.offset) || 0,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** ---------- Под-склады (17.09.2026) ----------
+ *  GET  /locations/sub-warehouses?warehouse_id=  — список
+ *  POST /locations/sub-warehouses { warehouse_id, code, name } — создать
+ *  PATCH /locations/sub-warehouses/:id { name?, is_active? } — переименовать/деактивировать
+ *  PATCH /locations/bulk-sub-warehouse { ids, sub_warehouse_id } — массово назначить/снять */
+router.get('/sub-warehouses', async (req,res,next)=>{
+  try {
+    const rows = await svc.listSubWarehouses({
+      tenantId:    req.user.tenantId,
+      warehouseId: req.query.warehouse_id ? Number(req.query.warehouse_id) : null,
+      isActive:    req.query.is_active !== undefined ? req.query.is_active === 'true' : null,
+    });
+    res.json({ ok: true, sub_warehouses: rows });
+  } catch(e){ next(e); }
+});
+
+router.post('/sub-warehouses', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const sw = await svc.createSubWarehouse({
+      tenantId: req.user.tenantId, createdById: req.user.id,
+      warehouseId: req.body.warehouse_id, code: req.body.code, name: req.body.name,
+    });
+    res.status(201).json({ ok: true, sub_warehouse: sw });
+  } catch(e){ next(e); }
+});
+
+router.patch('/sub-warehouses/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const sw = await svc.updateSubWarehouse({
+      tenantId: req.user.tenantId, subWarehouseId: validatePositiveInt(req.params.id,'id'), data: req.body,
+    });
+    res.json({ ok: true, sub_warehouse: sw });
+  } catch(e){ next(e); }
+});
+
+router.patch('/bulk-sub-warehouse', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkAssignSubWarehouse({
+      tenantId: req.user.tenantId, ids: req.body.ids, subWarehouseId: req.body.sub_warehouse_id || null,
     });
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }

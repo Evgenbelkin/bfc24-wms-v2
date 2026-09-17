@@ -37,6 +37,12 @@
         <option value="virtual">Виртуальная</option>
       </select>
     </div>
+    <div class="filters-row">
+      <select id="f-subwh">
+        <option value="">Все под-склады</option>
+        <option value="none">Без под-склада</option>
+      </select>
+    </div>
     <button class="btn-big btn-blue btn-full" onclick="loadLocations()"><svg class="i" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.6-4.6"/></svg> Показать</button>
   </div>
 
@@ -45,6 +51,7 @@
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"/> Выбрать все на странице</label>
       <span style="font-size:13px;color:var(--muted);">Выбрано: <b id="selected-count">0</b></span>
       <button class="btn-sm btn-back" style="margin-left:auto;" onclick="openBulkDimensionsModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg> Задать размеры</button>
+      <button class="btn-sm btn-back" onclick="openBulkSubWarehouseModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Под-склад</button>
       <button class="btn-sm btn-blue" onclick="printSelectedLabels()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Печать выбранных</button>
       <button class="btn-sm btn-red" onclick="deleteSelectedLocations()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить выбранные</button>
     </div>
@@ -61,6 +68,7 @@
     <button class="btn-big btn-blue" style="flex:1;" onclick="openBulkModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Создать пачкой</button>
   </div>
   <a href="/app/location-fill.html" class="btn-sm btn-back btn-full" style="display:block;text-align:center;margin-top:10px;"><svg class="i" viewBox="0 0 24 24" style="vertical-align:-3px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Заполняемость ячеек</a>
+  <button class="btn-sm btn-back btn-full" id="subwh-manage-btn" style="display:none;margin-top:10px;" onclick="openSubWarehousesModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Управление под-складами</button>
 
   <div id="modal-root"></div>
 
@@ -83,6 +91,7 @@ if (!UI.requireRole(['supervisor', 'tenant_admin', 'receiver', 'picker', 'invent
 var user = window.API.getUser();
 var canEdit = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
 if (canEdit) document.getElementById('add-btn').style.display = 'block';
+if (canEdit) document.getElementById('subwh-manage-btn').style.display = 'block';
 function logout() {
   return _logout.apply(this, arguments);
 }
@@ -112,6 +121,7 @@ var TYPE_LABELS = {
   virtual: 'Виртуальная'
 };
 var warehouses = [];
+var subWarehouses = [];
 var locOffset = 0;
 var PAGE_SIZE = 100;
 var locCache = [];
@@ -326,6 +336,130 @@ function _submitBulkCreate() {
   }));
   return _submitBulkCreate.apply(this, arguments);
 }
+// ---------- Под-склады (17.09.2026) ----------
+// Чисто учётная фича (см. миграцию 066): необязательный тег на ячейке,
+// группировка остатков в "Обзоре склада". На сборку/размещение не влияет.
+// Пишем plain Promise .then()-цепочками (не async/await) — этот код не
+// требует regenerator-транспиляции и проще для точечных правок.
+function loadSubWarehouses() {
+  return window.API.locations.subWarehouses({}).then(function (res) {
+    subWarehouses = res.sub_warehouses || [];
+    var f = document.getElementById('f-subwh');
+    if (f) {
+      var cur = f.value;
+      f.innerHTML = '<option value="">Все под-склады</option><option value="none">Без под-склада</option>' + subWarehouseOptionsFlat();
+      f.value = cur;
+    }
+  }).catch(function (e) { UI.notify.err(e.message); });
+}
+function subWarehouseOptionsFlat() {
+  var opts = '';
+  subWarehouses.forEach(function (sw) {
+    if (!sw.is_active) return;
+    opts += '<option value="' + sw.id + '">' + UI.escHtml(sw.warehouse_name) + ': ' + UI.escHtml(sw.name) + '</option>';
+  });
+  return opts;
+}
+function subWarehouseOptionsForWarehouse(warehouseId, currentId) {
+  var wid = warehouseId ? Number(warehouseId) : null;
+  var opts = '<option value="">— без под-склада —</option>';
+  subWarehouses.forEach(function (sw) {
+    if (wid && sw.warehouse_id !== wid) return;
+    if (!sw.is_active && Number(currentId) !== sw.id) return;
+    opts += '<option value="' + sw.id + '"' + (currentId && Number(currentId) === sw.id ? ' selected' : '') + '>' + UI.escHtml(sw.name) + '</option>';
+  });
+  return opts;
+}
+function refreshModalSubWarehouseOptions() {
+  var el = document.getElementById('m-subwh');
+  if (!el) return;
+  el.innerHTML = subWarehouseOptionsForWarehouse(UI.val('#m-warehouse'), null);
+}
+function openSubWarehousesModal() {
+  var whOptions = warehouses.map(function (w) { return '<option value="' + w.id + '">' + UI.escHtml(w.warehouse_name) + '</option>'; }).join('');
+  var rowsHtml = subWarehouses.map(function (sw) {
+    return '<div class="list-row" style="align-items:center;gap:8px;">' +
+      '<div class="main" style="flex:1;">' +
+        '<div class="title">' + UI.escHtml(sw.name) + (sw.is_active ? '' : ' <span style="color:var(--red)">(выключен)</span>') + '</div>' +
+        '<div class="sub">' + UI.escHtml(sw.code) + ' \xB7 ' + UI.escHtml(sw.warehouse_name) + ' \xB7 ячеек: ' + sw.locations_count + '</div>' +
+      '</div>' +
+      '<button class="btn-sm btn-back" onclick="renameSubWarehouse(' + sw.id + ')">✎</button>' +
+      '<button class="btn-sm ' + (sw.is_active ? 'btn-yellow' : 'btn-green') + '" onclick="toggleSubWarehouseActive(' + sw.id + ',' + (!sw.is_active) + ')">' + (sw.is_active ? 'Выкл' : 'Вкл') + '</button>' +
+    '</div>';
+  }).join('') || '<p style="font-size:13px;color:var(--muted);">Пока нет ни одного под-склада.</p>';
+
+  document.getElementById('modal-root').innerHTML =
+    '<div class="modal-overlay" onclick="if(event.target===this) closeModal()">' +
+      '<div class="modal-card">' +
+        '<div class="card-title">Под-склады</div>' +
+        '<div id="swm-list">' + rowsHtml + '</div>' +
+        '<div class="card-title" style="margin-top:16px;">Новый под-склад</div>' +
+        '<div class="field"><label>Склад</label><select id="sw-warehouse">' + whOptions + '</select></div>' +
+        '<div class="field"><label>Код (короткий)</label><input id="sw-code" placeholder="A" maxlength="30"/></div>' +
+        '<div class="field"><label>Название</label><input id="sw-name" placeholder="Склад А" maxlength="100"/></div>' +
+        '<div class="btn-row" style="margin-top:14px;">' +
+          '<button class="btn-big btn-green" onclick="submitCreateSubWarehouse()">Создать</button>' +
+          '<button class="btn-big btn-yellow" onclick="closeModal()">Закрыть</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+function submitCreateSubWarehouse() {
+  var data = { warehouse_id: UI.val('#sw-warehouse'), code: UI.val('#sw-code'), name: UI.val('#sw-name') };
+  if (!data.code || !data.name) { UI.notify.err('Укажите код и название'); return; }
+  window.API.locations.createSubWarehouse(data).then(function () {
+    UI.notify.ok('Под-склад создан');
+    return loadSubWarehouses();
+  }).then(function () {
+    openSubWarehousesModal();
+  }).catch(function (e) { UI.notify.err(e.message); });
+}
+function renameSubWarehouse(id) {
+  var sw = subWarehouses.find(function (s) { return s.id === id; });
+  if (!sw) return;
+  var name = window.prompt('Новое название под-склада', sw.name);
+  if (!name) return;
+  name = name.trim();
+  if (!name || name === sw.name) return;
+  window.API.locations.updateSubWarehouse(id, { name: name }).then(function () {
+    UI.notify.ok('Переименовано');
+    return loadSubWarehouses();
+  }).then(function () {
+    openSubWarehousesModal();
+  }).catch(function (e) { UI.notify.err(e.message); });
+}
+function toggleSubWarehouseActive(id, next) {
+  window.API.locations.updateSubWarehouse(id, { is_active: next }).then(function () {
+    UI.notify.ok(next ? 'Включено' : 'Выключено');
+    return loadSubWarehouses();
+  }).then(function () {
+    openSubWarehousesModal();
+  }).catch(function (e) { UI.notify.err(e.message); });
+}
+function openBulkSubWarehouseModal() {
+  if (!selectedIds.size) { UI.notify.err('Отметьте хотя бы одну ячейку'); return; }
+  document.getElementById('modal-root').innerHTML =
+    '<div class="modal-overlay" onclick="if(event.target===this) closeModal()">' +
+      '<div class="modal-card">' +
+        '<div class="card-title">Назначить под-склад (' + selectedIds.size + ' яч.)</div>' +
+        '<div class="field"><label>Под-склад</label><select id="bsw-subwh"><option value="none">— снять привязку —</option>' + subWarehouseOptionsFlat() + '</select></div>' +
+        '<p style="font-size:12px;color:var(--muted);">Под-склад должен относиться к тому же физическому складу, что и все выбранные ячейки — иначе назначение отклонится.</p>' +
+        '<div class="btn-row" style="margin-top:14px;">' +
+          '<button class="btn-big btn-green" onclick="submitBulkSubWarehouse()">Применить</button>' +
+          '<button class="btn-big btn-yellow" onclick="closeModal()">Отмена</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+function submitBulkSubWarehouse() {
+  var v = UI.val('#bsw-subwh');
+  var swId = (v && v !== 'none') ? Number(v) : null;
+  window.API.locations.bulkAssignSubWarehouse({ ids: Array.from(selectedIds), sub_warehouse_id: swId }).then(function (res) {
+    UI.notify.ok('Обновлено ячеек: ' + res.updated);
+    closeModal();
+    return loadLocations();
+  }).catch(function (e) { UI.notify.err(e.message); });
+}
 function loadWarehouses() {
   return _loadWarehouses.apply(this, arguments);
 }
@@ -381,6 +515,7 @@ function _loadLocations() {
           if (search) params.search = search;
           type = UI.val('#f-type');
           if (type) params.location_type = type;
+          if (UI.val('#f-subwh')) params.sub_warehouse_id = UI.val('#f-subwh');
           _context7.n = 2;
           return window.API.locations.list(params);
         case 2:
@@ -399,6 +534,14 @@ function _loadLocations() {
           list.innerHTML = locCache.map(function (l, idx) {
             return "\n          <div class=\"list-row loc-row\" style=\"display:flex;align-items:center;gap:10px;\" onclick=\"openModal(".concat(idx, ")\">\n            ").concat(canEdit ? "<input type=\"checkbox\" class=\"loc-cb\" data-id=\"".concat(l.id, "\" onclick=\"event.stopPropagation(); onLocCheck(").concat(l.id, ", this.checked);\" ").concat(selectedIds.has(l.id) ? 'checked' : '', "/>") : '', "\n            <div class=\"main\" style=\"flex:1;\">\n              <div class=\"title\">").concat(UI.escHtml(l.location_code), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(TYPE_LABELS[l.location_type] || l.location_type), " \xB7 ").concat(UI.escHtml(l.warehouse_name), " ").concat(l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>', "</div>\n            </div>\n            <div class=\"badge\"><span>\u041D\u0430 \u0440\u0443\u043A\u0430\u0445</span><div>").concat(UI.fmtQty(l.qty_on_hand), "</div></div>\n          </div>\n        ");
           }).join('');
+          // Под-склад (17.09.2026) — дописываем тег DOM-ом ПОСЛЕ рендера строк,
+          // а не встраиваем в плотный конкатенированный шаблон выше (это уже
+          // один раз стоило неприятного бага с неверно закрытыми скобками в
+          // похожем месте другого файла — см. admin-dashboard.html).
+          Array.prototype.forEach.call(list.querySelectorAll('.loc-row .sub'), function (subEl, i) {
+            var l = locCache[i];
+            if (l && l.sub_warehouse_name) subEl.appendChild(document.createTextNode(' \xB7 ' + l.sub_warehouse_name));
+          });
           updateSelectBar();
           _context7.n = 5;
           break;
@@ -430,6 +573,19 @@ function openModal(idx) {
     return "<option value=\"".concat(k, "\" ").concat(loc && loc.location_type === k ? 'selected' : '', ">").concat(v, "</option>");
   }).join('');
   document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(loc ? 'Ячейка ' + UI.escHtml(loc.location_code) : 'Новая ячейка', "</div>\n            <div class=\"field\"><label>\u041A\u043E\u0434 \u044F\u0447\u0435\u0439\u043A\u0438</label><input id=\"m-code\" value=\"").concat(loc ? UI.escHtml(loc.location_code) : '', "\" ").concat(loc ? 'disabled' : '', " placeholder=\"A-01-02-3\"/></div>\n            <div class=\"field\"><label>\u0421\u043A\u043B\u0430\u0434</label><select id=\"m-warehouse\" ").concat(loc ? 'disabled' : '', ">").concat(whOptions, "</select></div>\n            <div class=\"field\"><label>\u0422\u0438\u043F</label><select id=\"m-type\">").concat(typeOptions, "</select></div>\n            <div class=\"field\"><label>\u041E\u043F\u0438\u0441\u0430\u043D\u0438\u0435</label><input id=\"m-desc\" value=\"").concat(loc && loc.description ? UI.escHtml(loc.description) : '', "\"/></div>\n            <div class=\"field\"><label>\u0417\u043E\u043D\u0430</label><input id=\"m-zone\" value=\"").concat(loc && loc.zone_code ? UI.escHtml(loc.zone_code) : '', "\"/></div>\n            <div class=\"field-row3\" style=\"display:flex;gap:8px;\">\n              <div class=\"field\" style=\"flex:1;\"><label>\u0414\u043B\u0438\u043D\u0430, \u0441\u043C</label><input id=\"m-length\" type=\"number\" min=\"0\" step=\"0.1\" value=\"").concat(loc && loc.length_cm != null ? loc.length_cm : '', "\" oninput=\"updateModalVolumePreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0428\u0438\u0440\u0438\u043D\u0430, \u0441\u043C</label><input id=\"m-width\" type=\"number\" min=\"0\" step=\"0.1\" value=\"").concat(loc && loc.width_cm != null ? loc.width_cm : '', "\" oninput=\"updateModalVolumePreview()\"/></div>\n              <div class=\"field\" style=\"flex:1;\"><label>\u0412\u044B\u0441\u043E\u0442\u0430, \u0441\u043C</label><input id=\"m-height\" type=\"number\" min=\"0\" step=\"0.1\" value=\"").concat(loc && loc.height_cm != null ? loc.height_cm : '', "\" oninput=\"updateModalVolumePreview()\"/></div>\n            </div>\n            <p id=\"m-volume-preview\" style=\"font-size:13px;color:var(--muted);margin:2px 0 0;\"></p>\n            <div class=\"field\"><label style=\"display:inline;\">\u0410\u043A\u0442\u0438\u0432\u043D\u0430</label> <input type=\"checkbox\" id=\"m-active\" ").concat(!loc || loc.is_active ? 'checked' : '', "/></div>\n            <div class=\"field\"><label style=\"display:inline;\">\u042F\u0447\u0435\u0439\u043A\u0430 \u0441\u0431\u043E\u0440\u043A\u0438 (pick location)</label> <input type=\"checkbox\" id=\"m-pick\" ").concat(!loc || loc.is_pick_location ? 'checked' : '', "/></div>\n            <div class=\"btn-row\">\n              ").concat(canEdit ? "<button class=\"btn-big btn-green\" onclick=\"saveLocation(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z\"/><path d=\"M17 21v-8H7v8\"/><path d=\"M7 3v5h8\"/></svg> \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button>") : '', "\n              <button class=\"btn-big btn-yellow\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n            </div>\n            ").concat(canEdit && loc ? "<button class=\"btn-big btn-red btn-full\" style=\"margin-top:8px;\" onclick=\"deleteLocationFromModal(".concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M3 6h18\"/><path d=\"M8 6V4h8v2\"/><path d=\"M19 6l-1 14H6L5 6\"/></svg> \u0423\u0434\u0430\u043B\u0438\u0442\u044C \u044F\u0447\u0435\u0439\u043A\u0443</button>") : '', "\n          </div>\n        </div>\n      ");
+  // Под-склад (17.09.2026) — дописываем поле DOM-ом сразу после "Зоны", а не
+  // встраиваем в плотный конкатенированный HTML-шаблон выше целиком по той же
+  // причине, что и в списке ячеек: там легко случайно сдвинуть скобку.
+  var zoneField = document.getElementById('m-zone');
+  if (zoneField && zoneField.closest('.field')) {
+    zoneField.closest('.field').insertAdjacentHTML('afterend',
+      '<div class="field"><label>Под-склад</label><select id="m-subwh" ' + (readonly ? 'disabled' : '') + '>' +
+        subWarehouseOptionsForWarehouse(loc ? loc.warehouse_id : UI.val('#m-warehouse'), loc ? loc.sub_warehouse_id : null) +
+      '</select></div>'
+    );
+  }
+  var whSelect = document.getElementById('m-warehouse');
+  if (whSelect && !loc) whSelect.addEventListener('change', refreshModalSubWarehouseOptions);
   updateModalVolumePreview();
 }
 function deleteLocationFromModal(_x) {
@@ -564,7 +720,8 @@ function _saveLocation() {
             width_cm: UI.val('#m-width') || null,
             height_cm: UI.val('#m-height') || null,
             is_active: document.getElementById('m-active').checked,
-            is_pick_location: document.getElementById('m-pick').checked
+            is_pick_location: document.getElementById('m-pick').checked,
+            sub_warehouse_id: UI.val('#m-subwh') || null
           };
           _context0.p = 1;
           if (!loc) {
@@ -619,6 +776,7 @@ _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
         params = new URLSearchParams(window.location.search);
         searchParam = params.get('search');
         if (searchParam) UI.setVal('#f-search', searchParam);
+        loadSubWarehouses(); // параллельно, не блокирует основной список
         _context.n = 1;
         return loadWarehouses();
       case 1:

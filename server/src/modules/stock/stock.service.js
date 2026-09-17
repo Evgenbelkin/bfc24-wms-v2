@@ -14,6 +14,7 @@ const { validateBarcode, validatePositiveInt } = require('../../utils/validators
 async function listStockBalances({
   tenantId, warehouseId = null, clientId = null,
   barcode = null, locationCode = null,
+  subWarehouseId = null,
   onlyWithStock = true,
   limit = 500, offset = 0,
 }) {
@@ -26,6 +27,14 @@ async function listStockBalances({
   if (barcode)      { conds.push(`sb.barcode = $${idx++}`); params.push(validateBarcode(barcode)); }
   if (locationCode) { conds.push(`l.location_code = $${idx++}`); params.push(locationCode); }
   if (onlyWithStock){ conds.push(`sb.qty_on_hand > 0`); }
+  // Под-склады (17.09.2026) — группировка/фильтр по необязательному тегу на
+  // ячейке (wms.sub_warehouses), см. миграцию 066. 'none' — явно "без
+  // под-склада" (не путать с "фильтр не задан").
+  if (subWarehouseId === 'none') {
+    conds.push(`l.sub_warehouse_id IS NULL`);
+  } else if (subWarehouseId) {
+    conds.push(`l.sub_warehouse_id = $${idx++}`); params.push(subWarehouseId);
+  }
 
   const countRes = await query(
     `SELECT COUNT(*)::int AS total FROM wms.stock_balances sb
@@ -68,12 +77,14 @@ async function listStockBalances({
        sb.avg_cost, sb.last_movement_at, i.cost_price,
        (sb.qty_on_hand * COALESCE(i.cost_price, sb.avg_cost, 0))::numeric AS cost_value,
        l.id AS location_id, l.location_code, l.zone_code, l.location_type,
+       l.sub_warehouse_id, sw.code AS sub_warehouse_code, sw.name AS sub_warehouse_name,
        w.id AS warehouse_id, w.warehouse_name,
        i.item_name, i.vendor_code, i.size, i.unit, i.volume_liters, i.needs_packaging,
        c.client_name
      FROM wms.stock_balances sb
      JOIN wms.locations l ON l.id = sb.location_id
      JOIN wms.warehouses w ON w.id = sb.warehouse_id
+     LEFT JOIN wms.sub_warehouses sw ON sw.id = l.sub_warehouse_id
      LEFT JOIN wms.items i ON i.id = sb.item_id
      LEFT JOIN wms.clients c ON c.id = sb.client_id
      WHERE ${conds.join(' AND ')}

@@ -559,6 +559,18 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     fillReport: function fillReport(p) {
       return _get('/locations/fill-report', p);
+    },
+    subWarehouses: function subWarehouses(p) {
+      return _get('/locations/sub-warehouses', p);
+    },
+    createSubWarehouse: function createSubWarehouse(d) {
+      return post('/locations/sub-warehouses', d);
+    },
+    updateSubWarehouse: function updateSubWarehouse(id, d) {
+      return patch("/locations/sub-warehouses/".concat(id), d);
+    },
+    bulkAssignSubWarehouse: function bulkAssignSubWarehouse(d) {
+      return patch('/locations/bulk-sub-warehouse', d);
     }
   };
 

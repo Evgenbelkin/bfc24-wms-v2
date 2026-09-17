@@ -20,7 +20,7 @@ function volumeFromDims(lengthCm, widthCm, heightCm) {
   return Math.round((l * w * h / 1000) * 100) / 100;
 }
 
-async function listLocations({ tenantId, warehouseId = null, zoneCode = null, locationType = null, isActive = null, search = null, limit = 200, offset = 0 }) {
+async function listLocations({ tenantId, warehouseId = null, zoneCode = null, locationType = null, isActive = null, search = null, subWarehouseId = null, limit = 200, offset = 0 }) {
   const params = [tenantId];
   const conds = ['l.tenant_id = $1'];
   let idx = 2;
@@ -29,6 +29,13 @@ async function listLocations({ tenantId, warehouseId = null, zoneCode = null, lo
   if (zoneCode)    { conds.push(`l.zone_code = $${idx++}`); params.push(zoneCode); }
   if (locationType){ conds.push(`l.location_type = $${idx++}`); params.push(locationType); }
   if (isActive !== null) { conds.push(`l.is_active = $${idx++}`); params.push(isActive); }
+  // Под-склады (17.09.2026) — фильтр "без под-склада" через явное значение
+  // 'none' (не ставим тут магию на null/0, чтобы не путать с "фильтр не задан").
+  if (subWarehouseId === 'none') {
+    conds.push(`l.sub_warehouse_id IS NULL`);
+  } else if (subWarehouseId) {
+    conds.push(`l.sub_warehouse_id = $${idx++}`); params.push(subWarehouseId);
+  }
   if (search) {
     conds.push(`l.location_code ILIKE $${idx++}`);
     params.push(`%${search}%`);
@@ -45,13 +52,15 @@ async function listLocations({ tenantId, warehouseId = null, zoneCode = null, lo
        l.is_active, l.is_pick_location,
        l.max_weight_kg, l.max_volume_l,
        l.length_cm, l.width_cm, l.height_cm,
+       l.sub_warehouse_id, sw.code AS sub_warehouse_code, sw.name AS sub_warehouse_name,
        w.warehouse_name,
        COALESCE(SUM(sb.qty_on_hand), 0)::int AS qty_on_hand
      FROM wms.locations l
      JOIN wms.warehouses w ON w.id = l.warehouse_id
+     LEFT JOIN wms.sub_warehouses sw ON sw.id = l.sub_warehouse_id
      LEFT JOIN wms.stock_balances sb ON sb.location_id = l.id
      WHERE ${conds.join(' AND ')}
-     GROUP BY l.id, w.warehouse_name
+     GROUP BY l.id, w.warehouse_name, sw.code, sw.name
      ORDER BY l.location_code
      LIMIT $${idx++} OFFSET $${idx}`,
     params
@@ -105,6 +114,15 @@ async function createLocation({ tenantId, warehouseId, createdById, data }) {
   );
   if (exists.rowCount > 0) throw new ConflictError(`Location '${code}' already exists in this warehouse`);
 
+  // Под-склад (17.09.2026) — тот же контроль "того же физического склада",
+  // что и в updateLocation.
+  let subWarehouseId = data.sub_warehouse_id ? Number(data.sub_warehouse_id) : null;
+  if (subWarehouseId) {
+    const swRes = await query(`SELECT warehouse_id FROM wms.sub_warehouses WHERE id=$1 AND tenant_id=$2`, [subWarehouseId, tenantId]);
+    if (swRes.rowCount === 0) throw new NotFoundError('Под-склад', subWarehouseId);
+    if (swRes.rows[0].warehouse_id !== wid) throw new ValidationError('Этот под-склад относится к другому физическому складу');
+  }
+
   // Вместимость в литрах: если заданы все три размера — считаем сами
   // (L*W*H/1000), явно переданный max_volume_l имеет приоритет (на случай
   // нестандартной формы ячейки, где произведение размеров не отражает
@@ -121,8 +139,8 @@ async function createLocation({ tenantId, warehouseId, createdById, data }) {
        (tenant_id, warehouse_id, location_code, description, location_type,
         zone_code, aisle, rack, shelf, position,
         max_weight_kg, max_volume_l, length_cm, width_cm, height_cm,
-        is_active, is_pick_location, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        is_active, is_pick_location, created_by, sub_warehouse_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      RETURNING *`,
     [
       tenantId, wid, code,
@@ -133,7 +151,7 @@ async function createLocation({ tenantId, warehouseId, createdById, data }) {
       maxVolumeL, lengthCm, widthCm, heightCm,
       parseBool(data.is_active, true),
       parseBool(data.is_pick_location, true),
-      createdById,
+      createdById, subWarehouseId,
     ]
   );
   return res.rows[0];
@@ -179,6 +197,21 @@ async function updateLocation({ tenantId, locationId, data }) {
   if (data.location_type !== undefined) {
     if (!VALID_TYPES.includes(data.location_type)) throw new ValidationError('Invalid location_type');
     fields.push(`location_type = $${idx++}`); params.push(data.location_type);
+  }
+
+  // Под-склад (17.09.2026) — либо конкретный id (должен быть с ТОГО ЖЕ
+  // физического склада, что и ячейка — иначе бессмысленная комбинация),
+  // либо null/0 = снять привязку.
+  if (data.sub_warehouse_id !== undefined) {
+    const swId = data.sub_warehouse_id ? Number(data.sub_warehouse_id) : null;
+    if (swId) {
+      const swRes = await query(`SELECT warehouse_id FROM wms.sub_warehouses WHERE id=$1 AND tenant_id=$2`, [swId, tenantId]);
+      if (swRes.rowCount === 0) throw new NotFoundError('Под-склад', swId);
+      if (swRes.rows[0].warehouse_id !== current.warehouse_id) {
+        throw new ValidationError('Этот под-склад относится к другому физическому складу');
+      }
+    }
+    fields.push(`sub_warehouse_id = $${idx++}`); params.push(swId);
   }
 
   if (fields.length === 0) throw new ValidationError('No fields to update');
@@ -469,9 +502,109 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId, a
   return ahead || res.rows[0];
 }
 
+// =============================================================================
+// Под-склады (17.09.2026) — см. миграцию 066_sub_warehouses.sql. Чисто
+// аддитивный слой поверх ячеек: таблица wms.sub_warehouses + необязательный
+// тег на ячейке. Ничего в остатках/сборке/размещении не меняет — используется
+// только для группировки в отчёте "Обзор склада" (stock.service.js).
+// =============================================================================
+
+/** Список под-складов (с количеством привязанных ячеек — чтобы в UI сразу
+ *  было видно, пустой под-склад или уже используется). */
+async function listSubWarehouses({ tenantId, warehouseId = null, isActive = null }) {
+  const params = [tenantId];
+  const conds = ['sw.tenant_id = $1'];
+  let idx = 2;
+  if (warehouseId) { conds.push(`sw.warehouse_id = $${idx++}`); params.push(warehouseId); }
+  if (isActive !== null) { conds.push(`sw.is_active = $${idx++}`); params.push(isActive); }
+
+  const res = await query(
+    `SELECT sw.*, w.warehouse_name,
+       COALESCE(lc.cnt, 0)::int AS locations_count
+     FROM wms.sub_warehouses sw
+     JOIN wms.warehouses w ON w.id = sw.warehouse_id
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*)::int AS cnt FROM wms.locations l WHERE l.sub_warehouse_id = sw.id
+     ) lc ON TRUE
+     WHERE ${conds.join(' AND ')}
+     ORDER BY w.warehouse_name, sw.name`,
+    params
+  );
+  return res.rows;
+}
+
+async function createSubWarehouse({ tenantId, warehouseId, createdById, code, name }) {
+  const wid = validatePositiveInt(warehouseId, 'warehouse_id');
+  const c = validateNonEmptyString(code, 'code', 30).trim().toUpperCase();
+  const n = validateNonEmptyString(name, 'name', 100).trim();
+
+  const exists = await query(
+    `SELECT id FROM wms.sub_warehouses WHERE tenant_id=$1 AND warehouse_id=$2 AND code=$3`,
+    [tenantId, wid, c]
+  );
+  if (exists.rowCount > 0) throw new ConflictError(`Под-склад '${c}' уже существует на этом складе`);
+
+  const res = await query(
+    `INSERT INTO wms.sub_warehouses (tenant_id, warehouse_id, code, name, created_by)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [tenantId, wid, c, n, createdById]
+  );
+  return res.rows[0];
+}
+
+async function updateSubWarehouse({ tenantId, subWarehouseId, data }) {
+  const fields = []; const params = []; let idx = 1;
+  if (data.name !== undefined) {
+    fields.push(`name = $${idx++}`);
+    params.push(validateNonEmptyString(data.name, 'name', 100).trim());
+  }
+  if (data.is_active !== undefined) {
+    fields.push(`is_active = $${idx++}`);
+    params.push(parseBool(data.is_active, true));
+  }
+  if (!fields.length) throw new ValidationError('No fields to update');
+  fields.push('updated_at = NOW()');
+  params.push(subWarehouseId, tenantId);
+
+  const res = await query(
+    `UPDATE wms.sub_warehouses SET ${fields.join(', ')} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+    params
+  );
+  if (res.rowCount === 0) throw new NotFoundError('Под-склад', subWarehouseId);
+  return res.rows[0];
+}
+
+/** Массово назначить (или снять, subWarehouseId=null) под-склад сразу
+ *  нескольким выбранным ячейкам — так клиент размечает весь свой участок
+ *  склада за один запрос, а не кликает по ячейке. */
+async function bulkAssignSubWarehouse({ tenantId, ids, subWarehouseId }) {
+  const list = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!list.length) throw new ValidationError('ids must be a non-empty array');
+  const swId = subWarehouseId ? validatePositiveInt(subWarehouseId, 'sub_warehouse_id') : null;
+
+  if (swId) {
+    const swRes = await query(`SELECT warehouse_id FROM wms.sub_warehouses WHERE id=$1 AND tenant_id=$2`, [swId, tenantId]);
+    if (swRes.rowCount === 0) throw new NotFoundError('Под-склад', swId);
+    const mismatch = await query(
+      `SELECT COUNT(*)::int AS n FROM wms.locations WHERE tenant_id=$1 AND id = ANY($2::int[]) AND warehouse_id <> $3`,
+      [tenantId, list, swRes.rows[0].warehouse_id]
+    );
+    if (mismatch.rows[0].n > 0) {
+      throw new ValidationError('Среди выбранных ячеек есть ячейки с другого физического склада — под-склад относится только к одному складу.');
+    }
+  }
+
+  const r = await query(
+    `UPDATE wms.locations SET sub_warehouse_id=$1, updated_at=NOW() WHERE tenant_id=$2 AND id = ANY($3::int[]) RETURNING id, location_code`,
+    [swId, tenantId, list]
+  );
+  return { updated: r.rowCount, locations: r.rows };
+}
+
 module.exports = {
   listLocations, getLocationById, getLocationByCode,
   createLocation, updateLocation, deleteLocation, findBestPickLocation,
   bulkCreateLocations, getLocationsByIds,
   bulkUpdateDimensions, getLocationFillReport,
+  listSubWarehouses, createSubWarehouse, updateSubWarehouse, bulkAssignSubWarehouse,
 };
