@@ -35,14 +35,14 @@ async function listShipments({
   params.push(Math.min(limit, 500));
   const r = await query(
     `SELECT s.*, c.client_name, w.warehouse_name,
-       su.username AS shipper_name,
+       COALESCE(su.full_name, su.username) AS shipper_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
        (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
        (SELECT COALESCE(SUM(t.qty_picked),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_picked,
        -- Диспетчерская (16.09.2026): кто сейчас собирает/упаковывает, и с какого
        -- момента — для карточки "Отгрузки в работе" (остаток + время в работе).
-       pw.picker_id, pu.username AS picker_name, pw.accepted_at AS picking_started_at,
+       pw.picker_id, COALESCE(pu.full_name, pu.username) AS picker_name, pw.accepted_at AS picking_started_at,
        pk.status AS packing_status, pk.packer_name, pk.started_at AS packing_started_at,
        -- Приоритет и предварительное назначение (17.09.2026, "нужно задать
        -- приоритет волне" + "назначить конкретному сотруднику") — приоритет
@@ -50,7 +50,7 @@ async function listShipments({
        -- номер, ставится одним действием, см. picking.service.js::
        -- setShipmentPriority), assigned_picker/assigned_packer — раздельно.
        COALESCE(pw.priority, pk.priority) AS priority,
-       pw.assigned_picker_id, apu.username AS assigned_picker_name,
+       pw.assigned_picker_id, COALESCE(apu.full_name, apu.username) AS assigned_picker_name,
        pk.assigned_packer_id, pk.assigned_packer_name
      FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
@@ -61,7 +61,8 @@ async function listShipments({
      LEFT JOIN wms.users apu ON apu.id=pw.assigned_picker_id
      LEFT JOIN LATERAL (
        SELECT pt.status, pt.started_at, pt.priority, pt.assigned_packer_id,
-              u.username AS packer_name, au.username AS assigned_packer_name
+              COALESCE(u.full_name, u.username) AS packer_name,
+              COALESCE(au.full_name, au.username) AS assigned_packer_name
        FROM wms.packing_tasks pt
        LEFT JOIN wms.users u ON u.id=pt.packer_id
        LEFT JOIN wms.users au ON au.id=pt.assigned_packer_id

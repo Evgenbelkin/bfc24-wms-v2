@@ -151,7 +151,7 @@ async function listWaves({ tenantId, warehouseId = null, status = null, pickerId
   params.push(Math.min(limit, 200));
   const r = await query(
     `SELECT w.*,
-       u.username AS picker_name,
+       COALESCE(u.full_name, u.username) AS picker_name,
        c.client_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id) AS task_count,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id AND t.status='done') AS done_count
@@ -166,7 +166,7 @@ async function listWaves({ tenantId, warehouseId = null, status = null, pickerId
 
 async function getWaveByShipmentCode({ tenantId, shipmentCode }) {
   const r = await query(
-    `SELECT w.*, u.username AS picker_name, c.client_name,
+    `SELECT w.*, COALESCE(u.full_name, u.username) AS picker_name, c.client_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id) AS task_count,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id AND t.status='done') AS done_count
      FROM wms.pick_waves w
@@ -189,7 +189,7 @@ async function getWaveByShipmentCode({ tenantId, shipmentCode }) {
  */
 async function getWaveDetail({ tenantId, waveId }) {
   const wRes = await query(
-    `SELECT w.*, u.username AS picker_name, c.client_name
+    `SELECT w.*, COALESCE(u.full_name, u.username) AS picker_name, c.client_name
      FROM wms.pick_waves w
      LEFT JOIN wms.users u ON u.id=w.picker_id
      LEFT JOIN wms.clients c ON c.id=w.client_id
@@ -1490,7 +1490,7 @@ async function listSkippedTasks({ tenantId, warehouseId = null, limit = 100 }) {
     `SELECT t.id, t.barcode, t.qty, t.location_code, t.shipment_code, t.wave_id,
        t.reason, t.comment, t.finished_at, t.warehouse_id,
        i.item_name,
-       u.username AS picker_name,
+       COALESCE(u.full_name, u.username) AS picker_name,
        w.status AS wave_status,
        COALESCE(sb.qty_available, 0) AS qty_available_now
      FROM wms.picking_tasks t
@@ -1763,7 +1763,7 @@ async function listCancelledTasks({ tenantId, warehouseId = null, limit = 100 })
     `SELECT t.id, t.barcode, t.qty, t.qty_picked, t.location_code, t.shipment_code, t.wave_id,
        t.reason, t.comment, t.updated_at, t.warehouse_id,
        i.item_name,
-       u.username AS picker_name,
+       COALESCE(u.full_name, u.username) AS picker_name,
        w.status AS wave_status
      FROM wms.picking_tasks t
      LEFT JOIN wms.items i ON i.id = t.item_id
