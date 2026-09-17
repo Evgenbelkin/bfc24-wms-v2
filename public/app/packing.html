@@ -56,17 +56,23 @@
        и прячет весь обычный интерфейс одним селектором. */
     #silent-print-area{display:none;}
     @media print{
-      /* size:auto — берём размер листа/ленты как настроено у принтера по
-         умолчанию (не навязываем A4/Letter); margin:0 и обнуление отступов
-         body/html — иначе за счёт полей страницы + небольшой "хвостовой"
-         пустоты под картинкой (inline-элемент, строчный зазор) контент
-         вылезал на доли миллиметра за один "лист", и рулонный принтер
-         допечатывал следом ещё одну, почти пустую, этикетку. */
-      @page{size:auto;margin:0;}
+      /* Пробовали size:auto (взять размер листа как настроено у принтера) +
+         width:100%/max-width:100% на картинке — на разных принтерах/этикетках
+         давало РАЗНЫЙ результат: на одном лишний пустой лист (переполнение по
+         высоте), на другом стикер вылезал за края этикетки (переполнение по
+         ширине, т.к. без width картинка берёт дефолтный intrinsic-размер
+         браузера для SVG без явных width/height — обычно 300×150px, что не
+         совпадает с реальной этикеткой). И агент (печать в обход браузера,
+         через pdfkit — см. printer-agent/agent.js::buildPdf) НЕ полагается на
+         "какой есть" размер: там жёстко задан физический размер стикера ВБ
+         58×40мм, картинка вписывается В ЭТИ рамки (preserveAspectRatio meet).
+         Повторяем тот же подход здесь — задаём странице и картинке ТОЧНО
+         58×40мм, а не "как получится". */
+      @page{size:58mm 40mm;margin:0;}
       html, body{margin:0 !important;padding:0 !important;height:auto !important;}
       body > *:not(#silent-print-area){display:none !important;}
-      #silent-print-area{display:block !important;margin:0;padding:0;}
-      #silent-print-area img{display:block;margin:0;padding:0;}
+      #silent-print-area{display:block !important;margin:0;padding:0;width:58mm;height:40mm;}
+      #silent-print-area img{display:block;margin:0;padding:0;width:58mm;height:40mm;object-fit:contain;}
     }
   </style>
 </head>
@@ -362,14 +368,13 @@ function autoPrintScannedSticker() {
   var area = document.getElementById('silent-print-area');
   if (!area) return;
   fetchScannedStickerImage().then(function (image) {
-    // ВАЖНО: max-width, а НЕ width:100% — width:100% растягивал картинку по
-    // ширине предполагаемой страницы печати (auto-размер страницы у разных
-    // принтеров/этикеток отличается), из-за чего итоговая высота могла чуть
-    // превысить высоту ФИЗИЧЕСКОЙ этикетки — и на некоторых принтерах/
-    // размерах этикеток вылезала вторая, пустая. Без width:100% картинка
-    // печатается в своём естественном размере (SVG уже сгенерирован под
-    // размер этикетки на сервере) — max-width только страхует от переполнения.
-    area.innerHTML = '<img id="silent-print-img" src="data:image/svg+xml;base64,' + image + '" style="max-width:100%;"/>';
+    // Размер картинки задаёт CSS (#silent-print-area img, см. @media print
+    // в <style> вверху файла) — жёстко 58×40мм, как у стикера ВБ (та же
+    // физическая величина, что и в printer-agent/agent.js::buildPdf). Инлайн-
+    // стиль тут больше не нужен — раньше пробовали width:100%/max-width:100%,
+    // оба давали разный результат в зависимости от того, какой размер
+    // страницы браузер считал "auto" на конкретном принтере/этикетке.
+    area.innerHTML = '<img id="silent-print-img" src="data:image/svg+xml;base64,' + image + '"/>';
     var img = document.getElementById('silent-print-img');
     var clearArea = function () { area.innerHTML = ''; };
     var doPrint = function () {
