@@ -523,6 +523,14 @@ async function syncDeliveryStatusForTenant(tenantId) {
 // =============================================================================
 
 /** Подтянуть список складов продавца из WB (/api/v3/warehouses) в нашу таблицу.
+ *  ВАЖНО (17.09.2026, повторный случай к инциденту про is_enabled_for_picking
+ *  ниже): новый склад ОБЯЗАН приходить с is_enabled_for_dist=FALSE тоже - у
+ *  этой колонки дефолт таблицы TRUE, и раньше INSERT его не переопределял,
+ *  из-за чего новый склад клиента автоматически включался в раздачу
+ *  остатков (галочка "вкл" + доля 1.000 сами проставлялись на экране
+ *  "Раздача остатков по складам WB") - ровно тот же класс бага, что чинили
+ *  для is_enabled_for_picking, просто для другой колонки. weight остаётся
+ *  на дефолте 1.0 (это не влияет, пока is_enabled_for_dist=FALSE).
  *  Новый склад сохраняется с weight=1.0 (дефолт колонки) - это автоматически
  *  даёт РАВНОМЕРНОЕ распределение между складами, пока клиент не задаст свои
  *  проценты вручную (веса нормализуются по сумме при расчёте, не обязаны
@@ -551,8 +559,8 @@ async function syncSellerWarehouses({ tenantId, mpAccountId }) {
     const warehouseCode = String(w.id);
     await query(
       `INSERT INTO wms.wb_seller_warehouses
-         (tenant_id, mp_account_id, wb_warehouse_id, warehouse_code, warehouse_name, is_active, is_enabled_for_picking, source, last_synced_at)
-       VALUES ($1,$2,$3,$4,$5,TRUE,FALSE,'wb_api',NOW())
+         (tenant_id, mp_account_id, wb_warehouse_id, warehouse_code, warehouse_name, is_active, is_enabled_for_picking, is_enabled_for_dist, source, last_synced_at)
+       VALUES ($1,$2,$3,$4,$5,TRUE,FALSE,FALSE,'wb_api',NOW())
        ON CONFLICT (mp_account_id, warehouse_code)
        DO UPDATE SET warehouse_name=$5, is_active=TRUE, wb_warehouse_id=$3, last_synced_at=NOW(), updated_at=NOW()`,
       [tenantId, mpAccountId, w.id, warehouseCode, w.name || null]
