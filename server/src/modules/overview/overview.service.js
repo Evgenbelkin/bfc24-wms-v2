@@ -396,22 +396,53 @@ async function getStaffRoster(tenantId) {
   // "число || ' hours' :: interval" в SQL требует лишнего каста типов и
   // менее надёжно, чем просто сравнить timestamptz с timestamptz.
   const sinceTs = new Date(Date.now() - CHECKIN_VALID_HOURS * 3600 * 1000);
+  // 17.09.2026: пользователь поймал скриншотом реальный случай — один и тот
+  // же сотрудник дважды в списке, каждый раз с РАЗНОЙ волной сборки. Причина
+  // была не в этом запросе, а в race condition в picking.service.js::
+  // takeWave (два быстрых подряд запроса "взять волну" от одного сборщика
+  // могли пройти проверку параллельно и оба забрать себе разные волны —
+  // исправлено там через advisory-лок), но простой LEFT JOIN на
+  // "pick_waves.status='active'" в принципе не защищён от точно такого же
+  // фан-аута строк, если у сотрудника когда-либо снова окажется больше одной
+  // активной волны (старые данные, будущий баг где-то ещё). Переписано на
+  // LATERAL с LIMIT 1 (берём самую свежую активную волну/задачу упаковки) —
+  // в списке сотрудников всегда ровно одна строка на человека, даже если в
+  // данных на секунду возникла аномалия. Аналогично поддедублирован сам
+  // employee_checkins (DISTINCT ON) — на случай повторного чек-ина без
+  // чек-аута.
   const r = await query(
     `SELECT
        u.id AS user_id, u.username, u.full_name, u.role,
        ec.checked_in_at,
        ws.station_name,
        w.id AS wave_id, w.shipment_code AS wave_shipment_code,
-       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id) AS wave_task_count,
-       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=w.id AND t.status='done') AS wave_done_count,
+       w.wave_task_count, w.wave_done_count,
        pk.shipment_code AS packing_shipment_code
-     FROM wms.employee_checkins ec
+     FROM (
+       SELECT DISTINCT ON (employee_id) employee_id, checked_in_at
+       FROM wms.employee_checkins
+       WHERE tenant_id = $1 AND checked_in_at >= $2
+       ORDER BY employee_id, checked_in_at DESC
+     ) ec
      JOIN wms.users u ON u.id = ec.employee_id
      LEFT JOIN wms.employee_active_station eas ON eas.employee_id = u.id AND eas.tenant_id = u.tenant_id
      LEFT JOIN wms.workstations ws ON ws.id = eas.station_id
-     LEFT JOIN wms.pick_waves w ON w.picker_id = u.id AND w.tenant_id = u.tenant_id AND w.status = 'active'
-     LEFT JOIN wms.packing_tasks pk ON pk.packer_id = u.id AND pk.tenant_id = u.tenant_id AND pk.status = 'in_progress'
-     WHERE ec.tenant_id = $1 AND ec.checked_in_at >= $2
+     LEFT JOIN LATERAL (
+       SELECT pw.id, pw.shipment_code,
+         (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=pw.id) AS wave_task_count,
+         (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.wave_id=pw.id AND t.status='done') AS wave_done_count
+       FROM wms.pick_waves pw
+       WHERE pw.picker_id = u.id AND pw.tenant_id = u.tenant_id AND pw.status = 'active'
+       ORDER BY pw.accepted_at DESC NULLS LAST, pw.id DESC
+       LIMIT 1
+     ) w ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT pk2.shipment_code
+       FROM wms.packing_tasks pk2
+       WHERE pk2.packer_id = u.id AND pk2.tenant_id = u.tenant_id AND pk2.status = 'in_progress'
+       ORDER BY pk2.started_at DESC NULLS LAST, pk2.id DESC
+       LIMIT 1
+     ) pk ON TRUE
      ORDER BY u.full_name NULLS LAST, u.username`,
     [tenantId, sinceTs]
   );
