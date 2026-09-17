@@ -357,6 +357,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
     // принтера скан начал бы сам печатать без предупреждения.
     let printJob = null;
     let printConnectionType = null;
+    let printStickerImage = null;
     try {
       if (stickerRes.rowCount > 0) {
         const sticker = stickerRes.rows[0];
@@ -374,7 +375,17 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
           // на каждом скане у тех, кто просто выбрал этот способ подключения.
           const autoPrintBrowser = resolved.connectionType === 'usb' && resolved.autoPrintBrowser === true;
           printConnectionType = autoPrintBrowser ? 'usb' : null;
-          if (!autoPrintBrowser) {
+          if (autoPrintBrowser) {
+            // Правка 17.09.2026 (слабый интернет у ЭсЭнДи): картинку стикера
+            // отдаём СРАЗУ в этом же ответе на скан, а не отдельным запросом
+            // (GET /packing/sticker-image), как для обычного клика "Печать
+            // ещё раз" — иначе автопечать ждёт ВТОРОЙ поход на сервер по
+            // тому же плохому каналу и получается ещё медленнее агента.
+            // Для всех остальных сканов (без auto_print_browser) картинку
+            // по-прежнему не гоняем зря — экономия трафика из правки
+            // "Убрать base64-картинку стикера из ответа на скан" в силе.
+            printStickerImage = sticker.wb_sticker;
+          } else {
             const jobCode = `PKG-${shipment.id}-${barcode}-${Date.now()}`;
             const pjRes = await client.query(
               `INSERT INTO wms.print_jobs
@@ -493,6 +504,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       shipment_id: shipment.id,
       print_job:   printJob,
       print_connection_type: printConnectionType,
+      print_sticker_image: printStickerImage,
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
       wb_order_id:     scannedSticker?.wb_order_id || null,
       marking:           markingJob,

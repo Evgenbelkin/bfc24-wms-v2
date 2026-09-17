@@ -841,7 +841,12 @@ function _submitScan() {
           lastScanSticker = res.wb_order_id ? {
             wb_order_id: res.wb_order_id,
             wb_sticker_code: res.wb_sticker_code,
-            image: null
+            // print_sticker_image приходит уже в этом же ответе на скан ТОЛЬКО
+            // для принтеров с auto_print_browser (см. packing.service.js) —
+            // чтобы автопечать не делала второй поход на сервер по плохому
+            // интернету (см. правку 17.09.2026). Для обычных сканов null,
+            // картинка догружается по клику как раньше.
+            image: res.print_sticker_image || null
           } : null;
           // Принтер рабочего места настроен как "браузер/USB" — печатаем сами,
           // на сервере для такого принтера задание в очередь агента не
