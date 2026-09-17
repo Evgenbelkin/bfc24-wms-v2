@@ -36,8 +36,8 @@ async function resolvePrinter(queryFn, { tenantId, docType, employeeId, clientId
   if (employeeId) {
     const stationRes = await queryFn(
       `SELECT ws.default_printer_id, ws.marking_printer_id,
-              dp.is_active AS default_printer_active, dp.connection_type AS default_printer_conn,
-              mp.is_active AS marking_printer_active, mp.connection_type AS marking_printer_conn
+              dp.is_active AS default_printer_active, dp.connection_type AS default_printer_conn, dp.auto_print_browser AS default_printer_auto,
+              mp.is_active AS marking_printer_active, mp.connection_type AS marking_printer_conn, mp.auto_print_browser AS marking_printer_auto
        FROM wms.employee_active_station eas
        JOIN wms.workstations ws ON ws.id=eas.station_id
        LEFT JOIN wms.printers dp ON dp.id=ws.default_printer_id
@@ -48,10 +48,10 @@ async function resolvePrinter(queryFn, { tenantId, docType, employeeId, clientId
     if (stationRes.rowCount > 0) {
       const row = stationRes.rows[0];
       if (docType === 'marking_code' && row.marking_printer_id && row.marking_printer_active) {
-        return { printerId: row.marking_printer_id, routeId: null, connectionType: row.marking_printer_conn };
+        return { printerId: row.marking_printer_id, routeId: null, connectionType: row.marking_printer_conn, autoPrintBrowser: !!row.marking_printer_auto };
       }
       if (row.default_printer_id && row.default_printer_active) {
-        return { printerId: row.default_printer_id, routeId: null, connectionType: row.default_printer_conn };
+        return { printerId: row.default_printer_id, routeId: null, connectionType: row.default_printer_conn, autoPrintBrowser: !!row.default_printer_auto };
       }
       // У места нет подходящего активного принтера ни для этого doc_type, ни
       // дефолтного - падаем в printer_routes ниже, а не молчим.
@@ -61,7 +61,7 @@ async function resolvePrinter(queryFn, { tenantId, docType, employeeId, clientId
   let routeRes;
   if (clientId !== undefined) {
     routeRes = await queryFn(
-      `SELECT pr.id, pr.printer_id, p.connection_type FROM wms.printer_routes pr
+      `SELECT pr.id, pr.printer_id, p.connection_type, p.auto_print_browser FROM wms.printer_routes pr
        JOIN wms.printers p ON p.id=pr.printer_id
        WHERE pr.tenant_id=$1 AND pr.doc_type=$2 AND pr.is_active=TRUE AND p.is_active=TRUE
          AND (pr.client_id=$3 OR pr.client_id IS NULL)
@@ -71,7 +71,7 @@ async function resolvePrinter(queryFn, { tenantId, docType, employeeId, clientId
     );
   } else {
     routeRes = await queryFn(
-      `SELECT pr.id, pr.printer_id, p.connection_type FROM wms.printer_routes pr
+      `SELECT pr.id, pr.printer_id, p.connection_type, p.auto_print_browser FROM wms.printer_routes pr
        JOIN wms.printers p ON p.id=pr.printer_id
        WHERE pr.tenant_id=$1 AND pr.doc_type=$2 AND pr.is_active=TRUE AND p.is_active=TRUE
        ORDER BY pr.is_default DESC, pr.id
@@ -80,7 +80,10 @@ async function resolvePrinter(queryFn, { tenantId, docType, employeeId, clientId
     );
   }
   if (routeRes.rowCount === 0) return null;
-  return { printerId: routeRes.rows[0].printer_id, routeId: routeRes.rows[0].id, connectionType: routeRes.rows[0].connection_type };
+  return {
+    printerId: routeRes.rows[0].printer_id, routeId: routeRes.rows[0].id,
+    connectionType: routeRes.rows[0].connection_type, autoPrintBrowser: !!routeRes.rows[0].auto_print_browser,
+  };
 }
 
 module.exports = { resolvePrinter };

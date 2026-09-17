@@ -21,7 +21,7 @@ router.get('/printers', async (req,res,next)=>{
     const r = await query(
       `SELECT p.id, p.tenant_id, p.warehouse_id, p.printer_code, p.printer_name, p.printer_type,
               p.connection_type, p.device_name, p.ip_address, p.port, p.zone_code,
-              p.paper_size_name,
+              p.paper_size_name, p.auto_print_browser,
               p.is_default, p.is_active, p.notes, p.created_at, p.updated_at,
               p.agent_last_seen_at, (p.agent_key_hash IS NOT NULL OR p.agent_key_sha256 IS NOT NULL) AS has_agent_key,
               w.warehouse_name
@@ -62,7 +62,7 @@ router.post('/printers/:id/agent-key', requireRole('tenant_admin','supervisor'),
 // импорта списком (bulk-import) — при 70-100 принтерах создавать их по
 // одному через форму нереально.
 async function createPrinterRow(tenantId, data) {
-  const { printer_name, printer_type='label', connection_type='agent', agent_code, device_name, ip_address, port, zone_code, warehouse_id, is_default=false, paper_size_name } = data;
+  const { printer_name, printer_type='label', connection_type='agent', agent_code, device_name, ip_address, port, zone_code, warehouse_id, is_default=false, paper_size_name, auto_print_browser=false } = data;
   if (!printer_name) throw new ValidationError('printer_name is required');
 
   const base = slugify(printer_name, 40);
@@ -75,9 +75,9 @@ async function createPrinterRow(tenantId, data) {
   }
 
   const r = await query(
-    `INSERT INTO wms.printers(tenant_id,warehouse_id,printer_code,printer_name,printer_type,connection_type,agent_code,device_name,ip_address,port,zone_code,is_default,is_active,paper_size_name)
-     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13) RETURNING *`,
-    [tenantId, warehouse_id||null, printerCode, printer_name, printer_type, connection_type, agent_code||null, device_name||null, ip_address||null, port||null, zone_code||null, !!is_default, paper_size_name||null]
+    `INSERT INTO wms.printers(tenant_id,warehouse_id,printer_code,printer_name,printer_type,connection_type,agent_code,device_name,ip_address,port,zone_code,is_default,is_active,paper_size_name,auto_print_browser)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13,$14) RETURNING *`,
+    [tenantId, warehouse_id||null, printerCode, printer_name, printer_type, connection_type, agent_code||null, device_name||null, ip_address||null, port||null, zone_code||null, !!is_default, paper_size_name||null, !!auto_print_browser]
   );
   return r.rows[0];
 }
@@ -139,7 +139,7 @@ router.post('/printers/bulk-import', requireRole('tenant_admin','supervisor'), a
 router.patch('/printers/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
     const id = validatePositiveInt(req.params.id,'id');
-    const { printer_name, device_name, ip_address, port, zone_code, is_active, is_default, paper_size_name } = req.body;
+    const { printer_name, device_name, ip_address, port, zone_code, is_active, is_default, paper_size_name, auto_print_browser } = req.body;
     const fields=[]; const params=[]; let idx=1;
     if (printer_name !== undefined) { fields.push(`printer_name=$${idx++}`); params.push(printer_name); }
     if (device_name  !== undefined) { fields.push(`device_name=$${idx++}`);  params.push(device_name||null); }
@@ -149,6 +149,9 @@ router.patch('/printers/:id', requireRole('tenant_admin','supervisor'), async (r
     if (is_active    !== undefined) { fields.push(`is_active=$${idx++}`);    params.push(!!is_active); }
     if (is_default   !== undefined) { fields.push(`is_default=$${idx++}`);   params.push(!!is_default); }
     if (paper_size_name !== undefined) { fields.push(`paper_size_name=$${idx++}`); params.push(paper_size_name||null); }
+    // Явный переключатель тихой автопечати в браузере (обсуждение 17.09.2026)
+    // — см. комментарий у миграции 064 и в packing.service.js::scanItem.
+    if (auto_print_browser !== undefined) { fields.push(`auto_print_browser=$${idx++}`); params.push(!!auto_print_browser); }
     if (!fields.length) throw new ValidationError('No fields');
     fields.push(`updated_at=NOW()`); params.push(id, req.user.tenantId);
     const r = await query(`UPDATE wms.printers SET ${fields.join(',')} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`, params);
