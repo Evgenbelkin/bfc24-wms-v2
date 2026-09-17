@@ -51,7 +51,8 @@
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="select-all-cb" onchange="toggleSelectAll(this.checked)"/> Выбрать все на странице</label>
       <span style="font-size:13px;color:var(--muted);">Выбрано: <b id="selected-count">0</b></span>
       <button class="btn-sm btn-back" style="margin-left:auto;" onclick="openBulkDimensionsModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/></svg> Задать размеры</button>
-      <button class="btn-sm btn-back" onclick="openBulkSubWarehouseModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Под-склад</button>
+      <button class="btn-sm btn-back" onclick="openBulkSubWarehouseModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Назначить под-склад</button>
+      <button class="btn-sm btn-back" onclick="openSubWarehousesModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> Создать/переименовать под-склад</button>
       <button class="btn-sm btn-blue" onclick="printSelectedLabels()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Печать выбранных</button>
       <button class="btn-sm btn-red" onclick="deleteSelectedLocations()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить выбранные</button>
     </div>
@@ -68,7 +69,6 @@
     <button class="btn-big btn-blue" style="flex:1;" onclick="openBulkModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Создать пачкой</button>
   </div>
   <a href="/app/location-fill.html" class="btn-sm btn-back btn-full" style="display:block;text-align:center;margin-top:10px;"><svg class="i" viewBox="0 0 24 24" style="vertical-align:-3px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Заполняемость ячеек</a>
-  <button class="btn-sm btn-back btn-full" id="subwh-manage-btn" style="display:none;margin-top:10px;" onclick="openSubWarehousesModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Управление под-складами</button>
 
   <div id="modal-root"></div>
 
@@ -91,7 +91,6 @@ if (!UI.requireRole(['supervisor', 'tenant_admin', 'receiver', 'picker', 'invent
 var user = window.API.getUser();
 var canEdit = user && user.role === 'tenant_admin' || user && user.role === 'supervisor';
 if (canEdit) document.getElementById('add-btn').style.display = 'block';
-if (canEdit) document.getElementById('subwh-manage-btn').style.display = 'block';
 function logout() {
   return _logout.apply(this, arguments);
 }
