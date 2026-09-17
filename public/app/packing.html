@@ -345,17 +345,23 @@ function autoPrintScannedSticker() {
     doc.write("<title>Стикер</title>\n      <body style=\"margin:0;display:flex;align-items:center;justify-content:center;\">\n        <img id=\"silent-print-img\" src=\"data:image/svg+xml;base64,".concat(image, "\" style=\"width:100%;\"/>\n      </body>"));
     doc.close();
     var img = doc.getElementById('silent-print-img');
-    var doPrint = function () {
-      try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
-      // frame.contentWindow.focus() выше уводит фокус с поля скана на iframe —
-      // без явного возврата курсор остаётся в iframe и оператору приходится
-      // кликать по полю "сканируйте товар" мышкой перед следующим сканом.
-      // Возвращаем туда же, куда обычный ход скана (см. _submitScan чуть
-      // ниже: 'pack-location', если этим сканом упаковали всё, иначе снова
-      // 'scan-barcode') — сохранено в window.__packingRefocusTarget.
+    // Возврат фокуса вынесен в отдельную функцию и вызывается с небольшой
+    // задержкой (не сразу по возврату из print()) — сразу после закрытия
+    // системного диалога печати браузер ещё не всегда отдаёт фокус документу
+    // назад, синхронный .focus() в этот момент может молча не сработать.
+    // window.focus() на верхнем окне — на случай, если фокус вообще ушёл из
+    // вкладки (не просто на iframe).
+    var restoreFocus = function () {
+      try { window.focus(); } catch (e) {}
       var targetId = window.__packingRefocusTarget || 'scan-barcode';
       var input = document.getElementById(targetId);
       if (input) UI.focusNoKeyboard(input);
+    };
+    var doPrint = function () {
+      try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
+      restoreFocus();
+      setTimeout(restoreFocus, 250);
+      setTimeout(restoreFocus, 800);
     };
     if (img && !img.complete) img.onload = doPrint;else doPrint();
   }).catch(function (e) {
