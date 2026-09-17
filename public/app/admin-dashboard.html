@@ -624,12 +624,14 @@ function renderKpis(waveStats, shipStats) {
     num: pickQueued ? pickQueued.wave_count : '—',
     sub: pickQueued ? (pickQueued.items_remaining + ' шт') : '',
     label: 'В очереди на сборку',
-    cls: pickQueued && pickQueued.wave_count > 0 ? 'warn' : ''
+    cls: pickQueued && pickQueued.wave_count > 0 ? 'warn' : '',
+    codes: pickQueued ? pickQueued.shipment_codes : null
   }, {
     num: pickActive ? pickActive.wave_count : waveStats.activeCount,
     sub: pickActive ? (pickActive.items_remaining + ' шт') : '',
     label: 'В сборке (в работе)',
-    cls: ''
+    cls: '',
+    codes: pickActive ? pickActive.shipment_codes : null
   }, {
     num: w ? w.picking.idleActive : waveStats.idleCount,
     sub: '',
@@ -639,12 +641,14 @@ function renderKpis(waveStats, shipStats) {
     num: packQueued ? packQueued.task_count : '—',
     sub: packQueued ? (packQueued.items_remaining + ' шт') : '',
     label: 'В очереди на упаковку',
-    cls: packQueued && packQueued.task_count > 0 ? 'warn' : ''
+    cls: packQueued && packQueued.task_count > 0 ? 'warn' : '',
+    codes: packQueued ? packQueued.shipment_codes : null
   }, {
     num: packActive ? packActive.task_count : '—',
     sub: packActive ? (packActive.items_remaining + ' шт') : '',
     label: 'В упаковке (в работе)',
-    cls: ''
+    cls: '',
+    codes: packActive ? packActive.shipment_codes : null
   }, {
     num: pickReady ? pickReady.wave_count : waveStats.readyCount,
     sub: '',
@@ -656,9 +660,40 @@ function renderKpis(waveStats, shipStats) {
     label: 'Готовы к отгрузке',
     cls: shipStats.readyToShip > 0 ? 'ok' : ''
   }];
-  document.getElementById('kpi-grid').innerHTML = kpis.map(function (k) {
-    return '\n        <div class="kpi ' + k.cls + '"><div class="num">' + k.num + '</div><div class="label">' + k.label + '</div>' + (k.sub ? '<div class="submetric">' + k.sub + '</div>' : '') + '</div>\n      ';
+  document.getElementById('kpi-grid').innerHTML = kpis.map(function (k, i) {
+    var clickable = k.codes && k.codes.length ? ' style="cursor:pointer;" onclick="openKpiDetail(' + i + ')"' : '';
+    return '\n        <div class="kpi ' + k.cls + '"' + clickable + '><div class="num">' + k.num + '</div><div class="label">' + k.label + '</div>' + (k.sub ? '<div class="submetric">' + k.sub + '</div>' : '') + '</div>\n      ';
   }).join('');
+  lastKpis = kpis;
+}
+var lastKpis = [];
+// 17.09.2026: диспетчер засомневался, что цифры "В очереди/В работе на
+// упаковку" верные (подозревал, что считаются волны, которые ещё
+// собираются, или уже отгруженные) — вместо того чтобы просто уверять "всё
+// правильно", показываем СПИСОК конкретных номеров отгрузок за цифрой, по
+// клику на плашку. Так можно свериться с реальными карточками отгрузок ниже.
+function openKpiDetail(i) {
+  var k = lastKpis[i];
+  if (!k || !k.codes || !k.codes.length) return;
+  if (document.getElementById('kpi-detail-overlay')) return;
+  var overlay = document.createElement('div');
+  overlay.id = 'kpi-detail-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+  var rows = k.codes.map(function (code) {
+    return '<div style="padding:8px 10px;border-bottom:1px solid var(--border,#e2e8f0);font-size:13px;cursor:pointer;" onclick="document.getElementById(\'kpi-detail-overlay\').remove(); openShipmentDetail(\'' + code.replace(/'/g, "\\'") + '\');">' + UI.escHtml(code) + '</div>';
+  }).join('');
+  overlay.innerHTML =
+    '<div style="background:var(--card,#fff);border-radius:16px;padding:20px;width:100%;max-width:420px;max-height:80vh;box-sizing:border-box;display:flex;flex-direction:column;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<div style="font-size:15px;font-weight:700;color:var(--text,#0f172a);">' + UI.escHtml(k.label) + ' (' + k.codes.length + ')</div>' +
+        '<button id="kpi-detail-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted,#64748b);line-height:1;">&times;</button>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--muted,#64748b);margin-bottom:8px;">Конкретные отгрузки, которые сейчас входят в эту цифру — нажми, чтобы открыть карточку.</div>' +
+      '<div style="overflow-y:auto;border:1px solid var(--border,#e2e8f0);border-radius:10px;">' + rows + '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('kpi-detail-close').addEventListener('click', function () { overlay.remove(); });
 }
 
 // ---------- Пропущенные при сборке позиции ----------

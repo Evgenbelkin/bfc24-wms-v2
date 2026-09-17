@@ -311,7 +311,8 @@ async function getWorkloadBreakdown(tenantId) {
     query(
       `SELECT pw.status,
          COUNT(*)::int AS wave_count,
-         COALESCE(SUM(pt.qty_remaining),0)::int AS items_remaining
+         COALESCE(SUM(pt.qty_remaining),0)::int AS items_remaining,
+         array_agg(pw.shipment_code ORDER BY pw.created_at) AS shipment_codes
        FROM wms.pick_waves pw
        JOIN LATERAL (
          SELECT COALESCE(SUM(t.qty - t.qty_picked),0) AS qty_remaining
@@ -327,23 +328,46 @@ async function getWorkloadBreakdown(tenantId) {
       [tenantId]
     ),
     query(
+      // 17.09.2026, правка после проверки пользователем: числа в "В очереди/
+      // В работе на упаковку" казались завышенными. Нашли два реальных
+      // источника завышения (оба фиксим здесь, а не только объясняем):
+      //  1) qty_plan считался суммой qty ПО ВСЕМ picking_tasks отгрузки,
+      //     включая status='skipped'/'cancelled' (пропущенные/отменённые
+      //     позиции - см. requeueSkippedTask/cancelSkippedTask) - эти штуки
+      //     физически никогда не были собраны и никогда не будут упакованы,
+      //     но плюсовались в "осталось упаковать" навсегда. Теперь считаем
+      //     план как в packing.service.js::confirmPacking - только
+      //     'new'/'in_progress'/'done' (т.е. реально собранное или ещё
+      //     собираемое), пропущенное/отменённое не в счёт.
+      //  2) На всякий случай (защита от рассинхрона, а не только от
+      //     известной причины) не считаем задачу упаковки, если её отгрузка
+      //     уже физически ушла дальше (ready_to_ship и позже) - такая задача
+      //     явно "зависший хвост", а не реальный объём работы прямо сейчас.
+      //     В штатном потоке этого не бывает (confirmPacking закрывает
+      //     packing_task И переводит отгрузку в ready_to_ship одной
+      //     транзакцией), но лучше перестраховаться на чтение, чем показывать
+      //     дублирующую или зомби-задачу диспетчеру.
       `SELECT pt.status,
          COUNT(*)::int AS task_count,
-         COALESCE(SUM(GREATEST(pl.qty_plan - COALESCE(s.total_packed_qty,0), 0)),0)::int AS items_remaining
+         COALESCE(SUM(GREATEST(pl.qty_plan - COALESCE(s.total_packed_qty,0), 0)),0)::int AS items_remaining,
+         array_agg(pt.shipment_code ORDER BY pt.created_at) AS shipment_codes
        FROM wms.packing_tasks pt
        JOIN wms.shipments s ON s.tenant_id=pt.tenant_id AND s.external_id=pt.shipment_code
        JOIN LATERAL (
          SELECT COALESCE(SUM(t.qty),0) AS qty_plan
-         FROM wms.picking_tasks t WHERE t.tenant_id=pt.tenant_id AND t.shipment_code=pt.shipment_code
+         FROM wms.picking_tasks t
+         WHERE t.tenant_id=pt.tenant_id AND t.shipment_code=pt.shipment_code
+           AND t.status IN ('new','in_progress','done')
        ) pl ON TRUE
        WHERE pt.tenant_id=$1 AND pt.status IN ('new','in_progress')
+         AND s.status NOT IN ('ready_to_ship','shipping','in_transit','done','cancelled')
        GROUP BY pt.status`,
       [tenantId]
     ),
   ]);
 
-  const zeroWave = { wave_count: 0, items_remaining: 0 };
-  const zeroTask = { task_count: 0, items_remaining: 0 };
+  const zeroWave = { wave_count: 0, items_remaining: 0, shipment_codes: [] };
+  const zeroTask = { task_count: 0, items_remaining: 0, shipment_codes: [] };
   const pickBy = {};
   for (const row of pickingRes.rows) pickBy[row.status] = row;
   const packBy = {};
