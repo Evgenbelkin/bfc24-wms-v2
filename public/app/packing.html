@@ -347,6 +347,15 @@ function autoPrintScannedSticker() {
     var img = doc.getElementById('silent-print-img');
     var doPrint = function () {
       try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
+      // frame.contentWindow.focus() выше уводит фокус с поля скана на iframe —
+      // без явного возврата курсор остаётся в iframe и оператору приходится
+      // кликать по полю "сканируйте товар" мышкой перед следующим сканом.
+      // Возвращаем туда же, куда обычный ход скана (см. _submitScan чуть
+      // ниже: 'pack-location', если этим сканом упаковали всё, иначе снова
+      // 'scan-barcode') — сохранено в window.__packingRefocusTarget.
+      var targetId = window.__packingRefocusTarget || 'scan-barcode';
+      var input = document.getElementById(targetId);
+      if (input) UI.focusNoKeyboard(input);
     };
     if (img && !img.complete) img.onload = doPrint;else doPrint();
   }).catch(function (e) {
@@ -899,7 +908,12 @@ function _submitScan() {
           // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
           // отгрузки (туда сканируют физически следующим шагом), а не оставаться
           // в уже неактуальном поле товара.
-          UI.focusNoKeyboard(document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode'));
+          // Запоминаем цель в window.__packingRefocusTarget — autoPrintScannedSticker()
+          // (см. выше) печатает через iframe асинхронно, ПОСЛЕ этого фокуса, и
+          // сама уводит курсор на себя (frame.contentWindow.focus()); ей нужно
+          // знать, куда фокус вернуть, чтобы оператору не пришлось кликать мышкой.
+          window.__packingRefocusTarget = allPackedNow ? 'pack-location' : 'scan-barcode';
+          UI.focusNoKeyboard(document.getElementById(window.__packingRefocusTarget));
           return _context8.a(2, true);
         case 3:
           _context8.p = 3;
