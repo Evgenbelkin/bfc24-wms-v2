@@ -42,6 +42,16 @@
     .sticker-box{text-align:center;background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:6px;}
     .sticker-box img{max-width:100%;}
     .sticker-code{font-family:'SF Mono',Consolas,monospace;font-size:13px;color:var(--muted);margin-top:8px;text-align:center;}
+    /* Тихая автопечать стикера (см. autoPrintScannedSticker в скрипте ниже) —
+       печатаем ПРЯМО в этом же документе (не в отдельном iframe/окне), чтобы
+       браузер не переводил фокус в другой browsing context и не "забывал"
+       вернуть его в поле скана после печати (была именно такая проблема). */
+    #silent-print-area{display:none;}
+    @media print{
+      body *{visibility:hidden;}
+      #silent-print-area, #silent-print-area *{visibility:visible;}
+      #silent-print-area{display:block;position:fixed;top:0;left:0;width:100%;}
+    }
   </style>
 </head>
 <body>
@@ -104,15 +114,15 @@
           <!-- Именно тот стикер ВБ, который реально ушёл на печать для только
                что отсканированной единицы товара — чтобы сверить с тем, что
                физически выехало из принтера, до того как его наклеят. -->
-          <!-- Скрытый постоянный iframe для тихой автопечати стикера через браузер
+          <!-- Скрытый блок для тихой автопечати стикера через браузер
                (connection_type='usb' у принтера рабочего места — без агента, см.
-               autoPrintScannedSticker ниже). НЕ window.open — окно, открытое не
-               напрямую из обработчика клика (а из .then() после fetch), браузер
-               может заблокировать как всплывающее; постоянный iframe в DOM этой
-               проблемы не имеет. В связке с Chrome, запущенным с флагом
-               --kiosk-printing, печать уходит на принтер по умолчанию без
-               диалогового окна вообще. -->
-          <iframe id="silent-print-frame" style="position:absolute;width:0;height:0;border:0;visibility:hidden;"></iframe>
+               autoPrintScannedSticker ниже). Печатаем через window.print() ЭТОГО
+               ЖЕ окна (см. @media print выше) — печать через отдельный iframe
+               (первая версия) уводила браузерный фокус в другой browsing
+               context и после печати переставала возвращать курсор в поле
+               скана. В связке с Chrome, запущенным с флагом --kiosk-printing,
+               печать уходит на принтер по умолчанию без диалогового окна. -->
+          <div id="silent-print-area"></div>
 
           <div class="card" id="sticker-card" style="display:none">
             <div class="card-title">Стикер ВБ (печатается)</div>
@@ -329,42 +339,26 @@ function printScannedSticker() {
 // Тихая автопечать стикера сразу после скана — только для принтеров рабочего
 // места с connection_type='usb' (печать через браузер, без агента; см.
 // packing.service.js::scanItem и правку 17.09.2026 про слабый интернет у
-// ЭсЭнДи). Пишет картинку в постоянный скрытый iframe (#silent-print-frame)
-// и печатает его содержимое — НЕ window.open (см. комментарий у iframe в
-// разметке выше). С обычным window.print() (без --kiosk-printing у Chrome)
-// покажется системный диалог печати — это ожидаемо, пока браузер не
-// запущен в тихом режиме; сама печать при этом всё равно происходит без
-// похода на сервер за отдельным заданием.
+// ЭсЭнДи). ВАЖНО: печатаем через window.print() ЭТОГО ЖЕ документа (кладём
+// картинку в #silent-print-area, скрытый через CSS вне печати — см. @media
+// print в <style> вверху файла), а НЕ через отдельный iframe/окно. Раньше
+// печатали через iframe.contentWindow.print() — это переводило браузерный
+// фокус в ДРУГОЙ browsing context (iframe), и после печати курсор переставал
+// возвращаться в поле скана вообще, никакими задержками/afterprint не
+// лечилось (проверяли). Печать в том же окне такой проблемы не создаёт —
+// фокус никуда не уводим программно, значит браузеру нечего "забывать".
+// С обычным window.print() (без --kiosk-printing у Chrome) покажется
+// системный диалог печати — это ожидаемо, пока браузер не запущен в тихом
+// режиме; сама печать при этом всё равно происходит без похода на сервер
+// за отдельным заданием.
 function autoPrintScannedSticker() {
   if (!lastScanSticker) return;
-  var frame = document.getElementById('silent-print-frame');
-  if (!frame) return;
+  var area = document.getElementById('silent-print-area');
+  if (!area) return;
   fetchScannedStickerImage().then(function (image) {
-    var doc = frame.contentWindow.document;
-    doc.open();
-    doc.write("<title>Стикер</title>\n      <body style=\"margin:0;display:flex;align-items:center;justify-content:center;\">\n        <img id=\"silent-print-img\" src=\"data:image/svg+xml;base64,".concat(image, "\" style=\"width:100%;\"/>\n      </body>"));
-    doc.close();
-    var img = doc.getElementById('silent-print-img');
-    var restoreFocus = function () {
-      try { window.focus(); } catch (e) {}
-      var targetId = window.__packingRefocusTarget || 'scan-barcode';
-      var input = document.getElementById(targetId);
-      if (input) UI.focusNoKeyboard(input);
-    };
-    var doPrint = function () {
-      // afterprint — событие браузера, которое срабатывает ИМЕННО в момент
-      // завершения печати (и при кiosk-printing без диалога, и при обычном
-      // диалоге после закрытия) — надёжнее подбора задержек вручную.
-      try { frame.contentWindow.addEventListener('afterprint', restoreFocus); } catch (e) {}
-      try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
-      // Подстраховка: если afterprint по какой-то причине не сработает
-      // (встречается в некоторых версиях Chrome при печати из iframe).
-      restoreFocus();
-      setTimeout(restoreFocus, 250);
-      setTimeout(restoreFocus, 800);
-      setTimeout(restoreFocus, 1500);
-    };
-    if (img && !img.complete) img.onload = doPrint;else doPrint();
+    area.innerHTML = '<img src="data:image/svg+xml;base64,' + image + '" style="width:100%;"/>';
+    try { window.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
+    area.innerHTML = '';
   }).catch(function (e) {
     UI.notify.err('Не удалось загрузить стикер для печати: ' + e.message);
   });
@@ -915,12 +909,7 @@ function _submitScan() {
           // штрихкода больше нечего, курсор должен ждать в поле ячейки зоны
           // отгрузки (туда сканируют физически следующим шагом), а не оставаться
           // в уже неактуальном поле товара.
-          // Запоминаем цель в window.__packingRefocusTarget — autoPrintScannedSticker()
-          // (см. выше) печатает через iframe асинхронно, ПОСЛЕ этого фокуса, и
-          // сама уводит курсор на себя (frame.contentWindow.focus()); ей нужно
-          // знать, куда фокус вернуть, чтобы оператору не пришлось кликать мышкой.
-          window.__packingRefocusTarget = allPackedNow ? 'pack-location' : 'scan-barcode';
-          UI.focusNoKeyboard(document.getElementById(window.__packingRefocusTarget));
+          UI.focusNoKeyboard(document.getElementById(allPackedNow ? 'pack-location' : 'scan-barcode'));
           return _context8.a(2, true);
         case 3:
           _context8.p = 3;
