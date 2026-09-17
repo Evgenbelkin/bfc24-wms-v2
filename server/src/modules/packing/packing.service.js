@@ -342,8 +342,18 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       [tenantId, shipmentCode, barcode, alreadyPacked]
     );
 
-    // Создаём print_job (soft-fail)
+    // Создаём print_job (soft-fail). ИСКЛЮЧЕНИЕ (правка 17.09.2026, слабый
+    // интернет у ЭсЭнДи — печать через агента добавляла 5-10 сек задержки,
+    // т.к. и скан, и отдельный опрос агента идут через один и тот же плохой
+    // канал): если у рабочего места принтер настроен как connection_type=
+    // 'usb' ("Локально (браузер/USB)"), НЕ кладём задание в очередь агента —
+    // печатать некому, агент для такого принтера не запускается. Вместо
+    // этого просто сигналим фронту (printConnectionType='usb'), а он сам
+    // печатает стикер сразу тем же браузером, что и сканирует (см.
+    // autoPrintScannedSticker в packing.html) — без похода на сервер за
+    // отдельным job'ом.
     let printJob = null;
+    let printConnectionType = null;
     try {
       if (stickerRes.rowCount > 0) {
         const sticker = stickerRes.rows[0];
@@ -354,25 +364,28 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
           tenantId, docType: 'wb_sticker', employeeId: packerId, clientId: shipment.client_id,
         });
         if (resolved) {
-          const jobCode = `PKG-${shipment.id}-${barcode}-${Date.now()}`;
-          const pjRes = await client.query(
-            `INSERT INTO wms.print_jobs
-               (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,
-                copies,payload_json,status,created_by)
-             VALUES($1,$2,$3,$4,'wb_sticker','shipment',$5,1,$6::jsonb,'new',$7)
-             RETURNING id, job_code, status`,
-            [
-              tenantId, jobCode, resolved.printerId, resolved.routeId, shipment.id,
-              JSON.stringify({
-                wb_sticker:      sticker.wb_sticker,
-                wb_sticker_code: sticker.wb_sticker_code,
-                barcode,
-                shipment_code:   shipmentCode,
-              }),
-              packerId,
-            ]
-          );
-          printJob = pjRes.rows[0];
+          printConnectionType = resolved.connectionType || null;
+          if (resolved.connectionType !== 'usb') {
+            const jobCode = `PKG-${shipment.id}-${barcode}-${Date.now()}`;
+            const pjRes = await client.query(
+              `INSERT INTO wms.print_jobs
+                 (tenant_id,job_code,printer_id,route_id,doc_type,entity_type,entity_id,
+                  copies,payload_json,status,created_by)
+               VALUES($1,$2,$3,$4,'wb_sticker','shipment',$5,1,$6::jsonb,'new',$7)
+               RETURNING id, job_code, status`,
+              [
+                tenantId, jobCode, resolved.printerId, resolved.routeId, shipment.id,
+                JSON.stringify({
+                  wb_sticker:      sticker.wb_sticker,
+                  wb_sticker_code: sticker.wb_sticker_code,
+                  barcode,
+                  shipment_code:   shipmentCode,
+                }),
+                packerId,
+              ]
+            );
+            printJob = pjRes.rows[0];
+          }
         }
       }
     } catch (printErr) {
@@ -470,6 +483,7 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       qty_packed:  newPacked,
       shipment_id: shipment.id,
       print_job:   printJob,
+      print_connection_type: printConnectionType,
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
       wb_order_id:     scannedSticker?.wb_order_id || null,
       marking:           markingJob,

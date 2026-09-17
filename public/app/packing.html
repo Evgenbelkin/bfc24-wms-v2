@@ -104,6 +104,16 @@
           <!-- Именно тот стикер ВБ, который реально ушёл на печать для только
                что отсканированной единицы товара — чтобы сверить с тем, что
                физически выехало из принтера, до того как его наклеят. -->
+          <!-- Скрытый постоянный iframe для тихой автопечати стикера через браузер
+               (connection_type='usb' у принтера рабочего места — без агента, см.
+               autoPrintScannedSticker ниже). НЕ window.open — окно, открытое не
+               напрямую из обработчика клика (а из .then() после fetch), браузер
+               может заблокировать как всплывающее; постоянный iframe в DOM этой
+               проблемы не имеет. В связке с Chrome, запущенным с флагом
+               --kiosk-printing, печать уходит на принтер по умолчанию без
+               диалогового окна вообще. -->
+          <iframe id="silent-print-frame" style="position:absolute;width:0;height:0;border:0;visibility:hidden;"></iframe>
+
           <div class="card" id="sticker-card" style="display:none">
             <div class="card-title">Стикер ВБ (печатается)</div>
             <div class="sticker-box" id="sticker-box"></div>
@@ -314,6 +324,33 @@ function printScannedSticker() {
     w.document.open();
     w.document.write("<p style=\"font-family:sans-serif;color:red;padding:40px;\">".concat(UI.escHtml(e.message), "</p>"));
     w.document.close();
+  });
+}
+// Тихая автопечать стикера сразу после скана — только для принтеров рабочего
+// места с connection_type='usb' (печать через браузер, без агента; см.
+// packing.service.js::scanItem и правку 17.09.2026 про слабый интернет у
+// ЭсЭнДи). Пишет картинку в постоянный скрытый iframe (#silent-print-frame)
+// и печатает его содержимое — НЕ window.open (см. комментарий у iframe в
+// разметке выше). С обычным window.print() (без --kiosk-printing у Chrome)
+// покажется системный диалог печати — это ожидаемо, пока браузер не
+// запущен в тихом режиме; сама печать при этом всё равно происходит без
+// похода на сервер за отдельным заданием.
+function autoPrintScannedSticker() {
+  if (!lastScanSticker) return;
+  var frame = document.getElementById('silent-print-frame');
+  if (!frame) return;
+  fetchScannedStickerImage().then(function (image) {
+    var doc = frame.contentWindow.document;
+    doc.open();
+    doc.write("<title>Стикер</title>\n      <body style=\"margin:0;display:flex;align-items:center;justify-content:center;\">\n        <img id=\"silent-print-img\" src=\"data:image/svg+xml;base64,".concat(image, "\" style=\"width:100%;\"/>\n      </body>"));
+    doc.close();
+    var img = doc.getElementById('silent-print-img');
+    var doPrint = function () {
+      try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
+    };
+    if (img && !img.complete) img.onload = doPrint;else doPrint();
+  }).catch(function (e) {
+    UI.notify.err('Не удалось загрузить стикер для печати: ' + e.message);
   });
 }
 function renderPickupGate() {
@@ -806,6 +843,10 @@ function _submitScan() {
             wb_sticker_code: res.wb_sticker_code,
             image: null
           } : null;
+          // Принтер рабочего места настроен как "браузер/USB" — печатаем сами,
+          // на сервере для такого принтера задание в очередь агента не
+          // кладётся (см. packing.service.js::scanItem, print_connection_type).
+          if (lastScanSticker && res.print_connection_type === 'usb') autoPrintScannedSticker();
           renderLines();
           renderBigPhoto();
           renderStickerCard();
