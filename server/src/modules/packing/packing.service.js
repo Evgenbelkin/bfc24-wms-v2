@@ -505,8 +505,15 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
 /** Картинка конкретного стикера ВБ по клику на чип в списке строк упаковки —
  *  отдельным запросом, не в общем ответе (см. комментарий в getPackingTaskDetails). */
 async function getStickerImage({ tenantId, wbOrderId }) {
+  // ВАЖНО: wbOrderId сюда приходит от клиента как значение поля wb_order_id
+  // (внешний ID заказа ВБ, см. scanItem/stickerRes), а НЕ как внутренний
+  // serial id таблицы wms.wb_orders — это разные колонки/значения. Раньше
+  // тут ошибочно фильтровали по id, из-за чего lookup всегда промахивался
+  // (кроме случайного совпадения id и wb_order_id).
   const r = await query(
-    `SELECT wb_sticker, wb_sticker_code FROM wms.wb_orders WHERE id=$1 AND tenant_id=$2`,
+    `SELECT wb_sticker, wb_sticker_code FROM wms.wb_orders
+     WHERE wb_order_id=$1 AND tenant_id=$2
+     ORDER BY id DESC LIMIT 1`,
     [wbOrderId, tenantId]
   );
   if (r.rowCount === 0 || !r.rows[0].wb_sticker) throw new NotFoundError('Sticker', wbOrderId);
