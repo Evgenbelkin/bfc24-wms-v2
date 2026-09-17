@@ -400,7 +400,7 @@ async function findItemIdByBarcode({ tenantId, clientId, barcode, dbClient = nul
   const b = validateBarcode(barcode);
 
   const aliasRes = await db.query(
-    `SELECT i.id, i.is_active, i.merged_into_item_id
+    `SELECT i.id, i.is_active, i.merged_into_item_id, i.source
      FROM wms.item_barcodes ib
      JOIN wms.items i ON i.id = ib.item_id
      WHERE ib.tenant_id=$1 AND ib.client_id=$2 AND ib.barcode=$3 LIMIT 1`,
@@ -410,7 +410,7 @@ async function findItemIdByBarcode({ tenantId, clientId, barcode, dbClient = nul
 
   if (!row) {
     const directRes = await db.query(
-      `SELECT id, is_active, merged_into_item_id FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
+      `SELECT id, is_active, merged_into_item_id, source FROM wms.items WHERE tenant_id=$1 AND client_id=$2 AND barcode=$3 LIMIT 1`,
       [tenantId, clientId, b]
     );
     row = directRes.rowCount > 0 ? directRes.rows[0] : null;
@@ -422,7 +422,7 @@ async function findItemIdByBarcode({ tenantId, clientId, barcode, dbClient = nul
   let guard = 0;
   while (row.merged_into_item_id && guard++ < 5) {
     const nextRes = await db.query(
-      `SELECT id, is_active, merged_into_item_id FROM wms.items WHERE id=$1 LIMIT 1`,
+      `SELECT id, is_active, merged_into_item_id, source FROM wms.items WHERE id=$1 LIMIT 1`,
       [row.merged_into_item_id]
     );
     if (nextRes.rowCount === 0) break;

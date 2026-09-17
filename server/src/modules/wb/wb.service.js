@@ -1095,21 +1095,57 @@ async function importItemsForAccount({ tenantId, accountId, apiToken, clientId }
           existing = { id: ins.rows[0].id, is_active: true };
           if (volumeLiters) filledVolume++;
         } else if (existing) {
-          const cur = await client.query(`SELECT volume_liters, size FROM wms.items WHERE id=$1`, [existing.id]);
-          if (cur.rowCount > 0 && ((cur.rows[0].volume_liters == null && volumeLiters) || (cur.rows[0].size == null && primary.tech_size))) {
-            await client.query(
-              `UPDATE wms.items SET
-                 length_cm = COALESCE(length_cm, $1),
-                 width_cm  = COALESCE(width_cm, $2),
-                 height_cm = COALESCE(height_cm, $3),
-                 volume_liters = COALESCE(volume_liters, $4),
-                 weight_grams = COALESCE(weight_grams, $5),
-                 size = COALESCE(size, $6),
-                 updated_at = NOW()
-               WHERE id=$7`,
-              [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, primary.tech_size||null, existing.id]
-            );
-            if (volumeLiters) filledVolume++;
+          // 17.09.2026: раньше при повторном импорте (клиент переименовал
+          // карточку/сменил артикул продавца на самом WB) обновлялись ТОЛЬКО
+          // габариты, и то лишь если они были NULL — item_name/vendor_code/
+          // brand/preview_url так и оставались от первого импорта навсегда.
+          // wms.wb_items (каталог wb.html) при этом обновлялся исправно
+          // (ON CONFLICT DO UPDATE выше), из-за чего wb.html показывал новые
+          // данные, а items.html/stock-overview.html — старые. Реальный кейс:
+          // артикул BR-0711cat → PS-0926horse, "кольцо" → "серьги", штрихкод
+          // не менялся. Подтягиваем актуальные название/артикул/бренд/фото
+          // ТОЛЬКО для товаров с source='wb' — если склад вручную завёл
+          // товар (source='manual') и потом на него случайно лёг тот же
+          // штрихкод из WB, его ручное название трогать не должны.
+          const cur = await client.query(`SELECT volume_liters, size, source FROM wms.items WHERE id=$1`, [existing.id]);
+          if (cur.rowCount > 0) {
+            const row = cur.rows[0];
+            const needsDims = (row.volume_liters == null && volumeLiters) || (row.size == null && primary.tech_size);
+            if (row.source === 'wb') {
+              await client.query(
+                `UPDATE wms.items SET
+                   item_name = COALESCE($1, item_name),
+                   vendor_code = COALESCE($2, vendor_code),
+                   brand = COALESCE($3, brand),
+                   preview_url = COALESCE($4, preview_url),
+                   wb_nm_id = COALESCE($5, wb_nm_id),
+                   length_cm = COALESCE(length_cm, $6),
+                   width_cm  = COALESCE(width_cm, $7),
+                   height_cm = COALESCE(height_cm, $8),
+                   volume_liters = COALESCE(volume_liters, $9),
+                   weight_grams = COALESCE(weight_grams, $10),
+                   size = COALESCE(size, $11),
+                   updated_at = NOW()
+                 WHERE id=$12`,
+                [card.title||null, card.vendorCode||null, card.brand||null, previewUrl, card.nmID,
+                 lengthCm, widthCm, heightCm, volumeLiters, weightGrams, primary.tech_size||null, existing.id]
+              );
+              if (volumeLiters) filledVolume++;
+            } else if (needsDims) {
+              await client.query(
+                `UPDATE wms.items SET
+                   length_cm = COALESCE(length_cm, $1),
+                   width_cm  = COALESCE(width_cm, $2),
+                   height_cm = COALESCE(height_cm, $3),
+                   volume_liters = COALESCE(volume_liters, $4),
+                   weight_grams = COALESCE(weight_grams, $5),
+                   size = COALESCE(size, $6),
+                   updated_at = NOW()
+                 WHERE id=$7`,
+                [lengthCm, widthCm, heightCm, volumeLiters, weightGrams, primary.tech_size||null, existing.id]
+              );
+              if (volumeLiters) filledVolume++;
+            }
           }
         }
 
