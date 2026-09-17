@@ -357,7 +357,6 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
     // принтера скан начал бы сам печатать без предупреждения.
     let printJob = null;
     let printConnectionType = null;
-    let printStickerImage = null;
     try {
       if (stickerRes.rowCount > 0) {
         const sticker = stickerRes.rows[0];
@@ -375,17 +374,17 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
           // на каждом скане у тех, кто просто выбрал этот способ подключения.
           const autoPrintBrowser = resolved.connectionType === 'usb' && resolved.autoPrintBrowser === true;
           printConnectionType = autoPrintBrowser ? 'usb' : null;
-          if (autoPrintBrowser) {
-            // Правка 17.09.2026 (слабый интернет у ЭсЭнДи): картинку стикера
-            // отдаём СРАЗУ в этом же ответе на скан, а не отдельным запросом
-            // (GET /packing/sticker-image), как для обычного клика "Печать
-            // ещё раз" — иначе автопечать ждёт ВТОРОЙ поход на сервер по
-            // тому же плохому каналу и получается ещё медленнее агента.
-            // Для всех остальных сканов (без auto_print_browser) картинку
-            // по-прежнему не гоняем зря — экономия трафика из правки
-            // "Убрать base64-картинку стикера из ответа на скан" в силе.
-            printStickerImage = sticker.wb_sticker;
-          } else {
+          // ВАЖНО: картинку стикера НЕ отдаём здесь даже для autoPrintBrowser
+          // (пробовали 17.09.2026 встраивать прямо в ответ на скан, чтобы
+          // избежать второго запроса — оказалось хуже: сам ответ на скан
+          // (а значит и переход упаковщика к следующему товару) начинал
+          // ждать передачи картинки по плохому интернету — то есть блокировал
+          // именно то место, которое раньше НЕ ждало ничего, пока агент
+          // печатал в фоне). Ответ остаётся лёгким и быстрым; фронт сам
+          // отдельным fire-and-forget запросом (не блокируя UI) догружает
+          // картинку и печатает в фоне — см. autoPrintScannedSticker() в
+          // packing.html.
+          if (!autoPrintBrowser) {
             const jobCode = `PKG-${shipment.id}-${barcode}-${Date.now()}`;
             const pjRes = await client.query(
               `INSERT INTO wms.print_jobs
@@ -504,7 +503,6 @@ async function scanItem({ tenantId, packerId, shipmentCode, barcode, dataMatrixC
       shipment_id: shipment.id,
       print_job:   printJob,
       print_connection_type: printConnectionType,
-      print_sticker_image: printStickerImage,
       wb_sticker_code: scannedSticker?.wb_sticker_code || null,
       wb_order_id:     scannedSticker?.wb_order_id || null,
       marking:           markingJob,
