@@ -29,7 +29,7 @@ const lastPreSyncAtByAccount = new Map();
 
 async function getMpAccount(tenantId, accountId) {
   const r = await query(
-    `SELECT id, client_id, api_token, marketplace FROM wms.mp_accounts
+    `SELECT id, client_id, api_token, marketplace, account_name FROM wms.mp_accounts
      WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE LIMIT 1`,
     [accountId, tenantId]
   );

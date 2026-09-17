@@ -285,7 +285,30 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     // Это сужает окно гонки "клиент вручную забрал заказ в своём ЛК WB, пока мы не
     // успели сформировать волну" до секунд: любой заказ, который WB уже не считает
     // новым, будет помечен status='external' и не попадёт в выборку ниже.
-    await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id });
+    //
+    // ВАЖНО (инцидент 17.09.2026, ИП Макарова С.И.): раньше этот вызов не был
+    // обёрнут в try/catch - когда WB API токен аккаунта становится невалидным
+    // (клиент перевыпустил токен в своём ЛК WB, старый умер), WB отвечает 401
+    // "token is malformed" - это рушило ВЕСЬ запрос /generate-wave необработанным
+    // исключением, и диспетчер видел только общее "An unexpected error occurred"
+    // без единой подсказки, что вообще случилось. Явную ошибку токена (401 /
+    // "unauthorized" / "token") показываем сразу понятным сообщением - дальше
+    // всё равно ничего не сделать, все остальные вызовы WB API в этом же
+    // запросе (addOrdersToSupply и т.д.) упадут той же причиной. Любую ДРУГУЮ
+    // (сетевую/временную) ошибку синка - не рушим запрос, работаем с уже
+    // известными в БД заказами (заказы и так подтягиваются в фоне отдельной
+    // джобой, см. подсказку в wb.html).
+    try {
+      await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id });
+    } catch (e) {
+      const looksLikeAuthError = e.wbStatus === 401 || /unauthorized|token/i.test(e.message || '');
+      if (looksLikeAuthError) {
+        throw new ValidationError(
+          `Не удалось обновить заказы из WB: токен API аккаунта "${acc.account_name}" недействителен (WB: ${e.message}). Обновите токен в разделе "МР Аккаунты".`
+        );
+      }
+      logger.warn({ err: e, accountId }, 'syncOrdersForAccount failed before generate-wave, using cached orders');
+    }
 
     // Список складов WB тоже подтягиваем по свежему — чтобы флаг
     // is_enabled_for_picking ниже применялся к актуальному набору складов
