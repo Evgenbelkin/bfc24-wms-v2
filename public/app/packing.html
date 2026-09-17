@@ -345,12 +345,6 @@ function autoPrintScannedSticker() {
     doc.write("<title>Стикер</title>\n      <body style=\"margin:0;display:flex;align-items:center;justify-content:center;\">\n        <img id=\"silent-print-img\" src=\"data:image/svg+xml;base64,".concat(image, "\" style=\"width:100%;\"/>\n      </body>"));
     doc.close();
     var img = doc.getElementById('silent-print-img');
-    // Возврат фокуса вынесен в отдельную функцию и вызывается с небольшой
-    // задержкой (не сразу по возврату из print()) — сразу после закрытия
-    // системного диалога печати браузер ещё не всегда отдаёт фокус документу
-    // назад, синхронный .focus() в этот момент может молча не сработать.
-    // window.focus() на верхнем окне — на случай, если фокус вообще ушёл из
-    // вкладки (не просто на iframe).
     var restoreFocus = function () {
       try { window.focus(); } catch (e) {}
       var targetId = window.__packingRefocusTarget || 'scan-barcode';
@@ -358,10 +352,17 @@ function autoPrintScannedSticker() {
       if (input) UI.focusNoKeyboard(input);
     };
     var doPrint = function () {
+      // afterprint — событие браузера, которое срабатывает ИМЕННО в момент
+      // завершения печати (и при кiosk-printing без диалога, и при обычном
+      // диалоге после закрытия) — надёжнее подбора задержек вручную.
+      try { frame.contentWindow.addEventListener('afterprint', restoreFocus); } catch (e) {}
       try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
+      // Подстраховка: если afterprint по какой-то причине не сработает
+      // (встречается в некоторых версиях Chrome при печати из iframe).
       restoreFocus();
       setTimeout(restoreFocus, 250);
       setTimeout(restoreFocus, 800);
+      setTimeout(restoreFocus, 1500);
     };
     if (img && !img.complete) img.onload = doPrint;else doPrint();
   }).catch(function (e) {
