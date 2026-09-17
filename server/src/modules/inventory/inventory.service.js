@@ -428,27 +428,82 @@ async function submitCount({ tenantId, taskId, qtyActual, userId, comment }) {
       }
     }
 
+    // Автовозврат из карантина (правка 17.09.2026: "если товар на месте он же
+    // должен появиться в той же ячейке что и был до карантина" — раньше
+    // подтверждение факта в карантинной задаче просто закрывало саму задачу
+    // инвентаризации, а физический перенос остатка обратно на исходную ячейку
+    // нужно было делать отдельно вручную обычным перемещением — что на
+    // практике никто не делал, и товар "зависал" в КАРАНТИН навсегда).
+    // Работает только для задач "сборщик не нашёл товар" (reason=
+    // 'picker_not_found'), у которых при переносе в карантин исходная ячейка
+    // была сама же и записана в комментарий (см. picking.service.js::skipTask,
+    // формат "... (исходная ячейка: X)"). Возвращаем ровно то, что подтвердил
+    // счётчик (actual), но не больше, чем реально сейчас лежит в карантине.
+    let returnedTo = null;
+    if (task.reason === 'picker_not_found' && task.item_id && actual > 0) {
+      const m = /исходная ячейка:\s*([^)]+)\)/.exec(task.comment || '');
+      const origCode = m ? m[1].trim() : null;
+      if (origCode && origCode !== task.location_code) {
+        const origLoc = await getLocationByCode({
+          tenantId, warehouseId: task.warehouse_id, locationCode: origCode,
+        }).catch(() => null);
+        if (origLoc) {
+          const quarBalRes = await client.query(
+            `SELECT qty_available FROM wms.stock_balances
+             WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=$4 AND location_id=$5
+             FOR UPDATE`,
+            [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id]
+          );
+          const quarAvail = quarBalRes.rowCount > 0 ? Number(quarBalRes.rows[0].qty_available) : 0;
+          const moveQty = Math.min(actual, Math.max(quarAvail, 0));
+          if (moveQty > 0) {
+            await client.query(
+              `INSERT INTO wms.stock_movements
+                 (tenant_id,warehouse_id,client_id,item_id,barcode,movement_type,qty,
+                  from_location_id,from_location_code,to_location_id,to_location_code,
+                  ref_type,ref_id,user_id,comment)
+               VALUES($1,$2,$3,$4,$5,'move',$6,$7,$8,$9,$10,'inventory_task',$11,$12,$13)`,
+              [tenantId, task.warehouse_id, task.client_id, task.item_id, task.barcode, moveQty,
+               task.location_id, task.location_code, origLoc.id, origLoc.location_code,
+               task.id, userId, `Инвентаризация: товар подтверждён, автовозврат из карантина в ${origLoc.location_code}`]
+            );
+            await client.query(
+              `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [tenantId, task.warehouse_id, task.client_id, task.item_id, task.location_id, task.barcode, -moveQty, null]
+            );
+            await client.query(
+              `SELECT * FROM wms.apply_stock_movement($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [tenantId, task.warehouse_id, task.client_id, task.item_id, origLoc.id, task.barcode, moveQty, null]
+            );
+            returnedTo = origLoc.location_code;
+          }
+        }
+      }
+    }
+
     // Обновляем задачу
     const r = await client.query(
       `UPDATE wms.inventory_tasks
        SET qty_actual=$1, qty_delta=$2, status='done',
-           comment=COALESCE($3,comment),
+           comment=COALESCE($3,comment) || $6,
            closed_at=NOW(), closed_by=$4, updated_at=NOW()
        WHERE id=$5
        RETURNING *`,
-      [actual, delta, comment || null, userId, taskId]
+      [actual, delta, comment || null, userId, taskId, returnedTo ? ` → возвращено в ${returnedTo}` : '']
     );
 
-    logger.info({ tenantId, taskId, delta, actual, systemQty }, 'Inventory count submitted');
+    logger.info({ tenantId, taskId, delta, actual, systemQty, returnedTo }, 'Inventory count submitted');
 
-    return { row: r.rows[0], clientId: task.client_id, delta };
+    return { row: { ...r.rows[0], returned_to: returnedTo }, clientId: task.client_id, delta, returnedTo };
   });
 
-  // Пересчитать распределение по складам WB, только если реально что-то
-  // изменилось (delta=0 - подтвердили то, что и так было, пересчитывать нечего).
-  // Только по штрихкоду ЭТОЙ задачи (см. комментарий в wb.service.js) - не
+  // Пересчитать распределение по складам WB, если реально что-то изменилось:
+  // либо расхождение по счёту (delta != 0), либо физический автовозврат из
+  // карантина (даже при delta=0 — is_pick_location у ячейки другой, это
+  // меняет доступность для сборки/выгрузки, см. skipTask). Только по
+  // штрихкоду ЭТОЙ задачи (см. комментарий в wb.service.js) - не
   // пересчитываем заодно весь ассортимент клиента.
-  if (taskResult.delta !== 0 && taskResult.row.barcode) {
+  if ((taskResult.delta !== 0 || taskResult.returnedTo) && taskResult.row.barcode) {
     triggerRedistributionForClient({ tenantId, clientId: taskResult.clientId, barcodes: [taskResult.row.barcode] });
   }
 
