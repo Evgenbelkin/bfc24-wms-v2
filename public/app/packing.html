@@ -353,23 +353,36 @@ function autoPrintScannedSticker() {
   var area = document.getElementById('silent-print-area');
   if (!area) return;
   fetchScannedStickerImage().then(function (image) {
-    area.innerHTML = '<img src="data:image/svg+xml;base64,' + image + '" style="width:100%;"/>';
-    try { window.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
-    area.innerHTML = '';
-    // window.print() — системное/ОС-действие (диалог или тихий kiosk-print),
-    // оно ненадолго забирает фокус ДАЖЕ без наших собственных .focus()-
-    // вызовов. Картинка стикера грузится в фоне (см. fetchScannedStickerImage
-    // выше) - к моменту, когда print() реально вызывается, обычный
-    // автовозврат фокуса в ui.js (см. scheduleRefocus, разовая попытка через
-    // 300мс после самого скана) обычно уже отработал и печать его "перебивает"
-    // без второй попытки. Возвращаем фокус сюда сами, туда же, куда обычный
-    // ход скана (см. _submitScan: window.__packingRefocusTarget).
-    var targetId = window.__packingRefocusTarget || 'scan-barcode';
-    var input = document.getElementById(targetId);
-    if (input) {
-      UI.focusNoKeyboard(input);
-      setTimeout(function () { UI.focusNoKeyboard(input); }, 150);
-    }
+    area.innerHTML = '<img id="silent-print-img" src="data:image/svg+xml;base64,' + image + '" style="width:100%;"/>';
+    var img = document.getElementById('silent-print-img');
+    var clearArea = function () { area.innerHTML = ''; };
+    var doPrint = function () {
+      try { window.print(); } catch (e) { UI.notify.err('Печать не удалась: ' + e.message); }
+      // ВАЖНО: НЕ чистим area сразу после print() — на тихой (kiosk-printing)
+      // печати сам вызов возвращается быстро, а реальный рендеринг страницы
+      // печати браузер может делать чуть позже; если стереть картинку сразу,
+      // печатается пустой лист (это и происходило). Чистим с запасом позже,
+      // через afterprint (если дождёмся) и/или по таймеру.
+      try { window.addEventListener('afterprint', clearArea, { once: true }); } catch (e) {}
+      setTimeout(clearArea, 2000);
+      // window.print() — системное/ОС-действие (диалог или тихий kiosk-print),
+      // оно ненадолго забирает фокус ДАЖЕ без наших собственных .focus()-
+      // вызовов. Возвращаем фокус сюда сами, туда же, куда обычный ход скана
+      // (см. _submitScan: window.__packingRefocusTarget). Делаем это ЗДЕСЬ,
+      // ПОСЛЕ реального вызова print() — если вызвать раньше (пока картинка
+      // ещё грузится и печать ещё не случилась), print() потом всё равно
+      // отберёт фокус уже после этого возврата, и мы снова словим старый баг.
+      var targetId = window.__packingRefocusTarget || 'scan-barcode';
+      var input = document.getElementById(targetId);
+      if (input) {
+        UI.focusNoKeyboard(input);
+        setTimeout(function () { UI.focusNoKeyboard(input); }, 150);
+      }
+    };
+    // Ждём, пока браузер реально decode/отрисует картинку (data:-URI с SVG
+    // не всегда готов в тот же тик) — раньше (версия с iframe) это ожидание
+    // уже было, потерялось при переписывании на печать в этом же окне.
+    if (img && !img.complete) img.onload = doPrint;else doPrint();
   }).catch(function (e) {
     UI.notify.err('Не удалось загрузить стикер для печати: ' + e.message);
   });
