@@ -397,6 +397,15 @@ function renderShipmentsList() {
       var packingMetaHtml = packingMetaParts.length ? '<div class="stage-bar-meta">' + packingMetaParts.join(' \xB7 ') + '</div>' : '';
       return "\n          <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;cursor:pointer;\" onclick=\"openShipmentDetail('".concat(s.external_id, "')\">\n            <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n              <div>\n                <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0442\u0440\u043E\u043A ").concat(s.tasks_total || 0, "</div>\n                <div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> ").concat(packingNote, "</div>\n              </div>\n              <span class=\"pill ").concat(SHIP_STATUS_PILL[s.status] || 'pill-gray', "\">").concat(SHIP_STATUS_LABELS[s.status] || s.status, "</span>\n            </div>\n            <div class=\"stage-bars\">\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0421\u0431\u043E\u0440\u043A\u0430</span><span>").concat(s.pickingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill picking\" style=\"width:").concat(s.pickingPct, "%\"></div></div>").concat(pickingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430</span><span>").concat(s.packingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill packing\" style=\"width:").concat(s.packingPct, "%\"></div></div>").concat(packingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u041E\u0442\u0433\u0440\u0443\u0437\u043A\u0430</span><span>").concat(s.shippingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill shipping\" style=\"width:").concat(s.shippingPct, "%\"></div></div>\n              </div>\n            </div>\n          </div>\n        ");
     }).join('');
+    // Приоритет + назначение сборщика/упаковщика (17.09.2026, "волны падают
+    // по порядку, нужно задать приоритет" + вариант с назначением конкретному
+    // сотруднику) — дописываем DOM-ом ПОСЛЕ рендера строк, а не встраиваем в
+    // строку выше (там и так плотный конкатенированный шаблон, трогать
+    // рискованно) — см. appendDispatchControls().
+    Array.prototype.forEach.call(list.querySelectorAll('.list-row'), function (rowEl, i) {
+      var s = items[i];
+      if (s) appendDispatchControls(rowEl, s);
+    });
   }
   return {
     total: allShipments.length,
@@ -404,6 +413,159 @@ function renderShipmentsList() {
       return s.status === 'ready_to_ship';
     }).length
   };
+}
+
+// ---------- Приоритет волны + назначение сборщика/упаковщика ----------
+var PRIORITY_LEVELS = [
+  { value: 100, label: 'Обычный' },
+  { value: 75, label: 'Повышенный' },
+  { value: 50, label: 'Высокий' },
+  { value: 10, label: 'Срочно' }
+];
+var pickersCache = null;
+var packersCache = null;
+function loadPickersCached() {
+  if (pickersCache) return Promise.resolve(pickersCache);
+  return window.API.picking.pickers().then(function (res) {
+    pickersCache = res.pickers || [];
+    return pickersCache;
+  });
+}
+function loadPackersCached() {
+  if (packersCache) return Promise.resolve(packersCache);
+  return window.API.packing.packers().then(function (res) {
+    packersCache = res.packers || [];
+    return packersCache;
+  });
+}
+function appendDispatchControls(rowEl, s) {
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;';
+  // Строка целиком кликабельна (открывает карточку отгрузки) — эта панель
+  // должна работать сама по себе, без перехода.
+  bar.addEventListener('click', function (e) { e.stopPropagation(); });
+
+  var prioWrap = document.createElement('label');
+  prioWrap.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted,#64748b);';
+  prioWrap.textContent = 'Приоритет:';
+  var select = document.createElement('select');
+  select.style.cssText = 'font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border,#e2e8f0);background:var(--card2,#f1f5f9);color:var(--text,#0f172a);';
+  var currentPriority = Number(s.priority) || 100;
+  var hasExact = false;
+  PRIORITY_LEVELS.forEach(function (lvl) {
+    var opt = document.createElement('option');
+    opt.value = lvl.value;
+    opt.textContent = lvl.label;
+    if (lvl.value === currentPriority) { opt.selected = true; hasExact = true; }
+    select.appendChild(opt);
+  });
+  if (!hasExact) {
+    var customOpt = document.createElement('option');
+    customOpt.value = currentPriority;
+    customOpt.textContent = 'Приоритет ' + currentPriority;
+    customOpt.selected = true;
+    select.insertBefore(customOpt, select.firstChild);
+  }
+  select.addEventListener('change', function () {
+    window.API.picking.setPriority({ shipment_code: s.external_id, priority: Number(select.value) })
+      .then(function () { UI.notify.ok('Приоритет обновлён'); loadShipments(); })
+      .catch(function (e) { UI.notify.err(e.message); });
+  });
+  prioWrap.appendChild(select);
+  bar.appendChild(prioWrap);
+
+  var pickerBtn = document.createElement('button');
+  pickerBtn.type = 'button';
+  pickerBtn.className = 'btn-sm btn-back';
+  pickerBtn.style.fontSize = '12px';
+  pickerBtn.textContent = s.assigned_picker_name ? '👤 ' + s.assigned_picker_name : '👤 назначить сборщика';
+  pickerBtn.addEventListener('click', function () {
+    openAssignModal(s.external_id, 'picker', s.assigned_picker_id || null);
+  });
+  bar.appendChild(pickerBtn);
+
+  var packerBtn = document.createElement('button');
+  packerBtn.type = 'button';
+  packerBtn.className = 'btn-sm btn-back';
+  packerBtn.style.fontSize = '12px';
+  packerBtn.textContent = s.assigned_packer_name ? '📦 ' + s.assigned_packer_name : '📦 назначить упаковщика';
+  packerBtn.addEventListener('click', function () {
+    openAssignModal(s.external_id, 'packer', s.assigned_packer_id || null);
+  });
+  bar.appendChild(packerBtn);
+
+  rowEl.appendChild(bar);
+}
+function openAssignModal(shipmentCode, role, currentId) {
+  if (document.getElementById('assign-modal-overlay')) return;
+  var loadFn = role === 'picker' ? loadPickersCached : loadPackersCached;
+  var roleLabel = role === 'picker' ? 'сборщика' : 'упаковщика';
+  var overlay = document.createElement('div');
+  overlay.id = 'assign-modal-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML =
+    '<div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:420px;max-height:80vh;box-sizing:border-box;display:flex;flex-direction:column;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+        '<div style="font-size:16px;font-weight:700;color:var(--text,#0f172a);">Назначить ' + roleLabel + '</div>' +
+        '<button id="am-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted,#64748b);line-height:1;">&times;</button>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--muted,#64748b);margin-bottom:10px;">' + UI.escHtml(shipmentCode) + ' — как только сотрудник освободится от текущей волны/задачи, эта достанется ему первой (другим свободным сотрудникам она не видна).</div>' +
+      '<div id="am-list" style="overflow-y:auto;border:1px solid var(--border,#e2e8f0);border-radius:10px;flex:1;min-height:80px;">' +
+        '<div style="padding:16px;color:var(--muted,#64748b);font-size:13px;">Загрузка…</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  var close = function () { overlay.remove(); };
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+  document.getElementById('am-close').addEventListener('click', close);
+
+  var listEl = document.getElementById('am-list');
+  function doAssign(id) {
+    var payload = { shipment_code: shipmentCode };
+    var apiCall;
+    if (role === 'picker') {
+      payload.picker_id = id;
+      apiCall = window.API.picking.assignPicker(payload);
+    } else {
+      payload.packer_id = id;
+      apiCall = window.API.packing.assignPacker(payload);
+    }
+    apiCall.then(function () {
+      UI.notify.ok(id ? 'Назначено' : 'Назначение снято');
+      close();
+      loadShipments();
+    }).catch(function (e) { UI.notify.err(e.message); });
+  }
+
+  loadFn().then(function (employees) {
+    var rows = [];
+    rows.push(
+      '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border,#e2e8f0);cursor:pointer;">' +
+        '<input type="radio" name="am-emp" value=""' + (!currentId ? ' checked' : '') + '>' +
+        '<span style="font-size:13px;color:var(--muted,#64748b);">— без назначения —</span>' +
+      '</label>'
+    );
+    employees.forEach(function (u) {
+      var label = UI.escHtml(u.full_name || u.username);
+      rows.push(
+        '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border,#e2e8f0);cursor:pointer;">' +
+          '<input type="radio" name="am-emp" value="' + u.id + '"' + (currentId === u.id ? ' checked' : '') + '>' +
+          '<span style="font-size:13px;color:var(--text,#0f172a);">' + label + '</span>' +
+        '</label>'
+      );
+    });
+    if (!employees.length) {
+      rows.push('<div style="padding:16px;color:var(--muted,#64748b);font-size:13px;">Нет активных сотрудников с этой ролью</div>');
+    }
+    listEl.innerHTML = rows.join('');
+    listEl.addEventListener('change', function (e) {
+      if (e.target.name !== 'am-emp') return;
+      var v = e.target.value;
+      doAssign(v ? Number(v) : null);
+    });
+  }).catch(function (e) {
+    listEl.innerHTML = '<div style="padding:16px;color:#dc2626;font-size:13px;">' + UI.escHtml(e.message) + '</div>';
+  });
 }
 function renderKpis(_ref2, shipStats) {
   var activeCount = _ref2.activeCount,

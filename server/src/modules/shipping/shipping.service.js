@@ -43,17 +43,28 @@ async function listShipments({
        -- Диспетчерская (16.09.2026): кто сейчас собирает/упаковывает, и с какого
        -- момента — для карточки "Отгрузки в работе" (остаток + время в работе).
        pw.picker_id, pu.username AS picker_name, pw.accepted_at AS picking_started_at,
-       pk.status AS packing_status, pk.packer_name, pk.started_at AS packing_started_at
+       pk.status AS packing_status, pk.packer_name, pk.started_at AS packing_started_at,
+       -- Приоритет и предварительное назначение (17.09.2026, "нужно задать
+       -- приоритет волне" + "назначить конкретному сотруднику") — приоритет
+       -- берём с волны, пока она открыта, иначе с задачи упаковки (тот же
+       -- номер, ставится одним действием, см. picking.service.js::
+       -- setShipmentPriority), assigned_picker/assigned_packer — раздельно.
+       COALESCE(pw.priority, pk.priority) AS priority,
+       pw.assigned_picker_id, apu.username AS assigned_picker_name,
+       pk.assigned_packer_id, pk.assigned_packer_name
      FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
      JOIN wms.warehouses w ON w.id=s.warehouse_id
      LEFT JOIN wms.users su ON su.id=s.shipper_id
      LEFT JOIN wms.pick_waves pw ON pw.tenant_id=s.tenant_id AND pw.shipment_code=s.external_id
      LEFT JOIN wms.users pu ON pu.id=pw.picker_id
+     LEFT JOIN wms.users apu ON apu.id=pw.assigned_picker_id
      LEFT JOIN LATERAL (
-       SELECT pt.status, pt.started_at, u.username AS packer_name
+       SELECT pt.status, pt.started_at, pt.priority, pt.assigned_packer_id,
+              u.username AS packer_name, au.username AS assigned_packer_name
        FROM wms.packing_tasks pt
        LEFT JOIN wms.users u ON u.id=pt.packer_id
+       LEFT JOIN wms.users au ON au.id=pt.assigned_packer_id
        WHERE pt.tenant_id=s.tenant_id AND pt.shipment_code=s.external_id
        ORDER BY pt.id DESC LIMIT 1
      ) pk ON true

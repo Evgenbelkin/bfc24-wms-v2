@@ -25,6 +25,37 @@ router.get('/waves', requireRole('tenant_admin','supervisor'), async (req,res,ne
   } catch(e){ next(e); }
 });
 
+/** GET /picking/pickers — список активных сборщиков (для назначения в диспетчерской) */
+router.get('/pickers', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const pickers = await svc.listPickers({ tenantId: req.user.tenantId });
+    res.json({ ok: true, pickers });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /picking/priority — задать приоритет отгрузке (влияет на сборку и упаковку разом) */
+router.patch('/priority', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { shipment_code, priority } = req.body;
+    const result = await svc.setShipmentPriority({
+      tenantId: req.user.tenantId, shipmentCode: shipment_code, priority,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /picking/assign-picker — назначить (или снять, picker_id:null) волну сборщику заранее */
+router.patch('/assign-picker', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { shipment_code, picker_id } = req.body;
+    const result = await svc.assignWavePicker({
+      tenantId: req.user.tenantId, shipmentCode: shipment_code,
+      pickerId: picker_id != null ? Number(picker_id) : null,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /picking/wave/take — picker берёт волну */
 router.post('/wave/take', requireRole('tenant_admin','supervisor','picker'), async (req,res,next)=>{
   try {

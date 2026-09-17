@@ -226,18 +226,25 @@ async function takeWave({ tenantId, pickerId }) {
     );
     if (active.rowCount > 0) return { has_wave: true, wave: active.rows[0] };
 
-    // Берём первую свободную 'open' волну FOR UPDATE SKIP LOCKED
+    // Берём первую свободную 'open' волну FOR UPDATE SKIP LOCKED.
+    // Приоритет (17.09.2026, запрос пользователя): (1) волна, ЯВНО назначенная
+    // этому сборщику (assigned_picker_id) — забирается ПЕРВОЙ, независимо от
+    // priority/даты, и волны, назначенные ДРУГОМУ сборщику, этому вообще не
+    // видны (AND (assigned_picker_id IS NULL OR assigned_picker_id=$2)) —
+    // иначе их мог бы перехватить кто угодно; (2) среди остальных — по
+    // priority (меньше = раньше), потом по дате как раньше.
     const open = await client.query(
       `SELECT id, shipment_code, client_id, warehouse_id
        FROM wms.pick_waves
        WHERE tenant_id=$1 AND status='open' AND picker_id IS NULL
+         AND (assigned_picker_id IS NULL OR assigned_picker_id=$2)
          AND EXISTS (
            SELECT 1 FROM wms.picking_tasks t
            WHERE t.wave_id=wms.pick_waves.id AND t.status='new'
          )
-       ORDER BY created_at ASC
+       ORDER BY CASE WHEN assigned_picker_id=$2 THEN 0 ELSE 1 END, priority ASC, created_at ASC
        FOR UPDATE SKIP LOCKED LIMIT 1`,
-      [tenantId]
+      [tenantId, pickerId]
     );
     if (open.rowCount === 0) return { has_wave: false };
 
@@ -255,6 +262,75 @@ async function takeWave({ tenantId, pickerId }) {
     );
     return { has_wave: true, wave: { ...wave, status: 'active' } };
   });
+}
+
+/**
+ * Приоритет волны (17.09.2026, "волны падают по порядку, нужно задать
+ * приоритет") — общий на picking+packing одной и той же отгрузки, ставится
+ * ОДНИМ действием в диспетчерской. Меньше число — выше приоритет (тот же
+ * порядок, что уже был у picking_tasks.priority/packing_tasks.priority).
+ * Задаём только для ещё НЕ взятых в работу волны/задачи ('open'/'new') —
+ * приоритет решает, кто возьмёт СЛЕДУЮЩИМ, на уже идущую работу не влияет.
+ */
+async function setShipmentPriority({ tenantId, shipmentCode, priority }) {
+  const p = Math.max(0, Math.min(1000, Number(priority)));
+  if (!Number.isFinite(p)) throw new ValidationError('Некорректный приоритет');
+  return transaction(async (client) => {
+    const waveRes = await client.query(
+      `UPDATE wms.pick_waves SET priority=$1, updated_at=NOW()
+       WHERE tenant_id=$2 AND shipment_code=$3 AND status='open'
+       RETURNING id`,
+      [p, tenantId, shipmentCode]
+    );
+    const packRes = await client.query(
+      `UPDATE wms.packing_tasks SET priority=$1, updated_at=NOW()
+       WHERE tenant_id=$2 AND shipment_code=$3 AND status='new'
+       RETURNING id`,
+      [p, tenantId, shipmentCode]
+    );
+    if (waveRes.rowCount === 0 && packRes.rowCount === 0) {
+      throw new NotFoundError('Открытая волна или задача упаковки для этой отгрузки', shipmentCode);
+    }
+    return { shipment_code: shipmentCode, priority: p, wave_updated: waveRes.rowCount > 0, packing_updated: packRes.rowCount > 0 };
+  });
+}
+
+/**
+ * Назначить (или снять, pickerId=null) волну конкретному сборщику заранее —
+ * см. комментарий у takeWave() выше про приоритет выборки. Действует только
+ * на ещё не взятую ('open'/picker_id IS NULL) волну.
+ */
+async function assignWavePicker({ tenantId, shipmentCode, pickerId }) {
+  if (pickerId != null) {
+    const check = await query(
+      `SELECT id FROM wms.users
+       WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE
+         AND (role='picker' OR EXISTS(SELECT 1 FROM wms.user_roles WHERE user_id=$1 AND role='picker'))`,
+      [pickerId, tenantId]
+    );
+    if (check.rowCount === 0) throw new ValidationError('Сотрудник не найден или не является сборщиком');
+  }
+  const r = await query(
+    `UPDATE wms.pick_waves SET assigned_picker_id=$1, updated_at=NOW()
+     WHERE tenant_id=$2 AND shipment_code=$3 AND status='open' AND picker_id IS NULL
+     RETURNING id`,
+    [pickerId, tenantId, shipmentCode]
+  );
+  if (r.rowCount === 0) throw new NotFoundError('Свободная (ещё не взятая) волна для этой отгрузки', shipmentCode);
+  return { shipment_code: shipmentCode, assigned_picker_id: pickerId };
+}
+
+/** Список активных сборщиков — для выпадашки "назначить" в диспетчерской. */
+async function listPickers({ tenantId }) {
+  const r = await query(
+    `SELECT DISTINCT u.id, u.full_name, u.username
+     FROM wms.users u
+     LEFT JOIN wms.user_roles ur ON ur.user_id=u.id
+     WHERE u.tenant_id=$1 AND u.is_active=TRUE AND (u.role='picker' OR ur.role='picker')
+     ORDER BY u.full_name NULLS LAST, u.username`,
+    [tenantId]
+  );
+  return r.rows;
 }
 
 /**
@@ -1939,4 +2015,5 @@ module.exports = {
   listSkippedTasks, exportSkippedStickers, exportSkippedXlsx, requeueSkippedTask, cancelSkippedTask, listCancelledTasks,
   closeWave, getWaveStatus,
   createManualWave,
+  setShipmentPriority, assignWavePicker, listPickers,
 };

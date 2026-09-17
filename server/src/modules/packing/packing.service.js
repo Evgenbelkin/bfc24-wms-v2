@@ -42,13 +42,18 @@ async function getOrTakePackingTask({ tenantId, packerId }) {
       return task;
     }
 
-    // Берём свободную (started_at — для диспетчерской: "сколько отгрузка уже в упаковке")
+    // Берём свободную (started_at — для диспетчерской: "сколько отгрузка уже в упаковке").
+    // Приоритет (17.09.2026, тот же запрос, что и у волн сборки — см.
+    // picking.service.js::takeWave): задача, ЯВНО назначенная этому упаковщику
+    // (assigned_packer_id), забирается ПЕРВОЙ независимо от priority/id, и
+    // задачи, назначенные ДРУГОМУ упаковщику, этому вообще не видны.
     const free = await client.query(
       `UPDATE wms.packing_tasks SET packer_id=$1, status='in_progress', started_at=COALESCE(started_at, NOW()), updated_at=NOW()
        WHERE id=(
          SELECT id FROM wms.packing_tasks
          WHERE tenant_id=$2 AND status='new' AND packer_id IS NULL
-         ORDER BY priority ASC, id ASC
+           AND (assigned_packer_id IS NULL OR assigned_packer_id=$1)
+         ORDER BY CASE WHEN assigned_packer_id=$1 THEN 0 ELSE 1 END, priority ASC, id ASC
          FOR UPDATE SKIP LOCKED LIMIT 1
        )
        RETURNING *`,
@@ -56,6 +61,44 @@ async function getOrTakePackingTask({ tenantId, packerId }) {
     );
     return free.rowCount > 0 ? free.rows[0] : null;
   });
+}
+
+/**
+ * Назначить (или снять, packerId=null) задачу упаковки конкретному упаковщику
+ * заранее — см. комментарий у getOrTakePackingTask() выше. Действует только
+ * на ещё не взятую ('new'/packer_id IS NULL) задачу.
+ */
+async function assignPacker({ tenantId, shipmentCode, packerId }) {
+  if (packerId != null) {
+    const check = await query(
+      `SELECT id FROM wms.users
+       WHERE id=$1 AND tenant_id=$2 AND is_active=TRUE
+         AND (role='packer' OR EXISTS(SELECT 1 FROM wms.user_roles WHERE user_id=$1 AND role='packer'))`,
+      [packerId, tenantId]
+    );
+    if (check.rowCount === 0) throw new ValidationError('Сотрудник не найден или не является упаковщиком');
+  }
+  const r = await query(
+    `UPDATE wms.packing_tasks SET assigned_packer_id=$1, updated_at=NOW()
+     WHERE tenant_id=$2 AND shipment_code=$3 AND status='new' AND packer_id IS NULL
+     RETURNING id`,
+    [packerId, tenantId, shipmentCode]
+  );
+  if (r.rowCount === 0) throw new NotFoundError('Свободная (ещё не взятая) задача упаковки для этой отгрузки', shipmentCode);
+  return { shipment_code: shipmentCode, assigned_packer_id: packerId };
+}
+
+/** Список активных упаковщиков — для выпадашки "назначить" в диспетчерской. */
+async function listPackers({ tenantId }) {
+  const r = await query(
+    `SELECT DISTINCT u.id, u.full_name, u.username
+     FROM wms.users u
+     LEFT JOIN wms.user_roles ur ON ur.user_id=u.id
+     WHERE u.tenant_id=$1 AND u.is_active=TRUE AND (u.role='packer' OR ur.role='packer')
+     ORDER BY u.full_name NULLS LAST, u.username`,
+    [tenantId]
+  );
+  return r.rows;
 }
 
 /** Детали задачи на упаковку (состав отгрузки) */
@@ -671,4 +714,7 @@ async function confirmPacking({ tenantId, packerId, shipmentId, boxesCount, loca
   return result;
 }
 
-module.exports = { getOrTakePackingTask, getPackingTaskDetails, scanItem, confirmPacking, getStickerImage };
+module.exports = {
+  getOrTakePackingTask, getPackingTaskDetails, scanItem, confirmPacking, getStickerImage,
+  assignPacker, listPackers,
+};

@@ -23,6 +23,26 @@ router.post('/next', requireRole('tenant_admin','supervisor','packer'), async (r
   } catch(e){ next(e); }
 });
 
+/** GET /packing/packers — список активных упаковщиков (для назначения в диспетчерской) */
+router.get('/packers', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const packers = await svc.listPackers({ tenantId: req.user.tenantId });
+    res.json({ ok: true, packers });
+  } catch(e){ next(e); }
+});
+
+/** PATCH /packing/assign-packer — назначить (или снять, packer_id:null) задачу упаковщику заранее */
+router.patch('/assign-packer', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const { shipment_code, packer_id } = req.body;
+    const result = await svc.assignPacker({
+      tenantId: req.user.tenantId, shipmentCode: shipment_code,
+      packerId: packer_id != null ? Number(packer_id) : null,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** GET /packing/current — текущее задание без смены статуса */
 router.get('/current', requireRole('tenant_admin','supervisor','packer'), async (req,res,next)=>{
   try {

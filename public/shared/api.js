@@ -813,6 +813,15 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     cancelled: function cancelled(p) {
       return _get('/picking/tasks/cancelled', p);
+    },
+    pickers: function pickers() {
+      return _get('/picking/pickers');
+    },
+    setPriority: function setPriority(d) {
+      return patch('/picking/priority', d);
+    },
+    assignPicker: function assignPicker(d) {
+      return patch('/picking/assign-picker', d);
     }
   };
 
@@ -833,6 +842,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     stickerImage: function stickerImage(wbOrderId) {
       return _get("/packing/sticker-image/".concat(wbOrderId));
+    },
+    packers: function packers() {
+      return _get('/packing/packers');
+    },
+    assignPacker: function assignPacker(d) {
+      return patch('/packing/assign-packer', d);
     }
   };
 
