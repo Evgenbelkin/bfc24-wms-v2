@@ -1048,6 +1048,15 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     regionDeliveryFilters: function regionDeliveryFilters() {
       return _get('/fbs-analytics/region-delivery/filters');
+    },
+    unsortedReport: function unsortedReport() {
+      return _get('/fbs-analytics/unsorted-report');
+    },
+    unsortedSupplyOrders: function unsortedSupplyOrders(mpAccountId, supplyCode) {
+      return _get('/fbs-analytics/unsorted-report/orders', { mp_account_id: mpAccountId, supply_code: supplyCode });
+    },
+    unsortedStickersExport: function unsortedStickersExport(orderRowIds) {
+      return post('/fbs-analytics/unsorted-report/stickers-export', { order_row_ids: orderRowIds });
     }
   };
 

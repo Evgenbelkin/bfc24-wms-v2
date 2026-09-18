@@ -122,4 +122,39 @@ router.get('/region-delivery', requireRole('tenant_admin', 'supervisor'), async 
   } catch (e) { next(e); }
 });
 
+/** GET /fbs-analytics/unsorted-report — поставки, где есть ещё не
+ *  отсортированные WB (или ещё физически не принятые WB) заказы, по всем
+ *  WB-аккаунтам тенанта. Staff-only — это рабочий инструмент диспетчера, а не
+ *  витрина для клиента. */
+router.get('/unsorted-report', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const result = await fbsAnalyticsService.getUnsortedSuppliesReport({ tenantId: req.user.tenantId });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
+/** GET /fbs-analytics/unsorted-report/orders?mp_account_id=&supply_code= —
+ *  детали конкретной поставки: какие именно заказы ещё не отсортированы. */
+router.get('/unsorted-report/orders', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const mpAccountId = Number(req.query.mp_account_id);
+    const supplyCode = req.query.supply_code;
+    if (!mpAccountId || !supplyCode) throw new ValidationError('mp_account_id and supply_code are required');
+    const orders = await fbsAnalyticsService.getUnsortedSupplyOrders({ tenantId: req.user.tenantId, mpAccountId, supplyCode });
+    res.json({ ok: true, orders });
+  } catch (e) { next(e); }
+});
+
+/** POST /fbs-analytics/unsorted-report/stickers-export { order_row_ids }  —
+ *  печать стикеров WB выбранных "зависших" заказов одной HTML-страницей
+ *  (id — это wms.wb_orders.id, не wb_order_id самого WB). */
+router.post('/unsorted-report/stickers-export', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const orderRowIds = Array.isArray(req.body.order_row_ids) ? req.body.order_row_ids.map(Number).filter(Boolean) : [];
+    if (!orderRowIds.length) throw new ValidationError('order_row_ids is required and must be a non-empty array');
+    const result = await fbsAnalyticsService.exportUnsortedStickers({ tenantId: req.user.tenantId, orderRowIds });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

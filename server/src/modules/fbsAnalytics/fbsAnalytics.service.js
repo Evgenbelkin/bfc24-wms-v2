@@ -482,6 +482,205 @@ async function getProcessingSpeedBySupply({ tenantId, clientId = null, dateFrom,
   return { supplies };
 }
 
+function _escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// =============================================================================
+// Отчёт "Не отсортировано WB" (18.09.2026, идея владельца).
+//
+// Кейс: даже после того, как WB физически принял поставку на воротах СЦ
+// (scanDt/wb_accepted_at), часть заказов внутри неё может подолгу висеть в
+// wbStatus='waiting' - у самой WB в личном кабинете это отображается как
+// заказ со статусом "Ждёт сортировки" внутри поставки, которая в списке
+// "Заказы -> В доставке" может значиться как "Поставка в обработке" или
+// "Сортируем". Если WB так и не отсортирует часть позиций, есть риск
+// просрочки/штрафа - раньше это ловили только вручную, листая ЛК WB заказ за
+// заказом. Дешёвый товар в такой ситуации проще собрать и досдать вручную
+// (напечатать стикер конкретного "зависшего" заказа и физически отвезти/
+// досдать), чем ждать и рисковать штрафом.
+//
+// Отдельно нужно учитывать и заказы, которые мы ещё даже не отгрузили WB
+// физически (wb_accepted_at IS NULL - в ЛК WB это "Отгрузите поставку" /
+// заказ "Отгрузите товар") - по просьбе владельца (обсуждение 18.09.2026)
+// такие тоже считаются "проблемными" и попадают в тот же отчёт, отдельным
+// счётчиком, а не отдельным экраном - "чтобы видеть всё сразу в одном месте".
+//
+// wbStatus здесь берём из УЖЕ существующего постоянного хранения
+// (wo.wb_status/wb_status_updated_at, миграция 051, см. шапку файла) -
+// никакого нового опроса WB API не требуется, джоба обновления (см.
+// jobs/wbFbsStatusSync.js) и так регулярно держит его свежим.
+// =============================================================================
+
+const UNSORTED_LOOKBACK_DAYS = 90; // см. TERMINAL_STATUSES/refreshWbStatusesForAccount выше - за этим горизонтом wb_status всё равно не обновляется
+
+/** Сводка по поставкам, где есть хотя бы один ещё не отсортированный
+ *  (wbStatus='waiting'/ещё не пришёл) активный заказ. Разрез по ВСЕМ
+ *  WB-аккаунтам тенанта сразу (owner: "все аккаунты, без выбора"). */
+async function getUnsortedSuppliesReport({ tenantId }) {
+  const r = await query(
+    `SELECT wo.mp_account_id, wo.wb_supply_id AS supply_code, wo.wb_status,
+            ma.account_name, ma.client_id, c.client_name,
+            wo.warehouse_name, wo.created_at,
+            s.id AS shipment_id, s.status AS shipment_status, s.wb_accepted_at, s.created_at AS shipment_created_at
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     JOIN wms.clients c ON c.id = ma.client_id
+     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     WHERE wo.tenant_id=$1
+       AND wo.wb_supply_id IS NOT NULL
+       AND wo.status <> 'cancel'
+       AND wo.created_at >= NOW() - INTERVAL '${UNSORTED_LOOKBACK_DAYS} days'
+     ORDER BY wo.created_at ASC`,
+    [tenantId]
+  );
+
+  const bySupply = new Map(); // `${mp_account_id}:${supply_code}` -> agg
+  for (const row of r.rows) {
+    const key = `${row.mp_account_id}:${row.supply_code}`;
+    if (!bySupply.has(key)) {
+      bySupply.set(key, {
+        mp_account_id: row.mp_account_id,
+        account_name: row.account_name,
+        client_id: row.client_id,
+        client_name: row.client_name,
+        supply_code: row.supply_code,
+        warehouse_name: row.warehouse_name,
+        wb_accepted_at: row.wb_accepted_at,
+        shipment_status: row.shipment_status,
+        earliest_order_at: row.created_at,
+        total_orders: 0,
+        not_arrived: 0, // wbStatus='waiting' и WB ещё физически не принял (нет scanDt)
+        waiting_sort: 0, // wbStatus='waiting', WB принял, но не отсортировал
+      });
+    }
+    const agg = bySupply.get(key);
+    agg.total_orders++;
+    if (row.created_at < agg.earliest_order_at) agg.earliest_order_at = row.created_at;
+    const isWaiting = !row.wb_status || row.wb_status === 'waiting';
+    if (isWaiting) {
+      if (row.wb_accepted_at) agg.waiting_sort++;
+      else agg.not_arrived++;
+    }
+  }
+
+  const supplies = [...bySupply.values()]
+    .map((a) => ({ ...a, pending_orders: a.not_arrived + a.waiting_sort }))
+    .filter((a) => a.pending_orders > 0)
+    .sort((x, y) => new Date(x.earliest_order_at) - new Date(y.earliest_order_at));
+
+  return { supplies };
+}
+
+/** Детали одной поставки - конкретные ещё не отсортированные заказы
+ *  (для печати стикеров и ручной досдачи). Дотягивает недостающие стикеры у
+ *  WB (тот же приём, что и picking.service.js::_getSkippedForExport). */
+async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
+  const r = await query(
+    `SELECT wo.id, wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.price, wo.wb_status,
+            wo.wb_sticker, wo.wb_sticker_code, wo.created_at,
+            i.item_name
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
+     WHERE wo.tenant_id=$1 AND wo.mp_account_id=$2 AND wo.wb_supply_id=$3
+       AND wo.status <> 'cancel'
+       AND (wo.wb_status IS NULL OR wo.wb_status = 'waiting')
+     ORDER BY wo.created_at ASC`,
+    [tenantId, mpAccountId, supplyCode]
+  );
+  const rows = r.rows;
+
+  const missing = rows.filter((row) => !row.wb_sticker);
+  if (missing.length) {
+    const accRes = await query(`SELECT api_token FROM wms.mp_accounts WHERE id=$1 AND tenant_id=$2`, [mpAccountId, tenantId]);
+    const token = accRes.rows[0] && accRes.rows[0].api_token;
+    if (token) {
+      try {
+        const stickers = await wbClient.fetchOrderStickers(token, missing.map((row) => Number(row.wb_order_id)));
+        const byOrderId = new Map(stickers.map((st) => [Number(st.orderId), st]));
+        await Promise.all(missing.map(async (row) => {
+          const st = byOrderId.get(Number(row.wb_order_id));
+          if (!st || !st.file) return;
+          const code = wbClient.extractStickerCode(st.file);
+          row.wb_sticker = st.file;
+          row.wb_sticker_code = code;
+          await query(
+            `UPDATE wms.wb_orders SET wb_sticker=$1, wb_sticker_code=$2 WHERE tenant_id=$3 AND mp_account_id=$4 AND wb_order_id=$5`,
+            [st.file, code, tenantId, mpAccountId, Number(row.wb_order_id)]
+          );
+        }));
+      } catch (e) {
+        logger.warn({ err: e, tenantId, mpAccountId, supplyCode }, 'getUnsortedSupplyOrders: fetchOrderStickers failed, skipping');
+      }
+    }
+  }
+
+  return rows;
+}
+
+/** Печать стикеров выбранных "зависших" заказов одной HTML-страницей - тот же
+ *  визуальный приём, что и picking.service.js::exportSkippedStickers
+ *  (пропущенные позиции на сборке), только источник другой (wms.wb_orders.id
+ *  по явному списку, а не picking_tasks). */
+async function exportUnsortedStickers({ tenantId, orderRowIds }) {
+  if (!Array.isArray(orderRowIds) || !orderRowIds.length) return { html: null, count: 0 };
+  const r = await query(
+    `SELECT wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.wb_supply_id, wo.wb_sticker,
+            i.item_name, c.client_name
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     JOIN wms.clients c ON c.id = ma.client_id
+     LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
+     WHERE wo.tenant_id=$1 AND wo.id = ANY($2::bigint[])
+     ORDER BY c.client_name, i.item_name`,
+    [tenantId, orderRowIds]
+  );
+  const rows = r.rows;
+  const withSticker = rows.filter((row) => row.wb_sticker);
+  const withoutSticker = rows.filter((row) => !row.wb_sticker);
+
+  const labelBlocks = withSticker.map((row) => `
+    <div class="label">
+      <img class="label-svg" src="data:image/svg+xml;base64,${row.wb_sticker}" />
+      <div class="label-caption">
+        <div class="label-item">${_escHtml(row.item_name || row.barcode)}</div>
+        <div class="label-sub">${_escHtml(row.vendor_code || '')} · ${_escHtml(row.client_name || '')} · поставка ${_escHtml(row.wb_supply_id)}</div>
+      </div>
+    </div>`).join('');
+
+  const missingNote = withoutSticker.length
+    ? `<p style="color:#dc2626">Не удалось получить стикер для ${withoutSticker.length} заказ(ов) — распечатайте их вручную из личного кабинета ВБ: ${withoutSticker.map((row) => _escHtml(row.wb_order_id)).join(', ')}.</p>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8">
+<title>Стикеры — не отсортировано WB</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:20px;color:#111;}
+  h1{font-size:18px;margin-bottom:4px;}
+  .meta{color:#666;font-size:13px;margin-bottom:16px;}
+  .no-print{margin-bottom:16px;}
+  .labels{display:flex;flex-wrap:wrap;gap:14px;}
+  .label{width:230px;border:1px solid #ddd;border-radius:8px;padding:8px;page-break-inside:avoid;}
+  .label-svg{width:100%;display:block;}
+  .label-caption{margin-top:6px;font-size:12px;}
+  .label-item{font-weight:700;}
+  .label-sub{color:#666;}
+  @media print { .no-print{display:none;} }
+</style>
+</head><body>
+  <h1>Стикеры — не отсортировано WB</h1>
+  <div class="meta">${rows.length} заказ(ов), стикеров готово: ${withSticker.length}</div>
+  <div class="no-print"><button onclick="window.print()">🖨 Печать</button></div>
+  ${missingNote}
+  <div class="labels">${labelBlocks}</div>
+</body></html>`;
+
+  return { html, count: rows.length };
+}
+
 // =============================================================================
 // Отчёт "время доставки: склад отгрузки (СЦ WB) -> регион покупателя".
 //
@@ -681,4 +880,7 @@ module.exports = {
   getProcessingSpeed,
   getProcessingSpeedByClient,
   getProcessingSpeedBySupply,
+  getUnsortedSuppliesReport,
+  getUnsortedSupplyOrders,
+  exportUnsortedStickers,
 };

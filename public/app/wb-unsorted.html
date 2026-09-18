@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Не отсортировано WB — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+    .total-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .total-card{flex:1;min-width:180px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+    .total-card .num{font-size:26px;font-weight:800;}
+    .total-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    tr.supply-row{cursor:pointer;}
+    tr.supply-row:hover{background:var(--card2);}
+    tr.supply-row.active{background:var(--card2);}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;}
+    .pill-amber{background:rgba(245,158,11,.15);color:var(--amber, #f59e0b);}
+    .pill-red{background:rgba(220,38,38,.15);color:var(--red, #dc2626);}
+    .orders-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;}
+    .order-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+    .order-row:last-child{border-bottom:none;}
+    .order-row .main{flex:1;min-width:0;}
+    .order-row .title{font-weight:600;}
+    .order-row .sub{font-size:12px;color:var(--muted);}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 6.8 12 12l8.7-5.2M12 22V12"/></svg> Не отсортировано WB</h1>
+    <button class="btn-sm btn-back" onclick="load()">Обновить</button>
+  </div>
+
+  <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
+    Поставки, у которых WB ещё не закончил сортировку части заказов (статус в ЛК ВБ «Ждёт сортировки»),
+    а также заказы, которые мы ещё физически не отгрузили ВБ («Отгрузите товар»). По всем WB-аккаунтам сразу —
+    чтобы не искать вручную по каждой отгрузке.
+  </p>
+
+  <div class="total-row">
+    <div class="total-card">
+      <div class="num" id="sum-supplies">—</div>
+      <div class="label">Поставок с проблемой</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="sum-not-arrived">—</div>
+      <div class="label">Не отгружено ВБ</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="sum-waiting">—</div>
+      <div class="label">Ждёт сортировки</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Поставки</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Клиент / аккаунт</th>
+            <th>Поставка</th>
+            <th>Склад ВБ</th>
+            <th>Всего ШК</th>
+            <th>Не отгружено ВБ</th>
+            <th>Ждёт сортировки</th>
+            <th>Создана</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="empty" style="display:none;">
+      Проблемных поставок нет — всё, что отгружено ВБ, уже отсортировано.
+    </div>
+  </div>
+
+  <div class="card" id="detail-card" style="display:none;">
+    <div class="card-title" id="detail-title">Позиции поставки</div>
+    <div class="orders-toolbar">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+        <input type="checkbox" id="select-all" onchange="toggleAll(this.checked)"/> Выбрать все
+      </label>
+      <button class="btn-sm btn-blue" onclick="printStickers()">🖨 Распечатать стикеры выбранных</button>
+    </div>
+    <div id="orders-list"></div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin', 'supervisor'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    var lastSupplies = [];
+    var activeSupplyKey = null;
+    var currentOrders = [];
+
+    function fmtNum(n) {
+      return (Number(n) || 0).toLocaleString('ru-RU');
+    }
+    function fmtDate(s) {
+      if (!s) return '—';
+      var d = new Date(s);
+      return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    }
+    function supplyKey(s) {
+      return s.mp_account_id + ':' + s.supply_code;
+    }
+
+    function render() {
+      var tbody = document.getElementById('rows');
+      var empty = document.getElementById('empty');
+      if (!lastSupplies.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        document.getElementById('detail-card').style.display = 'none';
+        return;
+      }
+      empty.style.display = 'none';
+      tbody.innerHTML = lastSupplies.map(function (s) {
+        var key = supplyKey(s);
+        var activeClass = key === activeSupplyKey ? ' active' : '';
+        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.not_arrived ? '<span class="pill pill-red">' + fmtNum(s.not_arrived) + '</span>' : '—') + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
+      }).join('');
+    }
+
+    function renderOrders() {
+      var box = document.getElementById('orders-list');
+      if (!currentOrders.length) {
+        box.innerHTML = '<div class="empty-state">Нет данных</div>';
+        return;
+      }
+      box.innerHTML = currentOrders.map(function (o, idx) {
+        var statusLabel = o.wb_status === 'waiting' || !o.wb_status ? 'ждёт' : UI.escHtml(o.wb_status);
+        return '\n        <div class="order-row">\n          <input type="checkbox" class="order-check" data-idx="' + idx + '"/>\n          <div class="main">\n            <div class="title">' + UI.escHtml(o.item_name || o.barcode || '—') + '</div>\n            <div class="sub">' + UI.escHtml(o.vendor_code || '') + ' · ' + UI.escHtml(o.barcode || '') + ' · заказ ' + UI.escHtml(o.wb_order_id) + ' · ' + statusLabel + (o.wb_sticker ? '' : ' · <span style="color:var(--red,#dc2626)">нет стикера</span>') + '</div>\n          </div>\n        </div>\n      ';
+      }).join('');
+    }
+
+    function toggleAll(checked) {
+      document.querySelectorAll('.order-check').forEach(function (el) { el.checked = checked; });
+    }
+
+    async function selectSupply(key) {
+      activeSupplyKey = key;
+      render();
+      var s = lastSupplies.find(function (x) { return supplyKey(x) === key; });
+      if (!s) return;
+      document.getElementById('detail-card').style.display = 'block';
+      document.getElementById('detail-title').textContent = 'Поставка ' + s.supply_code + ' — ' + (s.client_name || '');
+      document.getElementById('orders-list').innerHTML = '<div class="empty-state">Загрузка...</div>';
+      try {
+        var res = await window.API.fbsAnalytics.unsortedSupplyOrders(s.mp_account_id, s.supply_code);
+        currentOrders = res.orders || [];
+        renderOrders();
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка загрузки позиций');
+      }
+    }
+
+    async function printStickers() {
+      var idxs = Array.prototype.map.call(document.querySelectorAll('.order-check:checked'), function (el) { return Number(el.dataset.idx); });
+      if (!idxs.length) { UI.notify.err('Выберите хотя бы одну позицию'); return; }
+      var ids = idxs.map(function (i) { return currentOrders[i].id; });
+      try {
+        var res = await window.API.fbsAnalytics.unsortedStickersExport(ids);
+        if (!res.html) { UI.notify.err('Не удалось получить стикеры'); return; }
+        var blob = new Blob([res.html], { type: 'text/html' });
+        var url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка печати стикеров');
+      }
+    }
+
+    async function load() {
+      try {
+        var res = await window.API.fbsAnalytics.unsortedReport();
+        lastSupplies = res.supplies || [];
+        var sumNotArrived = 0, sumWaiting = 0;
+        lastSupplies.forEach(function (s) { sumNotArrived += s.not_arrived || 0; sumWaiting += s.waiting_sort || 0; });
+        document.getElementById('sum-supplies').textContent = fmtNum(lastSupplies.length);
+        document.getElementById('sum-not-arrived').textContent = fmtNum(sumNotArrived);
+        document.getElementById('sum-waiting').textContent = fmtNum(sumWaiting);
+        render();
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка загрузки отчёта');
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>
