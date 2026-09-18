@@ -33,9 +33,9 @@
   </div>
 
   <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
-    Поставки, у которых WB ещё не закончил сортировку части заказов (статус в ЛК ВБ «Ждёт сортировки»),
-    а также заказы, которые мы ещё физически не отгрузили ВБ («Отгрузите товар»). По всем WB-аккаунтам сразу —
-    чтобы не искать вручную по каждой отгрузке.
+    Поставки, у которых часть заказов ещё не отсортирована WB — статус в ЛК ВБ «Ждёт сортировки» или
+    «Отгрузите товар» (для этой задачи оба считаются одинаково «ждёт сортировки»: в обоих случаях товар ещё
+    не добрался до покупателя). По всем WB-аккаунтам сразу — чтобы не искать вручную по каждой отгрузке.
   </p>
 
   <div class="total-row">
@@ -44,12 +44,8 @@
       <div class="label">Поставок с проблемой</div>
     </div>
     <div class="total-card">
-      <div class="num" id="sum-not-arrived">—</div>
-      <div class="label">Не отгружено ВБ</div>
-    </div>
-    <div class="total-card">
-      <div class="num" id="sum-waiting">—</div>
-      <div class="label">Ждёт сортировки</div>
+      <div class="num" id="sum-pending">—</div>
+      <div class="label">Ждёт сортировки, шт</div>
     </div>
   </div>
 
@@ -63,7 +59,6 @@
             <th>Поставка</th>
             <th>Склад ВБ</th>
             <th>Всего ШК</th>
-            <th>Не отгружено ВБ</th>
             <th>Ждёт сортировки</th>
             <th>Создана</th>
           </tr>
@@ -124,7 +119,7 @@
       tbody.innerHTML = lastSupplies.map(function (s) {
         var key = supplyKey(s);
         var activeClass = key === activeSupplyKey ? ' active' : '';
-        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.not_arrived ? '<span class="pill pill-red">' + fmtNum(s.not_arrived) + '</span>' : '—') + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
+        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.pending_orders ? '<span class="pill pill-amber">' + fmtNum(s.pending_orders) + '</span>' : '—') + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
       }).join('');
     }
 
@@ -180,11 +175,10 @@
       try {
         var res = await window.API.fbsAnalytics.unsortedReport();
         lastSupplies = res.supplies || [];
-        var sumNotArrived = 0, sumWaiting = 0;
-        lastSupplies.forEach(function (s) { sumNotArrived += s.not_arrived || 0; sumWaiting += s.waiting_sort || 0; });
+        var sumPending = 0;
+        lastSupplies.forEach(function (s) { sumPending += s.pending_orders || 0; });
         document.getElementById('sum-supplies').textContent = fmtNum(lastSupplies.length);
-        document.getElementById('sum-not-arrived').textContent = fmtNum(sumNotArrived);
-        document.getElementById('sum-waiting').textContent = fmtNum(sumWaiting);
+        document.getElementById('sum-pending').textContent = fmtNum(sumPending);
         render();
       } catch (e) {
         UI.notify.err(e.message || 'Ошибка загрузки отчёта');
