@@ -42,6 +42,14 @@
   </div>
 
   <div class="card">
+    <div class="card-title">Загрузить заказ из файла (1С)</div>
+    <div class="line-name" style="margin-bottom:8px;">Выгрузка «Заказ покупателя» (.xls/.xlsx) — штрихкоды и количество подставятся автоматически, доправить позиции можно вручную ниже.</div>
+    <input type="file" id="import-file" accept=".xls,.xlsx" style="width:100%;padding:10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;"/>
+    <button class="btn-big btn-blue btn-full" style="margin-top:10px;" onclick="submitImportOrderFile()"><svg class="i" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg> Загрузить и распознать</button>
+    <div id="import-status" class="line-name" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Добавить товар</div>
 
     <div class="field" style="margin-bottom:0;">
@@ -288,6 +296,67 @@ document.getElementById('search-item').addEventListener('input', function (e) {
     return runItemSearch(term);
   }, 300);
 });
+// ---------- Импорт заказа из файла 1С ----------
+function submitImportOrderFile() {
+  var clientId = getClientId();
+  if (!clientId) return;
+  var fileInput = document.getElementById('import-file');
+  var file = fileInput && fileInput.files && fileInput.files[0];
+  var statusEl = document.getElementById('import-status');
+  if (!file) {
+    UI.notify.err('Выберите файл .xls/.xlsx');
+    return;
+  }
+  if (statusEl) statusEl.textContent = 'Загрузка и распознавание...';
+  window.API.picking.parseManualOrderFile(file).then(function (res) {
+    var lines = res.lines || [];
+    if (!lines.length) {
+      if (statusEl) statusEl.textContent = '';
+      UI.notify.err('В файле не найдено ни одной позиции');
+      return;
+    }
+    if (res.order_number && !UI.val('#external-id')) {
+      UI.setVal('#external-id', res.order_number);
+    }
+    // Резолвим наименование по штрихкоду так же, как при ручном скане —
+    // но не блокируем импорт, если товара ещё нет в справочнике: он
+    // создастся автоматически при подтверждении заказа (createManualWave).
+    var results = lines.map(function () {
+      return null;
+    });
+    var pending = lines.length;
+    function finishImport() {
+      lines.forEach(function (l, idx) {
+        var itemName = results[idx] || l.item_name || null;
+        var existing = orderLines.find(function (o) {
+          return o.barcode === l.barcode;
+        });
+        if (existing) {
+          existing.qty += l.qty;
+        } else {
+          orderLines.push({ barcode: l.barcode, qty: l.qty, item_name: itemName });
+        }
+      });
+      renderLines();
+      if (statusEl) statusEl.textContent = '';
+      fileInput.value = '';
+      UI.notify.ok('Импортировано позиций: ' + lines.length + (res.order_number ? ' (заказ № ' + res.order_number + ')' : ''));
+    }
+    lines.forEach(function (l, idx) {
+      window.API.items.byBarcode(l.barcode, clientId).then(function (r) {
+        results[idx] = r.item && r.item.item_name || null;
+      }).catch(function () {
+        results[idx] = null;
+      }).then(function () {
+        pending -= 1;
+        if (pending === 0) finishImport();
+      });
+    });
+  }).catch(function (e) {
+    if (statusEl) statusEl.textContent = '';
+    UI.notify.err(e.message);
+  });
+}
 function addLine() {
   var barcode = UI.val('#add-barcode');
   if (!barcode) {

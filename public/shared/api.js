@@ -818,6 +818,11 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     manualWave: function manualWave(d) {
       return post('/picking/manual-wave', d);
     },
+    parseManualOrderFile: function parseManualOrderFile(file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      return postFile('/picking/manual-wave/parse-file', fd);
+    },
     skipped: function skipped(p) {
       return _get('/picking/tasks/skipped', p);
     },

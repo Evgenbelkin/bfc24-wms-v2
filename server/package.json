@@ -25,7 +25,8 @@
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
     "qrcode": "^1.5.4",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "jest": "^29.0.0",

@@ -1,6 +1,7 @@
 'use strict';
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const svc = require('./picking.service');
 const { authRequired } = require('../../middleware/auth');
 const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenant');
@@ -8,6 +9,7 @@ const { requireRole } = require('../../middleware/requireRole');
 const { requireCheckedIn } = require('../../middleware/requireCheckedIn');
 const { validatePositiveInt } = require('../../utils/validators');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
+const { ValidationError } = require('../../utils/errors');
 
 router.use(authRequired, tenantMiddleware, requireCheckedIn);
 
@@ -305,6 +307,28 @@ router.post('/manual-wave', requireRole('tenant_admin','supervisor'), async (req
     });
     res.status(201).json({ ok: true, ...result });
   } catch(e){ next(e); }
+});
+
+/** POST /picking/manual-wave/parse-file { file } — разбор выгрузки заказа из 1С
+ *  (.xls/.xlsx) в строки {barcode, qty, item_name} для формы "Ручной заказ" —
+ *  18.09.2026, для клиентов без подключения к маркетплейсу, у которых заказ
+ *  приходит только выгрузкой из 1С. Только парсинг, ничего не пишет в БД —
+ *  см. picking.service.js::parseManualOrderFile. */
+const uploadManualOrderFile = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('file');
+
+router.post('/manual-wave/parse-file', requireRole('tenant_admin','supervisor'), (req, res, next) => {
+  uploadManualOrderFile(req, res, (uploadErr) => {
+    try {
+      if (uploadErr) {
+        if (uploadErr.code === 'LIMIT_FILE_SIZE') throw new ValidationError('Файл слишком большой (максимум 10 МБ)');
+        throw new ValidationError(`Не удалось загрузить файл: ${uploadErr.message}`);
+      }
+      if (!req.file) throw new ValidationError('Файл не передан');
+      if (!/\.xlsx?$/i.test(req.file.originalname || '')) throw new ValidationError('Поддерживаются только файлы .xls/.xlsx');
+      const result = svc.parseManualOrderFile(req.file.buffer);
+      res.json({ ok: true, ...result });
+    } catch (e) { next(e); }
+  });
 });
 
 module.exports = router;

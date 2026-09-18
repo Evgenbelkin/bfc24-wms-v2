@@ -2025,11 +2025,113 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
   });
 }
 
+/**
+ * Разбор выгрузки заказа из 1С ("Заказ покупателя") в строки {barcode, qty, item_name}
+ * для ручного заказа — см. createManualWave выше. Только парсинг, БЕЗ записи в БД:
+ * результат отдаётся на фронт, диспетчер видит распознанные строки и уже сам
+ * жмёт "Создать волну на сборку" (существующий /manual-wave, без изменений).
+ *
+ * Формат 1С — печатный документ с объединёнными ячейками: номер/дата заказа
+ * одной строкой текста ("Заказ покупателя № 171 от 18 сентября 2026 г."),
+ * дальше строка-заголовок таблицы ("№", "Код", "Кол-во" и т.п. в разных
+ * колонках), затем по одной строке на позицию (могут перемежаться пустыми
+ * строками-спейсерами), и в конце строка "Всего наименований N, на сумму
+ * X руб." — это и есть стоп-маркер конца таблицы.
+ *
+ * Файл может быть старым .xls (BIFF8) — exceljs (см. importItemsFromExcel в
+ * items.service.js) такие читать не умеет, поэтому здесь используется xlsx
+ * (SheetJS), которая одинаково читает и .xls, и .xlsx.
+ *
+ * @param fileBuffer Buffer содержимого загруженного .xls/.xlsx
+ * @returns { order_number, order_date, lines: [{barcode, qty, item_name}] }
+ */
+function parseManualOrderFile(fileBuffer) {
+  const XLSX = require('xlsx');
+
+  function normHeader(s) {
+    return String(s == null ? '' : s).trim().toLowerCase();
+  }
+
+  let wb;
+  try {
+    wb = XLSX.read(fileBuffer, { type: 'buffer' });
+  } catch (e) {
+    throw new ValidationError('Не удалось прочитать файл — убедитесь, что это корректный .xls/.xlsx');
+  }
+  const sheetName = wb.SheetNames[0];
+  const sheet = wb.Sheets[sheetName];
+  if (!sheet) throw new ValidationError('В файле нет ни одного листа');
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+
+  // Номер/дата заказа — ищем в первых 15 строках ячейку вида "Заказ покупателя № X от Y"
+  let orderNumber = null;
+  let orderDate = null;
+  for (let r = 0; r < Math.min(rows.length, 15); r++) {
+    for (const cell of rows[r]) {
+      const t = String(cell == null ? '' : cell).trim();
+      const m = /заказ покупателя\s*№\s*(\S+)\s*от\s*(.+)/i.exec(t);
+      if (m) {
+        orderNumber = m[1].replace(/[.,]+$/, '');
+        orderDate = m[2].trim();
+        break;
+      }
+    }
+    if (orderNumber) break;
+  }
+
+  // Заголовок таблицы товаров — строка, где есть и "код", и "кол-во"
+  let colBarcode = null;
+  let colQty = null;
+  let colName = null;
+  let headerRowIdx = null;
+  for (let r = 0; r < Math.min(rows.length, 40); r++) {
+    let foundBarcode = null;
+    let foundQty = null;
+    let foundName = null;
+    rows[r].forEach((cell, c) => {
+      const t = normHeader(cell);
+      if (!t) return;
+      if (t === 'код' || t === 'код товара' || t.includes('штрихкод')) foundBarcode = c;
+      else if (t.includes('кол-во') || t.includes('количество')) foundQty = c;
+      else if (t.includes('товар') || t.includes('наимен')) foundName = c;
+    });
+    if (foundBarcode != null && foundQty != null) {
+      colBarcode = foundBarcode;
+      colQty = foundQty;
+      colName = foundName;
+      headerRowIdx = r;
+      break;
+    }
+  }
+  if (headerRowIdx == null) {
+    throw new ValidationError('Не нашёл в файле таблицу товаров (нет колонок "Код" и "Кол-во")');
+  }
+
+  const lines = [];
+  for (let r = headerRowIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    const joined = row.join(' ');
+    if (/всего наименований/i.test(joined)) break;
+    const barcode = String(row[colBarcode] == null ? '' : row[colBarcode]).trim();
+    const qty = Number(row[colQty]);
+    if (barcode && Number.isFinite(qty) && qty > 0) {
+      const itemName = colName != null ? String(row[colName] == null ? '' : row[colName]).trim() : '';
+      lines.push({ barcode, qty, item_name: itemName || null });
+    }
+  }
+
+  if (!lines.length) {
+    throw new ValidationError('В файле не нашлось ни одной позиции со штрихкодом и количеством');
+  }
+
+  return { order_number: orderNumber, order_date: orderDate, lines };
+}
+
 module.exports = {
   listWaves, getWaveByShipmentCode, getWaveDetail, takeWave, resetWave,
   getNextTask, scanLocation, scanItem, scanItemQty, skipTask,
   listSkippedTasks, exportSkippedStickers, exportSkippedXlsx, requeueSkippedTask, cancelSkippedTask, listCancelledTasks,
   closeWave, getWaveStatus,
-  createManualWave,
+  createManualWave, parseManualOrderFile,
   setShipmentPriority, assignWavePicker, listPickers,
 };
