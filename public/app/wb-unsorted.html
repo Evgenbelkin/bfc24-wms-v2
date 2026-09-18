@@ -29,7 +29,7 @@
   <div class="header">
     <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
     <h1><svg class="i" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 6.8 12 12l8.7-5.2M12 22V12"/></svg> Не отсортировано WB</h1>
-    <button class="btn-sm btn-back" onclick="load()">Обновить</button>
+    <button class="btn-sm btn-back" id="refresh-btn" onclick="refreshAndLoad()">↻ Обновить статусы из WB</button>
   </div>
 
   <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
@@ -37,8 +37,11 @@
     неотсортированных заказов (статус в ЛК ВБ «Ждёт сортировки» или «Отгрузите товар» — не важно, отгружена ли
     поставка целиком). «Не отгружено от нас» — из них же, дополнительно: сколько физически ещё лежит у нас на
     складе (мы сами ещё не подтвердили передачу перевозчику) — эта цифра не вычитается из первой, а входит в неё.
-    По всем WB-аккаунтам сразу — чтобы не искать вручную по каждой отгрузке.
+    По всем WB-аккаунтам сразу — чтобы не искать вручную по каждой отгрузке. Статусы синхронизируются с WB
+    автоматически раз в ~30 минут; кнопка «Обновить статусы из WB» запрашивает их у WB прямо сейчас, если нужна
+    самая свежая картина.
   </p>
+  <p style="font-size:12px;color:var(--muted);margin:-8px 0 14px;" id="sync-note"></p>
 
   <div class="total-row">
     <div class="total-card">
@@ -191,6 +194,22 @@
       } catch (e) {
         UI.notify.err(e.message || 'Ошибка загрузки отчёта');
       }
+    }
+
+    async function refreshAndLoad() {
+      var btn = document.getElementById('refresh-btn');
+      var note = document.getElementById('sync-note');
+      btn.disabled = true;
+      btn.textContent = '↻ Запрашиваю статусы у WB...';
+      try {
+        var r = await window.API.fbsAnalytics.refreshNow();
+        note.textContent = 'Синхронизировано с WB только что: проверено ' + fmtNum(r.checked) + ', обновлено ' + fmtNum(r.updated) + ' заказ(ов).';
+      } catch (e) {
+        UI.notify.err(e.message || 'Не удалось обновить статусы из WB, показываю последние сохранённые');
+      }
+      btn.disabled = false;
+      btn.textContent = '↻ Обновить статусы из WB';
+      await load();
     }
 
     load();
