@@ -620,21 +620,19 @@ async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
   return rows;
 }
 
-/** Печать стикеров выбранных "зависших" заказов одной HTML-страницей - тот же
- *  визуальный приём, что и picking.service.js::exportSkippedStickers
- *  (пропущенные позиции на сборке), только источник другой (wms.wb_orders.id
- *  по явному списку, а не picking_tasks). */
+/** Печать стикеров выбранных "зависших" заказов одной HTML-страницей - чистые
+ *  стикеры ВБ без каких-либо подписей поверх (обсуждение 18.09.2026: это
+ *  реальный стикер под термопринтер 58×40мм для наклейки на короб/товар,
+ *  никакой лишний текст на нём не нужен и может помешать сканеру ВБ на
+ *  сортировке) - тот же режим, что 'thermal' в
+ *  picking.service.js::exportSkippedStickers, один стикер на страницу. */
 async function exportUnsortedStickers({ tenantId, orderRowIds }) {
   if (!Array.isArray(orderRowIds) || !orderRowIds.length) return { html: null, count: 0 };
   const r = await query(
-    `SELECT wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.wb_supply_id, wo.wb_sticker,
-            i.item_name, c.client_name
+    `SELECT wo.wb_order_id, wo.wb_sticker
      FROM wms.wb_orders wo
-     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
-     JOIN wms.clients c ON c.id = ma.client_id
-     LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
      WHERE wo.tenant_id=$1 AND wo.id = ANY($2::bigint[])
-     ORDER BY c.client_name, i.item_name`,
+     ORDER BY wo.id`,
     [tenantId, orderRowIds]
   );
   const rows = r.rows;
@@ -642,13 +640,7 @@ async function exportUnsortedStickers({ tenantId, orderRowIds }) {
   const withoutSticker = rows.filter((row) => !row.wb_sticker);
 
   const labelBlocks = withSticker.map((row) => `
-    <div class="label">
-      <img class="label-svg" src="data:image/svg+xml;base64,${row.wb_sticker}" />
-      <div class="label-caption">
-        <div class="label-item">${_escHtml(row.item_name || row.barcode)}</div>
-        <div class="label-sub">${_escHtml(row.vendor_code || '')} · ${_escHtml(row.client_name || '')} · поставка ${_escHtml(row.wb_supply_id)}</div>
-      </div>
-    </div>`).join('');
+    <div class="label"><img src="data:image/svg+xml;base64,${row.wb_sticker}" /></div>`).join('');
 
   const missingNote = withoutSticker.length
     ? `<p style="color:#dc2626">Не удалось получить стикер для ${withoutSticker.length} заказ(ов) — распечатайте их вручную из личного кабинета ВБ: ${withoutSticker.map((row) => _escHtml(row.wb_order_id)).join(', ')}.</p>`
@@ -656,26 +648,21 @@ async function exportUnsortedStickers({ tenantId, orderRowIds }) {
 
   const html = `<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8">
-<title>Стикеры — не отсортировано WB</title>
+<title>Стикеры 58×40 — не отсортировано WB</title>
 <style>
-  body{font-family:Arial,sans-serif;margin:20px;color:#111;}
-  h1{font-size:18px;margin-bottom:4px;}
-  .meta{color:#666;font-size:13px;margin-bottom:16px;}
-  .no-print{margin-bottom:16px;}
-  .labels{display:flex;flex-wrap:wrap;gap:14px;}
-  .label{width:230px;border:1px solid #ddd;border-radius:8px;padding:8px;page-break-inside:avoid;}
-  .label-svg{width:100%;display:block;}
-  .label-caption{margin-top:6px;font-size:12px;}
-  .label-item{font-weight:700;}
-  .label-sub{color:#666;}
+  @page { size: 58mm 40mm; margin: 0; }
+  html,body{margin:0;padding:0;}
+  .label{width:58mm;height:40mm;page-break-after:always;display:flex;align-items:center;justify-content:center;}
+  .label img{width:58mm;height:40mm;display:block;}
+  .no-print{padding:10px;font-family:Arial,sans-serif;}
   @media print { .no-print{display:none;} }
 </style>
 </head><body>
-  <h1>Стикеры — не отсортировано WB</h1>
-  <div class="meta">${rows.length} заказ(ов), стикеров готово: ${withSticker.length}</div>
-  <div class="no-print"><button onclick="window.print()">🖨 Печать</button></div>
-  ${missingNote}
-  <div class="labels">${labelBlocks}</div>
+  <div class="no-print">
+    <button onclick="window.print()">🖨 Печать (${withSticker.length} шт., в диалоге печати выбрать этикетку 58×40мм, поля 0)</button>
+    ${missingNote}
+  </div>
+  ${labelBlocks}
 </body></html>`;
 
   return { html, count: rows.length };
