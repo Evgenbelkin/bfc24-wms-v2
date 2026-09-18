@@ -528,6 +528,27 @@ router.get('/fbs-analytics/region-delivery', async (req,res,next)=>{
   } catch(e){ next(e); }
 });
 
+/** GET /seller/report/items — "супер-отчёт" ЭТОГО клиента (владелец,
+ *  18.09.2026: "клиент попросил красивый цветной отчёт - сколько продано,
+ *  какие товары, остаток по ВМС, оборачиваемость"): ОДНА таблица по ВСЕМ
+ *  товарам клиента - остаток, продано за выбранный период, скорость продаж,
+ *  на сколько дней хватит запаса. См. fbsAnalytics.service.js::getClientItemsReport.
+ *  clientId ЖЁСТКО из JWT, как и у остальных /seller/fbs-analytics/* выше. */
+router.get('/report/items', async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const to = req.query.to ? new Date(`${req.query.to}T23:59:59.999Z`) : new Date();
+    const from = req.query.from ? new Date(`${req.query.from}T00:00:00.000Z`) : new Date(to.getTime() - 29*86400000);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new ValidationError('Некорректный диапазон дат (from/to)');
+    }
+    const result = await fbsAnalyticsSvc.getClientItemsReport({
+      tenantId: req.user.tenantId, clientId, dateFrom: from, dateTo: to,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── История операций ───────────────
 
 /** GET /seller/history */

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Отчёт по товарам — Кабинет клиента</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+    .toolbar input[type=date]{padding:9px 10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    .preset{padding:8px 12px;border-radius:10px;border:2px solid var(--border);background:var(--card2);color:var(--text);font-size:13px;cursor:pointer;}
+    .preset.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+    .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+    @media (min-width:720px){ .kpi-grid{grid-template-columns:repeat(5,1fr);} }
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
+    .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;font-weight:600;}
+    .kpi .num{font-size:22px;font-weight:800;margin-top:4px;}
+    .kpi .sub{font-size:11px;color:var(--muted);margin-top:2px;}
+
+    .chart-card{margin-bottom:14px;}
+    .bars{display:flex;align-items:flex-end;gap:4px;height:120px;margin-top:6px;}
+    .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative;}
+    .bar{width:100%;background:linear-gradient(180deg,var(--accent2,#818cf8),var(--accent,#6366f1));border-radius:4px 4px 0 0;min-height:2px;}
+    .bar-lbl{font-size:9px;color:var(--muted);margin-top:4px;white-space:nowrap;}
+
+    .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+    .filters input[type=search]{flex:1;min-width:180px;padding:9px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    .status-chip{padding:6px 12px;border-radius:999px;border:2px solid var(--border);background:var(--card2);color:var(--text);font-size:12px;cursor:pointer;font-weight:600;}
+    .status-chip.active{border-color:var(--accent);color:var(--accent);}
+
+    th.sortable{cursor:pointer;user-select:none;}
+    th.sortable:hover{color:var(--accent);}
+    .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;}
+    .pill-green{background:rgba(22,163,74,.15);color:#16a34a;}
+    .pill-amber{background:rgba(245,158,11,.15);color:#b45309;}
+    .pill-red{background:rgba(220,38,38,.15);color:#dc2626;}
+    .pill-gray{background:var(--card2);color:var(--muted);}
+    .item-name{font-weight:600;}
+    .item-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/seller/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg> Отчёт по товарам</h1>
+    <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
+  </div>
+
+  <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
+    Сколько продано, какой остаток на складе и на сколько дней его хватит — по каждому товару. «Риск дефицита» — товар
+    скоро закончится при текущем темпе продаж, пора довозить. «Залежался» — за выбранный период не продано ни одной
+    штуки, а остаток есть.
+  </p>
+
+  <div class="toolbar" id="presets">
+    <button class="preset" data-days="7" onclick="setPreset(7)">7 дней</button>
+    <button class="preset active" data-days="30" onclick="setPreset(30)">30 дней</button>
+    <button class="preset" data-days="90" onclick="setPreset(90)">90 дней</button>
+    <input type="date" id="f-from"/>
+    <span style="color:var(--muted);">—</span>
+    <input type="date" id="f-to"/>
+    <button class="btn-sm btn-back" onclick="loadCustomRange()">Показать</button>
+  </div>
+
+  <div class="refresh-note" id="meta" style="margin-bottom:10px;">—</div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="label">Продано, шт</div>
+      <div class="num" id="k-qty">—</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Выручка</div>
+      <div class="num" id="k-amount">—</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Остаток доступно, шт</div>
+      <div class="num" id="k-stock">—</div>
+    </div>
+    <div class="kpi">
+      <div class="label" style="color:#dc2626;">Риск дефицита</div>
+      <div class="num" id="k-risk" style="color:#dc2626;">—</div>
+      <div class="sub">товаров скоро закончится</div>
+    </div>
+    <div class="kpi">
+      <div class="label" style="color:#b45309;">Залежались</div>
+      <div class="num" id="k-stale" style="color:#b45309;">—</div>
+      <div class="sub">товаров без продаж за период</div>
+    </div>
+  </div>
+
+  <div class="card chart-card">
+    <div class="card-title">Динамика продаж по дням</div>
+    <div class="bars" id="trend-bars"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Все товары</div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="Поиск по названию или артикулу..." oninput="renderTable()"/>
+      <button class="status-chip active" data-status="" onclick="setStatusFilter('')">Все</button>
+      <button class="status-chip" data-status="risk" onclick="setStatusFilter('risk')">Риск дефицита</button>
+      <button class="status-chip" data-status="out_of_stock" onclick="setStatusFilter('out_of_stock')">Нет остатка</button>
+      <button class="status-chip" data-status="stale" onclick="setStatusFilter('stale')">Залежался</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" onclick="sortBy('item_name')">Товар ↕</th>
+            <th class="sortable" onclick="sortBy('qty_available')">Остаток, шт ↕</th>
+            <th class="sortable" onclick="sortBy('qty_sold')">Продано, шт ↕</th>
+            <th class="sortable" onclick="sortBy('amount')">Выручка ↕</th>
+            <th class="sortable" onclick="sortBy('avg_daily_sales')">Продажи/день ↕</th>
+            <th class="sortable" onclick="sortBy('days_of_stock')">Хватит на ↕</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="empty" style="display:none;">Нет данных за выбранный период.</div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['seller'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    var allItems = [];
+    var statusFilter = '';
+    var sortKey = 'amount';
+    var sortDir = -1;
+
+    async function logout() {
+      await window.API.auth.logout();
+      window.location.href = '/app/login.html';
+    }
+
+    function fmtMoney(n) {
+      return (Number(n) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
+    }
+    function fmtNum(n) {
+      return (Number(n) || 0).toLocaleString('ru-RU');
+    }
+    function isoDate(d) {
+      return d.toISOString().slice(0, 10);
+    }
+    function fmtDays(d) {
+      if (d === null || d === undefined) return '—';
+      return Math.round(d) + ' дн';
+    }
+
+    var STATUS_LABELS = {
+      out_of_stock: { text: 'нет остатка', cls: 'pill-red' },
+      risk:         { text: 'риск дефицита', cls: 'pill-amber' },
+      stale:        { text: 'залежался', cls: 'pill-amber' },
+      normal:       { text: 'норма', cls: 'pill-green' },
+    };
+
+    function setPreset(days) {
+      document.querySelectorAll('#presets .preset').forEach(function (b) {
+        b.classList.toggle('active', Number(b.dataset.days) === days);
+      });
+      var to = new Date();
+      var from = new Date(to.getTime() - days * 86400000);
+      document.getElementById('f-from').value = isoDate(from);
+      document.getElementById('f-to').value = isoDate(to);
+      load();
+    }
+    function loadCustomRange() {
+      document.querySelectorAll('#presets .preset').forEach(function (b) { b.classList.remove('active'); });
+      load();
+    }
+    function setStatusFilter(s) {
+      statusFilter = s;
+      document.querySelectorAll('.status-chip').forEach(function (b) {
+        b.classList.toggle('active', b.dataset.status === s);
+      });
+      renderTable();
+    }
+    function sortBy(key) {
+      if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = -1; }
+      renderTable();
+    }
+
+    function renderTrend(trend) {
+      var box = document.getElementById('trend-bars');
+      if (!trend || !trend.length) { box.innerHTML = '<div class="empty-state">Нет данных</div>'; return; }
+      var max = Math.max.apply(null, trend.map(function (t) { return t.qty; })) || 1;
+      box.innerHTML = trend.map(function (t) {
+        var h = Math.max(Math.round((t.qty / max) * 100), t.qty > 0 ? 4 : 1);
+        var d = new Date(t.date);
+        var lbl = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+        return '<div class="bar-col" title="' + lbl + ': ' + t.qty + ' шт">'
+          + '<div class="bar" style="height:' + h + '%"></div>'
+          + '<div class="bar-lbl">' + lbl + '</div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function renderTable() {
+      var q = document.getElementById('q').value.trim().toLowerCase();
+      var rows = allItems.filter(function (it) {
+        if (statusFilter && it.status !== statusFilter) return false;
+        if (q) {
+          var hay = ((it.item_name || '') + ' ' + (it.vendor_code || '') + ' ' + (it.barcode || '')).toLowerCase();
+          if (hay.indexOf(q) === -1) return false;
+        }
+        return true;
+      });
+      rows.sort(function (a, b) {
+        var av = a[sortKey], bv = b[sortKey];
+        if (sortKey === 'item_name') {
+          return (String(av || '').localeCompare(String(bv || ''), 'ru')) * sortDir;
+        }
+        av = av == null ? -Infinity : av;
+        bv = bv == null ? -Infinity : bv;
+        return (av - bv) * sortDir;
+      });
+
+      var tbody = document.getElementById('rows');
+      var empty = document.getElementById('empty');
+      if (!rows.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      tbody.innerHTML = rows.map(function (it) {
+        var st = STATUS_LABELS[it.status] || { text: it.status, cls: 'pill-gray' };
+        return '\n        <tr>\n          <td>\n            <div class="item-name">' + UI.escHtml(it.item_name || it.barcode || '—') + '</div>\n            <div class="item-sub">' + UI.escHtml(it.vendor_code || '') + (it.vendor_code && it.barcode ? ' · ' : '') + UI.escHtml(it.barcode || '') + '</div>\n          </td>\n          <td>' + fmtNum(it.qty_available) + '</td>\n          <td>' + fmtNum(it.qty_sold) + '</td>\n          <td>' + fmtMoney(it.amount) + '</td>\n          <td>' + (it.avg_daily_sales || 0).toFixed(2) + '</td>\n          <td>' + fmtDays(it.days_of_stock) + '</td>\n          <td><span class="pill ' + st.cls + '">' + st.text + '</span></td>\n        </tr>\n      ';
+      }).join('');
+    }
+
+    async function load() {
+      var from = document.getElementById('f-from').value;
+      var to = document.getElementById('f-to').value;
+      if (!from || !to) return;
+      try {
+        var res = await window.API.seller.reportItems({ from: from, to: to });
+        document.getElementById('meta').textContent = 'Период: ' + from + ' — ' + to + ' (' + res.period.days + ' дн.)';
+        document.getElementById('k-qty').textContent = fmtNum(res.totals.qty_sold);
+        document.getElementById('k-amount').textContent = fmtMoney(res.totals.amount);
+        document.getElementById('k-stock').textContent = fmtNum(res.totals.qty_available);
+        document.getElementById('k-risk').textContent = fmtNum(res.items.filter(function (it) { return it.status === 'risk' || it.status === 'out_of_stock'; }).length);
+        document.getElementById('k-stale').textContent = fmtNum(res.items.filter(function (it) { return it.status === 'stale'; }).length);
+        renderTrend(res.trend);
+        allItems = res.items || [];
+        renderTable();
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка загрузки отчёта');
+      }
+    }
+
+    setPreset(30);
+  </script>
+</body>
+</html>

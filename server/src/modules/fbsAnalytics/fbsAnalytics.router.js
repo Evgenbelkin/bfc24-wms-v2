@@ -145,6 +145,24 @@ router.get('/unsorted-report/orders', requireRole('tenant_admin', 'supervisor'),
   } catch (e) { next(e); }
 });
 
+/** GET /fbs-analytics/items-report?from=&to=&client_id= — "супер-отчёт"
+ *  клиенту: остаток + продажи за период + оборачиваемость по КАЖДОМУ товару
+ *  (владелец, 18.09.2026: "клиент попросил красивый отчёт - сколько продано,
+ *  какие товары, остаток, оборачиваемость"). Доступен и селлеру (свой
+ *  clientId через resolveClientScope), и персоналу (явный client_id) - как и
+ *  /summary выше, поэтому без requireRole. */
+router.get('/items-report', async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req.query);
+    const clientId = resolveClientScope(req, req.query.client_id);
+    if (!clientId) throw new ValidationError('client_id is required');
+    const result = await fbsAnalyticsService.getClientItemsReport({
+      tenantId: req.user.tenantId, clientId, dateFrom, dateTo,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** POST /fbs-analytics/unsorted-report/stickers-export { order_row_ids }  —
  *  печать стикеров WB выбранных "зависших" заказов одной HTML-страницей
  *  (id — это wms.wb_orders.id, не wb_order_id самого WB). */

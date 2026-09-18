@@ -1408,6 +1408,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     fbsAnalyticsRegionDeliveryFilters: function fbsAnalyticsRegionDeliveryFilters() {
       return _get('/seller/fbs-analytics/region-delivery/filters');
     },
+    reportItems: function reportItems(p) {
+      return _get('/seller/report/items', p);
+    },
     history: function history(p) {
       return _get('/seller/history', p);
     },
