@@ -544,7 +544,7 @@ async function getUnsortedSuppliesReport({ tenantId }) {
   const r = await query(
     `SELECT wo.mp_account_id, wo.wb_supply_id AS supply_code, wo.wb_status,
             ma.account_name, ma.client_id, c.client_name,
-            wo.warehouse_name, wo.created_at, s.status AS shipment_status
+            wo.warehouse_name, wo.created_at, s.status AS shipment_status, s.wb_accepted_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
@@ -573,11 +573,20 @@ async function getUnsortedSuppliesReport({ tenantId }) {
         pending_orders: 0,  // = waiting_sort, оставлено для обратной совместимости поля
         waiting_sort: 0,    // ВСЕ ещё не отсортированные (wbStatus='waiting'/ещё не пришёл) - и "отгрузите товар", и "ждёт сортировки" вместе, БЕЗ фильтра по нашей отгрузке
         not_shipped: 0,     // ДОПОЛНИТЕЛЬНО, отдельным флагом: из них сколько физически ещё у нас (наш shipments.status не дошёл до in_transit) - не вычитается из waiting_sort, а пересекается с ним
+        // Чисто информационная колонка (владелец 18.09.2026): отсканировали ли
+        // поставку целиком на воротах WB (s.wb_accepted_at, он же scanDt) -
+        // НЕ используется в расчёте выше (сигнал ненадёжный, см. комментарий к
+        // SHIPMENT_NOT_YET_SHIPPED_STATUSES), но полезен глазами дежурного -
+        // подтверждает, что поставка реально доехала.
+        wb_accepted_at: row.wb_accepted_at || null,
       });
     }
     const agg = bySupply.get(key);
     agg.total_orders++;
     if (row.created_at < agg.earliest_order_at) agg.earliest_order_at = row.created_at;
+    if (row.wb_accepted_at && (!agg.wb_accepted_at || row.wb_accepted_at < agg.wb_accepted_at)) {
+      agg.wb_accepted_at = row.wb_accepted_at;
+    }
     const isWaiting = !row.wb_status || row.wb_status === 'waiting';
     if (isWaiting) {
       agg.pending_orders++;

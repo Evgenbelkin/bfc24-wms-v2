@@ -37,6 +37,9 @@
     неотсортированных заказов (статус в ЛК ВБ «Ждёт сортировки» или «Отгрузите товар» — не важно, отгружена ли
     поставка целиком). «Не отгружено от нас» — из них же, дополнительно: сколько физически ещё лежит у нас на
     складе (мы сами ещё не подтвердили передачу перевозчику) — эта цифра не вычитается из первой, а входит в неё.
+    «Поставка отсканирована ВБ» — чисто справочная колонка: отметили ли ворота WB приёмку поставки целиком (это
+    поле часто не срабатывает у самого WB, даже когда сортировка уже идёт, поэтому не используется в расчёте
+    выше, только для сверки глазами).
     По всем WB-аккаунтам сразу за последние 7 дней — чтобы не искать вручную по каждой отгрузке. Статусы синхронизируются с WB
     автоматически раз в ~30 минут; кнопка «Обновить статусы из WB» запрашивает их у WB прямо сейчас, если нужна
     самая свежая картина.
@@ -70,6 +73,7 @@
             <th>Всего ШК</th>
             <th>Ждёт сортировки у WB</th>
             <th>из них не отгружено от нас</th>
+            <th>Поставка отсканирована ВБ</th>
             <th>Создана</th>
           </tr>
         </thead>
@@ -129,7 +133,10 @@
       tbody.innerHTML = lastSupplies.map(function (s) {
         var key = supplyKey(s);
         var activeClass = key === activeSupplyKey ? ' active' : '';
-        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + (s.not_shipped ? '<span class="pill pill-red">' + fmtNum(s.not_shipped) + '</span>' : '—') + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
+        var scannedCell = s.wb_accepted_at
+          ? '<span class="pill" style="background:rgba(22,163,74,.15);color:#16a34a;">Да, ' + fmtDate(s.wb_accepted_at) + '</span>'
+          : '<span class="pill pill-red">Нет</span>';
+        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + (s.not_shipped ? '<span class="pill pill-red">' + fmtNum(s.not_shipped) + '</span>' : '—') + '</td>\n          <td>' + scannedCell + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
       }).join('');
     }
 
