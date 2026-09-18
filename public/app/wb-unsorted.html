@@ -33,10 +33,11 @@
   </div>
 
   <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
-    Поставки, у которых часть заказов ещё не отсортирована WB. Разбито на две колонки: «Не отгружено от нас» —
-    товар ещё физически лежит у нас на складе (мы сами ещё не подтвердили передачу перевозчику), и «Ждёт
-    сортировки у WB» — мы уже отгрузили, но WB ещё не отсортировал. По всем WB-аккаунтам сразу — чтобы не искать
-    вручную по каждой отгрузке.
+    Поставки, у которых часть заказов ещё не отсортирована WB. «Ждёт сортировки у WB» — полный счётчик всех
+    неотсортированных заказов (статус в ЛК ВБ «Ждёт сортировки» или «Отгрузите товар» — не важно, отгружена ли
+    поставка целиком). «Не отгружено от нас» — из них же, дополнительно: сколько физически ещё лежит у нас на
+    складе (мы сами ещё не подтвердили передачу перевозчику) — эта цифра не вычитается из первой, а входит в неё.
+    По всем WB-аккаунтам сразу — чтобы не искать вручную по каждой отгрузке.
   </p>
 
   <div class="total-row">
@@ -45,12 +46,12 @@
       <div class="label">Поставок с проблемой</div>
     </div>
     <div class="total-card">
-      <div class="num" id="sum-not-shipped">—</div>
-      <div class="label">Не отгружено от нас, шт</div>
-    </div>
-    <div class="total-card">
       <div class="num" id="sum-waiting-sort">—</div>
       <div class="label">Ждёт сортировки у WB, шт</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="sum-not-shipped">—</div>
+      <div class="label">из них не отгружено от нас, шт</div>
     </div>
   </div>
 
@@ -64,8 +65,8 @@
             <th>Поставка</th>
             <th>Склад ВБ</th>
             <th>Всего ШК</th>
-            <th>Не отгружено от нас</th>
             <th>Ждёт сортировки у WB</th>
+            <th>из них не отгружено от нас</th>
             <th>Создана</th>
           </tr>
         </thead>
@@ -125,7 +126,7 @@
       tbody.innerHTML = lastSupplies.map(function (s) {
         var key = supplyKey(s);
         var activeClass = key === activeSupplyKey ? ' active' : '';
-        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.not_shipped ? '<span class="pill pill-red">' + fmtNum(s.not_shipped) + '</span>' : '—') + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
+        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + (s.not_shipped ? '<span class="pill pill-red">' + fmtNum(s.not_shipped) + '</span>' : '—') + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
       }).join('');
     }
 
