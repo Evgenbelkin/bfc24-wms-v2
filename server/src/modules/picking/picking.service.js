@@ -1979,15 +1979,123 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
     );
     if (dup.rowCount > 0) throw new ConflictError(`Shipment '${shipmentCode}' already exists`);
 
-    let totalQty = 0;
     const resolvedLines = [];
     for (const line of lines) {
       const barcode = validateBarcode(line.barcode);
       const qty = validateQty(line.qty);
       const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode, dbClient: client });
       resolvedLines.push({ barcode, qty, itemId });
-      totalQty += qty;
     }
+
+    // 18.09.2026: раньше волна создавалась из ВСЕХ строк как есть, даже если
+    // товара физически нет ни на одной ячейке — сборщик получал задание с
+    // пустой ячейкой ("—") и упирался в это только в момент сборки. Теперь,
+    // как и в generate-wave для WB (см. wb.router.js), заранее считаем
+    // реальный остаток и урезаем количество каждой строки до доступного —
+    // если просили 10, а на складе 6, в задачу уйдёт 6, а недостающие 4
+    // попадут в stock_shortage в ответе (строка при этом не выбрасывается
+    // целиком — частично собрать лучше, чем не собрать ничего). Пул остатков
+    // (resolveStockKey) учитываем так же, как и везде — резолвим стоковый
+    // ключ товара, а не читаем баланс по исходному item_id напрямую.
+    const stockKeyByItemId = new Map();
+    const uniqueItemIds = [...new Set(resolvedLines.map((l) => l.itemId))];
+    for (const itemId of uniqueItemIds) {
+      stockKeyByItemId.set(itemId, await resolveStockKey({ tenantId, itemId, clientId, dbClient: client }));
+    }
+    const itemIdsByStockClient = new Map(); // stockClientId -> Set(stockItemId)
+    for (const key of stockKeyByItemId.values()) {
+      if (!itemIdsByStockClient.has(key.stockClientId)) itemIdsByStockClient.set(key.stockClientId, new Set());
+      itemIdsByStockClient.get(key.stockClientId).add(key.stockItemId);
+    }
+    const availByStockKey = new Map(); // `${stockClientId}:${stockItemId}` -> qty
+    for (const [stockClientId, stockItemIdSet] of itemIdsByStockClient) {
+      const stockItemIds = [...stockItemIdSet];
+      const availRes = await client.query(
+        `SELECT item_id, COALESCE(SUM(qty_available),0)::int AS qty
+         FROM wms.stock_balances
+         WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=ANY($4::int[])
+         GROUP BY item_id`,
+        [tenantId, warehouseId, stockClientId, stockItemIds]
+      );
+      for (const row of availRes.rows) availByStockKey.set(`${stockClientId}:${row.item_id}`, row.qty);
+    }
+    // Уже "занято" незавершёнными задачами сборки ДРУГИХ волн (остаток ещё не
+    // списан физически, спишется только при реальном скане) — та же логика,
+    // что и в generate-wave: без этого можно случайно пообещать один и тот же
+    // остаток двум волнам, созданным почти одновременно.
+    const allStockItemIds = [...new Set(uniqueItemIds.map((id) => stockKeyByItemId.get(id).stockItemId))];
+    if (allStockItemIds.length) {
+      const poolSourcesRes = await client.query(
+        `SELECT item_id, pool_item_id FROM wms.item_pool_links WHERE tenant_id=$1 AND pool_item_id = ANY($2::int[])`,
+        [tenantId, allStockItemIds]
+      );
+      const sourceItemIdsByStockItemId = new Map();
+      for (const id of allStockItemIds) sourceItemIdsByStockItemId.set(id, [id]);
+      for (const row of poolSourcesRes.rows) {
+        sourceItemIdsByStockItemId.get(row.pool_item_id)?.push(row.item_id);
+      }
+      const allSourceItemIds = [...new Set([...sourceItemIdsByStockItemId.values()].flat())];
+      const pendingRes = await client.query(
+        `SELECT item_id, COALESCE(SUM(qty - qty_picked),0)::int AS pending
+         FROM wms.picking_tasks
+         WHERE tenant_id=$1 AND item_id=ANY($2::int[]) AND status NOT IN ('done','cancelled')
+         GROUP BY item_id`,
+        [tenantId, allSourceItemIds]
+      );
+      const pendingByItemId = new Map(pendingRes.rows.map((r) => [r.item_id, r.pending]));
+      for (const [stockClientId, stockItemIdSet] of itemIdsByStockClient) {
+        for (const stockItemId of stockItemIdSet) {
+          const sources = sourceItemIdsByStockItemId.get(stockItemId) || [stockItemId];
+          const pending = sources.reduce((s, id) => s + (pendingByItemId.get(id) || 0), 0);
+          if (pending <= 0) continue;
+          const k = `${stockClientId}:${stockItemId}`;
+          availByStockKey.set(k, Math.max(0, (availByStockKey.get(k) ?? 0) - pending));
+        }
+      }
+    }
+
+    const includedLines = [];
+    const shortageLines = [];
+    for (const line of resolvedLines) {
+      const key = stockKeyByItemId.get(line.itemId);
+      const mapKey = `${key.stockClientId}:${key.stockItemId}`;
+      const avail = Math.max(0, availByStockKey.get(mapKey) ?? 0);
+      const take = Math.min(line.qty, avail);
+      if (take > 0) {
+        includedLines.push({ ...line, qty: take });
+        availByStockKey.set(mapKey, avail - take);
+      }
+      if (take < line.qty) {
+        shortageLines.push({
+          barcode: line.barcode,
+          qty_requested: line.qty,
+          qty_available: take,
+          qty_short: line.qty - take,
+        });
+      }
+    }
+
+    if (!includedLines.length) {
+      throw new ValidationError(
+        `Нет остатка ни по одной позиции заказа — волну создать не из чего (штрихкоды: ${shortageLines.map((s) => s.barcode).join(', ')})`
+      );
+    }
+
+    // Наименования для читаемого списка дефицита в ответе (штрихкод сам по
+    // себе диспетчеру ни о чём не скажет).
+    if (shortageLines.length) {
+      const shortageItemIds = resolvedLines
+        .filter((l) => shortageLines.some((s) => s.barcode === l.barcode))
+        .map((l) => l.itemId);
+      const namesRes = await client.query(
+        `SELECT barcode, item_name FROM wms.items WHERE tenant_id=$1 AND id = ANY($2::int[])`,
+        [tenantId, shortageItemIds]
+      );
+      const nameByBarcode = new Map(namesRes.rows.map((r) => [r.barcode, r.item_name]));
+      for (const s of shortageLines) s.item_name = nameByBarcode.get(s.barcode) || null;
+    }
+
+    const totalQty = includedLines.reduce((s, l) => s + l.qty, 0);
 
     await client.query(
       `INSERT INTO wms.shipments(tenant_id,warehouse_id,client_id,external_id,marketplace,status,total_planned_qty,created_by)
@@ -1998,7 +2106,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
     await client.query(
       `INSERT INTO wms.pick_waves(tenant_id,warehouse_id,client_id,shipment_code,status,total_tasks,notes,created_by)
        VALUES($1,$2,$3,$4,'open',$5,$6,$7)`,
-      [tenantId, warehouseId, clientId, shipmentCode, resolvedLines.length, comment || null, createdById]
+      [tenantId, warehouseId, clientId, shipmentCode, includedLines.length, comment || null, createdById]
     );
 
     const waveRes = await client.query(
@@ -2007,7 +2115,7 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
     );
     const waveId = waveRes.rows[0].id;
 
-    for (const line of resolvedLines) {
+    for (const line of includedLines) {
       await client.query(
         `INSERT INTO wms.picking_tasks
            (tenant_id,warehouse_id,client_id,wave_id,item_id,barcode,qty,status,priority,shipment_code,order_ref,created_by,updated_by)
@@ -2019,8 +2127,9 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
     return {
       shipment_code: shipmentCode,
       wave_id: waveId,
-      tasks_created: resolvedLines.length,
+      tasks_created: includedLines.length,
       total_qty: totalQty,
+      stock_shortage: shortageLines,
     };
   });
 }

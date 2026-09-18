@@ -397,6 +397,17 @@ function renderLines() {
     return "\n        <div class=\"list-row\">\n          <div class=\"main\">\n            <div class=\"title\">".concat(UI.escHtml(l.item_name || l.barcode), "</div>\n            <div class=\"sub\">").concat(UI.escHtml(l.barcode), "</div>\n          </div>\n          <div class=\"badge\"><span>\u041A\u043E\u043B-\u0432\u043E</span><div>").concat(UI.fmtQty(l.qty), "</div></div>\n          <button class=\"btn-remove\" onclick=\"removeLine(").concat(idx, ")\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M18 6 6 18\"/><path d=\"M6 6l12 12\"/></svg></button>\n        </div>\n      ");
   }).join('');
 }
+// Показ позиций, недобранных из-за нехватки остатка (createManualWave их не
+// исключает целиком, а урезает qty до доступного и возвращает разницу в
+// stock_shortage) — тот же паттерн, что и renderStockShortage в wb.html для
+// обычных волн WB.
+function renderStockShortage(list) {
+  if (!list || !list.length) return '';
+  var rows = list.map(function (s) {
+    return "<div class=\"loc-row\"><span>".concat(UI.escHtml(s.item_name || s.barcode), " (").concat(UI.escHtml(s.barcode), ")</span><span>\u0437\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043E ").concat(s.qty_requested, ", \u0435\u0441\u0442\u044C ").concat(s.qty_available, ", \u043D\u0435 \u0445\u0432\u0430\u0442\u0430\u0435\u0442 ").concat(s.qty_short, "</span></div>");
+  }).join('');
+  return "<div class=\"result-box\" style=\"border-color:var(--amber);margin-top:8px;\">\n    <svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z\"/><path d=\"M12 9v4\"/><path d=\"M12 17h.01\"/></svg>\n    \u041D\u0435 \u0445\u0432\u0430\u0442\u0438\u043B\u043E \u043E\u0441\u0442\u0430\u0442\u043A\u0430 \u2014 \u044D\u0442\u0438 \u043F\u043E\u0437\u0438\u0446\u0438\u0438 \u0432 \u0432\u043E\u043B\u043D\u0443 \u043D\u0435 \u0432\u043E\u0448\u043B\u0438 \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E:\n    <div class=\"locations-box\" style=\"margin-top:6px;\">".concat(rows, "</div>\n  </div>");
+}
 function createOrder() {
   return _createOrder.apply(this, arguments);
 }
@@ -440,8 +451,8 @@ function _createOrder() {
           });
         case 4:
           res = _context6.v;
-          document.getElementById('create-result').innerHTML = "\n          <div class=\"result-box\">\n            <svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u0417\u0430\u043A\u0430\u0437 <strong>".concat(UI.escHtml(res.shipment_code), "</strong> \u0441\u043E\u0437\u0434\u0430\u043D.<br/>\n            \u0417\u0430\u0434\u0430\u0447 \u043D\u0430 \u0441\u0431\u043E\u0440\u043A\u0443: <strong>").concat(res.tasks_created, "</strong>, \u0442\u043E\u0432\u0430\u0440\u043E\u0432 \u0432\u0441\u0435\u0433\u043E: <strong>").concat(res.total_qty, "</strong><br/>\n            \u0412\u043E\u043B\u043D\u0430 \u0443\u0436\u0435 \u0432\u0438\u0434\u043D\u0430 \u0432 \xAB\u0414\u0438\u0441\u043F\u0435\u0442\u0447\u0435\u0440\u0441\u043A\u043E\u0439\xBB \u0438 \u043D\u0430 \u044D\u043A\u0440\u0430\u043D\u0435 \xAB\u0421\u0431\u043E\u0440\u043A\u0430\xBB.\n          </div>\n        ");
-          UI.notify.ok('Волна создана');
+          document.getElementById('create-result').innerHTML = "\n          <div class=\"result-box\">\n            <svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M22 11.1V12a10 10 0 1 1-5.9-9.1\"/><path d=\"M22 4 12 14.01l-3-3\"/></svg> \u0417\u0430\u043A\u0430\u0437 <strong>".concat(UI.escHtml(res.shipment_code), "</strong> \u0441\u043E\u0437\u0434\u0430\u043D.<br/>\n            \u0417\u0430\u0434\u0430\u0447 \u043D\u0430 \u0441\u0431\u043E\u0440\u043A\u0443: <strong>").concat(res.tasks_created, "</strong>, \u0442\u043E\u0432\u0430\u0440\u043E\u0432 \u0432\u0441\u0435\u0433\u043E: <strong>").concat(res.total_qty, "</strong><br/>\n            \u0412\u043E\u043B\u043D\u0430 \u0443\u0436\u0435 \u0432\u0438\u0434\u043D\u0430 \u0432 \xAB\u0414\u0438\u0441\u043F\u0435\u0442\u0447\u0435\u0440\u0441\u043A\u043E\u0439\xBB \u0438 \u043D\u0430 \u044D\u043A\u0440\u0430\u043D\u0435 \xAB\u0421\u0431\u043E\u0440\u043A\u0430\xBB.\n          </div>\n        " + renderStockShortage(res.stock_shortage));
+          UI.notify.ok(res.stock_shortage && res.stock_shortage.length ? 'Волна создана \u2014 часть позиций не хватило на складе' : 'Волна создана');
           orderLines = [];
           UI.setVal('#external-id', '');
           renderLines();
