@@ -88,6 +88,7 @@
         <button class="ship-filter-btn" data-filter="packing" onclick="setShipFilter('packing')">Упаковка</button>
         <button class="ship-filter-btn" data-filter="ready" onclick="setShipFilter('ready')">Готовы к отгрузке</button>
         <button class="ship-filter-btn" data-filter="shipped" onclick="setShipFilter('shipped')">В пути</button>
+        <button class="ship-filter-btn" data-filter="cancelled" onclick="setShipFilter('cancelled')">Отменённые</button>
         <button class="ship-filter-btn" onclick="openCollectedExportModal()">📊 Все собранные в Excel</button>
         <select class="ship-sort-select" id="ship-sort" onchange="setShipSort(this.value)">
           <option value="new_first">Сначала новые</option>
@@ -310,7 +311,52 @@ function setShipFilter(f) {
   document.querySelectorAll('.ship-filter-btn').forEach(function (b) {
     return b.classList.toggle('active', b.dataset.filter === f);
   });
-  renderShipmentsList();
+  if (f === 'cancelled') {
+    loadCancelledShipments();
+  } else {
+    renderShipmentsList();
+  }
+}
+// Отменённые отгрузки (18.09.2026, "надо видеть что и кто отменил") — намеренно
+// НЕ часть allShipments/стадийного фильтра (там они всегда исключены запросом
+// board({limit:500}) на бэкенде по умолчанию не фильтрует по status, но
+// loadShipments() ниже сам просит только активные через client-side filter) -
+// загружаем отдельным запросом с status=cancelled лениво, только при первом
+// открытии вкладки, чтобы не тянуть их при каждом обычном автообновлении доски.
+var cancelledShipments = null;
+function loadCancelledShipments() {
+  var list = document.getElementById('shipments-list');
+  list.innerHTML = '<div class="empty-state">Загрузка…</div>';
+  return window.API.shipping.board({ limit: 500, status: 'cancelled' }).then(function (res) {
+    cancelledShipments = res.shipments || [];
+    renderCancelledList();
+  }).catch(function (e) {
+    UI.notify.err(e.message || 'Не удалось загрузить отменённые отгрузки');
+  });
+}
+function renderCancelledList() {
+  var list = document.getElementById('shipments-list');
+  var items = (cancelledShipments || []).slice().sort(function (a, b) {
+    return new Date(b.cancelled_at || b.updated_at || 0) - new Date(a.cancelled_at || a.updated_at || 0);
+  });
+  if (!items.length) {
+    list.innerHTML = '<div class="empty-state"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></div>Отменённых отгрузок нет</div>';
+    return;
+  }
+  list.innerHTML = items.map(function (s) {
+    var qtyPlan = Number(s.qty_plan || 0);
+    return '\n          <div class="list-row" style="flex-direction:column;align-items:stretch;cursor:pointer;" onclick="openShipmentDetail(\'' + s.external_id + '\')">' +
+      '\n            <div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+      '\n              <div>' +
+      '\n                <div class="title">' + UI.escHtml(s.external_id) + '</div>' +
+      '\n                <div class="sub">' + UI.escHtml(s.client_name || '') + ' · ' + UI.escHtml(s.warehouse_name || '') + (qtyPlan ? ' · единиц: ' + qtyPlan : '') + '</div>' +
+      '\n                <div class="sub">Отменено: ' + (s.cancelled_at ? UI.fmtDateTime(s.cancelled_at) : '—') + (s.cancelled_by_name ? ' · кем: ' + UI.escHtml(s.cancelled_by_name) : '') + '</div>' +
+      '\n                <div class="sub" style="color:var(--muted);">Причина: ' + (s.cancel_reason ? UI.escHtml(s.cancel_reason) : 'не указана') + '</div>' +
+      '\n              </div>' +
+      '\n              <span class="pill pill-red">отменена</span>' +
+      '\n            </div>' +
+      '\n          </div>\n        ';
+  }).join('');
 }
 function setShipSort(s) {
   shipSort = s;
@@ -351,7 +397,7 @@ function _loadShipments() {
               stage: stageOf(pickingPct, packingPct, shippingPct, s.tasks_total)
             });
           });
-          return _context3.a(2, renderShipmentsList());
+          return _context3.a(2, shipFilter === 'cancelled' ? undefined : renderShipmentsList());
       }
     }, _callee3);
   }));

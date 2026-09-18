@@ -51,11 +51,16 @@ async function listShipments({
        -- setShipmentPriority), assigned_picker/assigned_packer — раздельно.
        COALESCE(pw.priority, pk.priority) AS priority,
        pw.assigned_picker_id, COALESCE(apu.full_name, apu.username) AS assigned_picker_name,
-       pk.assigned_packer_id, pk.assigned_packer_name
+       pk.assigned_packer_id, pk.assigned_packer_name,
+       -- Кто и когда отменил (диспетчерская, вкладка "Отменённые", 18.09.2026:
+       -- "надо видеть что и кто отменил") — cancelled_by/cancelled_at/cancel_reason
+       -- уже пишутся в cancelShipment(), просто не были видны в табло раньше.
+       COALESCE(cbu.full_name, cbu.username) AS cancelled_by_name
      FROM wms.shipments s
      JOIN wms.clients c ON c.id=s.client_id
      JOIN wms.warehouses w ON w.id=s.warehouse_id
      LEFT JOIN wms.users su ON su.id=s.shipper_id
+     LEFT JOIN wms.users cbu ON cbu.id=s.cancelled_by
      LEFT JOIN wms.pick_waves pw ON pw.tenant_id=s.tenant_id AND pw.shipment_code=s.external_id
      LEFT JOIN wms.users pu ON pu.id=pw.picker_id
      LEFT JOIN wms.users apu ON apu.id=pw.assigned_picker_id
