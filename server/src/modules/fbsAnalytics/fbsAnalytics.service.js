@@ -515,6 +515,27 @@ function _escHtml(s) {
 
 const UNSORTED_LOOKBACK_DAYS = 90; // см. TERMINAL_STATUSES/refreshWbStatusesForAccount выше - за этим горизонтом wb_status всё равно не обновляется
 
+// "Ещё не отгружено WB" vs "отгружено, но ждёт сортировки" - ИСПРАВЛЕНО
+// 18.09.2026 (обратная связь владельца): раньше эти два случая различались по
+// wms.shipments.wb_accepted_at (наш локальный вывод из scanDt - момента
+// скана QR поставки на воротах WB). Владелец подтвердил на живых поставках:
+// сканирование QR на воротах ЧАСТО вообще не происходит (пропускается в
+// процессе WB), но это НЕ значит, что WB не принял и не начал сортировать
+// товар - просто конкретно этот скан-евент не случился. Поставка в такой
+// ситуации в ЛК WB так и висит "Отгрузите поставку" НАВСЕГДА, даже когда
+// часть заказов внутри нее уже "Отсортировано". Из этого следует, что
+// wb_accepted_at/scanDt - ненадёжный сигнал для "физически отгружено или
+// нет" (и в другую сторону: WB API не отдаёт отдельного статуса
+// "принято, ждёт сортировки" против "ещё не принято" - оба варианта это
+// одно и то же wbStatus='waiting', см. шапку файла).
+//
+// Надёжный сигнал "мы физически отгрузили" - это НАШ СОБСТВЕННЫЙ статус
+// wms.shipments.status: он переходит в 'in_transit' в момент, когда МЫ сами
+// подтверждаем отгрузку (shipping.service.js, вызов wbClient.deliverSupply)
+// - это наше собственное действие, а не ответ WB, и не зависит от того,
+// сработает ли скан QR на воротах или нет.
+const SHIPMENT_NOT_YET_SHIPPED_STATUSES = new Set(['new', 'picking', 'packing', 'ready_to_ship', 'shipping']);
+
 /** Сводка по поставкам, где есть хотя бы один ещё не отсортированный
  *  (wbStatus='waiting'/ещё не пришёл) активный заказ. Разрез по ВСЕМ
  *  WB-аккаунтам тенанта сразу (owner: "все аккаунты, без выбора"). */
@@ -551,8 +572,8 @@ async function getUnsortedSuppliesReport({ tenantId }) {
         shipment_status: row.shipment_status,
         earliest_order_at: row.created_at,
         total_orders: 0,
-        not_arrived: 0, // wbStatus='waiting' и WB ещё физически не принял (нет scanDt)
-        waiting_sort: 0, // wbStatus='waiting', WB принял, но не отсортировал
+        not_arrived: 0, // wbStatus='waiting' и мы сами ещё не отгрузили (shipment.status до 'in_transit')
+        waiting_sort: 0, // wbStatus='waiting', мы отгрузили - дальше уже на стороне WB (сортировка)
       });
     }
     const agg = bySupply.get(key);
@@ -560,8 +581,9 @@ async function getUnsortedSuppliesReport({ tenantId }) {
     if (row.created_at < agg.earliest_order_at) agg.earliest_order_at = row.created_at;
     const isWaiting = !row.wb_status || row.wb_status === 'waiting';
     if (isWaiting) {
-      if (row.wb_accepted_at) agg.waiting_sort++;
-      else agg.not_arrived++;
+      const notYetShipped = !row.shipment_status || SHIPMENT_NOT_YET_SHIPPED_STATUSES.has(row.shipment_status);
+      if (notYetShipped) agg.not_arrived++;
+      else agg.waiting_sort++;
     }
   }
 
