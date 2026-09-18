@@ -95,6 +95,26 @@
     <div class="bars" id="trend-bars"></div>
   </div>
 
+  <div class="card" id="wh-card" style="margin-bottom:14px;">
+    <div class="card-title">Заказы по складам WB</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+      Показаны все склады WB, откуда шли заказы за период. «Не учтено» — склад обслуживает не наш склад, его заказы
+      исключены из остальных цифр этого отчёта (остаток, заказы/день, «Довезти»).
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Склад WB</th>
+            <th>Заказы, шт</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody id="wh-rows"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="card restock-card">
     <div>
       <div class="card-title" style="margin-bottom:2px;">Плановый запас на складе</div>
@@ -263,13 +283,28 @@
       }).join('');
     }
 
+    function renderWarehouses(byWarehouse) {
+      var tbody = document.getElementById('wh-rows');
+      if (!byWarehouse || !byWarehouse.length) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);">Нет заказов за период</td></tr>';
+        return;
+      }
+      tbody.innerHTML = byWarehouse.map(function (w) {
+        var pill = w.included
+          ? '<span class="pill pill-green">учтено</span>'
+          : '<span class="pill pill-gray">не учтено</span>';
+        return '<tr><td>' + UI.escHtml(w.warehouse_name) + '</td><td>' + fmtNum(w.qty_ordered) + '</td><td>' + pill + '</td></tr>';
+      }).join('');
+    }
+
     async function load() {
       var from = document.getElementById('f-from').value;
       var to = document.getElementById('f-to').value;
       if (!from || !to) return;
       try {
         var res = await window.API.seller.reportItems({ from: from, to: to });
-        document.getElementById('meta').textContent = 'Период: ' + from + ' — ' + to + ' (' + res.period.days + ' дн.)';
+        document.getElementById('meta').innerHTML = 'Период: <b>' + from + ' — ' + to + '</b> (' + res.period.days + ' дн.)';
+        renderWarehouses(res.by_warehouse);
         document.getElementById('k-qty').textContent = fmtNum(res.totals.qty_ordered);
         document.getElementById('k-stock').textContent = fmtNum(res.totals.qty_available);
         document.getElementById('k-risk').textContent = fmtNum(res.items.filter(function (it) { return it.status === 'risk' || it.status === 'out_of_stock'; }).length);

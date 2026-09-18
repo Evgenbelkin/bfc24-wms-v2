@@ -1004,6 +1004,31 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
     [tenantId, clientId, dateFrom, dateTo]
   );
 
+  // Разбивка ЗАКАЗОВ ПО СКЛАДАМ WB (владелец, 19.09.2026: "давай наверное
+  // прям по складам разбивку сделаем, смотришь и видишь сразу склад и
+  // кол-во заказов с него") - специально БЕЗ фильтра MY_WAREHOUSE_ONLY_SQL,
+  // показываем ВСЕ склады, откуда шли заказы клиента, с явной пометкой
+  // included (наш ли это склад по is_enabled_for_picking) - это заодно и
+  // прозрачная диагностика самого фильтра "мои склады": если склад, который
+  // владелец точно не обслуживает, помечен included=true, значит его просто
+  // забыли выключить в app/wb.html, а не что фильтр не работает.
+  const byWarehousePromise = query(
+    `SELECT COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id) AS warehouse_name,
+            wo.warehouse_id,
+            COUNT(*)::int AS qty_ordered,
+            COALESCE(sw.is_enabled_for_picking, TRUE) AS included
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
+     WHERE wo.tenant_id=$1 AND ma.client_id=$2
+       AND wo.created_at >= $3 AND wo.created_at < $4
+       AND wo.status <> 'cancel'
+       AND (wo.wb_status IS NULL OR wo.wb_status NOT IN ('canceled','canceled_by_client','declined_by_client'))
+     GROUP BY COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id), wo.warehouse_id, COALESCE(sw.is_enabled_for_picking, TRUE)
+     ORDER BY qty_ordered DESC`,
+    [tenantId, clientId, dateFrom, dateTo]
+  );
+
   const r = await query(
     `WITH stock AS (
        SELECT item_id, SUM(qty_on_hand)::int AS qty_on_hand, SUM(qty_available)::int AS qty_available
@@ -1037,6 +1062,14 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
      ORDER BY o.qty_ordered DESC NULLS LAST, i.item_name`,
     [tenantId, clientId, dateFrom, dateTo]
   );
+
+  const byWarehouseRes = await byWarehousePromise;
+  const byWarehouse = byWarehouseRes.rows.map((row) => ({
+    warehouse_name: row.warehouse_name,
+    warehouse_id: row.warehouse_id,
+    qty_ordered: Number(row.qty_ordered),
+    included: row.included,
+  }));
 
   const trendRes = await trendPromise;
   // Заполняем пропущенные дни нулями, чтобы график был непрерывным (а не
@@ -1092,6 +1125,7 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
     period: { from: dateFrom, to: dateTo, days: Math.round(periodDays) },
     totals,
     trend,
+    by_warehouse: byWarehouse,
     items,
   };
 }
