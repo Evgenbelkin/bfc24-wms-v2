@@ -11,7 +11,7 @@
     .preset{padding:8px 12px;border-radius:10px;border:2px solid var(--border);background:var(--card2);color:var(--text);font-size:13px;cursor:pointer;}
     .preset.active{background:var(--accent);color:#fff;border-color:var(--accent);}
     .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
-    @media (min-width:720px){ .kpi-grid{grid-template-columns:repeat(5,1fr);} }
+    @media (min-width:720px){ .kpi-grid{grid-template-columns:repeat(4,1fr);} }
     .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
     .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;font-weight:600;}
     .kpi .num{font-size:22px;font-weight:800;margin-top:4px;}
@@ -22,6 +22,10 @@
     .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;position:relative;}
     .bar{width:100%;background:linear-gradient(180deg,var(--accent2,#818cf8),var(--accent,#6366f1));border-radius:4px 4px 0 0;min-height:2px;}
     .bar-lbl{font-size:9px;color:var(--muted);margin-top:4px;white-space:nowrap;}
+
+    .restock-card{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+    .restock-card input[type=range]{flex:1;min-width:160px;}
+    .restock-days-val{font-size:20px;font-weight:800;color:var(--accent);min-width:70px;}
 
     .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
     .filters input[type=search]{flex:1;min-width:180px;padding:9px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
@@ -37,6 +41,7 @@
     .pill-gray{background:var(--card2);color:var(--muted);}
     .item-name{font-weight:600;}
     .item-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+    .restock-num{font-weight:700;}
   </style>
 </head>
 <body>
@@ -47,9 +52,9 @@
   </div>
 
   <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
-    Сколько продано, какой остаток на складе и на сколько дней его хватит — по каждому товару. «Риск дефицита» — товар
-    скоро закончится при текущем темпе продаж, пора довозить. «Залежался» — за выбранный период не продано ни одной
-    штуки, а остаток есть.
+    Сколько заказано, какой остаток на нашем складе и на сколько дней его хватит — по каждому товару. Учитываются
+    только заказы со складов WB, которые физически обслуживаем мы. «Риск дефицита» — товар скоро закончится при
+    текущем темпе заказов, пора довозить. «Залежался» — за выбранный период не было ни одного заказа, а остаток есть.
   </p>
 
   <div class="toolbar" id="presets">
@@ -66,12 +71,8 @@
 
   <div class="kpi-grid">
     <div class="kpi">
-      <div class="label">Продано, шт</div>
+      <div class="label">Заказано, шт</div>
       <div class="num" id="k-qty">—</div>
-    </div>
-    <div class="kpi">
-      <div class="label">Выручка</div>
-      <div class="num" id="k-amount">—</div>
     </div>
     <div class="kpi">
       <div class="label">Остаток доступно, шт</div>
@@ -85,13 +86,22 @@
     <div class="kpi">
       <div class="label" style="color:#b45309;">Залежались</div>
       <div class="num" id="k-stale" style="color:#b45309;">—</div>
-      <div class="sub">товаров без продаж за период</div>
+      <div class="sub">товаров без заказов за период</div>
     </div>
   </div>
 
   <div class="card chart-card">
-    <div class="card-title">Динамика продаж по дням</div>
+    <div class="card-title">Динамика заказов по дням</div>
     <div class="bars" id="trend-bars"></div>
+  </div>
+
+  <div class="card restock-card">
+    <div>
+      <div class="card-title" style="margin-bottom:2px;">Плановый запас на складе</div>
+      <div style="font-size:12px;color:var(--muted);">на сколько дней вперёд держать товар — от этого считается колонка «Довезти»</div>
+    </div>
+    <input type="range" id="restock-days" min="3" max="90" value="30" oninput="onRestockDaysChange()"/>
+    <div class="restock-days-val" id="restock-days-val">30 дн</div>
   </div>
 
   <div class="card">
@@ -109,10 +119,10 @@
           <tr>
             <th class="sortable" onclick="sortBy('item_name')">Товар ↕</th>
             <th class="sortable" onclick="sortBy('qty_available')">Остаток, шт ↕</th>
-            <th class="sortable" onclick="sortBy('qty_sold')">Продано, шт ↕</th>
-            <th class="sortable" onclick="sortBy('amount')">Выручка ↕</th>
-            <th class="sortable" onclick="sortBy('avg_daily_sales')">Продажи/день ↕</th>
+            <th class="sortable" onclick="sortBy('qty_ordered')">Заказы, шт ↕</th>
+            <th class="sortable" onclick="sortBy('avg_daily_orders')">Заказы/день ↕</th>
             <th class="sortable" onclick="sortBy('days_of_stock')">Хватит на ↕</th>
+            <th class="sortable" onclick="sortBy('qty_to_ship')">Довезти, шт ↕</th>
             <th>Статус</th>
           </tr>
         </thead>
@@ -132,17 +142,15 @@
 
     var allItems = [];
     var statusFilter = '';
-    var sortKey = 'amount';
+    var sortKey = 'qty_ordered';
     var sortDir = -1;
+    var restockDays = 30;
 
     async function logout() {
       await window.API.auth.logout();
       window.location.href = '/app/login.html';
     }
 
-    function fmtMoney(n) {
-      return (Number(n) || 0).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' ₽';
-    }
     function fmtNum(n) {
       return (Number(n) || 0).toLocaleString('ru-RU');
     }
@@ -185,6 +193,22 @@
     function sortBy(key) {
       if (sortKey === key) { sortDir *= -1; } else { sortKey = key; sortDir = -1; }
       renderTable();
+    }
+    // Плановый запас в днях - клиент сам решает, на сколько дней вперёд
+    // держать товар (владелец, 19.09.2026: "запас пусть клиент определяет").
+    // "Довезти" считаем прямо на фронте - avg_daily_orders уже приходит с
+    // бэкенда, пересчёт мгновенный, без лишнего запроса к серверу.
+    function onRestockDaysChange() {
+      restockDays = Number(document.getElementById('restock-days').value);
+      document.getElementById('restock-days-val').textContent = restockDays + ' дн';
+      computeRestock();
+      renderTable();
+    }
+    function computeRestock() {
+      allItems.forEach(function (it) {
+        var need = it.avg_daily_orders * restockDays - it.qty_available;
+        it.qty_to_ship = need > 0 ? Math.ceil(need) : 0;
+      });
     }
 
     function renderTrend(trend) {
@@ -232,7 +256,10 @@
       empty.style.display = 'none';
       tbody.innerHTML = rows.map(function (it) {
         var st = STATUS_LABELS[it.status] || { text: it.status, cls: 'pill-gray' };
-        return '\n        <tr>\n          <td>\n            <div class="item-name">' + UI.escHtml(it.item_name || it.barcode || '—') + '</div>\n            <div class="item-sub">' + UI.escHtml(it.vendor_code || '') + (it.vendor_code && it.barcode ? ' · ' : '') + UI.escHtml(it.barcode || '') + '</div>\n          </td>\n          <td>' + fmtNum(it.qty_available) + '</td>\n          <td>' + fmtNum(it.qty_sold) + '</td>\n          <td>' + fmtMoney(it.amount) + '</td>\n          <td>' + (it.avg_daily_sales || 0).toFixed(2) + '</td>\n          <td>' + fmtDays(it.days_of_stock) + '</td>\n          <td><span class="pill ' + st.cls + '">' + st.text + '</span></td>\n        </tr>\n      ';
+        var shipHtml = it.qty_to_ship > 0
+          ? '<span class="restock-num" style="color:#dc2626;">' + fmtNum(it.qty_to_ship) + '</span>'
+          : '<span style="color:var(--muted);">—</span>';
+        return '\n        <tr>\n          <td>\n            <div class="item-name">' + UI.escHtml(it.item_name || it.barcode || '—') + '</div>\n            <div class="item-sub">' + UI.escHtml(it.vendor_code || '') + (it.vendor_code && it.barcode ? ' · ' : '') + UI.escHtml(it.barcode || '') + '</div>\n          </td>\n          <td>' + fmtNum(it.qty_available) + '</td>\n          <td>' + fmtNum(it.qty_ordered) + '</td>\n          <td>' + (it.avg_daily_orders || 0).toFixed(2) + '</td>\n          <td>' + fmtDays(it.days_of_stock) + '</td>\n          <td>' + shipHtml + '</td>\n          <td><span class="pill ' + st.cls + '">' + st.text + '</span></td>\n        </tr>\n      ';
       }).join('');
     }
 
@@ -243,13 +270,13 @@
       try {
         var res = await window.API.seller.reportItems({ from: from, to: to });
         document.getElementById('meta').textContent = 'Период: ' + from + ' — ' + to + ' (' + res.period.days + ' дн.)';
-        document.getElementById('k-qty').textContent = fmtNum(res.totals.qty_sold);
-        document.getElementById('k-amount').textContent = fmtMoney(res.totals.amount);
+        document.getElementById('k-qty').textContent = fmtNum(res.totals.qty_ordered);
         document.getElementById('k-stock').textContent = fmtNum(res.totals.qty_available);
         document.getElementById('k-risk').textContent = fmtNum(res.items.filter(function (it) { return it.status === 'risk' || it.status === 'out_of_stock'; }).length);
         document.getElementById('k-stale').textContent = fmtNum(res.items.filter(function (it) { return it.status === 'stale'; }).length);
         renderTrend(res.trend);
         allItems = res.items || [];
+        computeRestock();
         renderTable();
       } catch (e) {
         UI.notify.err(e.message || 'Ошибка загрузки отчёта');

@@ -940,43 +940,65 @@ async function listRegionDeliveryFilterOptions(tenantId, clientId = null) {
 // =============================================================================
 // "Супер-отчёт" клиенту в личном кабинете (18.09.2026, идея владельца: "клиент
 // попросил красивый цветной отчёт - сколько продано, какие товары, остаток по
-// ВМС, и что-то по оборачиваемости").
+// ВМС, и что-то по оборачиваемости"; далее в тот же день несколько уточнений).
 //
-// По итогам обсуждения с владельцем: одна большая таблица ПО ВСЕМ товарам
-// клиента сразу (а не отдельно топ-5 и отдельно остатки) - продано за
-// выбранный период, текущий остаток, скорость продаж и на сколько дней
-// хватит запаса. Период выбирается на фронте (те же пресеты 7/30 дней +
-// произвольный диапазон, что и в аналитике FBS).
+// Итоговая форма после уточнений владельца:
+//   - ОДНА большая таблица ПО ВСЕМ товарам клиента сразу (не отдельно топ-5 и
+//     отдельно остатки) - заказы за период, текущий остаток, скорость
+//     заказов/день, на сколько дней хватит запаса.
+//   - Деньги вообще НЕ показываем нигде в этом отчёте (ни выручку, ни
+//     стоимость остатка) - только штуки и дни ("про деньги вообще не нужно
+//     тут").
+//   - Колонка называется "Заказы", не "Продано" - это количество НЕотменённых
+//     заказов WB за период (см. комментарий у qty_ordered ниже), а не
+//     подтверждённый выкуп, и владелец явно попросил не называть это
+//     "продажами".
+//   - Смысл всего отчёта для клиента - понять, СКОЛЬКО ТОВАРА ДОВЕЗТИ на наш
+//     склад ("суть такая что бы клиент видел сколько нужно товара доотправить
+//     ко мне на склад") - расчёт "довезти" делается на фронте
+//     (avg_daily_orders × плановый запас в днях, который клиент сам крутит
+//     ползунком, минус текущий остаток - см. report.html), бэкенду для этого
+//     ничего сверх avg_daily_orders/qty_available отдавать не нужно.
+//   - Заказы считаем ТОЛЬКО с складов WB, которые физически обслуживает ЭТОТ
+//     склад/тенант ("интересует только мой склад") - те же
+//     wms.wb_seller_warehouses.is_enabled_for_picking=TRUE (или ещё не
+//     настроенный склад - обратная совместимость), что уже использует
+//     /generate-wave, список заказов и табло диспетчерской (см.
+//     wb.router.js::/generate-wave, /orders, overview.service.js). Заказы со
+//     складов, которые обслуживает ДРУГОЙ фулфилмент этого же клиента, в наш
+//     отчёт попадать не должны - иначе "довезти" считало бы чужой спрос.
 //
-// Стоимость остатка (по себестоимости) сознательно НЕ считаем и не отдаём -
-// владелец явно попросил не показывать клиенту деньги в остатке, только
-// штуки/дни.
-//
-// Источник продаж - тот же wms.wb_orders, что и в остальной FBS-аналитике
+// Источник заказов - тот же wms.wb_orders, что и в остальной FBS-аналитике
 // этого файла (join на items через (tenant_id, client_id, barcode) - тот же
-// установившийся приём, что и в getUnsortedSupplyOrders выше). "Продано"
-// здесь - НЕ отменённые заказы за период (включая ещё не выкупленные - для
-// продавца практический смысл "продано" ближе к "оформлено и не отменено",
-// а не только к финальному wbStatus='sold', иначе свежие заказы за последние
-// дни периода искусственно занижали бы картину). Остаток - из
+// установившийся приём, что и в getUnsortedSupplyOrders выше). Остаток - из
 // wms.stock_balances (тот же источник, что и /seller/stock).
 // =============================================================================
 
 const ITEM_REPORT_DEFAULT_LOW_STOCK_DAYS = 7; // если у товара не задан свой reorder_min_days
 
-/** Отчёт по товарам клиента: остаток + продажи за период + оборачиваемость.
+// Заказы со склада WB, который тенант явно выключил как "не мой" (см. шапку
+// файла выше) - тот же NOT EXISTS, что в wb.router.js::/generate-wave и
+// /orders, overview.service.js::getWaveBacklogStats. Склад без настройки
+// (ещё не засинкан) остаётся включённым - обратная совместимость.
+const MY_WAREHOUSE_ONLY_SQL = `NOT EXISTS (
+  SELECT 1 FROM wms.wb_seller_warehouses w
+  WHERE w.mp_account_id=wo.mp_account_id AND w.wb_warehouse_id=wo.warehouse_id
+    AND w.is_enabled_for_picking=FALSE
+)`;
+
+/** Отчёт по товарам клиента: остаток + заказы за период + оборачиваемость.
  *  clientId обязателен - это отчёт по ОДНОМУ клиенту (в кабинете селлера
  *  всегда свой clientId, см. resolveClientScope в роуте). */
 async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
   const trendPromise = query(
-    `SELECT DATE(wo.created_at) AS d, COUNT(*)::int AS qty,
-            (SUM(COALESCE(wo.converted_price,0))::numeric / 100) AS amount
+    `SELECT DATE(wo.created_at) AS d, COUNT(*)::int AS qty
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      WHERE wo.tenant_id=$1 AND ma.client_id=$2
        AND wo.created_at >= $3 AND wo.created_at < $4
        AND wo.status <> 'cancel'
        AND (wo.wb_status IS NULL OR wo.wb_status NOT IN ('canceled','canceled_by_client','declined_by_client'))
+       AND ${MY_WAREHOUSE_ONLY_SQL}
      GROUP BY DATE(wo.created_at)
      ORDER BY d`,
     [tenantId, clientId, dateFrom, dateTo]
@@ -989,10 +1011,9 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
        WHERE tenant_id=$1 AND client_id=$2
        GROUP BY item_id
      ),
-     sales AS (
+     orders AS (
        SELECT i.id AS item_id,
-              COUNT(*)::int AS qty_sold,
-              (SUM(COALESCE(wo.converted_price,0))::numeric / 100) AS amount
+              COUNT(*)::int AS qty_ordered
        FROM wms.wb_orders wo
        JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
        JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
@@ -1000,20 +1021,20 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
          AND wo.created_at >= $3 AND wo.created_at < $4
          AND wo.status <> 'cancel'
          AND (wo.wb_status IS NULL OR wo.wb_status NOT IN ('canceled','canceled_by_client','declined_by_client'))
+         AND ${MY_WAREHOUSE_ONLY_SQL}
        GROUP BY i.id
      )
      SELECT i.id AS item_id, i.item_name, i.vendor_code, i.barcode,
             i.reorder_min_qty, i.reorder_min_days,
             COALESCE(st.qty_on_hand, 0) AS qty_on_hand,
             COALESCE(st.qty_available, 0) AS qty_available,
-            COALESCE(s.qty_sold, 0) AS qty_sold,
-            COALESCE(s.amount, 0) AS amount
+            COALESCE(o.qty_ordered, 0) AS qty_ordered
      FROM wms.items i
      LEFT JOIN stock st ON st.item_id = i.id
-     LEFT JOIN sales s ON s.item_id = i.id
+     LEFT JOIN orders o ON o.item_id = i.id
      WHERE i.tenant_id=$1 AND i.client_id=$2 AND i.is_active=TRUE
-       AND (COALESCE(st.qty_on_hand, 0) > 0 OR COALESCE(s.qty_sold, 0) > 0)
-     ORDER BY amount DESC, s.qty_sold DESC NULLS LAST, i.item_name`,
+       AND (COALESCE(st.qty_on_hand, 0) > 0 OR COALESCE(o.qty_ordered, 0) > 0)
+     ORDER BY o.qty_ordered DESC NULLS LAST, i.item_name`,
     [tenantId, clientId, dateFrom, dateTo]
   );
 
@@ -1022,30 +1043,29 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
   // "прыгал" по датам, где вообще не было заказов).
   const trendByDay = new Map(trendRes.rows.map((row) => [
     new Date(row.d).toISOString().slice(0, 10),
-    { qty: Number(row.qty), amount: Number(row.amount) },
+    Number(row.qty),
   ]));
   const trend = [];
   for (let d = new Date(dateFrom); d < new Date(dateTo); d.setDate(d.getDate() + 1)) {
     const key = d.toISOString().slice(0, 10);
-    const hit = trendByDay.get(key);
-    trend.push({ date: key, qty: hit ? hit.qty : 0, amount: hit ? hit.amount : 0 });
+    trend.push({ date: key, qty: trendByDay.get(key) || 0 });
   }
 
   const periodDays = Math.max((new Date(dateTo) - new Date(dateFrom)) / 86400000, 1);
 
   const items = r.rows.map((row) => {
-    const qtySold = Number(row.qty_sold);
+    const qtyOrdered = Number(row.qty_ordered);
     const qtyAvailable = Number(row.qty_available);
-    const avgDailySales = qtySold / periodDays;
-    const daysOfStock = avgDailySales > 0 ? qtyAvailable / avgDailySales : null;
+    const avgDailyOrders = qtyOrdered / periodDays;
+    const daysOfStock = avgDailyOrders > 0 ? qtyAvailable / avgDailyOrders : null;
     const lowStockThreshold = row.reorder_min_days != null ? Number(row.reorder_min_days) : ITEM_REPORT_DEFAULT_LOW_STOCK_DAYS;
 
     // Статус - владелец, 18.09.2026: главное, чтобы сразу было видно, что
     // скоро закончится (риск дефицита) и что лежит без движения (залежался).
     let status;
-    if (qtyAvailable <= 0 && qtySold > 0) status = 'out_of_stock';       // раньше продавался, сейчас остатка нет
+    if (qtyAvailable <= 0 && qtyOrdered > 0) status = 'out_of_stock';       // раньше заказывали, сейчас остатка нет
     else if (daysOfStock != null && daysOfStock < lowStockThreshold) status = 'risk'; // скоро закончится
-    else if (qtySold === 0 && qtyAvailable > 0) status = 'stale';        // лежит, за период не продано ни штуки
+    else if (qtyOrdered === 0 && qtyAvailable > 0) status = 'stale';        // лежит, за период ни одного заказа
     else status = 'normal';
 
     return {
@@ -1055,20 +1075,18 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
       barcode: row.barcode,
       qty_on_hand: Number(row.qty_on_hand),
       qty_available: qtyAvailable,
-      qty_sold: qtySold,
-      amount: Number(row.amount),
-      avg_daily_sales: Math.round(avgDailySales * 100) / 100,
+      qty_ordered: qtyOrdered,
+      avg_daily_orders: Math.round(avgDailyOrders * 100) / 100,
       days_of_stock: daysOfStock != null ? Math.round(daysOfStock * 10) / 10 : null,
       status,
     };
   });
 
   const totals = items.reduce((acc, it) => {
-    acc.qty_sold += it.qty_sold;
-    acc.amount += it.amount;
+    acc.qty_ordered += it.qty_ordered;
     acc.qty_available += it.qty_available;
     return acc;
-  }, { qty_sold: 0, amount: 0, qty_available: 0 });
+  }, { qty_ordered: 0, qty_available: 0 });
 
   return {
     period: { from: dateFrom, to: dateTo, days: Math.round(periodDays) },
