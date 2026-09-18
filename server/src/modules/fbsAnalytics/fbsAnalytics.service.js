@@ -528,7 +528,7 @@ function _escHtml(s) {
 // jobs/wbFbsStatusSync.js) и так регулярно держит его свежим.
 // =============================================================================
 
-const UNSORTED_LOOKBACK_DAYS = 90; // см. TERMINAL_STATUSES/refreshWbStatusesForAccount выше - за этим горизонтом wb_status всё равно не обновляется
+const UNSORTED_LOOKBACK_DAYS = 7; // владелец 18.09.2026: 90 дней тяжело/избыточно - неотсортированное зависает на днях, не на месяцах
 
 // Статусы wms.shipments, при которых поставка физически ещё СТОИТ У НАС (мы
 // сами ещё не подтвердили передачу перевозчику/WB) - см. shipping.service.js
