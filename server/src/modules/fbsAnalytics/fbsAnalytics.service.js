@@ -501,18 +501,25 @@ function _escHtml(s) {
 // (напечатать стикер конкретного "зависшего" заказа и физически отвезти/
 // досдать), чем ждать и рисковать штрафом.
 //
-// ВАЖНО (обратная связь владельца, 18.09.2026, дважды уточнялось): "Отгрузите
-// товар" и "Ждёт сортировки" для ЭТОЙ задачи считаются ОДНИМ И ТЕМ ЖЕ -
-// в обоих случаях товар ещё физически не добрался до покупателя, и в обоих
-// может понадобиться ручная досдача. Изначально пробовали делить их на два
-// отдельных счётчика (сперва по wms.shipments.wb_accepted_at/scanDt, потом
-// по нашему статусу отгрузки) - оказалось, что и то и другое ненадёжно:
-// сканирование QR поставки на воротах WB часто вообще не происходит
-// (пропускается в процессе WB), но это не значит, что WB не принял и не
-// сортирует товар - поставка в ЛК так и висит "Отгрузите поставку" НАВСЕГДА,
-// даже когда часть заказов внутри уже "Отсортировано". Поэтому - один общий
-// счётчик "ждёт сортировки" на wbStatus='waiting', без попытки угадать,
-// физически поставка уже у WB или ещё нет.
+// ВАЖНО (обратная связь владельца, 18.09.2026, уточнялось трижды): нужны ДВЕ
+// раздельные колонки внутри общего "ждёт сортировки":
+//   1) ещё физически не уехало от нас (лежит у нас на складе, курьер/WB ещё
+//      не забрал);
+//   2) уже лежит у WB и ждёт сортировки их сотрудниками.
+// Первая попытка различать это по wms.shipments.wb_accepted_at/scanDt (момент
+// сканирования QR поставки НА ВОРОТАХ WB) оказалась ненадёжной: сканирование
+// ворот часто вообще не происходит (пропускается в процессе WB), даже когда
+// WB уже физически принял и сортирует товар - поставка в ЛК так и висит
+// "Отгрузите поставку" НАВСЕГДА, даже когда часть заказов внутри уже
+// "Отсортировано". Значит, сигнал должен быть НЕ от WB, а НАШ СОБСТВЕННЫЙ:
+// wms.shipments.status - именно МЫ отмечаем поставку как переданную
+// перевозчику/WB (переход в 'in_transit' происходит в shipping.service.js в
+// момент, когда наш сотрудник физически подтверждает отгрузку - см.
+// deliverSupply()), и это не зависит от того, сработает ли сканирование на
+// воротах WB или нет. Пока shipments.status ещё 'new'/'picking'/'packing'/
+// 'ready_to_ship' - значит физически СТОИТ У НАС. Как только мы сами
+// отметили отгрузку ('in_transit' и далее) - значит уехало от нас, и если
+// wbStatus при этом всё ещё 'waiting' - значит лежит у WB и ждёт сортировки.
 //
 // wbStatus здесь берём из УЖЕ существующего постоянного хранения
 // (wo.wb_status/wb_status_updated_at, миграция 051, см. шапку файла) -
@@ -522,6 +529,10 @@ function _escHtml(s) {
 
 const UNSORTED_LOOKBACK_DAYS = 90; // см. TERMINAL_STATUSES/refreshWbStatusesForAccount выше - за этим горизонтом wb_status всё равно не обновляется
 
+// Статусы wms.shipments, при которых поставка физически ещё СТОИТ У НАС (мы
+// сами ещё не подтвердили передачу перевозчику/WB) - см. shipping.service.js.
+const SHIPMENT_NOT_YET_SHIPPED_STATUSES = new Set(['new', 'picking', 'packing', 'ready_to_ship']);
+
 /** Сводка по поставкам, где есть хотя бы один ещё не отсортированный
  *  (wbStatus='waiting'/ещё не пришёл) активный заказ. Разрез по ВСЕМ
  *  WB-аккаунтам тенанта сразу (owner: "все аккаунты, без выбора"). */
@@ -529,10 +540,11 @@ async function getUnsortedSuppliesReport({ tenantId }) {
   const r = await query(
     `SELECT wo.mp_account_id, wo.wb_supply_id AS supply_code, wo.wb_status,
             ma.account_name, ma.client_id, c.client_name,
-            wo.warehouse_name, wo.created_at
+            wo.warehouse_name, wo.created_at, s.status AS shipment_status
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
+     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
      WHERE wo.tenant_id=$1
        AND wo.wb_supply_id IS NOT NULL
        AND wo.status <> 'cancel'
@@ -554,14 +566,21 @@ async function getUnsortedSuppliesReport({ tenantId }) {
         warehouse_name: row.warehouse_name,
         earliest_order_at: row.created_at,
         total_orders: 0,
-        pending_orders: 0, // wbStatus='waiting'/ещё не пришёл - "Отгрузите товар" и "Ждёт сортировки" вместе
+        pending_orders: 0,  // всего wbStatus='waiting'/ещё не пришёл (обе категории вместе)
+        not_shipped: 0,     // физически ещё у нас (наш shipments.status не дошёл до in_transit)
+        waiting_sort: 0,    // мы уже отгрузили, но wbStatus всё ещё 'waiting' - лежит у WB, ждёт сортировки
       });
     }
     const agg = bySupply.get(key);
     agg.total_orders++;
     if (row.created_at < agg.earliest_order_at) agg.earliest_order_at = row.created_at;
     const isWaiting = !row.wb_status || row.wb_status === 'waiting';
-    if (isWaiting) agg.pending_orders++;
+    if (isWaiting) {
+      agg.pending_orders++;
+      const notShippedByUs = !row.shipment_status || SHIPMENT_NOT_YET_SHIPPED_STATUSES.has(row.shipment_status);
+      if (notShippedByUs) agg.not_shipped++;
+      else agg.waiting_sort++;
+    }
   }
 
   const supplies = [...bySupply.values()]
