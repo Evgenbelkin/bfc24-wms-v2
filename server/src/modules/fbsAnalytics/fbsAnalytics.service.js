@@ -605,15 +605,33 @@ async function getUnsortedSuppliesReport({ tenantId }) {
 
 /** Детали одной поставки - конкретные ещё не отсортированные заказы
  *  (для печати стикеров и ручной досдачи). Дотягивает недостающие стикеры у
- *  WB (тот же приём, что и picking.service.js::_getSkippedForExport). */
+ *  WB (тот же приём, что и picking.service.js::_getSkippedForExport).
+ *
+ *  ВАЖНО (владелец, 18.09.2026: "как мне посмотреть мы вообще упаковывали
+ *  эти товары или нет? И кто упаковывал и когда"): помимо самих заказов,
+ *  отдаём (1) для каждого заказа — статус его задачи сборки (собран/не
+ *  собран, кем, когда — из wms.picking_tasks по wb_order_id) и (2) сводку по
+ *  упаковке ВСЕЙ поставки целиком (packer, статус, когда взяли в работу) —
+ *  упаковка в системе не по заказам, а одной задачей на весь shipment_code
+ *  (см. wms.packing_tasks), поэтому это отдельный объект, а не поле заказа.
+ */
 async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
   const r = await query(
     `SELECT wo.id, wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.price, wo.wb_status,
             wo.wb_sticker, wo.wb_sticker_code, wo.created_at,
-            i.item_name
+            i.item_name,
+            pt.status AS picking_status, pt.finished_at AS picked_at,
+            COALESCE(pku.full_name, pku.username) AS picker_name
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
+     LEFT JOIN LATERAL (
+       SELECT status, finished_at, picker_id
+       FROM wms.picking_tasks
+       WHERE tenant_id = wo.tenant_id AND wb_order_id = wo.wb_order_id
+       ORDER BY id DESC LIMIT 1
+     ) pt ON true
+     LEFT JOIN wms.users pku ON pku.id = pt.picker_id
      WHERE wo.tenant_id=$1 AND wo.mp_account_id=$2 AND wo.wb_supply_id=$3
        AND wo.status <> 'cancel'
        AND (wo.wb_status IS NULL OR wo.wb_status = 'waiting')
@@ -621,6 +639,19 @@ async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
     [tenantId, mpAccountId, supplyCode]
   );
   const rows = r.rows;
+
+  // Упаковка — одна задача на весь shipment_code (=supplyCode), а не по
+  // заказам. Берём последнюю (на случай если задачу пересоздавали).
+  const packingRes = await query(
+    `SELECT pk.status, pk.boxes_count, pk.started_at, pk.updated_at,
+            COALESCE(pu.full_name, pu.username) AS packer_name
+     FROM wms.packing_tasks pk
+     LEFT JOIN wms.users pu ON pu.id = pk.packer_id
+     WHERE pk.tenant_id=$1 AND pk.shipment_code=$2
+     ORDER BY pk.id DESC LIMIT 1`,
+    [tenantId, supplyCode]
+  );
+  const packing = packingRes.rows[0] || null;
 
   const missing = rows.filter((row) => !row.wb_sticker);
   if (missing.length) {
@@ -647,7 +678,7 @@ async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
     }
   }
 
-  return rows;
+  return { orders: rows, packing };
 }
 
 /** Печать стикеров выбранных "зависших" заказов одной HTML-страницей - чистые

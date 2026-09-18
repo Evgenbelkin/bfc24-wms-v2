@@ -87,6 +87,7 @@
 
   <div class="card" id="detail-card" style="display:none;">
     <div class="card-title" id="detail-title">Позиции поставки</div>
+    <div id="packing-summary" class="refresh-note" style="text-align:left;margin-bottom:10px;"></div>
     <div class="orders-toolbar">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
         <input type="checkbox" id="select-all" onchange="toggleAll(this.checked)"/> Выбрать все
@@ -140,6 +141,37 @@
       }).join('');
     }
 
+    // Упаковка в системе — ОДНА задача на всю поставку (shipment_code), не по
+    // заказам, поэтому это отдельная сводка, а не поле заказа (см. коммент в
+    // fbsAnalytics.service.js::getUnsortedSupplyOrders). Владелец, 18.09.2026:
+    // "как посмотреть, упаковывали ли эти товары, кто и когда".
+    var PACKING_STATUS_LABELS = {
+      new: 'ждёт упаковщика',
+      in_progress: 'упаковывается',
+      done: 'упаковано',
+      cancelled: 'отменено'
+    };
+    var PICKING_STATUS_LABELS = {
+      new: 'не собран',
+      in_progress: 'собирается',
+      done: 'собран',
+      cancelled: 'отменён',
+      skipped: 'пропущен'
+    };
+    function renderPackingSummary(packing) {
+      var box = document.getElementById('packing-summary');
+      if (!packing) {
+        box.innerHTML = 'Упаковка: <b style="color:var(--red,#dc2626);">задача ещё не создавалась</b> — эта поставка ещё ни разу не доходила до упаковки.';
+        return;
+      }
+      var label = PACKING_STATUS_LABELS[packing.status] || packing.status || '—';
+      var parts = ['Упаковка: <b>' + UI.escHtml(label) + '</b>'];
+      if (packing.packer_name) parts.push('упаковщик: ' + UI.escHtml(packing.packer_name));
+      if (packing.started_at) parts.push('взято в работу: ' + fmtDate(packing.started_at));
+      if (packing.status === 'done' && packing.updated_at) parts.push('завершено: ' + fmtDate(packing.updated_at));
+      if (packing.boxes_count) parts.push('коробов: ' + packing.boxes_count);
+      box.innerHTML = parts.join(' · ');
+    }
     function renderOrders() {
       var box = document.getElementById('orders-list');
       if (!currentOrders.length) {
@@ -148,7 +180,11 @@
       }
       box.innerHTML = currentOrders.map(function (o, idx) {
         var statusLabel = o.wb_status === 'waiting' || !o.wb_status ? 'ждёт' : UI.escHtml(o.wb_status);
-        return '\n        <div class="order-row">\n          <input type="checkbox" class="order-check" data-idx="' + idx + '"/>\n          <div class="main">\n            <div class="title">' + UI.escHtml(o.item_name || o.barcode || '—') + '</div>\n            <div class="sub">' + UI.escHtml(o.vendor_code || '') + ' · ' + UI.escHtml(o.barcode || '') + ' · заказ ' + UI.escHtml(o.wb_order_id) + ' · ' + statusLabel + (o.wb_sticker ? '' : ' · <span style="color:var(--red,#dc2626)">нет стикера</span>') + '</div>\n          </div>\n        </div>\n      ';
+        var pickingLabel = o.picking_status ? (PICKING_STATUS_LABELS[o.picking_status] || o.picking_status) : 'ещё не в очереди на сборку';
+        var pickingColor = o.picking_status === 'done' ? '#16a34a' : (o.picking_status ? '#ca8a04' : 'var(--muted)');
+        var pickingHtml = '<span style="color:' + pickingColor + ';font-weight:600;">' + UI.escHtml(pickingLabel) + '</span>' +
+          (o.picking_status === 'done' && o.picker_name ? ' (' + UI.escHtml(o.picker_name) + (o.picked_at ? ', ' + fmtDate(o.picked_at) : '') + ')' : '');
+        return '\n        <div class="order-row">\n          <input type="checkbox" class="order-check" data-idx="' + idx + '"/>\n          <div class="main">\n            <div class="title">' + UI.escHtml(o.item_name || o.barcode || '—') + '</div>\n            <div class="sub">' + UI.escHtml(o.vendor_code || '') + ' · ' + UI.escHtml(o.barcode || '') + ' · заказ ' + UI.escHtml(o.wb_order_id) + ' · ' + statusLabel + (o.wb_sticker ? '' : ' · <span style="color:var(--red,#dc2626)">нет стикера</span>') + '</div>\n            <div class="sub">Сборка: ' + pickingHtml + '</div>\n          </div>\n        </div>\n      ';
       }).join('');
     }
 
@@ -167,6 +203,7 @@
       try {
         var res = await window.API.fbsAnalytics.unsortedSupplyOrders(s.mp_account_id, s.supply_code);
         currentOrders = res.orders || [];
+        renderPackingSummary(res.packing);
         renderOrders();
       } catch (e) {
         UI.notify.err(e.message || 'Ошибка загрузки позиций');

@@ -140,8 +140,8 @@ router.get('/unsorted-report/orders', requireRole('tenant_admin', 'supervisor'),
     const mpAccountId = Number(req.query.mp_account_id);
     const supplyCode = req.query.supply_code;
     if (!mpAccountId || !supplyCode) throw new ValidationError('mp_account_id and supply_code are required');
-    const orders = await fbsAnalyticsService.getUnsortedSupplyOrders({ tenantId: req.user.tenantId, mpAccountId, supplyCode });
-    res.json({ ok: true, orders });
+    const result = await fbsAnalyticsService.getUnsortedSupplyOrders({ tenantId: req.user.tenantId, mpAccountId, supplyCode });
+    res.json({ ok: true, ...result });
   } catch (e) { next(e); }
 });
 
