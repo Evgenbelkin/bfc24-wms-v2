@@ -604,8 +604,7 @@ async function getUnsortedSuppliesReport({ tenantId }) {
 }
 
 /** Детали одной поставки - конкретные ещё не отсортированные заказы
- *  (для печати стикеров и ручной досдачи). Дотягивает недостающие стикеры у
- *  WB (тот же приём, что и picking.service.js::_getSkippedForExport).
+ *  (для печати стикеров и ручной досдачи).
  *
  *  ВАЖНО (владелец, 18.09.2026: "как мне посмотреть мы вообще упаковывали
  *  эти товары или нет? И кто упаковывал и когда"): помимо самих заказов,
@@ -614,71 +613,55 @@ async function getUnsortedSuppliesReport({ tenantId }) {
  *  упаковке ВСЕЙ поставки целиком (packer, статус, когда взяли в работу) —
  *  упаковка в системе не по заказам, а одной задачей на весь shipment_code
  *  (см. wms.packing_tasks), поэтому это отдельный объект, а не поле заказа.
+ *
+ *  ФИКС СКОРОСТИ (владелец, 18.09.2026: "посмотри что бы быстрее
+ *  отрабатывала по загрузке"): раньше здесь же СИНХРОННО дотягивали у WB API
+ *  недостающие стикеры для ВСЕХ заказов поставки (до 500шт) - это медленный
+ *  сетевой round-trip к WB на каждый клик по поставке, даже если владелец
+ *  просто смотрит список, а печатать ничего не собирается. Дотягивание
+ *  стикеров перенесено в exportUnsortedStickers() - там оно нужно только для
+ *  реально выбранных на печать заказов (обычно единицы, а не сотни), и
+ *  вызывается только по факту нажатия "Распечатать стикеры", а не при каждом
+ *  простом просмотре поставки.
  */
 async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
-  const r = await query(
-    `SELECT wo.id, wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.price, wo.wb_status,
-            wo.wb_sticker, wo.wb_sticker_code, wo.created_at,
-            i.item_name,
-            pt.status AS picking_status, pt.finished_at AS picked_at,
-            COALESCE(pku.full_name, pku.username) AS picker_name
-     FROM wms.wb_orders wo
-     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
-     LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
-     LEFT JOIN LATERAL (
-       SELECT status, finished_at, picker_id
-       FROM wms.picking_tasks
-       WHERE tenant_id = wo.tenant_id AND wb_order_id = wo.wb_order_id
-       ORDER BY id DESC LIMIT 1
-     ) pt ON true
-     LEFT JOIN wms.users pku ON pku.id = pt.picker_id
-     WHERE wo.tenant_id=$1 AND wo.mp_account_id=$2 AND wo.wb_supply_id=$3
-       AND wo.status <> 'cancel'
-       AND (wo.wb_status IS NULL OR wo.wb_status = 'waiting')
-     ORDER BY wo.created_at ASC`,
-    [tenantId, mpAccountId, supplyCode]
-  );
-  const rows = r.rows;
+  const [r, packingRes] = await Promise.all([
+    query(
+      `SELECT wo.id, wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.price, wo.wb_status,
+              wo.wb_sticker, wo.wb_sticker_code, wo.created_at,
+              i.item_name,
+              pt.status AS picking_status, pt.finished_at AS picked_at,
+              COALESCE(pku.full_name, pku.username) AS picker_name
+       FROM wms.wb_orders wo
+       JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+       LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
+       LEFT JOIN LATERAL (
+         SELECT status, finished_at, picker_id
+         FROM wms.picking_tasks
+         WHERE tenant_id = wo.tenant_id AND wb_order_id = wo.wb_order_id
+         ORDER BY id DESC LIMIT 1
+       ) pt ON true
+       LEFT JOIN wms.users pku ON pku.id = pt.picker_id
+       WHERE wo.tenant_id=$1 AND wo.mp_account_id=$2 AND wo.wb_supply_id=$3
+         AND wo.status <> 'cancel'
+         AND (wo.wb_status IS NULL OR wo.wb_status = 'waiting')
+       ORDER BY wo.created_at ASC`,
+      [tenantId, mpAccountId, supplyCode]
+    ),
+    // Упаковка — одна задача на весь shipment_code (=supplyCode), а не по
+    // заказам. Берём последнюю (на случай если задачу пересоздавали).
+    query(
+      `SELECT pk.status, pk.boxes_count, pk.started_at, pk.updated_at,
+              COALESCE(pu.full_name, pu.username) AS packer_name
+       FROM wms.packing_tasks pk
+       LEFT JOIN wms.users pu ON pu.id = pk.packer_id
+       WHERE pk.tenant_id=$1 AND pk.shipment_code=$2
+       ORDER BY pk.id DESC LIMIT 1`,
+      [tenantId, supplyCode]
+    ),
+  ]);
 
-  // Упаковка — одна задача на весь shipment_code (=supplyCode), а не по
-  // заказам. Берём последнюю (на случай если задачу пересоздавали).
-  const packingRes = await query(
-    `SELECT pk.status, pk.boxes_count, pk.started_at, pk.updated_at,
-            COALESCE(pu.full_name, pu.username) AS packer_name
-     FROM wms.packing_tasks pk
-     LEFT JOIN wms.users pu ON pu.id = pk.packer_id
-     WHERE pk.tenant_id=$1 AND pk.shipment_code=$2
-     ORDER BY pk.id DESC LIMIT 1`,
-    [tenantId, supplyCode]
-  );
-  const packing = packingRes.rows[0] || null;
-
-  const missing = rows.filter((row) => !row.wb_sticker);
-  if (missing.length) {
-    const accRes = await query(`SELECT api_token FROM wms.mp_accounts WHERE id=$1 AND tenant_id=$2`, [mpAccountId, tenantId]);
-    const token = accRes.rows[0] && accRes.rows[0].api_token;
-    if (token) {
-      try {
-        const stickers = await wbClient.fetchOrderStickers(token, missing.map((row) => Number(row.wb_order_id)));
-        const byOrderId = new Map(stickers.map((st) => [Number(st.orderId), st]));
-        await Promise.all(missing.map(async (row) => {
-          const st = byOrderId.get(Number(row.wb_order_id));
-          if (!st || !st.file) return;
-          const code = wbClient.extractStickerCode(st.file);
-          row.wb_sticker = st.file;
-          row.wb_sticker_code = code;
-          await query(
-            `UPDATE wms.wb_orders SET wb_sticker=$1, wb_sticker_code=$2 WHERE tenant_id=$3 AND mp_account_id=$4 AND wb_order_id=$5`,
-            [st.file, code, tenantId, mpAccountId, Number(row.wb_order_id)]
-          );
-        }));
-      } catch (e) {
-        logger.warn({ err: e, tenantId, mpAccountId, supplyCode }, 'getUnsortedSupplyOrders: fetchOrderStickers failed, skipping');
-      }
-    }
-  }
-
-  return { orders: rows, packing };
+  return { orders: r.rows, packing: packingRes.rows[0] || null };
 }
 
 /** Печать стикеров выбранных "зависших" заказов одной HTML-страницей - чистые
@@ -686,17 +669,52 @@ async function getUnsortedSupplyOrders({ tenantId, mpAccountId, supplyCode }) {
  *  реальный стикер под термопринтер 58×40мм для наклейки на короб/товар,
  *  никакой лишний текст на нём не нужен и может помешать сканеру ВБ на
  *  сортировке) - тот же режим, что 'thermal' в
- *  picking.service.js::exportSkippedStickers, один стикер на страницу. */
+ *  picking.service.js::exportSkippedStickers, один стикер на страницу.
+ *
+ *  Дотягивает у WB недостающие стикеры ТОЛЬКО для реально выбранных здесь
+ *  заказов (перенесено сюда из getUnsortedSupplyOrders 18.09.2026 - см.
+ *  коммент там же про скорость загрузки списка). */
 async function exportUnsortedStickers({ tenantId, orderRowIds }) {
   if (!Array.isArray(orderRowIds) || !orderRowIds.length) return { html: null, count: 0 };
   const r = await query(
-    `SELECT wo.wb_order_id, wo.wb_sticker
+    `SELECT wo.id, wo.wb_order_id, wo.wb_sticker, wo.mp_account_id
      FROM wms.wb_orders wo
      WHERE wo.tenant_id=$1 AND wo.id = ANY($2::bigint[])
      ORDER BY wo.id`,
     [tenantId, orderRowIds]
   );
   const rows = r.rows;
+
+  const missing = rows.filter((row) => !row.wb_sticker);
+  if (missing.length) {
+    const byAccount = new Map();
+    for (const row of missing) {
+      if (!byAccount.has(row.mp_account_id)) byAccount.set(row.mp_account_id, []);
+      byAccount.get(row.mp_account_id).push(row);
+    }
+    for (const [mpAccountId, accountRows] of byAccount) {
+      const accRes = await query(`SELECT api_token FROM wms.mp_accounts WHERE id=$1 AND tenant_id=$2`, [mpAccountId, tenantId]);
+      const token = accRes.rows[0] && accRes.rows[0].api_token;
+      if (!token) continue;
+      try {
+        const stickers = await wbClient.fetchOrderStickers(token, accountRows.map((row) => Number(row.wb_order_id)));
+        const byOrderId = new Map(stickers.map((st) => [Number(st.orderId), st]));
+        await Promise.all(accountRows.map(async (row) => {
+          const st = byOrderId.get(Number(row.wb_order_id));
+          if (!st || !st.file) return;
+          const code = wbClient.extractStickerCode(st.file);
+          row.wb_sticker = st.file;
+          await query(
+            `UPDATE wms.wb_orders SET wb_sticker=$1, wb_sticker_code=$2 WHERE tenant_id=$3 AND mp_account_id=$4 AND wb_order_id=$5`,
+            [st.file, code, tenantId, mpAccountId, Number(row.wb_order_id)]
+          );
+        }));
+      } catch (e) {
+        logger.warn({ err: e, tenantId, mpAccountId }, 'exportUnsortedStickers: fetchOrderStickers failed, skipping');
+      }
+    }
+  }
+
   const withSticker = rows.filter((row) => row.wb_sticker);
   const withoutSticker = rows.filter((row) => !row.wb_sticker);
 
