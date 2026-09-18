@@ -236,13 +236,19 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
     const anyProgress = allLinesRes.rows.some(r => ['received','partial'].includes(r.status));
     const orderStatus = allDone ? 'completed' : anyProgress ? 'in_progress' : ord.status;
 
+    // ВАЖНО: раньше completed_at вычислялся SQL-выражением
+    // `CASE WHEN $2='completed' THEN NOW() ELSE NULL END`, где $2 (statuses)
+    // использовался и как значение enum-колонки status, и как текстовый
+    // литерал в CASE — Postgres выводил для одного placeholder'а два разных
+    // типа (enum вэрсус text) и падал с ошибкой 42P08 "inconsistent types
+     // deduced for parameter $2" при КАЖДОЙ приёмке по заявке. Вычисляем
+    // completed_at в JS, чтобы параметр использовался только с одним типом.
+    const completedAt = orderStatus === 'completed' ? new Date() : null;
     await client.query(
       `UPDATE wms.inbound_orders
-       SET total_received_qty=$1, status=$2,
-           completed_at=CASE WHEN $2='completed' THEN NOW() ELSE NULL END,
-           updated_at=NOW()
-       WHERE id=$3`,
-      [totalReceived, orderStatus, ord.id]
+       SET total_received_qty=$1, status=$2, completed_at=$3, updated_at=NOW()
+       WHERE id=$4`,
+      [totalReceived, orderStatus, completedAt, ord.id]
     );
 
     // 7. Запись в receiving_tasks
