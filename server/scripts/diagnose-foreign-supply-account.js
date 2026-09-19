@@ -67,7 +67,7 @@ async function main() {
 
       // Условие 2: platform.tenants статус
       const tenantRes = await client.query(
-        `SELECT id, name, status FROM platform.tenants WHERE id=$1`,
+        `SELECT id, company_name, status FROM platform.tenants WHERE id=$1`,
         [acc.tenant_id]
       );
       if (tenantRes.rowCount === 0) {
@@ -75,7 +75,7 @@ async function main() {
       } else {
         const t = tenantRes.rows[0];
         const cond2 = ['trial', 'active'].includes(t.status);
-        console.log(`  [2] tenant "${t.name}" status='${t.status}' IN (trial,active) -> ${cond2 ? 'OK' : 'FAIL <-- ПРИЧИНА'}`);
+        console.log(`  [2] tenant "${t.company_name}" status='${t.status}' IN (trial,active) -> ${cond2 ? 'OK' : 'FAIL <-- ПРИЧИНА'}`);
       }
 
       // Условие 3: platform.tenant_modules содержит warehouse_insights
