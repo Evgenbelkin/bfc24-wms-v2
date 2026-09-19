@@ -98,8 +98,8 @@
   <div class="card" id="wh-card" style="margin-bottom:14px;">
     <div class="card-title">Заказы по складам WB</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
-      Показаны все склады WB, откуда шли заказы за период. «Не учтено» — склад обслуживает не наш склад, его заказы
-      исключены из остальных цифр этого отчёта (остаток, заказы/день, «Довезти»).
+      Только склады WB, которые физически обслуживаем мы — те же, что участвуют в остальных цифрах этого отчёта
+      (остаток, заказы/день, «Довезти»). Склады, которые возит другой фулфилмент этого клиента, сюда не попадают.
     </div>
     <div class="table-wrap">
       <table>
@@ -107,7 +107,6 @@
           <tr>
             <th>Склад WB</th>
             <th>Заказы, шт</th>
-            <th>Статус</th>
           </tr>
         </thead>
         <tbody id="wh-rows"></tbody>
@@ -286,14 +285,11 @@
     function renderWarehouses(byWarehouse) {
       var tbody = document.getElementById('wh-rows');
       if (!byWarehouse || !byWarehouse.length) {
-        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted);">Нет заказов за период</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="2" style="color:var(--muted);">Нет заказов за период</td></tr>';
         return;
       }
       tbody.innerHTML = byWarehouse.map(function (w) {
-        var pill = w.included
-          ? '<span class="pill pill-green">учтено</span>'
-          : '<span class="pill pill-gray">не учтено</span>';
-        return '<tr><td>' + UI.escHtml(w.warehouse_name) + '</td><td>' + fmtNum(w.qty_ordered) + '</td><td>' + pill + '</td></tr>';
+        return '<tr><td>' + UI.escHtml(w.warehouse_name) + '</td><td>' + fmtNum(w.qty_ordered) + '</td></tr>';
       }).join('');
     }
 
