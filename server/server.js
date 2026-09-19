@@ -15,6 +15,7 @@ const wbAcceptanceSync = require('./src/jobs/wbAcceptanceSync'); // ВЫКЛЮЧ
 const wbFbsStatusSync = require('./src/jobs/wbFbsStatusSync');
 const wbStockReconcileAlert = require('./src/jobs/wbStockReconcileAlert');
 const wbStatsRegionSync = require('./src/jobs/wbStatsRegionSync');
+const wbForeignSupplySync = require('./src/jobs/wbForeignSupplySync');
 const markingWithdrawalExport = require('./src/jobs/markingWithdrawalExport');
 const ozonLabelSync = require('./src/jobs/ozonLabelSync');
 const ozonStatusSync = require('./src/jobs/ozonStatusSync');
@@ -64,6 +65,7 @@ async function start() {
   wbFbsStatusSync.start();
   wbStockReconcileAlert.start();
   wbStatsRegionSync.start();
+  wbForeignSupplySync.start();
   markingWithdrawalExport.start();
   ozonLabelSync.start();
   ozonStatusSync.start();
@@ -83,6 +85,7 @@ async function shutdown(signal) {
   wbFbsStatusSync.stop();
   wbStockReconcileAlert.stop();
   wbStatsRegionSync.stop();
+  wbForeignSupplySync.stop();
   markingWithdrawalExport.stop();
   ozonLabelSync.stop();
   ozonStatusSync.stop();

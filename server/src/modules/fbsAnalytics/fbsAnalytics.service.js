@@ -1212,25 +1212,32 @@ function _finalizeAgg(agg, grandTotal) {
  *  владельца: "добавить сюда информацию по каждому складу по скорости
  *  доставки ... от заказа до ворот ВБ и от заказа до сортировки ВБ, и %
  *  выкупа ... буду видеть на сколько я превосхожу конкурентов по скорости".
- *  classify()/% выкупа и avg_hours_to_sorted берутся из данных, доступных
- *  по ВСЕМ складам аккаунта (см. _addOrderToAgg выше) - работают и для
- *  чужих складов. avg_hours_to_wb - НЕТ: он в принципе доступен только там,
- *  где поставку формировали МЫ сами (wms.shipments), поэтому для чужих
- *  складов там будет "—" (владелец в курсе, обсуждали 19.09.2026; довести
- *  эту метрику и до чужих складов - отдельная задача, требует ещё одной
- *  интеграции с WB API на список/состав чужих поставок). */
+ *  classify()/% выкупа и avg_hours_to_sorted берутся из данных, доступных по
+ *  ВСЕМ складам аккаунта (см. _addOrderToAgg выше) - работают и для чужих
+ *  складов сразу. avg_hours_to_wb для чужих складов (обрабатывает не наш
+ *  тенант) берётся из отдельного кэша wms.wb_foreign_supplies (миграция 068,
+ *  см. wbForeignSupplySync.js/wbService.syncForeignSuppliesForAccount) -
+ *  scanDt поставки, которую мы не создавали сами, WB всё равно отдаёт через
+ *  общий список поставок аккаунта (GET /api/v3/supplies). Это ФОНОВЫЙ,
+ *  постепенный бэкфилл - сразу после деплоя для чужих складов ещё может быть
+ *  "—", пока джоба не обойдёт историю поставок (округ ~5 минут на тик, см.
+ *  WB_FOREIGN_SUPPLY_SYNC_INTERVAL_MINUTES). */
 async function getWarehousePerformanceReport({ tenantId, dateFrom, dateTo }) {
   const r = await query(
     `SELECT ma.client_id, c.client_name, wo.warehouse_id,
             COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id) AS warehouse_name,
             wo.created_at, wo.status, wo.wb_status,
-            s.wb_accepted_at AS accepted_at,
+            COALESCE(s.wb_accepted_at, fs.scan_dt) AS accepted_at,
             sorted.observed_at AS sorted_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
      LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
      LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     -- Чужие поставки (склад обрабатывает не наш тенант) - у них никогда не
+     -- будет строки в wms.shipments (см. миграцию 068 и wbForeignSupplySync.js),
+     -- scanDt для них берём из отдельного кэша.
+     LEFT JOIN wms.wb_foreign_supplies fs ON fs.mp_account_id = wo.mp_account_id AND fs.supply_id = wo.wb_supply_id
      LEFT JOIN LATERAL (
        SELECT observed_at FROM wms.wb_order_status_events e
        WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status = 'sorted'

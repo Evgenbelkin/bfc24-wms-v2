@@ -501,6 +501,116 @@ async function syncDeliveryStatusForTenant(tenantId) {
 }
 
 // =============================================================================
+// Чужие поставки WB (обрабатывает не наш тенант, а другой оператор на том же
+// WB-аккаунте клиента) - кэш scanDt для отчёта "Эффективность складов WB"
+// (fbsAnalytics.service.js::getWarehousePerformanceReport). Владелец,
+// 19.09.2026: "мне важна информация как быстро работают другие склады".
+// См. подробное обоснование в миграции 068_wb_foreign_supplies.sql и в
+// комментариях к wbClient.listSupplies/getSupplyOrderIds.
+// =============================================================================
+
+/** Аккаунты, которым включён модуль warehouse_insights - только для них имеет
+ *  смысл тратить WB API квоту на обход ЧУЖИХ поставок (без модуля отчёт всё
+ *  равно никто не увидит). По аналогии с listAllWbAccountsForStatsSync выше. */
+async function listAllWbAccountsForForeignSupplySync() {
+  const r = await query(
+    `SELECT ma.id, ma.tenant_id, ma.api_token, ma.account_name
+     FROM wms.mp_accounts ma
+     JOIN platform.tenants t ON t.id = ma.tenant_id AND t.status IN ('trial','active')
+     JOIN platform.tenant_modules tm ON tm.tenant_id = t.id AND tm.module_code = 'warehouse_insights'
+     WHERE ma.marketplace='wb' AND ma.is_active=TRUE AND ma.api_token IS NOT NULL
+     ORDER BY ma.id`
+  );
+  return r.rows;
+}
+
+/** Обойти список ВСЕХ поставок аккаунта (не только своих), закэшировать
+ *  scanDt для ЧУЖИХ закрытых поставок и backfill'ить wo.wb_supply_id по их
+ *  заказам (только там, где он ещё NULL). Ограничен по объёму работы за один
+ *  вызов (MAX_PAGES/MAX_NEW_LOOKUPS) - джоба вызывает это по кругу, полный
+ *  бэкфилл может растянуться на несколько тиков для больших аккаунтов, это
+ *  нормально (аналогично другим инкрементальным WB-синкам в проекте). */
+async function syncForeignSuppliesForAccount({ tenantId, accountId, apiToken }) {
+  const MAX_PAGES = 10;       // до 10 000 поставок за вызов (limit=1000/страница)
+  const MAX_NEW_LOOKUPS = 30; // до 30 новых GET .../order-ids за вызов (это отдельные WB-запросы)
+
+  let next = 0;
+  let pages = 0, scanned = 0, newLookups = 0, cached = 0;
+
+  while (pages < MAX_PAGES) {
+    let page;
+    try {
+      page = await wbClient.listSupplies(apiToken, { limit: 1000, next });
+    } catch (e) {
+      logger.error({ err: e.message, tenantId, accountId }, 'syncForeignSuppliesForAccount: listSupplies failed');
+      break;
+    }
+    const supplies = Array.isArray(page?.supplies) ? page.supplies : [];
+    if (!supplies.length) break;
+    pages++;
+    scanned += supplies.length;
+
+    for (const s of supplies) {
+      if (!s.id || !s.done) continue; // поставка ещё формируется/в пути - подождём, пока закроется
+
+      // Своя поставка? Мы и так знаем её приёмку через syncDeliveryStatusForTenant/wms.shipments.
+      const own = await query(`SELECT 1 FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 LIMIT 1`, [tenantId, s.id]);
+      if (own.rowCount > 0) continue;
+
+      const existing = await query(
+        `SELECT orders_synced FROM wms.wb_foreign_supplies WHERE mp_account_id=$1 AND supply_id=$2`,
+        [accountId, s.id]
+      );
+      if (existing.rowCount > 0) {
+        // Уже ходили за составом раньше - просто освежаем scanDt (мог появиться
+        // позже, если тогда поставка была done без scanDt), без нового похода
+        // за order-ids (это самая дорогая по квоте часть).
+        if (existing.rows[0].orders_synced) {
+          await query(
+            `UPDATE wms.wb_foreign_supplies SET scan_dt=$3, done=TRUE, synced_at=NOW() WHERE mp_account_id=$1 AND supply_id=$2`,
+            [accountId, s.id, s.scanDt || null]
+          );
+          cached++;
+        }
+        continue;
+      }
+
+      if (newLookups >= MAX_NEW_LOOKUPS) continue; // бюджет тика исчерпан - подхватим на следующем вызове
+
+      let orderIds = [];
+      try {
+        orderIds = await wbClient.getSupplyOrderIds(apiToken, s.id);
+      } catch (e) {
+        logger.warn({ err: e.message, tenantId, accountId, supplyId: s.id }, 'syncForeignSuppliesForAccount: getSupplyOrderIds failed (non-fatal)');
+        continue;
+      }
+      newLookups++;
+
+      if (orderIds.length) {
+        await query(
+          `UPDATE wms.wb_orders SET wb_supply_id=$3
+           WHERE tenant_id=$1 AND mp_account_id=$2 AND wb_order_id=ANY($4::bigint[]) AND wb_supply_id IS NULL`,
+          [tenantId, accountId, s.id, orderIds.map(Number)]
+        );
+      }
+      await query(
+        `INSERT INTO wms.wb_foreign_supplies (tenant_id, mp_account_id, supply_id, scan_dt, done, orders_synced, synced_at)
+         VALUES ($1,$2,$3,$4,TRUE,TRUE,NOW())
+         ON CONFLICT (mp_account_id, supply_id) DO UPDATE SET
+           scan_dt=EXCLUDED.scan_dt, done=TRUE, orders_synced=TRUE, synced_at=NOW()`,
+        [tenantId, accountId, s.id, s.scanDt || null]
+      );
+      cached++;
+    }
+
+    if (!page.next || page.next === next) break; // WB больше нечего вернуть / курсор не двигается
+    next = page.next;
+  }
+
+  return { pages, scanned, newLookups, cached };
+}
+
+// =============================================================================
 // Автораспределение остатков по складам WB (собственные склады продавца, FBS)
 //
 // Идея: клиент хранит товар у нас на складе, а на WB зарегистрировано
@@ -1406,4 +1516,6 @@ module.exports = {
   reconcileStockForTenant,
   listAllWbAccountsForStatsSync,
   syncStatsRegionForAccount,
+  listAllWbAccountsForForeignSupplySync,
+  syncForeignSuppliesForAccount,
 };

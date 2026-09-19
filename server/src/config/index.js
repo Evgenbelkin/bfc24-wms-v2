@@ -150,6 +150,12 @@ const config = {
     // (не все сразу) - интервал ниже это тик, а не полный круг по всем
     // аккаунтам. 0 = выключено.
     statsRegionSyncIntervalMinutes: intEnv('WB_STATS_REGION_SYNC_INTERVAL_MINUTES', 2),
+    // Обход ЧУЖИХ поставок WB (wb.service.js::syncForeignSuppliesForAccount,
+    // server/src/jobs/wbForeignSupplySync.js) - кэш scanDt складов, которые
+    // обрабатывает не наш тенант, для отчёта "Эффективность складов WB".
+    // Только для аккаунтов с включённым модулем warehouse_insights - редкая
+    // фича, не нужно гонять чаще, чем раз в несколько минут. 0 = выключено.
+    foreignSupplySyncIntervalMinutes: intEnv('WB_FOREIGN_SUPPLY_SYNC_INTERVAL_MINUTES', 5),
     // Ограничить алерт конкретными тенантами (свои клиенты владельца
     // платформы), а не вообще всеми - иначе в алерт попадают и клиенты
     // ДРУГИХ фулфилментов, купивших WMS по подписке (например ещё не

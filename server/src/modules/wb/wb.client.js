@@ -434,6 +434,40 @@ async function getSupplyDetails(token, supplyId) {
   return data; // { id, done, createdAt, closedAt, scanDt, name, cargoType, destinationOfficeId }
 }
 
+/** Список ВСЕХ поставок аккаунта - не только тех, что создали МЫ (см. GET
+ *  /api/v3/supplies "Get a Supplies List" в доке dev.wildberries.ru).
+ *  Постранично (limit/next), до 1000 штук за раз, next=0 для первой
+ *  страницы. Добавлено 19.09.2026 - владелец хочет видеть скорость чужих
+ *  складов (других операторов на том же WB-аккаунте клиента) в отчёте
+ *  "Эффективность складов WB", а wb_accepted_at для чужих поставок нам
+ *  взять неоткуда (wms.shipments заполняется только для НАШИХ поставок,
+ *  см. addOrdersToSupply/wb.router.js) - зато этот метод отдаёт scanDt по
+ *  ЛЮБОЙ поставке аккаунта, независимо от того, кто её создал. См.
+ *  jobs/wbForeignSupplySync.js. */
+async function listSupplies(token, { limit = 1000, next = 0 } = {}) {
+  const data = await wbRequest({
+    token,
+    path: '/api/v3/supplies',
+    params: { limit, next },
+  });
+  return data; // { next, supplies: [{id, done, createdAt, closedAt, scanDt, name, cargoType, destinationOfficeId}] }
+}
+
+/** ID заказов, входящих в конкретную поставку (актуальный метод "Get Supply
+ *  Assembly Order IDs", /api/marketplace/v3/supplies/{id}/order-ids -
+ *  заменил Deprecated GET /api/v3/supplies/{id}/orders, который WB убирает).
+ *  Состав СВОИХ поставок мы и так знаем (сами их формируем) - этот метод
+ *  нужен только чтобы узнать состав ЧУЖОЙ поставки, найденной через
+ *  listSupplies() выше. */
+async function getSupplyOrderIds(token, supplyId) {
+  const fullId = normalizeShipmentCode(supplyId);
+  const data = await wbRequest({
+    token,
+    path: `/api/marketplace/v3/supplies/${encodeURIComponent(fullId)}/order-ids`,
+  });
+  return Array.isArray(data?.orderIds) ? data.orderIds : [];
+}
+
 /** Получить реальный статус приёмки заказов у WB (не наш локальный supplierStatus,
  *  а именно wbStatus — статус на стороне WB: 'waiting' значит подтверждён
  *  продавцом, но WB ещё физически не принял; 'sorted'/'sold'/и т.п. — уже принят
@@ -622,6 +656,7 @@ module.exports = {
   deliverSupply,
   fetchOrderStatuses,
   getSupplyDetails,
+  listSupplies, getSupplyOrderIds,
   fetchFbsStocks, updateFbsStocks,
   fetchReturnClaims,
   setOrderKiz,
