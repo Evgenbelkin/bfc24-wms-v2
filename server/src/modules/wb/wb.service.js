@@ -558,8 +558,11 @@ async function listAllWbAccountsForForeignSupplySync() {
  *  бэкфилл может растянуться на несколько тиков для больших аккаунтов, это
  *  нормально (аналогично другим инкрементальным WB-синкам в проекте). */
 async function syncForeignSuppliesForAccount({ tenantId, accountId, apiToken }) {
-  const MAX_PAGES = 10;       // до 10 000 поставок за вызов (limit=1000/страница)
-  const MAX_NEW_LOOKUPS = 30; // до 30 новых GET .../order-ids за вызов (это отдельные WB-запросы)
+  const MAX_PAGES = 10;        // до 10 000 поставок за вызов (limit=1000/страница)
+  const MAX_NEW_LOOKUPS = 100; // до 100 новых GET .../order-ids за вызов (владелец, 19.09.2026: с
+                                // 30 при большом бэкфилле (сотни неохваченных поставок) докачка
+                                // растягивалась на десятки тиков; wbClient и так ретраит 429 с
+                                // бэкоффом, так что поднять лимит безопасно, просто дольше идёт сам вызов)
 
   let next = 0;
   let pages = 0, scanned = 0, newLookups = 0, cached = 0;
