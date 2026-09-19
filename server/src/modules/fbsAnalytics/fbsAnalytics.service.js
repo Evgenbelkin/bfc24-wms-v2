@@ -1162,9 +1162,21 @@ function _newWarehouseAgg(warehouseId, warehouseName) {
 
 /** Добавить один "сырой" заказ (строку из SQL ниже) в аккумулятор группы.
  *  Использует ТЕ ЖЕ правила, что и остальная FBS-аналитика этого файла:
- *  classify() для sold/cancelled (см. computeSummary выше), и тот же приём
- *  "sorted_at считаем только среди заказов с accepted_at" из
- *  getProcessingSpeed() (фикс 14.09.2026, см. комментарий там). */
+ *  classify() для sold/cancelled (см. computeSummary выше).
+ *
+ *  avg_hours_to_wb и avg_hours_to_sorted считаются НЕЗАВИСИМО друг от друга
+ *  (фикс 19.09.2026, владелец: "мне важна информация как быстро работают
+ *  другие склады") - в отличие от getProcessingSpeed() выше в файле, где
+ *  sorted_at нарочно гейтился наличием accepted_at (фикс 14.09.2026) для
+ *  сопоставимости выборки В РАМКАХ ОДНОГО набора заказов (все свои). Здесь
+ *  же смысл отчёта - сравнивать МЕЖДУ складами, включая чужие (которые
+ *  обрабатывает не наш тенант): accepted_at для них НИКОГДА не появится
+ *  (wms.shipments заполняется только для поставок, которые формируем МЫ
+ *  сами через generate-wave, см. wb.router.js addOrdersToSupply) - но
+ *  sorted_at им ДОСТУПЕН, потому что берётся из account-wide опроса статуса
+ *  каждого заказа (refreshWbStatusesForAccount, не зависит от того, кто
+ *  физически собирает поставку). Если гейтить sorted_at по accepted_at,
+ *  чужие склады будут молча терять и эту метрику тоже, хотя данные есть. */
 function _addOrderToAgg(agg, row) {
   const bucket = classify(row);
   if (bucket === 'cancelled') agg.cancelled++;
@@ -1176,10 +1188,10 @@ function _addOrderToAgg(agg, row) {
   if (row.accepted_at) {
     const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
     agg.sumHoursToWb += hoursToWb; agg.cntToWb++;
-    if (row.sorted_at) {
-      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
-      if (hoursToSorted >= 0) { agg.sumHoursToSorted += hoursToSorted; agg.cntToSorted++; }
-    }
+  }
+  if (row.sorted_at) {
+    const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+    if (hoursToSorted >= 0) { agg.sumHoursToSorted += hoursToSorted; agg.cntToSorted++; }
   }
 }
 
@@ -1200,10 +1212,13 @@ function _finalizeAgg(agg, grandTotal) {
  *  владельца: "добавить сюда информацию по каждому складу по скорости
  *  доставки ... от заказа до ворот ВБ и от заказа до сортировки ВБ, и %
  *  выкупа ... буду видеть на сколько я превосхожу конкурентов по скорости".
- *  Метрики берутся ИЗ ТОЙ ЖЕ логики, что уже используется в
- *  getProcessingSpeed()/computeSummary() выше в этом файле - просто
- *  дополнительно разрезаны по (клиент × склад), а не только по клиенту
- *  целиком. */
+ *  classify()/% выкупа и avg_hours_to_sorted берутся из данных, доступных
+ *  по ВСЕМ складам аккаунта (см. _addOrderToAgg выше) - работают и для
+ *  чужих складов. avg_hours_to_wb - НЕТ: он в принципе доступен только там,
+ *  где поставку формировали МЫ сами (wms.shipments), поэтому для чужих
+ *  складов там будет "—" (владелец в курсе, обсуждали 19.09.2026; довести
+ *  эту метрику и до чужих складов - отдельная задача, требует ещё одной
+ *  интеграции с WB API на список/состав чужих поставок). */
 async function getWarehousePerformanceReport({ tenantId, dateFrom, dateTo }) {
   const r = await query(
     `SELECT ma.client_id, c.client_name, wo.warehouse_id,
