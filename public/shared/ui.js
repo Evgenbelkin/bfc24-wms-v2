@@ -779,8 +779,8 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
                       _context5.p = 3;
                       _t5 = _context5.v;
                     case 4:
-                      label = station ? "\u0420\u0430\u0431\u043E\u0447\u0435\u0435 \u043C\u0435\u0441\u0442\u043E: <b style=\"color:var(--text,#0f172a);\">".concat(escHtml(station.station_name), "</b>") : "\u0420\u0430\u0431\u043E\u0447\u0435\u0435 \u043C\u0435\u0441\u0442\u043E \u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u043E \u2014 \u043F\u0435\u0447\u0430\u0442\u044C \u043F\u043E\u0439\u0434\u0451\u0442 \u043F\u043E \u043E\u0431\u0449\u0435\u043C\u0443 \u043C\u0430\u0440\u0448\u0440\u0443\u0442\u0443 \u0441\u043A\u043B\u0430\u0434\u0430";
-                      _bar.innerHTML = "<span>".concat(label, "</span>") + "<button id=\"ws-banner-scan\" style=\"background:var(--accent,#0284c7);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-size:12px;cursor:pointer;\">".concat(station ? 'Сменить' : 'Выбрать', "</button>");
+                      label = station ? "<b style=\"color:var(--text,#0f172a);\">".concat(escHtml(station.station_name), "</b>") : "Место не выбрано";
+                      _bar.innerHTML = "<span style=\"flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;\">".concat(label, "</span>") + "<button id=\"ws-banner-scan\" style=\"flex-shrink:0;background:var(--accent,#0284c7);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-weight:700;font-size:11px;cursor:pointer;\">".concat(station ? 'Сменить' : 'Выбрать', "</button>");
                       document.getElementById('ws-banner-scan').addEventListener('click', scan);
                     case 5:
                       return _context5.a(2);
@@ -814,7 +814,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
           case 3:
             _bar = document.createElement('div');
             _bar.id = 'workstation-banner';
-            _bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;' + 'background:var(--card2,#f1f5f9);border:1px dashed var(--border,#e2e8f0);border-radius:10px;' + 'padding:8px 12px;margin:10px 0;font-size:13px;color:var(--muted,#64748b);flex-wrap:wrap;';
+            _bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;' + 'background:var(--card2,#f1f5f9);border:1px dashed var(--border,#e2e8f0);border-radius:8px;' + 'padding:5px 10px;margin:6px 0;font-size:12px;color:var(--muted,#64748b);flex-wrap:nowrap;';
             header.insertAdjacentElement('afterend', _bar);
             _context6.n = 4;
             return render();

@@ -32,7 +32,9 @@
        обтекал её отдельными блоками с большими отступами - теперь один
        компактный ряд. */
     .item-row{display:flex;align-items:center;gap:8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;margin-bottom:8px;}
-    .task-preview{width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0;}
+    .task-preview{width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:pointer;}
+    .image-zoom-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.8);z-index:600;display:flex;align-items:center;justify-content:center;padding:20px;}
+    .image-zoom-overlay img{max-width:90vw;max-height:85vh;border-radius:12px;object-fit:contain;}
     .item-row .item-text{min-width:0;flex:1;}
     .task-barcode{font-size:14px;font-weight:800;color:#0284c7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .task-name{font-size:11px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -120,7 +122,7 @@
       </div>
 
       <div class="item-row">
-        <img id="task-preview" class="task-preview" src="" onerror="this.style.display='none'"/>
+        <img id="task-preview" class="task-preview" src="" onerror="this.style.display='none'" onclick="openImagePreview()"/>
         <div class="item-text">
           <div class="task-barcode" id="task-barcode">—</div>
           <div class="task-name" id="task-name">—</div>
@@ -838,6 +840,17 @@ function _confirmCloseWave() {
     }, _callee0, null, [[1, 4]]);
   }));
   return _confirmCloseWave.apply(this, arguments);
+}
+// Владелец, 19.09.2026: "если нужно увеличить картинку то нажав на неё
+// она увеличится" - тап по маленькому превью открывает фото крупно на весь
+// экран, повторный тап закрывает.
+function openImagePreview() {
+  if (!currentTask || !currentTask.preview_url) return;
+  document.getElementById('modal-root').innerHTML =
+    '<div class="image-zoom-overlay" onclick="closeImagePreview()"><img src="' + UI.escHtml(currentTask.preview_url) + '"/></div>';
+}
+function closeImagePreview() {
+  document.getElementById('modal-root').innerHTML = '';
 }
 function openCameraScan() {
   if (!currentTask) {
