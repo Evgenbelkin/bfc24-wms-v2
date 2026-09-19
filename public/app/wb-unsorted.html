@@ -23,6 +23,8 @@
     .order-row .main{flex:1;min-width:0;}
     .order-row .title{font-weight:600;}
     .order-row .sub{font-size:12px;color:var(--muted);}
+    .own-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;background:rgba(22,163,74,.15);color:#16a34a;vertical-align:middle;}
+    .filter-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;}
   </style>
 </head>
 <body>
@@ -42,7 +44,8 @@
     выше, только для сверки глазами).
     По всем WB-аккаунтам сразу за последние 7 дней — чтобы не искать вручную по каждой отгрузке. Статусы синхронизируются с WB
     автоматически раз в ~30 минут; кнопка «Обновить статусы из WB» запрашивает их у WB прямо сейчас, если нужна
-    самая свежая картина.
+    самая свежая картина. Поставки со значком «✓ Мой» — те, что физически отгружали вы; остальные — другой
+    фулфилмент-оператор на том же WB-аккаунте клиента (действий от вас не требуют, показаны для полноты картины).
   </p>
   <p style="font-size:12px;color:var(--muted);margin:-8px 0 14px;" id="sync-note"></p>
 
@@ -63,6 +66,11 @@
 
   <div class="card">
     <div class="card-title">Поставки</div>
+    <div class="filter-toolbar">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="filter-own" onchange="onFilterChange()"/> Только мои (которые я отгружаю)
+      </label>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -121,23 +129,49 @@
       return s.mp_account_id + ':' + s.supply_code;
     }
 
+    // Владелец, 19.09.2026: "тут надо либо убрать все склады которые не мои
+    // либо пометить мои склады значком, а то тут не понятно" - чужие поставки
+    // (другой фулфилмент-оператор на том же WB-аккаунте клиента) не требуют
+    // никаких действий от нашей диспетчерской, но раньше выглядели как
+    // "наши" проблемы. По умолчанию показываем всё со значком "✓ Мой", плюс
+    // переключатель "Только мои" для фильтрации.
+    function visibleSupplies() {
+      var onlyOwn = document.getElementById('filter-own').checked;
+      return onlyOwn ? lastSupplies.filter(function (s) { return s.is_own; }) : lastSupplies;
+    }
+
+    function updateTotals(list) {
+      var sumNotShipped = 0, sumWaitingSort = 0;
+      list.forEach(function (s) { sumNotShipped += s.not_shipped || 0; sumWaitingSort += s.waiting_sort || 0; });
+      document.getElementById('sum-supplies').textContent = fmtNum(list.length);
+      document.getElementById('sum-not-shipped').textContent = fmtNum(sumNotShipped);
+      document.getElementById('sum-waiting-sort').textContent = fmtNum(sumWaitingSort);
+    }
+
+    function onFilterChange() {
+      render();
+    }
+
     function render() {
       var tbody = document.getElementById('rows');
       var empty = document.getElementById('empty');
-      if (!lastSupplies.length) {
+      var supplies = visibleSupplies();
+      updateTotals(supplies);
+      if (!supplies.length) {
         tbody.innerHTML = '';
         empty.style.display = 'block';
         document.getElementById('detail-card').style.display = 'none';
         return;
       }
       empty.style.display = 'none';
-      tbody.innerHTML = lastSupplies.map(function (s) {
+      tbody.innerHTML = supplies.map(function (s) {
         var key = supplyKey(s);
         var activeClass = key === activeSupplyKey ? ' active' : '';
         var scannedCell = s.wb_accepted_at
           ? '<span class="pill" style="background:rgba(22,163,74,.15);color:#16a34a;">Да, ' + fmtDate(s.wb_accepted_at) + '</span>'
           : '<span class="pill pill-red">Нет</span>';
-        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + (s.not_shipped ? '<span class="pill pill-red">' + fmtNum(s.not_shipped) + '</span>' : '—') + '</td>\n          <td>' + scannedCell + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
+        var ownBadge = s.is_own ? '<span class="own-badge">✓ Мой</span>' : '';
+        return '\n        <tr class="supply-row' + activeClass + '" onclick="selectSupply(\'' + key + '\')">\n          <td>' + UI.escHtml(s.client_name || '—') + '<div class="sub" style="font-size:11px;color:var(--muted);">' + UI.escHtml(s.account_name || '') + '</div></td>\n          <td>' + UI.escHtml(s.supply_code) + '</td>\n          <td>' + UI.escHtml(s.warehouse_name || '—') + ownBadge + '</td>\n          <td>' + fmtNum(s.total_orders) + '</td>\n          <td>' + (s.waiting_sort ? '<span class="pill pill-amber">' + fmtNum(s.waiting_sort) + '</span>' : '—') + '</td>\n          <td>' + (s.not_shipped ? '<span class="pill pill-red">' + fmtNum(s.not_shipped) + '</span>' : '—') + '</td>\n          <td>' + scannedCell + '</td>\n          <td>' + fmtDate(s.earliest_order_at) + '</td>\n        </tr>\n      ';
       }).join('');
     }
 
@@ -229,11 +263,6 @@
       try {
         var res = await window.API.fbsAnalytics.unsortedReport();
         lastSupplies = res.supplies || [];
-        var sumNotShipped = 0, sumWaitingSort = 0;
-        lastSupplies.forEach(function (s) { sumNotShipped += s.not_shipped || 0; sumWaitingSort += s.waiting_sort || 0; });
-        document.getElementById('sum-supplies').textContent = fmtNum(lastSupplies.length);
-        document.getElementById('sum-not-shipped').textContent = fmtNum(sumNotShipped);
-        document.getElementById('sum-waiting-sort').textContent = fmtNum(sumWaitingSort);
         render();
       } catch (e) {
         UI.notify.err(e.message || 'Ошибка загрузки отчёта');

@@ -579,6 +579,13 @@ async function getUnsortedSuppliesReport({ tenantId }) {
         // SHIPMENT_NOT_YET_SHIPPED_STATUSES), но полезен глазами дежурного -
         // подтверждает, что поставка реально доехала.
         wb_accepted_at: row.wb_accepted_at || null,
+        // Своя поставка (мы физически её отгружали) или чужая (другой
+        // фулфилмент-оператор на том же WB-аккаунте клиента)? wms.shipments
+        // заводится ТОЛЬКО для поставок, которые прошли через наш
+        // addOrdersToSupply/confirmShipment - надёжный признак "своя"
+        // (владелец, 19.09.2026: "тут не понятно, вот этот клиент, эти
+        // склады я не отгружаю" - чужие поставки путали с реальными проблемами).
+        is_own: row.shipment_status != null,
       });
     }
     const agg = bySupply.get(key);
