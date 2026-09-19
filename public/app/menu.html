@@ -49,6 +49,11 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
 if (!UI.requireAuth()) throw new Error('Not logged in');
 var user = window.API.getUser();
 var userRoles = user && user.roles && user.roles.length ? user.roles : [user && user.role];
+// Список включённых у тенанта модулей (см. auth.service.js::loginUser) -
+// владелец, 19.09.2026: "не хочу засорять меню всякими фичами а то кому-то
+// может это не нужно". Тайл с полем module показывается только если этот
+// модуль есть в списке; тайлы без поля module ведут себя как раньше.
+var userModules = user && user.modules || [];
 if (userRoles.includes('seller')) window.location.href = '/seller/menu.html';
 document.getElementById('user-name').textContent = user && user.username || '—';
 document.getElementById('user-role').textContent = userRoles.join(' + ') || '—';
@@ -206,6 +211,16 @@ var ALL_TILES = [{
   icon: 'alert',
   label: 'Не отсортировано WB',
   roles: ['tenant_admin', 'supervisor']
+}, {
+  // Опциональная фича (19.09.2026) - включается точечно по тенантам через
+  // platform/dashboard.html (module_code='warehouse_insights'), поэтому у
+  // тенантов без этого модуля плитка просто не рендерится (см. фильтр tiles
+  // ниже) - "не хочу засорять меню всякими фичами".
+  href: 'warehouse-performance.html',
+  icon: 'trending',
+  label: 'Эффективность складов WB',
+  roles: ['tenant_admin', 'supervisor'],
+  module: 'warehouse_insights'
 },
 // region-delivery.html (30.08.2026): перенесено вкладкой "Время доставки"
 // внутрь fbs-analytics.html - отдельная плитка меню больше не нужна.
@@ -301,11 +316,17 @@ var ALL_TILES = [{
   roles: ['tenant_admin', 'supervisor']
 }];
 
-// Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя
+// Мульти-роли: показываем тайл, если пересекается хоть одна роль пользователя.
+// Плюс: если у тайла указан module - показываем только когда этот модуль
+// реально включён тенанту (см. userModules выше) - даже tenant_admin его не
+// видит, пока платформа не подключила фичу (в отличие от ролей, где
+// tenant_admin видит всё).
 var tiles = ALL_TILES.filter(function (t) {
-  return !t.roles || userRoles.includes('tenant_admin') || t.roles.some(function (r) {
+  var roleOk = !t.roles || userRoles.includes('tenant_admin') || t.roles.some(function (r) {
     return userRoles.includes(r);
   });
+  var moduleOk = !t.module || userModules.includes(t.module);
+  return roleOk && moduleOk;
 });
 document.getElementById('tiles').innerHTML = tiles.map(function (t) {
   return "\n      <a class=\"tile\" href=\"/app/".concat(t.href, "\">\n        <div class=\"icon\">").concat(icon(t.icon), "</div>\n        <div class=\"label\">").concat(UI.escHtml(t.label), "</div>\n      </a>\n    ");

@@ -163,6 +163,23 @@ router.get('/items-report', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/** GET /fbs-analytics/warehouse-performance?from=&to= — отчёт "Эффективность
+ *  складов WB": по каждому клиенту тенанта - заказы в разрезе складов WB
+ *  (шт и %), плюс общий рейтинг складов по всем клиентам сразу (владелец,
+ *  19.09.2026: "хочу видеть какие склады дают больше заказов и их
+ *  рекомендовать другим клиентам"). Staff-only И требует опциональный модуль
+ *  warehouse_insights (см. миграцию 067) - владелец явно попросил не
+ *  засорять меню фичами, которые не всем тенантам нужны. */
+router.get('/warehouse-performance', requireModule('warehouse_insights'), requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo } = parseDateRange(req.query);
+    const result = await fbsAnalyticsService.getWarehousePerformanceReport({
+      tenantId: req.user.tenantId, dateFrom, dateTo,
+    });
+    res.json({ ok: true, ...result });
+  } catch (e) { next(e); }
+});
+
 /** POST /fbs-analytics/unsorted-report/stickers-export { order_row_ids }  —
  *  печать стикеров WB выбранных "зависших" заказов одной HTML-страницей
  *  (id — это wms.wb_orders.id, не wb_order_id самого WB). */

@@ -185,4 +185,5 @@ module.exports = {
   validateClientBelongsToTenant,
   resolveClientScope,
   invalidateTenantCache,
+  loadTenant,
 };

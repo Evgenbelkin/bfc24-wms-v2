@@ -1129,6 +1129,99 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
   };
 }
 
+// =============================================================================
+// Отчёт "Эффективность складов WB" (19.09.2026, идея владельца, модуль
+// warehouse_insights - см. миграцию 067): "хочу отчет который будет
+// показывать по каждому клиенту сколько заказов на каждый склад и % ...
+// хочу видеть какие склады дают больше заказов и их рекомендовать другим
+// клиентам".
+//
+// В отличие от клиентского getClientItemsReport выше, здесь СОЗНАТЕЛЬНО НЕТ
+// фильтра MY_WAREHOUSE_ONLY_SQL - цель ровно противоположная: увидеть ВСЕ
+// склады, которыми пользуются клиенты тенанта (включая те, что сейчас
+// обслуживает другой ФФ или вообще никто не обрабатывает у нас), чтобы
+// заметить хорошо работающий склад и посоветовать его другим клиентам,
+// которые его ещё не используют. Staff-only отчёт (персонал видит сразу
+// всех клиентов тенанта) - не путать с клиентским отчётом, который всегда
+// per-client.
+// =============================================================================
+
+async function getWarehousePerformanceReport({ tenantId, dateFrom, dateTo }) {
+  const r = await query(
+    `SELECT ma.client_id, c.client_name, wo.warehouse_id,
+            COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id) AS warehouse_name,
+            COUNT(*)::int AS qty_ordered
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     JOIN wms.clients c ON c.id = ma.client_id
+     LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
+     WHERE wo.tenant_id=$1
+       AND wo.created_at >= $2 AND wo.created_at < $3
+       AND wo.status <> 'cancel'
+       AND (wo.wb_status IS NULL OR wo.wb_status NOT IN ('canceled','canceled_by_client','declined_by_client'))
+     GROUP BY ma.client_id, c.client_name, wo.warehouse_id, COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id)
+     ORDER BY c.client_name, qty_ordered DESC`,
+    [tenantId, dateFrom, dateTo]
+  );
+
+  const byClient = new Map();
+  const overallByWarehouse = new Map(); // warehouse_id -> agg (по всем клиентам сразу - тот самый "рейтинг складов")
+  let grandTotal = 0;
+
+  for (const row of r.rows) {
+    const qty = Number(row.qty_ordered);
+    grandTotal += qty;
+
+    if (!byClient.has(row.client_id)) {
+      byClient.set(row.client_id, { client_id: row.client_id, client_name: row.client_name, total_orders: 0, warehouses: [] });
+    }
+    const clientAgg = byClient.get(row.client_id);
+    clientAgg.total_orders += qty;
+    clientAgg.warehouses.push({ warehouse_id: row.warehouse_id, warehouse_name: row.warehouse_name, qty_ordered: qty });
+
+    if (!overallByWarehouse.has(row.warehouse_id)) {
+      overallByWarehouse.set(row.warehouse_id, { warehouse_id: row.warehouse_id, warehouse_name: row.warehouse_name, qty_ordered: 0, clientIds: new Set() });
+    }
+    const whAgg = overallByWarehouse.get(row.warehouse_id);
+    whAgg.qty_ordered += qty;
+    whAgg.clientIds.add(row.client_id);
+  }
+
+  const clients = [...byClient.values()]
+    .map((c) => ({
+      client_id: c.client_id,
+      client_name: c.client_name,
+      total_orders: c.total_orders,
+      warehouses: c.warehouses
+        .map((w) => ({ ...w, pct: c.total_orders > 0 ? Math.round((w.qty_ordered / c.total_orders) * 1000) / 10 : 0 }))
+        .sort((a, b) => b.qty_ordered - a.qty_ordered),
+    }))
+    .sort((a, b) => b.total_orders - a.total_orders);
+
+  // "Рейтинг складов" по всем клиентам сразу - именно это владелец хочет
+  // использовать для рекомендаций ("какие склады дают больше заказов").
+  // clients_count - у скольких РАЗНЫХ клиентов тенанта вообще есть заказы с
+  // этого склада, чтобы сразу было видно "популярный, но пока мало у кого
+  // подключён" склад - лучший кандидат для рекомендации остальным.
+  const overall = [...overallByWarehouse.values()]
+    .map((w) => ({
+      warehouse_id: w.warehouse_id,
+      warehouse_name: w.warehouse_name,
+      qty_ordered: w.qty_ordered,
+      clients_count: w.clientIds.size,
+      pct: grandTotal > 0 ? Math.round((w.qty_ordered / grandTotal) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.qty_ordered - a.qty_ordered);
+
+  return {
+    period: { from: dateFrom, to: dateTo },
+    grand_total: grandTotal,
+    total_clients: byClient.size,
+    overall,
+    clients,
+  };
+}
+
 module.exports = {
   refreshWbStatusesForAccount,
   refreshWbStatusesForTenant,
@@ -1142,4 +1235,5 @@ module.exports = {
   getUnsortedSupplyOrders,
   exportUnsortedStickers,
   getClientItemsReport,
+  getWarehousePerformanceReport,
 };

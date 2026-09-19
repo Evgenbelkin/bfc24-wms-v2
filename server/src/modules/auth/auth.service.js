@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { query, transaction } = require('../../config/database');
 const { signUserToken, signRefreshToken, signPlatformToken } = require('../../middleware/auth');
+const { loadTenant } = require('../../middleware/tenant');
 const {
   AuthError,
   ValidationError,
@@ -114,6 +115,22 @@ async function loginUser({ username, password, ip, userAgent }) {
 
   logger.info({ userId: user.id, tenantId: user.tenant_id, role: user.role }, 'User logged in');
 
+  // Список включённых модулей тенанта - фронтенду нужен, чтобы прятать из
+  // меню плитки фич, которые тенанту не подключены (19.09.2026, владелец:
+  // "не хочу засорять меню всякими фичами а то кому-то может это не нужно").
+  // Тот же набор, что requireModule() проверяет на бэкенде - здесь просто
+  // отдаём его наружу, ничего нового не считаем. Т.к. это кладётся в
+  // localStorage при логине, включение/выключение модуля тенанту применится
+  // у уже залогиненных пользователей только после их следующего входа - это
+  // тот же компромисс, что и с ролями (тоже меняются только при релогине).
+  let modules = [];
+  try {
+    const { modules: modulesSet } = await loadTenant(user.tenant_id);
+    modules = [...modulesSet];
+  } catch (e) {
+    logger.warn({ err: e, tenantId: user.tenant_id }, 'loginUser: failed to load tenant modules, defaulting to []');
+  }
+
   return {
     accessToken,
     refreshToken: rawRefreshToken,
@@ -126,6 +143,7 @@ async function loginUser({ username, password, ip, userAgent }) {
       role:        user.role,
       roles,
       companyName: user.company_name,
+      modules,
     },
   };
 }

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+  <title>Эффективность складов WB — BFC24 WMS v2</title>
+  <link rel="stylesheet" href="/shared/theme.css"/>
+  <style>
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}
+    .toolbar input[type=date]{padding:9px 10px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;}
+    .preset{padding:8px 12px;border-radius:10px;border:2px solid var(--border);background:var(--card2);color:var(--text);font-size:13px;cursor:pointer;}
+    .preset.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+    .total-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .total-card{flex:1;min-width:160px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+    .total-card .num{font-size:26px;font-weight:800;}
+    .total-card .label{font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:4px;}
+    .pct-track{background:var(--card2);border-radius:6px;height:14px;overflow:hidden;min-width:80px;}
+    .pct-fill{height:100%;background:linear-gradient(90deg,var(--accent2,#818cf8),var(--accent,#6366f1));border-radius:6px;}
+    .pct-row{display:flex;align-items:center;gap:8px;}
+    .pct-num{font-size:12px;font-weight:700;min-width:42px;text-align:right;}
+    select#client-select{padding:9px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;min-width:240px;}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <a href="/app/menu.html" class="btn-sm btn-back">← Меню</a>
+    <h1><svg class="i" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg> Эффективность складов WB</h1>
+  </div>
+
+  <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
+    Сколько заказов идёт на каждый склад WB — по всем клиентам сразу и по каждому клиенту отдельно. Используйте общий
+    рейтинг, чтобы найти хорошо работающие склады и порекомендовать их клиентам, которые их ещё не используют.
+  </p>
+
+  <div class="toolbar" id="presets">
+    <button class="preset" data-days="7" onclick="setPreset(7)">7 дней</button>
+    <button class="preset active" data-days="30" onclick="setPreset(30)">30 дней</button>
+    <button class="preset" data-days="90" onclick="setPreset(90)">90 дней</button>
+    <input type="date" id="f-from"/>
+    <span style="color:var(--muted);">—</span>
+    <input type="date" id="f-to"/>
+    <button class="btn-sm btn-back" onclick="loadCustomRange()">Показать</button>
+  </div>
+
+  <div class="refresh-note" id="meta" style="margin-bottom:10px;">—</div>
+
+  <div class="total-row">
+    <div class="total-card">
+      <div class="num" id="k-total">—</div>
+      <div class="label">Заказов всего</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="k-clients">—</div>
+      <div class="label">Клиентов с заказами</div>
+    </div>
+    <div class="total-card">
+      <div class="num" id="k-warehouses">—</div>
+      <div class="label">Складов WB задействовано</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Рейтинг складов — все клиенты</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Склад WB</th>
+            <th>Заказы, шт</th>
+            <th>% от всех заказов</th>
+            <th>Клиентов пользуется</th>
+          </tr>
+        </thead>
+        <tbody id="overall-rows"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="overall-empty" style="display:none;">Нет данных за период.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Разбивка по клиенту</div>
+    <div class="toolbar">
+      <select id="client-select" onchange="renderClient()"></select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Склад WB</th>
+            <th>Заказы, шт</th>
+            <th>% от заказов клиента</th>
+          </tr>
+        </thead>
+        <tbody id="client-rows"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="client-empty" style="display:none;">Выберите клиента.</div>
+  </div>
+
+  <script src="/shared/api.js"></script>
+  <script src="/shared/ui.js"></script>
+  <script>
+    if (!UI.requireAuth()) throw new Error('Not logged in');
+    if (!UI.requireRole(['tenant_admin', 'supervisor'])) {
+      window.location.href = '/app/menu.html';
+    }
+
+    var lastResult = null;
+
+    function fmtNum(n) {
+      return (Number(n) || 0).toLocaleString('ru-RU');
+    }
+    function fmtPct(p) {
+      return (Number(p) || 0).toFixed(1) + '%';
+    }
+    function isoDate(d) {
+      return d.toISOString().slice(0, 10);
+    }
+
+    function setPreset(days) {
+      document.querySelectorAll('#presets .preset').forEach(function (b) {
+        b.classList.toggle('active', Number(b.dataset.days) === days);
+      });
+      var to = new Date();
+      var from = new Date(to.getTime() - days * 86400000);
+      document.getElementById('f-from').value = isoDate(from);
+      document.getElementById('f-to').value = isoDate(to);
+      load();
+    }
+    function loadCustomRange() {
+      document.querySelectorAll('#presets .preset').forEach(function (b) { b.classList.remove('active'); });
+      load();
+    }
+
+    function renderOverall(overall) {
+      var tbody = document.getElementById('overall-rows');
+      var empty = document.getElementById('overall-empty');
+      if (!overall || !overall.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      tbody.innerHTML = overall.map(function (w) {
+        return '<tr>'
+          + '<td>' + UI.escHtml(w.warehouse_name) + '</td>'
+          + '<td>' + fmtNum(w.qty_ordered) + '</td>'
+          + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
+          + '<td>' + fmtNum(w.clients_count) + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    function fillClientSelect(clients) {
+      var sel = document.getElementById('client-select');
+      var prev = sel.value;
+      sel.innerHTML = clients.map(function (c) {
+        return '<option value="' + c.client_id + '">' + UI.escHtml(c.client_name) + ' (' + fmtNum(c.total_orders) + ' зак.)</option>';
+      }).join('');
+      if (prev && clients.some(function (c) { return String(c.client_id) === prev; })) {
+        sel.value = prev;
+      }
+    }
+
+    function renderClient() {
+      var tbody = document.getElementById('client-rows');
+      var empty = document.getElementById('client-empty');
+      if (!lastResult || !lastResult.clients.length) {
+        tbody.innerHTML = '';
+        empty.textContent = 'Нет данных за период.';
+        empty.style.display = 'block';
+        return;
+      }
+      var clientId = Number(document.getElementById('client-select').value);
+      var client = lastResult.clients.find(function (c) { return c.client_id === clientId; });
+      if (!client) {
+        tbody.innerHTML = '';
+        empty.textContent = 'Выберите клиента.';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      tbody.innerHTML = client.warehouses.map(function (w) {
+        return '<tr>'
+          + '<td>' + UI.escHtml(w.warehouse_name) + '</td>'
+          + '<td>' + fmtNum(w.qty_ordered) + '</td>'
+          + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    async function load() {
+      var from = document.getElementById('f-from').value;
+      var to = document.getElementById('f-to').value;
+      if (!from || !to) return;
+      try {
+        var res = await window.API.fbsAnalytics.warehousePerformance({ from: from, to: to });
+        lastResult = res;
+        document.getElementById('meta').textContent = 'Период: ' + from + ' — ' + to;
+        document.getElementById('k-total').textContent = fmtNum(res.grand_total);
+        document.getElementById('k-clients').textContent = fmtNum(res.total_clients);
+        document.getElementById('k-warehouses').textContent = fmtNum(res.overall.length);
+        renderOverall(res.overall);
+        fillClientSelect(res.clients);
+        renderClient();
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка загрузки отчёта');
+      }
+    }
+
+    setPreset(30);
+  </script>
+</body>
+</html>

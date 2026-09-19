@@ -1057,6 +1057,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     unsortedStickersExport: function unsortedStickersExport(orderRowIds) {
       return post('/fbs-analytics/unsorted-report/stickers-export', { order_row_ids: orderRowIds });
+    },
+    warehousePerformance: function warehousePerformance(p) {
+      return _get('/fbs-analytics/warehouse-performance', p);
     }
   };
 
