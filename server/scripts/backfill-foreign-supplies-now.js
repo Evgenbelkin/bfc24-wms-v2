@@ -56,7 +56,7 @@ async function main() {
 
     console.log('\nГотово. Результат:');
     console.log(JSON.stringify(result, null, 2));
-    console.log('\nЕсли newLookups достиг лимита (30) - значит, за один запуск докачали не всё,');
+    console.log('\nЕсли newLookups достиг лимита (100) - значит, за один запуск докачали не всё,');
     console.log('запустите скрипт ещё раз через минуту-другую, чтобы докачать остаток.');
   } finally {
     client.release();
@@ -64,7 +64,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error('Ошибка:', e);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0)) // wb.service.js держит открытым свой (общий) пул к БД -
+  .catch((e) => {              // без явного exit() процесс никогда бы сам не завершился
+    console.error('Ошибка:', e);
+    process.exit(1);
+  });
