@@ -22,6 +22,17 @@
     .own-badge{display:inline-flex;align-items:center;gap:3px;margin-left:6px;padding:1px 7px;border-radius:8px;background:rgba(34,197,94,.15);color:#16a34a;font-size:11px;font-weight:700;white-space:nowrap;vertical-align:middle;}
     .own-badge svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;}
     .wh-clients{color:var(--muted);font-size:12px;}
+    .wh-cell{cursor:pointer;}
+    .wh-chevron{width:12px;height:12px;stroke:var(--muted);fill:none;stroke-width:2.5;transition:transform .15s;vertical-align:middle;margin-right:5px;}
+    .wh-chevron.open{transform:rotate(90deg);}
+    .region-tr td{padding:0;border:none;}
+    .region-detail{display:none;padding:10px 14px 14px 28px;background:var(--card2);}
+    .region-detail.open{display:block;}
+    .region-mini-table{width:100%;border-collapse:collapse;font-size:12px;}
+    .region-mini-table th{text-align:left;color:var(--muted);font-weight:600;padding:3px 8px;}
+    .region-mini-table td{padding:3px 8px;border-top:1px solid var(--border);}
+    .region-loading,.region-empty{font-size:12px;color:var(--muted);}
+    .region-more{font-size:11px;color:var(--muted);margin-top:4px;}
   </style>
 </head>
 <body>
@@ -33,6 +44,7 @@
   <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">
     Сколько заказов идёт на каждый склад WB — по всем клиентам сразу и по каждому клиенту отдельно. Используйте общий
     рейтинг, чтобы найти хорошо работающие склады и порекомендовать их клиентам, которые их ещё не используют.
+    Кликните по названию склада, чтобы посмотреть время доставки до покупателя по регионам.
   </p>
 
   <div class="toolbar" id="presets">
@@ -146,6 +158,69 @@
       return '<span class="own-badge" title="Вы обрабатываете этот склад сами"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Мой</span>';
     }
 
+    // Кэш ответов "время доставки по регионам" на текущий период, чтобы не
+    // дёргать API повторно при повторном сворачивании/разворачивании одного
+    // и того же склада. Сбрасывается в load() при смене периода.
+    var regionCache = {};
+
+    function renderRegionRows(rows) {
+      if (!rows || !rows.length) {
+        return '<div class="region-empty">Нет данных о доставке до покупателя за этот период (заказы ещё не доехали до ПВЗ).</div>';
+      }
+      var sorted = rows.slice().sort(function (a, b) { return b.orders - a.orders; });
+      var multiClient = new Set(sorted.map(function (r) { return r.client_id; })).size > 1;
+      var top = sorted.slice(0, 8);
+      var html = '<table class="region-mini-table"><thead><tr>'
+        + '<th>Регион</th>' + (multiClient ? '<th>Клиент</th>' : '') + '<th>Заказов</th><th>До покупателя</th><th>% выкупа</th>'
+        + '</tr></thead><tbody>'
+        + top.map(function (r) {
+          return '<tr>'
+            + '<td>' + UI.escHtml(r.region_name || '—') + '</td>'
+            + (multiClient ? '<td>' + UI.escHtml(r.client_name || '—') + '</td>' : '')
+            + '<td>' + fmtNum(r.orders) + '</td>'
+            + '<td>' + fmtHours(r.avg_hours_from_order) + '</td>'
+            + '<td>' + fmtPurchase(r.purchase_rate) + '</td>'
+            + '</tr>';
+        }).join('')
+        + '</tbody></table>';
+      if (sorted.length > top.length) {
+        html += '<div class="region-more">и ещё ' + (sorted.length - top.length) + ' регион(ов)</div>';
+      }
+      return html;
+    }
+
+    // Раскрывающийся блок по клику на склад (владелец 19.09.2026: "хочу
+    // данные по времени доставки в регионы куда-то сюда" - решили сделать
+    // именно так, чтобы не перегружать основные таблицы лишними колонками).
+    // uid ('overall'/'client') нужен, чтобы у одного и того же warehouse_id
+    // были разные DOM-id в двух таблицах на странице.
+    async function toggleRegions(whId, uid) {
+      var contId = 'region-' + uid + '-' + whId;
+      var chevId = 'chev-' + uid + '-' + whId;
+      var el = document.getElementById(contId);
+      var chev = document.getElementById(chevId);
+      if (!el) return;
+      var open = el.classList.toggle('open');
+      if (chev) chev.classList.toggle('open', open);
+      if (!open || el.dataset.loaded) return;
+
+      el.innerHTML = '<div class="region-loading">Загрузка...</div>';
+      try {
+        var rows = regionCache[whId];
+        if (!rows) {
+          var from = document.getElementById('f-from').value;
+          var to = document.getElementById('f-to').value;
+          var res = await window.API.fbsAnalytics.regionDelivery({ from: from, to: to, warehouse_id: whId });
+          rows = res.rows || [];
+          regionCache[whId] = rows;
+        }
+        el.innerHTML = renderRegionRows(rows);
+        el.dataset.loaded = '1';
+      } catch (e) {
+        el.innerHTML = '<div class="region-empty">Ошибка загрузки: ' + UI.escHtml(e.message || '') + '</div>';
+      }
+    }
+
     function setPreset(days) {
       document.querySelectorAll('#presets .preset').forEach(function (b) {
         b.classList.toggle('active', Number(b.dataset.days) === days);
@@ -173,7 +248,9 @@
       tbody.innerHTML = overall.map(function (w) {
         var names = Array.isArray(w.client_names) ? w.client_names.filter(Boolean) : [];
         return '<tr>'
-          + '<td>' + UI.escHtml(w.warehouse_name) + ownBadge(w.is_own) + '</td>'
+          + '<td class="wh-cell" onclick="toggleRegions(' + w.warehouse_id + ',\'overall\')">'
+          + '<svg class="wh-chevron" id="chev-overall-' + w.warehouse_id + '" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>'
+          + UI.escHtml(w.warehouse_name) + ownBadge(w.is_own) + '</td>'
           + '<td class="wh-clients">' + UI.escHtml(names.join(', ') || '—') + '</td>'
           + '<td>' + fmtNum(w.qty_ordered) + '</td>'
           + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
@@ -181,7 +258,8 @@
           + '<td>' + fmtHours(w.avg_hours_to_wb) + '</td>'
           + '<td>' + fmtHours(w.avg_hours_to_sorted) + '</td>'
           + '<td>' + fmtPurchase(w.purchase_rate) + '</td>'
-          + '</tr>';
+          + '</tr>'
+          + '<tr class="region-tr"><td colspan="8"><div class="region-detail" id="region-overall-' + w.warehouse_id + '"></div></td></tr>';
       }).join('');
     }
 
@@ -216,13 +294,16 @@
       empty.style.display = 'none';
       tbody.innerHTML = client.warehouses.map(function (w) {
         return '<tr>'
-          + '<td>' + UI.escHtml(w.warehouse_name) + ownBadge(w.is_own) + '</td>'
+          + '<td class="wh-cell" onclick="toggleRegions(' + w.warehouse_id + ',\'client\')">'
+          + '<svg class="wh-chevron" id="chev-client-' + w.warehouse_id + '" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>'
+          + UI.escHtml(w.warehouse_name) + ownBadge(w.is_own) + '</td>'
           + '<td>' + fmtNum(w.qty_ordered) + '</td>'
           + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
           + '<td>' + fmtHours(w.avg_hours_to_wb) + '</td>'
           + '<td>' + fmtHours(w.avg_hours_to_sorted) + '</td>'
           + '<td>' + fmtPurchase(w.purchase_rate) + '</td>'
-          + '</tr>';
+          + '</tr>'
+          + '<tr class="region-tr"><td colspan="6"><div class="region-detail" id="region-client-' + w.warehouse_id + '"></div></td></tr>';
       }).join('');
     }
 
@@ -230,6 +311,7 @@
       var from = document.getElementById('f-from').value;
       var to = document.getElementById('f-to').value;
       if (!from || !to) return;
+      regionCache = {};
       try {
         var res = await window.API.fbsAnalytics.warehousePerformance({ from: from, to: to });
         lastResult = res;

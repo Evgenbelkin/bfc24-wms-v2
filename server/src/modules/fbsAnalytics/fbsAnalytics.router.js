@@ -112,11 +112,12 @@ router.get('/region-delivery', requireRole('tenant_admin', 'supervisor'), async 
   try {
     const { dateFrom, dateTo } = parseDateRange(req.query);
     const clientId = resolveClientScope(req, req.query.client_id);
+    const warehouseId = req.query.warehouse_id ? Number(req.query.warehouse_id) : null;
     const wbScName = req.query.wb_sc_name || null;
     const regionName = req.query.region_name || null;
     const oblastOkrugName = req.query.oblast_okrug_name || null;
     const result = await fbsAnalyticsService.getRegionDeliveryTime({
-      tenantId: req.user.tenantId, clientId, wbScName, regionName, oblastOkrugName, dateFrom, dateTo,
+      tenantId: req.user.tenantId, clientId, warehouseId, wbScName, regionName, oblastOkrugName, dateFrom, dateTo,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }

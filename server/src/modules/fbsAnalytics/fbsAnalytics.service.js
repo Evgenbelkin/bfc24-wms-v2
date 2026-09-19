@@ -781,10 +781,16 @@ async function exportUnsortedStickers({ tenantId, orderRowIds }) {
 // classify()/computeSummary() - sold/(sold+cancelled), 'defect' не участвует).
 // =============================================================================
 
-async function getRegionDeliveryTime({ tenantId, clientId = null, wbScName = null, regionName = null, oblastOkrugName = null, dateFrom, dateTo }) {
+async function getRegionDeliveryTime({ tenantId, clientId = null, warehouseId = null, wbScName = null, regionName = null, oblastOkrugName = null, dateFrom, dateTo }) {
   const params = [tenantId, dateFrom, dateTo];
   const conds = ['wo.tenant_id=$1', 'wo.created_at >= $2', 'wo.created_at < $3', 'wo.region_name IS NOT NULL'];
   let idx = 4;
+  // warehouseId (wo.warehouse_id, точный ID склада WB) - добавлено 19.09.2026
+  // для выпадающего блока по региону в "Эффективность складов WB". Надёжнее,
+  // чем фильтр по имени (wbScName ниже): у складов без записи в
+  // wb_seller_warehouses там 'Склад WB #<id>' в одном отчёте против
+  // wo.wb_sc_name (сырое имя из Statistics API) в этом - имена бы разъехались.
+  if (warehouseId) { conds.push(`wo.warehouse_id=$${idx++}`); params.push(warehouseId); }
   if (wbScName) { conds.push(`COALESCE(sw.warehouse_name, wo.wb_sc_name)=$${idx++}`); params.push(wbScName); }
   if (clientId) { conds.push(`ma.client_id=$${idx++}`); params.push(clientId); }
   if (regionName) { conds.push(`wo.region_name=$${idx++}`); params.push(regionName); }
