@@ -35,6 +35,9 @@ router.get('/accounts', requireRole('tenant_admin','supervisor'), async (req,res
          COALESCE((ma.settings->>'stock_sync_disabled')::boolean, false) AS stock_sync_disabled,
          (ma.api_token IS NOT NULL AND length(trim(ma.api_token))>0) AS has_token,
          (ma.api_token_stats IS NOT NULL AND length(trim(ma.api_token_stats))>0) AS has_token_stats,
+         ma.settings->'stats_sync'->>'last_success_at' AS stats_last_success_at,
+         ma.settings->'stats_sync'->>'last_error' AS stats_last_error,
+         ma.settings->'stats_sync'->>'last_error_at' AS stats_last_error_at,
          c.client_name
        FROM wms.mp_accounts ma JOIN wms.clients c ON c.id=ma.client_id
        WHERE ${conds.join(' AND ')} ORDER BY c.client_name, ma.account_name`,

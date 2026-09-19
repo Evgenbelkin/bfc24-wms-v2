@@ -247,6 +247,22 @@ function _loadClients() {
   }));
   return _loadClients.apply(this, arguments);
 }
+// Видимый статус синка "Статистика" (владелец 19.09.2026 - долго искал,
+// почему у клиента ИП Макарова С.И. вообще нет данных в отчёте "Время
+// доставки"; оказалось - токен без категории "Статистика", раньше это было
+// видно только в логах pm2). stats_last_error/stats_last_success_at/
+// stats_last_error_at приходят из mp_accounts.settings->stats_sync (см.
+// wb.service.js::syncStatsRegionForAccount).
+function statsSyncBadge(a) {
+  if (a.stats_last_error) {
+    var whenErr = a.stats_last_error_at ? new Date(a.stats_last_error_at).toLocaleString('ru-RU') : '';
+    return ' · <span style="color:var(--red)" title="' + UI.escHtml(a.stats_last_error) + (whenErr ? ' (' + whenErr + ')' : '') + '">Статистика: ошибка синка</span>';
+  }
+  if (a.stats_last_success_at) {
+    return ' · <span style="color:var(--muted)">Статистика: ок (' + new Date(a.stats_last_success_at).toLocaleDateString('ru-RU') + ')</span>';
+  }
+  return ' · <span style="color:var(--muted)">Статистика: ещё не синхронизировано</span>';
+}
 function loadAccounts() {
   return _loadAccounts.apply(this, arguments);
 }
@@ -268,7 +284,7 @@ function _loadAccounts() {
             list.innerHTML = "<div class=\"empty-state\"><div class=\"icon\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M6 8h12l1 12a1.6 1.6 0 0 1-1.6 1.7H6.6A1.6 1.6 0 0 1 5 20l1-12z\"/><path d=\"M9 8V6a3 3 0 0 1 6 0v2\"/></svg></div>\u0410\u043A\u043A\u0430\u0443\u043D\u0442\u043E\u0432 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442</div>";
           } else {
             list.innerHTML = accountsList.map(function (a, idx) {
-              return "\n            <div class=\"list-row acc-row\" onclick=\"openAccModal(".concat(idx, ")\">\n              <div class=\"main\">\n                <div class=\"title\">").concat(UI.escHtml(a.account_name), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(a.client_name), " ").concat(a.supplier_id ? '· supplier ' + UI.escHtml(a.supplier_id) : '', " ").concat(a.has_token ? '' : '· <span style=\"color:var(--red)\">нет токена</span>', " ").concat(a.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>', "</div>\n              </div>\n              <div class=\"badge\"><span>WB</span><div>").concat(a.has_token ? '<svg class="i" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="M11.5 11.5 20 3"/><path d="M16 7l3 3"/><path d="M19 4l3 3"/></svg>' : '—', "</div></div>\n            </div>\n          ");
+              return "\n            <div class=\"list-row acc-row\" onclick=\"openAccModal(".concat(idx, ")\">\n              <div class=\"main\">\n                <div class=\"title\">").concat(UI.escHtml(a.account_name), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(a.client_name), " ").concat(a.supplier_id ? '· supplier ' + UI.escHtml(a.supplier_id) : '', " ").concat(a.has_token ? '' : '· <span style=\"color:var(--red)\">нет токена</span>', " ").concat(a.is_active ? '' : '· <span style=\"color:var(--red)\">выключен</span>', statsSyncBadge(a), "</div>\n              </div>\n              <div class=\"badge\"><span>WB</span><div>").concat(a.has_token ? '<svg class="i" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="M11.5 11.5 20 3"/><path d="M16 7l3 3"/><path d="M19 4l3 3"/></svg>' : '—', "</div></div>\n            </div>\n          ");
             }).join('');
           }
           UI.populateSelect('#cat-account', accountsList, {

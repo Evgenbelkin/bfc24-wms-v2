@@ -248,13 +248,43 @@ async function listAllWbAccountsForStatsSync() {
  *  mp_accounts.settings->stats_sync, чтобы каждый следующий тик забирал
  *  только новое, а не всю историю заново - как и предписывает документация
  *  WB для пагинации этого метода. */
+// Видимый статус синка региона по аккаунту (владелец 19.09.2026 - потратил
+// время на диагностику "у клиента ИП Макарова С.И. вообще нет данных по
+// времени доставки", хотя причина - токен без категории "Статистика" -
+// раньше была видна только в логах pm2. Мержим точечно (jsonb || $2), а не
+// перезаписываем весь stats_sync объект целиком, чтобы не терять соседние
+// поля типа last_change_date при записи одной лишь ошибки).
+async function _mergeStatsSyncSettings(accountId, patch) {
+  await query(
+    `UPDATE wms.mp_accounts
+     SET settings = jsonb_set(COALESCE(settings,'{}'::jsonb), '{stats_sync}',
+       COALESCE(settings->'stats_sync','{}'::jsonb) || $2::jsonb, true)
+     WHERE id = $1`,
+    [accountId, JSON.stringify(patch)]
+  );
+}
+
 async function syncStatsRegionForAccount({ tenantId, accountId, apiToken, settings }) {
   const cursorRaw = settings?.stats_sync?.last_change_date;
   const dateFrom = cursorRaw
     || new Date(Date.now() - STATS_SYNC_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
 
-  const orders = await wbClient.fetchStatisticsOrders(apiToken, dateFrom);
+  let orders;
+  try {
+    orders = await wbClient.fetchStatisticsOrders(apiToken, dateFrom);
+  } catch (e) {
+    // Самая частая причина - токен без категории "Статистика" (WB отдаёт
+    // 401/403 на /api/v1/supplier/orders). Сохраняем текст ошибки как есть -
+    // именно он и покажет это в wb.html, без похода в логи.
+    await _mergeStatsSyncSettings(accountId, { last_error: e.message || String(e), last_error_at: new Date().toISOString() });
+    throw e;
+  }
+
   if (!orders.length) {
+    // Запрос прошёл успешно, просто с прошлого раза нет новых заказов -
+    // это тоже "успех", отмечаем last_success_at, но last_change_date
+    // (курсор) не трогаем - его двигать нечем.
+    await _mergeStatsSyncSettings(accountId, { last_success_at: new Date().toISOString(), last_error: null });
     return { fetched: 0, matched: 0 };
   }
 
@@ -289,13 +319,10 @@ async function syncStatsRegionForAccount({ tenantId, accountId, apiToken, settin
 
   const lastRow = orders[orders.length - 1];
   const nextCursor = lastRow?.lastChangeDate || dateFrom;
-  await query(
-    `UPDATE wms.mp_accounts
-     SET settings = jsonb_set(COALESCE(settings,'{}'::jsonb), '{stats_sync}',
-       jsonb_build_object('last_change_date', $2::text, 'updated_at', NOW()::text), true)
-     WHERE id = $1`,
-    [accountId, nextCursor]
-  );
+  await _mergeStatsSyncSettings(accountId, {
+    last_change_date: nextCursor, updated_at: new Date().toISOString(),
+    last_success_at: new Date().toISOString(), last_error: null,
+  });
 
   return { fetched: orders.length, matched: upd.rowCount, nextCursor };
 }
