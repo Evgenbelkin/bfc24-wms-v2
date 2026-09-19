@@ -14,16 +14,20 @@ const logger = require('../utils/logger');
 // (см. wbService.listAllWbAccountsForForeignSupplySync) - без модуля отчёт
 // всё равно никто не увидит, незачем тратить WB API квоту.
 //
-// По аналогии с wbStatsRegionSync.js - round-robin ОДИН аккаунт за тик, а не
-// все сразу (эндпоинты /api/v3/supplies и .../order-ids грузим не спеша, хоть
-// их лимит и мягче, чем у Statistics API - 300 запросов/мин, но каждый тик
-// сам по себе уже может сделать до ~10 списочных + 30 точечных запросов на
-// один аккаунт, см. MAX_PAGES/MAX_NEW_LOOKUPS в syncForeignSuppliesForAccount).
+// ИЗНАЧАЛЬНО было round-robin ОДИН аккаунт за тик (по аналогии с
+// wbStatsRegionSync.js), но это оказалось неудачным решением: курсор
+// хранится в памяти и сбрасывается на 0 при каждом `pm2 restart` (а деплои
+// частые) - в итоге аккаунты в конце списка (ORDER BY ma.id) месяцами не
+// доходили до своей очереди (владелец, 19.09.2026: обнаружено на примере
+// аккаунта "ИП Макарова С. И", который проходил все условия выборки, но не
+// обрабатывался). Эндпоинты /api/v3/supplies и .../order-ids используют
+// лимит 300 запросов/мин НА АККАУНТ (в отличие от Statistics API с его
+// жёстким 1 запрос/мин) - поэтому последовательный проход ВСЕХ аккаунтов
+// за один тик безопасен, курсор больше не нужен.
 // =============================================================================
 
 let timer = null;
 let running = false;
-let cursorIndex = 0; // позиция в списке аккаунтов для round-robin (in-memory, не переживает рестарт)
 
 async function runOnce() {
   if (running) {
@@ -36,23 +40,23 @@ async function runOnce() {
     const accounts = await wbService.listAllWbAccountsForForeignSupplySync();
     if (accounts.length === 0) return;
 
-    if (cursorIndex >= accounts.length) cursorIndex = 0;
-    const acc = accounts[cursorIndex];
-    cursorIndex++;
-
-    try {
-      const r = await wbService.syncForeignSuppliesForAccount({
-        tenantId: acc.tenant_id,
-        accountId: acc.id,
-        apiToken: acc.api_token,
-      });
-      logger.info(
-        { tenantId: acc.tenant_id, accountId: acc.id, accountName: acc.account_name, ...r, ms: Date.now() - startedAt },
-        'WB foreign-supply-sync: account synced'
-      );
-    } catch (e) {
-      logger.error({ err: e, tenantId: acc.tenant_id, accountId: acc.id }, 'WB foreign-supply-sync: account failed');
+    for (const acc of accounts) {
+      const accStartedAt = Date.now();
+      try {
+        const r = await wbService.syncForeignSuppliesForAccount({
+          tenantId: acc.tenant_id,
+          accountId: acc.id,
+          apiToken: acc.api_token,
+        });
+        logger.info(
+          { tenantId: acc.tenant_id, accountId: acc.id, accountName: acc.account_name, ...r, ms: Date.now() - accStartedAt },
+          'WB foreign-supply-sync: account synced'
+        );
+      } catch (e) {
+        logger.error({ err: e, tenantId: acc.tenant_id, accountId: acc.id }, 'WB foreign-supply-sync: account failed');
+      }
     }
+    logger.info({ accounts: accounts.length, ms: Date.now() - startedAt }, 'WB foreign-supply-sync: full run finished');
   } catch (e) {
     logger.error({ err: e }, 'WB foreign-supply-sync: run failed');
   } finally {
