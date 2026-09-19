@@ -7,42 +7,59 @@
   <link rel="stylesheet" href="/shared/theme.css"/>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:-apple-system,sans-serif;background:#f8fafc;color:#0f172a;min-height:100vh;padding:12px;}
-    .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
-    .header h1{font-size:20px;font-weight:700;color:#0284c7;}
-    .btn-sm{padding:8px 14px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+    body{font-family:-apple-system,sans-serif;background:#f8fafc;color:#0f172a;min-height:100vh;padding:8px;}
+    .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+    .header h1{font-size:15px;font-weight:700;color:#0284c7;display:flex;align-items:center;gap:6px;}
+    .header h1 .i{width:16px;height:16px;}
+    .btn-sm{padding:6px 10px;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;}
     .btn-back{background:#ffffff;color:#334155;border:1px solid #e2e8f0;}
     .btn-logout{background:#fee2e2;color:#b91c1c;}
     .card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;margin-bottom:12px;}
     .card-title{font-size:13px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
-    .wave-info{display:flex;gap:12px;flex-wrap:wrap;}
-    .badge{background:#f1f5f9;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;}
-    .badge span{color:#64748b;font-size:12px;display:block;}
-    /* Progress bar */
-    .progress-bar{height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;margin:12px 0;}
-    .progress-fill{height:100%;background:#22c55e;border-radius:4px;transition:width .3s;}
+    /* Волна: раньше отдельная карточка с заголовком + двумя крупными
+       бейджами + прогресс-баром (~110px по высоте) - владелец, 19.09.2026:
+       "что бы не нужно было листать постоянно вниз вверх экран". Теперь
+       тонкая строка сразу под шапкой: код поставки + прогресс в одну
+       линию, прогресс-бар без отступов сверху/снизу. */
+    .wave-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:#64748b;margin-bottom:4px;}
+    .wave-row b{color:#0f172a;font-size:12px;}
+    .wave-row .wave-progress-val{font-weight:700;color:#16a34a;}
+    .progress-bar{height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;margin-bottom:10px;}
+    .progress-fill{height:100%;background:#22c55e;border-radius:3px;transition:width .3s;}
     /* Task card */
-    .task-card{background:#f1f5f9;border-radius:14px;padding:20px;}
-    .task-barcode{font-size:26px;font-weight:800;color:#0284c7;margin-bottom:4px;word-break:break-all;}
-    .task-name{font-size:16px;color:#0f172a;margin-bottom:16px;}
-    .task-location{display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:16px;}
-    .location-icon{font-size:28px;}
-    .location-code{font-size:24px;font-weight:800;color:#b45309;}
-    .location-label{font-size:12px;color:#64748b;}
-    .task-qty{font-size:40px;font-weight:800;color:#16a34a;text-align:center;margin:16px 0;}
-    .task-preview{width:80px;height:80px;object-fit:cover;border-radius:8px;float:right;margin-left:12px;}
-    /* Scan input */
-    .scan-section{margin-top:16px;}
-    .scan-label{font-size:14px;color:#334155;margin-bottom:8px;font-weight:600;}
-    .scan-input{width:100%;padding:18px;background:#f1f5f9;border:3px solid #e2e8f0;border-radius:12px;color:#0f172a;font-size:18px;outline:none;}
+    .task-card{background:#f1f5f9;border-radius:14px;padding:12px;}
+    /* Фото + штрихкод + название: раньше картинка float:right, текст
+       обтекал её отдельными блоками с большими отступами - теперь один
+       компактный ряд. */
+    .item-row{display:flex;align-items:center;gap:8px;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:8px;margin-bottom:8px;}
+    .task-preview{width:36px;height:36px;object-fit:cover;border-radius:6px;flex-shrink:0;}
+    .item-row .item-text{min-width:0;flex:1;}
+    .task-barcode{font-size:14px;font-weight:800;color:#0284c7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .task-name{font-size:11px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #task-vendor{font-size:10px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    /* Ячейка + количество: раньше два отдельных блока друг под другом
+       (ячейка - полноширинная плашка с иконкой, количество - число 40px
+       по центру своей строки) - теперь два столбика в одной строке. */
+    .stat-row{display:flex;gap:8px;margin-bottom:8px;}
+    .stat-box{flex:1;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;min-width:0;}
+    .stat-label{font-size:9px;color:#64748b;text-transform:uppercase;}
+    .location-code{font-size:17px;font-weight:800;color:#b45309;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .task-qty{font-size:17px;font-weight:800;color:#16a34a;}
+    /* Scan input - оставляем крупным, это главный элемент экрана */
+    .scan-section{margin-top:8px;}
+    .scan-label{font-size:13px;color:#334155;margin-bottom:6px;font-weight:600;display:flex;align-items:center;gap:6px;}
+    .scan-label .i{width:15px;height:15px;}
+    .scan-input{width:100%;padding:16px;background:#f1f5f9;border:3px solid #e2e8f0;border-radius:12px;color:#0f172a;font-size:18px;outline:none;}
     .scan-input.awaiting-location{border-color:#fbbf24;}
     .scan-input.awaiting-item{border-color:#0284c7;}
     .scan-input:focus{border-color:#0ea5e9;}
     .scan-row{display:flex;gap:8px;}
-    .scan-camera-btn{padding:0 18px;border:1px solid #e2e8f0;border-radius:12px;background:#f1f5f9;color:#0284c7;font-size:22px;cursor:pointer;}
-    /* Buttons */
-    .btn-row{display:flex;gap:10px;margin-top:12px;}
-    .btn-big{flex:1;padding:18px;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;}
+    .scan-camera-btn{padding:0 16px;border:1px solid #e2e8f0;border-radius:12px;background:#f1f5f9;color:#0284c7;font-size:20px;cursor:pointer;}
+    /* Buttons - основные действия (пропустить/закрыть волну) нужны редко,
+       раньше занимали целую строку с 18px отступами - теперь компактнее,
+       но не мельче стандартного размера тач-таргета. */
+    .btn-row{display:flex;gap:8px;margin-top:8px;}
+    .btn-big{flex:1;padding:11px;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;}
     .btn-green{background:#16a34a;color:#fff;}
     .btn-yellow{background:#d97706;color:#fff;}
     .btn-red{background:#dc2626;color:#fff;}
@@ -51,11 +68,11 @@
     .no-wave{text-align:center;padding:40px 20px;}
     .no-wave p{color:#64748b;font-size:16px;margin-bottom:20px;}
     /* Step indicator */
-    .step-indicator{display:flex;gap:6px;justify-content:center;margin-bottom:16px;}
-    .step{width:12px;height:12px;border-radius:50%;background:#e2e8f0;}
+    .step-indicator{display:flex;gap:6px;justify-content:center;margin-bottom:8px;}
+    .step{width:10px;height:10px;border-radius:50%;background:#e2e8f0;}
     .step.active{background:#0284c7;}
     .step.done{background:#22c55e;}
-    #status-msg{text-align:center;color:#64748b;font-size:14px;min-height:20px;margin-top:8px;}
+    #status-msg{text-align:center;color:#64748b;font-size:12px;min-height:16px;margin-top:6px;}
     .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.5);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
     .modal-card{background:#ffffff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;box-shadow:0 -8px 30px rgba(15,23,42,.15);}
     @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
@@ -70,13 +87,11 @@
     <button class="btn-sm btn-logout" onclick="logout()">Выход</button>
   </div>
 
-  <!-- Wave info -->
-  <div class="card" id="wave-card" style="display:none">
-    <div class="card-title">Волна сборки</div>
-    <div class="wave-info">
-      <div class="badge"><span>Поставка</span><div id="shipment-code">—</div></div>
-      <div class="badge"><span>Прогресс</span><div id="wave-progress">0/0</div></div>
-    </div>
+  <!-- Wave info: тонкая строка вместо отдельной карточки (владелец,
+       19.09.2026: "что бы не нужно было листать постоянно вниз вверх
+       экран") -->
+  <div id="wave-card" style="display:none">
+    <div class="wave-row"><b id="shipment-code">—</b><span class="wave-progress-val" id="wave-progress">0/0</span></div>
     <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
   </div>
 
@@ -104,22 +119,25 @@
         <div class="step" id="step-item"></div>
       </div>
 
-      <div style="overflow:hidden">
+      <div class="item-row">
         <img id="task-preview" class="task-preview" src="" onerror="this.style.display='none'"/>
-        <div class="task-barcode" id="task-barcode">—</div>
-        <div class="task-name" id="task-name" style="margin-bottom:2px;">—</div>
-        <div id="task-vendor" style="font-size:13px;color:#64748b;margin-bottom:16px;"></div>
-      </div>
-
-      <div class="task-location">
-        <div class="location-icon"><svg class="i" viewBox="0 0 24 24"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg></div>
-        <div>
-          <div class="location-label">Ячейка</div>
-          <div class="location-code" id="task-location">—</div>
+        <div class="item-text">
+          <div class="task-barcode" id="task-barcode">—</div>
+          <div class="task-name" id="task-name">—</div>
+          <div id="task-vendor"></div>
         </div>
       </div>
 
-      <div class="task-qty" id="task-qty">0</div>
+      <div class="stat-row">
+        <div class="stat-box">
+          <div class="stat-label">Ячейка</div>
+          <div class="location-code" id="task-location">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Нужно</div>
+          <div class="task-qty" id="task-qty">0</div>
+        </div>
+      </div>
 
       <div class="scan-section" id="scan-section-main">
         <div class="scan-label" id="scan-label">Отсканируйте ячейку</div>
