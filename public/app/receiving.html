@@ -21,6 +21,24 @@
     .act-lines-table{width:100%;border-collapse:collapse;font-size:13px;}
     .act-lines-table th,.act-lines-table td{border:1px solid var(--border);padding:6px 8px;text-align:left;}
     .act-lines-table input{width:100%;box-sizing:border-box;padding:6px 8px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;}
+    /* Компактная раскладка под экран ТСД (владелец, 19.09.2026: "что бы
+       не нужно было листать постоянно вниз вверх" - тот же принцип, что и
+       в сборке). Переопределяет часть глобальных .card/.header из
+       theme.css ТОЛЬКО на этой странице (порядок подключения CSS даёт
+       приоритет этим правилам), другие страницы не затрагиваются. */
+    .header{margin-bottom:8px;}
+    .header h1{font-size:15px;}
+    .card{padding:10px 12px;margin-bottom:8px;}
+    .card-title{font-size:11px;margin-bottom:6px;}
+    .scan-input{padding:12px;font-size:16px;}
+    .btn-big{padding:11px;font-size:13px;}
+    .qty-btn{width:40px;height:40px;font-size:18px;}
+    .qty-val{font-size:22px;padding:4px;}
+    .tabs{margin-bottom:8px;}
+    .tab{padding:6px 10px;font-size:12px;}
+    .mode-note{margin-bottom:6px;font-size:11px;}
+    .sub-field-title{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px;}
+    .sub-field-title:first-child{margin-top:0;}
   </style>
 </head>
 <body>
@@ -46,17 +64,15 @@
   <!-- ============ Свободная приёмка ============ -->
   <div id="tab-free">
     <div class="card">
-      <div class="card-title">Ячейка приёмки</div>
+      <div class="sub-field-title">Ячейка приёмки</div>
       <div class="mode-note" id="free-location-note">Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.</div>
       <div class="scan-row">
         <input id="free-location" class="scan-input" placeholder="Код ячейки (например PRM-01)" inputmode="none" autocomplete="off"/>
         <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
       </div>
-      <button type="button" class="btn-sm btn-yellow" id="free-change-location-btn" style="display:none;margin-top:8px;" onclick="changeFreeLocation()">Сменить ячейку</button>
-    </div>
+      <button type="button" class="btn-sm btn-yellow" id="free-change-location-btn" style="display:none;margin-top:6px;" onclick="changeFreeLocation()">Сменить ячейку</button>
 
-    <div class="card">
-      <div class="card-title">Товар</div>
+      <div class="sub-field-title">Товар</div>
       <div class="scan-row">
         <input id="free-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
         <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#free-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
@@ -64,17 +80,20 @@
     </div>
 
     <div class="card">
-      <div class="card-title">Количество</div>
-      <div class="qty-row">
-        <button class="qty-btn" onclick="stepQty(-1)">−</button>
-        <input type="number" class="qty-val" id="free-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQty(this.value)" onfocus="this.select()"/>
-        <button class="qty-btn" onclick="stepQty(1)">+</button>
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:0 0 150px;">
+          <div class="sub-field-title">Количество</div>
+          <div class="qty-row">
+            <button class="qty-btn" onclick="stepQty(-1)">−</button>
+            <input type="number" class="qty-val" id="free-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQty(this.value)" onfocus="this.select()"/>
+            <button class="qty-btn" onclick="stepQty(1)">+</button>
+          </div>
+        </div>
+        <div style="flex:1;min-width:140px;">
+          <div class="sub-field-title">Комментарий</div>
+          <input id="free-comment" class="scan-input" style="font-size:14px;padding:11px;" placeholder="Например: пересорт..."/>
+        </div>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Комментарий (необязательно)</div>
-      <input id="free-comment" class="scan-input" style="font-size:15px;padding:12px;" placeholder="Например: пересорт, повреждена упаковка..."/>
     </div>
 
     <div class="card" id="free-dm-card" style="display:none;">
@@ -118,26 +137,22 @@
       </div>
 
       <div class="card">
-        <div class="card-title">Ячейка приёмки</div>
+        <div class="sub-field-title">Ячейка приёмки</div>
         <div class="mode-note">Отсканируйте ячейку один раз — дальше сканируйте товар подряд, ячейка не сбрасывается.</div>
         <div class="scan-row">
           <input id="inb-location" class="scan-input" placeholder="Код ячейки" inputmode="none" autocomplete="off"/>
           <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-location','Скан ячейки')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
         </div>
-        <button type="button" class="btn-sm btn-yellow" id="inb-change-location-btn" style="display:none;margin-top:8px;" onclick="changeInbLocation()">Сменить ячейку</button>
-      </div>
+        <button type="button" class="btn-sm btn-yellow" id="inb-change-location-btn" style="display:none;margin-top:6px;" onclick="changeInbLocation()">Сменить ячейку</button>
 
-      <div class="card">
-        <div class="card-title">Товар</div>
+        <div class="sub-field-title">Товар</div>
         <div class="scan-row">
           <input id="inb-barcode" class="scan-input" placeholder="Штрихкод товара" inputmode="none" autocomplete="off"/>
           <button type="button" class="scan-camera-btn" onclick="UI.scanInto('#inb-barcode','Скан товара')"><svg class="i" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="card-title">Количество</div>
-        <div class="qty-row">
+        <div class="sub-field-title">Количество</div>
+        <div class="qty-row" style="max-width:150px;">
           <button class="qty-btn" onclick="stepQtyInbound(-1)">−</button>
           <input type="number" class="qty-val" id="inb-qty-val" value="1" min="1" step="1" inputmode="numeric" onchange="setQtyInbound(this.value)" onfocus="this.select()"/>
           <button class="qty-btn" onclick="stepQtyInbound(1)">+</button>
