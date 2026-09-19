@@ -1146,77 +1146,133 @@ async function getClientItemsReport({ tenantId, clientId, dateFrom, dateTo }) {
 // per-client.
 // =============================================================================
 
+// Пустой аккумулятор для одной группы (склад, либо склад×клиент) - копится
+// по каждому "сырому" заказу через _addOrderToAgg, в конце сворачивается
+// через _finalizeAgg в готовые метрики для фронтенда.
+function _newWarehouseAgg(warehouseId, warehouseName) {
+  return {
+    warehouse_id: warehouseId,
+    warehouse_name: warehouseName,
+    qtyOrdered: 0,   // НЕ отменённые заказы (та же логика, что и раньше)
+    sold: 0, cancelled: 0, // для % выкупа (см. classify() выше в файле)
+    sumHoursToWb: 0, cntToWb: 0,
+    sumHoursToSorted: 0, cntToSorted: 0,
+  };
+}
+
+/** Добавить один "сырой" заказ (строку из SQL ниже) в аккумулятор группы.
+ *  Использует ТЕ ЖЕ правила, что и остальная FBS-аналитика этого файла:
+ *  classify() для sold/cancelled (см. computeSummary выше), и тот же приём
+ *  "sorted_at считаем только среди заказов с accepted_at" из
+ *  getProcessingSpeed() (фикс 14.09.2026, см. комментарий там). */
+function _addOrderToAgg(agg, row) {
+  const bucket = classify(row);
+  if (bucket === 'cancelled') agg.cancelled++;
+  else {
+    agg.qtyOrdered++;
+    if (bucket === 'purchased') agg.sold++;
+  }
+
+  if (row.accepted_at) {
+    const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
+    agg.sumHoursToWb += hoursToWb; agg.cntToWb++;
+    if (row.sorted_at) {
+      const hoursToSorted = (new Date(row.sorted_at) - new Date(row.created_at)) / 3600000;
+      if (hoursToSorted >= 0) { agg.sumHoursToSorted += hoursToSorted; agg.cntToSorted++; }
+    }
+  }
+}
+
+function _finalizeAgg(agg, grandTotal) {
+  const purchaseBase = agg.sold + agg.cancelled;
+  return {
+    warehouse_id: agg.warehouse_id,
+    warehouse_name: agg.warehouse_name,
+    qty_ordered: agg.qtyOrdered,
+    pct: grandTotal > 0 ? Math.round((agg.qtyOrdered / grandTotal) * 1000) / 10 : 0,
+    purchase_rate: purchaseBase > 0 ? Math.round((agg.sold / purchaseBase) * 1000) / 10 : null,
+    avg_hours_to_wb: agg.cntToWb > 0 ? Math.round((agg.sumHoursToWb / agg.cntToWb) * 10) / 10 : null,
+    avg_hours_to_sorted: agg.cntToSorted > 0 ? Math.round((agg.sumHoursToSorted / agg.cntToSorted) * 10) / 10 : null,
+  };
+}
+
+/** Отчёт "Эффективность складов WB" - расширен 19.09.2026 по просьбе
+ *  владельца: "добавить сюда информацию по каждому складу по скорости
+ *  доставки ... от заказа до ворот ВБ и от заказа до сортировки ВБ, и %
+ *  выкупа ... буду видеть на сколько я превосхожу конкурентов по скорости".
+ *  Метрики берутся ИЗ ТОЙ ЖЕ логики, что уже используется в
+ *  getProcessingSpeed()/computeSummary() выше в этом файле - просто
+ *  дополнительно разрезаны по (клиент × склад), а не только по клиенту
+ *  целиком. */
 async function getWarehousePerformanceReport({ tenantId, dateFrom, dateTo }) {
   const r = await query(
     `SELECT ma.client_id, c.client_name, wo.warehouse_id,
             COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id) AS warehouse_name,
-            COUNT(*)::int AS qty_ordered
+            wo.created_at, wo.status, wo.wb_status,
+            s.wb_accepted_at AS accepted_at,
+            sorted.observed_at AS sorted_at
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
      LEFT JOIN wms.wb_seller_warehouses sw ON sw.mp_account_id = wo.mp_account_id AND sw.wb_warehouse_id = wo.warehouse_id
+     LEFT JOIN wms.shipments s ON s.tenant_id = wo.tenant_id AND s.external_id = wo.wb_supply_id
+     LEFT JOIN LATERAL (
+       SELECT observed_at FROM wms.wb_order_status_events e
+       WHERE e.mp_account_id = wo.mp_account_id AND e.wb_order_id = wo.wb_order_id AND e.wb_status = 'sorted'
+       ORDER BY observed_at ASC LIMIT 1
+     ) sorted ON TRUE
      WHERE wo.tenant_id=$1
-       AND wo.created_at >= $2 AND wo.created_at < $3
-       AND wo.status <> 'cancel'
-       AND (wo.wb_status IS NULL OR wo.wb_status NOT IN ('canceled','canceled_by_client','declined_by_client'))
-     GROUP BY ma.client_id, c.client_name, wo.warehouse_id, COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id)
-     ORDER BY c.client_name, qty_ordered DESC`,
+       AND wo.created_at >= $2 AND wo.created_at < $3`,
     [tenantId, dateFrom, dateTo]
   );
 
-  const byClient = new Map();
-  const overallByWarehouse = new Map(); // warehouse_id -> agg (по всем клиентам сразу - тот самый "рейтинг складов")
-  let grandTotal = 0;
+  const byClientWarehouse = new Map(); // client_id -> Map(warehouse_id -> agg)
+  const clientNames = new Map();
+  const overallByWarehouse = new Map(); // warehouse_id -> { agg, clientIds }
+  let grandTotal = 0; // для % считаем от НЕотменённых заказов, как и раньше
 
   for (const row of r.rows) {
-    const qty = Number(row.qty_ordered);
-    grandTotal += qty;
+    if (classify(row) !== 'cancelled') grandTotal++;
+    clientNames.set(row.client_id, row.client_name);
 
-    if (!byClient.has(row.client_id)) {
-      byClient.set(row.client_id, { client_id: row.client_id, client_name: row.client_name, total_orders: 0, warehouses: [] });
-    }
-    const clientAgg = byClient.get(row.client_id);
-    clientAgg.total_orders += qty;
-    clientAgg.warehouses.push({ warehouse_id: row.warehouse_id, warehouse_name: row.warehouse_name, qty_ordered: qty });
+    if (!byClientWarehouse.has(row.client_id)) byClientWarehouse.set(row.client_id, new Map());
+    const whMap = byClientWarehouse.get(row.client_id);
+    if (!whMap.has(row.warehouse_id)) whMap.set(row.warehouse_id, _newWarehouseAgg(row.warehouse_id, row.warehouse_name));
+    _addOrderToAgg(whMap.get(row.warehouse_id), row);
 
     if (!overallByWarehouse.has(row.warehouse_id)) {
-      overallByWarehouse.set(row.warehouse_id, { warehouse_id: row.warehouse_id, warehouse_name: row.warehouse_name, qty_ordered: 0, clientIds: new Set() });
+      overallByWarehouse.set(row.warehouse_id, { agg: _newWarehouseAgg(row.warehouse_id, row.warehouse_name), clientIds: new Set() });
     }
-    const whAgg = overallByWarehouse.get(row.warehouse_id);
-    whAgg.qty_ordered += qty;
-    whAgg.clientIds.add(row.client_id);
+    const overallEntry = overallByWarehouse.get(row.warehouse_id);
+    _addOrderToAgg(overallEntry.agg, row);
+    overallEntry.clientIds.add(row.client_id);
   }
 
-  const clients = [...byClient.values()]
-    .map((c) => ({
-      client_id: c.client_id,
-      client_name: c.client_name,
-      total_orders: c.total_orders,
-      warehouses: c.warehouses
-        .map((w) => ({ ...w, pct: c.total_orders > 0 ? Math.round((w.qty_ordered / c.total_orders) * 1000) / 10 : 0 }))
-        .sort((a, b) => b.qty_ordered - a.qty_ordered),
-    }))
+  const clients = [...byClientWarehouse.entries()]
+    .map(([clientId, whMap]) => {
+      const warehouses = [...whMap.values()].map((agg) => {
+        const clientTotal = [...whMap.values()].reduce((s, a) => s + a.qtyOrdered, 0);
+        return _finalizeAgg(agg, clientTotal);
+      }).sort((a, b) => b.qty_ordered - a.qty_ordered);
+      const totalOrders = warehouses.reduce((s, w) => s + w.qty_ordered, 0);
+      return { client_id: clientId, client_name: clientNames.get(clientId), total_orders: totalOrders, warehouses };
+    })
     .sort((a, b) => b.total_orders - a.total_orders);
 
   // "Рейтинг складов" по всем клиентам сразу - именно это владелец хочет
-  // использовать для рекомендаций ("какие склады дают больше заказов").
+  // использовать для рекомендаций ("какие склады дают больше заказов") и
+  // теперь ещё и для сравнения скорости/% выкупа между складами.
   // clients_count - у скольких РАЗНЫХ клиентов тенанта вообще есть заказы с
   // этого склада, чтобы сразу было видно "популярный, но пока мало у кого
   // подключён" склад - лучший кандидат для рекомендации остальным.
   const overall = [...overallByWarehouse.values()]
-    .map((w) => ({
-      warehouse_id: w.warehouse_id,
-      warehouse_name: w.warehouse_name,
-      qty_ordered: w.qty_ordered,
-      clients_count: w.clientIds.size,
-      pct: grandTotal > 0 ? Math.round((w.qty_ordered / grandTotal) * 1000) / 10 : 0,
-    }))
+    .map((entry) => ({ ..._finalizeAgg(entry.agg, grandTotal), clients_count: entry.clientIds.size }))
     .sort((a, b) => b.qty_ordered - a.qty_ordered);
 
   return {
     period: { from: dateFrom, to: dateTo },
     grand_total: grandTotal,
-    total_clients: byClient.size,
+    total_clients: byClientWarehouse.size,
     overall,
     clients,
   };

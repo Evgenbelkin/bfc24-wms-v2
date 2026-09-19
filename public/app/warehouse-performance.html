@@ -69,6 +69,9 @@
             <th>Заказы, шт</th>
             <th>% от всех заказов</th>
             <th>Клиентов пользуется</th>
+            <th>До ворот ВБ</th>
+            <th>До сортировки</th>
+            <th>% выкупа</th>
           </tr>
         </thead>
         <tbody id="overall-rows"></tbody>
@@ -89,6 +92,9 @@
             <th>Склад WB</th>
             <th>Заказы, шт</th>
             <th>% от заказов клиента</th>
+            <th>До ворот ВБ</th>
+            <th>До сортировки</th>
+            <th>% выкупа</th>
           </tr>
         </thead>
         <tbody id="client-rows"></tbody>
@@ -115,6 +121,18 @@
     }
     function isoDate(d) {
       return d.toISOString().slice(0, 10);
+    }
+    // Форматирование часов - тот же приём, что и в fbs-analytics.html
+    // (сутки+ показываем ещё и в днях, так нагляднее для сравнения складов).
+    function fmtHours(h) {
+      if (h === null || h === undefined) return '—';
+      var n = Number(h);
+      if (n < 24) return n.toFixed(1) + ' ч';
+      return (n / 24).toFixed(1) + ' дн (' + n.toFixed(0) + ' ч)';
+    }
+    function fmtPurchase(p) {
+      if (p === null || p === undefined) return '—';
+      return Number(p).toFixed(1) + '%';
     }
 
     function setPreset(days) {
@@ -147,6 +165,9 @@
           + '<td>' + fmtNum(w.qty_ordered) + '</td>'
           + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
           + '<td>' + fmtNum(w.clients_count) + '</td>'
+          + '<td>' + fmtHours(w.avg_hours_to_wb) + '</td>'
+          + '<td>' + fmtHours(w.avg_hours_to_sorted) + '</td>'
+          + '<td>' + fmtPurchase(w.purchase_rate) + '</td>'
           + '</tr>';
       }).join('');
     }
@@ -185,6 +206,9 @@
           + '<td>' + UI.escHtml(w.warehouse_name) + '</td>'
           + '<td>' + fmtNum(w.qty_ordered) + '</td>'
           + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
+          + '<td>' + fmtHours(w.avg_hours_to_wb) + '</td>'
+          + '<td>' + fmtHours(w.avg_hours_to_sorted) + '</td>'
+          + '<td>' + fmtPurchase(w.purchase_rate) + '</td>'
           + '</tr>';
       }).join('');
     }
