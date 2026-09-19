@@ -19,6 +19,9 @@
     .pct-row{display:flex;align-items:center;gap:8px;}
     .pct-num{font-size:12px;font-weight:700;min-width:42px;text-align:right;}
     select#client-select{padding:9px 12px;background:var(--card2);border:2px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;min-width:240px;}
+    .own-badge{display:inline-flex;align-items:center;gap:3px;margin-left:6px;padding:1px 7px;border-radius:8px;background:rgba(34,197,94,.15);color:#16a34a;font-size:11px;font-weight:700;white-space:nowrap;vertical-align:middle;}
+    .own-badge svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:2.5;}
+    .wh-clients{color:var(--muted);font-size:12px;}
   </style>
 </head>
 <body>
@@ -66,6 +69,7 @@
         <thead>
           <tr>
             <th>Склад WB</th>
+            <th>Клиент(ы)</th>
             <th>Заказы, шт</th>
             <th>% от всех заказов</th>
             <th>Клиентов пользуется</th>
@@ -134,6 +138,13 @@
       if (p === null || p === undefined) return '—';
       return Number(p).toFixed(1) + '%';
     }
+    // Значок "мой склад" (владелец 19.09.2026: "значок складам, которые
+    // отгружаю я, чтобы видеть сразу") - is_own приходит с бэкенда
+    // (is_enabled_for_picking, та же логика, что и в остальной системе).
+    function ownBadge(isOwn) {
+      if (!isOwn) return '';
+      return '<span class="own-badge" title="Вы обрабатываете этот склад сами"><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Мой</span>';
+    }
 
     function setPreset(days) {
       document.querySelectorAll('#presets .preset').forEach(function (b) {
@@ -160,8 +171,10 @@
       }
       empty.style.display = 'none';
       tbody.innerHTML = overall.map(function (w) {
+        var names = Array.isArray(w.client_names) ? w.client_names.filter(Boolean) : [];
         return '<tr>'
-          + '<td>' + UI.escHtml(w.warehouse_name) + '</td>'
+          + '<td>' + UI.escHtml(w.warehouse_name) + ownBadge(w.is_own) + '</td>'
+          + '<td class="wh-clients">' + UI.escHtml(names.join(', ') || '—') + '</td>'
           + '<td>' + fmtNum(w.qty_ordered) + '</td>'
           + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
           + '<td>' + fmtNum(w.clients_count) + '</td>'
@@ -203,7 +216,7 @@
       empty.style.display = 'none';
       tbody.innerHTML = client.warehouses.map(function (w) {
         return '<tr>'
-          + '<td>' + UI.escHtml(w.warehouse_name) + '</td>'
+          + '<td>' + UI.escHtml(w.warehouse_name) + ownBadge(w.is_own) + '</td>'
           + '<td>' + fmtNum(w.qty_ordered) + '</td>'
           + '<td><div class="pct-row"><div class="pct-track"><div class="pct-fill" style="width:' + w.pct + '%"></div></div><div class="pct-num">' + fmtPct(w.pct) + '</div></div></td>'
           + '<td>' + fmtHours(w.avg_hours_to_wb) + '</td>'

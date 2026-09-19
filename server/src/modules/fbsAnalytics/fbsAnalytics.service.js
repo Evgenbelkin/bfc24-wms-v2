@@ -1157,6 +1157,7 @@ function _newWarehouseAgg(warehouseId, warehouseName) {
     sold: 0, cancelled: 0, // для % выкупа (см. classify() выше в файле)
     sumHoursToWb: 0, cntToWb: 0,
     sumHoursToSorted: 0, cntToSorted: 0,
+    isOwn: false, // "мой склад" (is_enabled_for_picking) - см. _addOrderToAgg
   };
 }
 
@@ -1185,6 +1186,15 @@ function _addOrderToAgg(agg, row) {
     if (bucket === 'purchased') agg.sold++;
   }
 
+  // "Мой склад" (владелец 19.09.2026: "значок складам, которые отгружаю я,
+  // чтобы видеть сразу") - та же семантика, что и в MY_WAREHOUSE_ONLY_SQL
+  // выше в файле: is_enabled_for_picking=FALSE - явно ЧУЖОЙ склад, всё
+  // остальное (TRUE или ещё не заведено в wb_seller_warehouses) - считаем
+  // своим по умолчанию. В overall-рейтинге склад помечен "своим", если он
+  // мой хотя бы у ОДНОГО клиента (в разбивке по клиенту - однозначно, там
+  // все строки одного mp_account_id).
+  if (row.is_enabled_for_picking !== false) agg.isOwn = true;
+
   if (row.accepted_at) {
     const hoursToWb = (new Date(row.accepted_at) - new Date(row.created_at)) / 3600000;
     agg.sumHoursToWb += hoursToWb; agg.cntToWb++;
@@ -1205,6 +1215,7 @@ function _finalizeAgg(agg, grandTotal) {
     purchase_rate: purchaseBase > 0 ? Math.round((agg.sold / purchaseBase) * 1000) / 10 : null,
     avg_hours_to_wb: agg.cntToWb > 0 ? Math.round((agg.sumHoursToWb / agg.cntToWb) * 10) / 10 : null,
     avg_hours_to_sorted: agg.cntToSorted > 0 ? Math.round((agg.sumHoursToSorted / agg.cntToSorted) * 10) / 10 : null,
+    is_own: agg.isOwn,
   };
 }
 
@@ -1228,7 +1239,8 @@ async function getWarehousePerformanceReport({ tenantId, dateFrom, dateTo }) {
             COALESCE(sw.warehouse_name, 'Склад WB #' || wo.warehouse_id) AS warehouse_name,
             wo.created_at, wo.status, wo.wb_status,
             COALESCE(s.wb_accepted_at, fs.scan_dt) AS accepted_at,
-            sorted.observed_at AS sorted_at
+            sorted.observed_at AS sorted_at,
+            sw.is_enabled_for_picking
      FROM wms.wb_orders wo
      JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
      JOIN wms.clients c ON c.id = ma.client_id
@@ -1287,8 +1299,16 @@ async function getWarehousePerformanceReport({ tenantId, dateFrom, dateTo }) {
   // clients_count - у скольких РАЗНЫХ клиентов тенанта вообще есть заказы с
   // этого склада, чтобы сразу было видно "популярный, но пока мало у кого
   // подключён" склад - лучший кандидат для рекомендации остальным.
+  // client_names - владелец 19.09.2026: "добавить к каждому складу клиента,
+  // чтобы видеть чей это склад" (в общем рейтинге раньше было видно только
+  // число "клиентов пользуется", а не КТО именно). Обычно там 1 клиент - имя
+  // просто через запятую на случай, если склад всё же общий для нескольких.
   const overall = [...overallByWarehouse.values()]
-    .map((entry) => ({ ..._finalizeAgg(entry.agg, grandTotal), clients_count: entry.clientIds.size }))
+    .map((entry) => ({
+      ..._finalizeAgg(entry.agg, grandTotal),
+      clients_count: entry.clientIds.size,
+      client_names: [...entry.clientIds].map((id) => clientNames.get(id)),
+    }))
     .sort((a, b) => b.qty_ordered - a.qty_ordered);
 
   return {
