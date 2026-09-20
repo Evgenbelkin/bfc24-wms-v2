@@ -1399,8 +1399,18 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
     // пределами транзакции).
     let requeued = false;
     if (task.item_id) {
+      // dbClient: client (найдено 21.09.2026) - без этого findBestPickLocation
+      // шёл через отдельное соединение из пула и не видел ещё незакоммиченный
+      // перенос остатка исходной ячейки в карантин чуть выше в ЭТОЙ ЖЕ
+      // транзакции - видел старое (пока ещё не обнулённое снаружи) значение
+      // исходной ячейки и ошибочно "находил" её же саму как альтернативу.
+      // Задача requeue'илась туда же, откуда её только что убрали - сборщик
+      // получал следующее задание с ячейкой, которая по факту (после коммита)
+      // тоже 0 - "прочерк" на ТСД, а в "Дефициты" заказ не уходил, хотя должен
+      // был (реальной альтернативы не было).
       const alt = await findBestPickLocation({
         tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id,
+        dbClient: client,
       });
       if (alt) {
         const prioRes = await client.query(
