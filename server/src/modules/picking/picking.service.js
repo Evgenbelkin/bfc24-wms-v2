@@ -1191,7 +1191,12 @@ async function scanItemQty({ tenantId, pickerId, taskId, scannedBarcode, qty, co
 
 /** Пропустить задачу (товар не найден) */
 async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
-  return transaction(async (client) => {
+  // ВАЖНО (найдено 21.09.2026): раньше здесь стояло `return transaction(...)` -
+  // это завершало функцию СРАЗУ на конце транзакции, и весь код ниже (триггер
+  // пересчёта остатка для ВБ при карантине, перенос заказа в "Дефициты") был
+  // мёртвым - физически никогда не выполнялся (недостижимый код после return).
+  // Именно поэтому перенос в "Дефициты" не срабатывал в тесте на staging.
+  const result = await transaction(async (client) => {
     const tRes = await client.query(
       `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, [taskId, tenantId]
     );
