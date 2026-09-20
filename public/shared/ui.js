@@ -949,3 +949,26 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     toggleVoice: toggleVoice
   };
 })(window);
+
+// Фавикон BFC24 во вкладке браузера (тот же логотип, что на bfc-24.ru) —
+// без этого браузер показывал дефолтную иконку-globe. Подключаем через JS
+// в общем ui.js, а не в каждый из ~60 HTML-файлов по отдельности: так одна
+// правка сразу покрывает все страницы, где уже подключён этот скрипт.
+(function () {
+  if (document.querySelector('link[rel="icon"]')) return;
+  var icons = [
+    { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
+    { rel: 'icon', href: '/favicon-32x32.png', type: 'image/png', sizes: '32x32' },
+    { rel: 'icon', href: '/favicon-16x16.png', type: 'image/png', sizes: '16x16' },
+    { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
+    { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }
+  ];
+  for (var i = 0; i < icons.length; i++) {
+    var link = document.createElement('link');
+    var def = icons[i];
+    for (var key in def) {
+      if (Object.prototype.hasOwnProperty.call(def, key)) link.setAttribute(key, def[key]);
+    }
+    document.head.appendChild(link);
+  }
+})();
