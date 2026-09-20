@@ -15,15 +15,23 @@ set -euo pipefail
 # дампа В ТЕЛЕГРАМ НЕ ШЛЁМ: на момент этой правки дамп уже 508 МБ и продолжает
 # расти, а лимит Telegram Bot API на отправку файла ботом - 50 МБ. Шлём
 # только текстовый статус (размер, время, ошибка/успех) - это уведомление,
-# что бэкап прошёл, а не второй канал хранения самого файла. Настоящая защита
-# от отказа ВСЕГО VPS - это копия в отдельное хранилище (см. закомментированную
-# строку rclone внизу), её владелец планирует добавить позже (Яндекс Object
-# Storage или аналог).
+# что бэкап прошёл, а не второй канал хранения самого файла.
+#
+# 20.09.2026, тем же вечером - добавлена реальная защита от отказа ВСЕГО VPS:
+# копия дампа в Yandex Object Storage (бакет bfc24-backups, класс "Холодное" -
+# он же указан у Yandex как рекомендованный именно для бэкапов, и почти вдвое
+# дешевле стандартного). rclone настроен как remote "yandex-backup" (root'ом,
+# см. /root/.config/rclone/rclone.conf). Неуспех заливки в облако НЕ считаем
+# провалом всего бэкапа - локальная копия к этому моменту уже готова, это
+# главное; облако просто получает отдельное предупреждение в Telegram, а не
+# ту же самую критическую ошибку.
 # =============================================================================
 
 APP_DIR="/var/www/bfc24-wms-v2/server"
 BACKUP_DIR="/var/backups/bfc24-wms-v2"
 RETENTION_DAYS=14
+RCLONE_REMOTE="yandex-backup:bfc24-backups"
+REMOTE_RETENTION_DAYS=30
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
@@ -77,7 +85,23 @@ find "$BACKUP_DIR" -name "prod_*.dump" -mtime +$RETENTION_DAYS -delete
 SIZE_HUMAN=$(du -h "$DUMP_FILE" | cut -f1)
 echo "$(date '+%Y-%m-%d %H:%M:%S') backup OK: $DUMP_FILE ($SIZE_HUMAN)" >> "$BACKUP_DIR/backup.log"
 
-notify_telegram "✅ bfc24-wms-v2: бэкап БД готов. ${SIZE_HUMAN}, $(date '+%Y-%m-%d %H:%M')."
+# --- Облачная копия (Yandex Object Storage) ---
+# set +e/-e вокруг этого блока намеренно: ошибка здесь не должна триггерить
+# общую ERR-ловушку выше (локальный дамп уже готов и это не менее важно, чем
+# облако) - вместо этого разбираем код возврата сами и шлём отдельное,
+# менее тревожное сообщение.
+set +e
+rclone copy "$DUMP_FILE" "$RCLONE_REMOTE/" >> "$BACKUP_DIR/backup.log" 2>&1
+RCLONE_EXIT=$?
+set -e
 
-# Когда определишься с внешним хранилищем — сюда добавится одна строка вида:
-# rclone copy "$DUMP_FILE" remote:bfc24-backups/
+if [ $RCLONE_EXIT -eq 0 ]; then
+  # ротация в облаке - отдельный (более долгий, чем локальный) срок хранения,
+  # т.к. хранение там на порядок дешевле, чем место на диске VPS.
+  rclone delete "$RCLONE_REMOTE/" --min-age "${REMOTE_RETENTION_DAYS}d" >> "$BACKUP_DIR/backup.log" 2>&1 || true
+  echo "$(date '+%Y-%m-%d %H:%M:%S') cloud upload OK: $RCLONE_REMOTE/$(basename "$DUMP_FILE")" >> "$BACKUP_DIR/backup.log"
+  notify_telegram "✅ bfc24-wms-v2: бэкап БД готов и загружен в облако. ${SIZE_HUMAN}, $(date '+%Y-%m-%d %H:%M')."
+else
+  echo "$(date '+%Y-%m-%d %H:%M:%S') cloud upload FAILED (rclone exit $RCLONE_EXIT)" >> "$BACKUP_DIR/backup.log"
+  notify_telegram "⚠️ bfc24-wms-v2: локальный бэкап БД готов (${SIZE_HUMAN}), но НЕ загрузился в облако (rclone exit $RCLONE_EXIT). Смотри $BACKUP_DIR/backup.log на сервере."
+fi
