@@ -220,6 +220,8 @@ router.get('/shipped-report', requireRole('tenant_admin', 'supervisor'), async (
       dateTo: req.query.date_to || null,
       sticker: req.query.sticker || null,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
+      afterUsedAt: req.query.after_used_at || null,
+      afterId: req.query.after_id ? Number(req.query.after_id) : null,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }
@@ -240,6 +242,8 @@ router.get('/codes-journal', requireRole('tenant_admin', 'supervisor'), async (r
       dateFrom: req.query.date_from || null,
       dateTo: req.query.date_to || null,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
+      afterCreatedAt: req.query.after_created_at || null,
+      afterId: req.query.after_id ? Number(req.query.after_id) : null,
     });
     res.json({ ok: true, ...result });
   } catch (e) { next(e); }

@@ -90,17 +90,22 @@ async function importCodes({ tenantId, itemId, createdBy, codesText }) {
   const itemRes = await query(`SELECT id FROM wms.items WHERE id=$1 AND tenant_id=$2`, [itemId, tenantId]);
   if (itemRes.rowCount === 0) throw new ValidationError('Item not found');
 
-  let imported = 0;
-  for (const code of codes) {
-    const r = await query(
-      `INSERT INTO wms.marking_codes (tenant_id, item_id, code, created_by)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (tenant_id, code) DO NOTHING
-       RETURNING id`,
-      [tenantId, itemId, code, createdBy]
-    );
-    if (r.rowCount > 0) imported++;
-  }
+  // Bulk-вставка через unnest() вместо INSERT по одному коду за вызов (владелец,
+  // 19.09.2026, аудит модуля "Честный знак": при импорте пачками в тысячи
+  // кодов из Excel это были тысячи последовательных round-trip'ов к БД -
+  // заметно медленно на объёме ~6000 ед./сутки). Число параметров запроса не
+  // растёт с количеством строк (тот же приём, что и в createWithdrawalExport
+  // ниже). ON CONFLICT DO NOTHING + RETURNING id даёт точное число реально
+  // вставленных строк (дубликаты просто не попадают в RETURNING).
+  const insRes = await query(
+    `INSERT INTO wms.marking_codes (tenant_id, item_id, code, created_by)
+     SELECT $1, $2, x.code, $3
+     FROM unnest($4::text[]) AS x(code)
+     ON CONFLICT (tenant_id, code) DO NOTHING
+     RETURNING id`,
+    [tenantId, itemId, createdBy, codes]
+  );
+  const imported = insRes.rowCount;
   return {
     imported, duplicates: codes.length - imported,
     skipped_invalid: skippedInvalid, skipped_broken_structure: skippedBroken,
@@ -604,7 +609,7 @@ async function listPendingManualOverrides({ tenantId, limit = 200 }) {
      WHERE mc.tenant_id=$1 AND mc.wb_submit_status='manual_override'
      ORDER BY mc.used_at DESC
      LIMIT $2`,
-    [tenantId, Math.min(Number(limit) || 200, 1000)]
+    [tenantId, Math.max(1, Math.min(Number(limit) || 200, 1000))]
   );
   return r.rows;
 }
@@ -840,7 +845,10 @@ async function listCodesForShipment({ tenantId, shipmentExternalId }) {
  * коды (реально ушедшие в заказ на упаковке) - 'available' в отчёт об
  * отгрузке смысла попадать нет.
  */
-async function getShippedReport({ tenantId, clientId = null, dateFrom = null, dateTo = null, sticker = null, limit = 5000 }) {
+async function getShippedReport({
+  tenantId, clientId = null, dateFrom = null, dateTo = null, sticker = null, limit = 300,
+  afterUsedAt = null, afterId = null,
+}) {
   const params = [tenantId];
   const conds = [`mc.tenant_id=$1`, `mc.status='used'`];
   let idx = 2;
@@ -848,10 +856,21 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
   if (dateFrom) { conds.push(`mc.used_at >= $${idx++}::date`); params.push(dateFrom); }
   if (dateTo)   { conds.push(`mc.used_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(dateTo); }
   if (sticker)  { conds.push(`wo.wb_sticker_code=$${idx++}`); params.push(String(sticker).trim()); }
-  params.push(Math.min(Number(limit) || 5000, 20000));
+  // Keyset-пагинация (владелец, 19.09.2026, аудит "Честного знака": "и все на
+  // одной странице... отгрузки по 6000 шк в сутки, список очень большой
+  // будет") - страница за страницей по (used_at, id) вместо OFFSET, который
+  // на больших таблицах дорожает линейно с глубиной страницы. mc.id как
+  // тай-брейкер обязателен: у пачки кодов, отгруженных в одной волне, used_at
+  // часто совпадает до секунды.
+  if (afterUsedAt && afterId) {
+    conds.push(`(mc.used_at, mc.id) < ($${idx++}::timestamptz, $${idx++}::bigint)`);
+    params.push(afterUsedAt, afterId);
+  }
+  const effectiveLimit = Math.max(1, Math.min(Number(limit) || 300, 2000));
+  params.push(effectiveLimit);
 
   const r = await query(
-    `SELECT mc.code, mc.used_at, mc.wb_submit_status, mc.wb_order_id,
+    `SELECT mc.id, mc.code, mc.used_at, mc.wb_submit_status, mc.wb_order_id,
             i.barcode, i.item_name, i.vendor_code, i.size,
             s.external_id AS shipment_code, s.marketplace, s.shipped_at,
             c.client_name,
@@ -878,11 +897,16 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
        LIMIT 1
      ) wo ON mc.wb_order_id IS NOT NULL
      WHERE ${conds.join(' AND ')}
-     ORDER BY mc.used_at DESC
+     ORDER BY mc.used_at DESC, mc.id DESC
      LIMIT $${idx}`,
     params
   );
-  return { rows: r.rows };
+  const rows = r.rows;
+  const last = rows[rows.length - 1];
+  const nextCursor = rows.length === effectiveLimit && last
+    ? { after_used_at: last.used_at, after_id: last.id }
+    : null;
+  return { rows, next_cursor: nextCursor };
 }
 
 /**
@@ -896,7 +920,8 @@ async function getShippedReport({ tenantId, clientId = null, dateFrom = null, da
  */
 async function getCodesJournal({
   tenantId, clientId = null, barcode = null, status = null, sticker = null,
-  dateFrom = null, dateTo = null, limit = 5000,
+  dateFrom = null, dateTo = null, limit = 300,
+  afterCreatedAt = null, afterId = null,
 }) {
   const params = [tenantId];
   const conds = [`mc.tenant_id=$1`];
@@ -913,10 +938,16 @@ async function getCodesJournal({
   }
   if (dateFrom) { conds.push(`mc.created_at >= $${idx++}::date`); params.push(dateFrom); }
   if (dateTo)   { conds.push(`mc.created_at < ($${idx++}::date + INTERVAL '1 day')`); params.push(dateTo); }
-  params.push(Math.min(Number(limit) || 5000, 20000));
+  // Keyset-пагинация - см. комментарий в getShippedReport выше, тот же приём.
+  if (afterCreatedAt && afterId) {
+    conds.push(`(mc.created_at, mc.id) < ($${idx++}::timestamptz, $${idx++}::bigint)`);
+    params.push(afterCreatedAt, afterId);
+  }
+  const effectiveLimit = Math.max(1, Math.min(Number(limit) || 300, 2000));
+  params.push(effectiveLimit);
 
   const r = await query(
-    `SELECT mc.code, mc.status, mc.source, mc.created_at,
+    `SELECT mc.id, mc.code, mc.status, mc.source, mc.created_at,
             mc.used_at, mc.wb_submit_status, mc.wb_order_id,
             i.barcode, i.item_name, i.vendor_code, i.size,
             c.client_name,
@@ -944,11 +975,16 @@ async function getCodesJournal({
        LIMIT 1
      ) wo ON mc.wb_order_id IS NOT NULL
      WHERE ${conds.join(' AND ')}
-     ORDER BY mc.created_at DESC
+     ORDER BY mc.created_at DESC, mc.id DESC
      LIMIT $${idx}`,
     params
   );
-  return { rows: r.rows };
+  const rows = r.rows;
+  const last = rows[rows.length - 1];
+  const nextCursor = rows.length === effectiveLimit && last
+    ? { after_created_at: last.created_at, after_id: last.id }
+    : null;
+  return { rows, next_cursor: nextCursor };
 }
 
 // =============================================================================
@@ -997,7 +1033,7 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
   const conds = [`mc.tenant_id=$1`, `mc.status='used'`, `mc.withdrawal_status IS NULL`, `mc.wb_order_id IS NOT NULL`];
   let idx = 2;
   if (clientId) { conds.push(`i.client_id=$${idx++}`); params.push(Number(clientId)); }
-  params.push(Math.min(Number(limit) || 20000, 20000));
+  params.push(Math.max(1, Math.min(Number(limit) || 20000, 20000)));
 
   const r = await run(
     `SELECT mc.id AS marking_code_id, mc.code, mc.wb_order_id,
@@ -1106,7 +1142,7 @@ async function listWithdrawalExports({ tenantId, limit = 200 }) {
      WHERE e.tenant_id=$1
      ORDER BY e.created_at DESC
      LIMIT $2`,
-    [tenantId, Math.min(Number(limit) || 200, 1000)]
+    [tenantId, Math.max(1, Math.min(Number(limit) || 200, 1000))]
   );
   return r.rows;
 }

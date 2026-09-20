@@ -64,6 +64,7 @@
             <tbody id="shipped-body"></tbody>
           </table>
         </div>
+        <button class="btn-sm btn-back" id="shipped-more-btn" style="display:none;margin-top:10px;width:100%;" onclick="loadShippedReport(true)">Показать ещё</button>
       </div>
     </div>
 
@@ -106,6 +107,7 @@
             <tbody id="journal-body"></tbody>
           </table>
         </div>
+        <button class="btn-sm btn-back" id="journal-more-btn" style="display:none;margin-top:10px;width:100%;" onclick="loadJournal(true)">Показать ещё</button>
       </div>
     </div>
 
@@ -244,6 +246,8 @@ var SOURCE_LABELS = {
 var shippedRows = [];
 var journalRows = [];
 var journalLoaded = false;
+var shippedNextCursor = null;
+var journalNextCursor = null;
 function loadClients() {
   return _loadClients.apply(this, arguments);
 }
@@ -300,74 +304,53 @@ function defaultDates() {
   document.getElementById('j-date-from').value = fromStr;
 }
 
-// Явно передаём limit, чтобы фронт знал, каким лимитом ограничен ответ, и
-// мог предупредить, если выборка обрезана (иначе на клиентах с большим
-// потоком заказов срез в 5000 строк выглядел бы как "это все данные",
-// хотя на самом деле часть за период просто не поместилась).
-var REPORT_LIMIT = 5000;
-function loadShippedReport() {
-  return _loadShippedReport.apply(this, arguments);
-} // Клиентский экспорт в CSV (Excel открывает такие файлы сразу, с BOM для
-// корректной кириллицы) — тот же подход, что и в других отчётах WMS
-// (см. public/seller/receiving-history.html), без сторонних библиотек.
-function _loadShippedReport() {
-  _loadShippedReport = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
-    var params, clientId, dateFrom, dateTo, sticker, res, _t2;
-    return _regenerator().w(function (_context4) {
-      while (1) switch (_context4.p = _context4.n) {
-        case 0:
-          _context4.p = 0;
-          params = {
-            limit: REPORT_LIMIT
-          };
-          clientId = UI.val('#f-client');
-          if (clientId) params.client_id = clientId;
-          dateFrom = UI.val('#f-date-from');
-          if (dateFrom) params.date_from = dateFrom;
-          dateTo = UI.val('#f-date-to');
-          if (dateTo) params.date_to = dateTo;
-          sticker = UI.val('#f-sticker');
-          if (sticker) params.sticker = sticker.trim();
-          _context4.n = 1;
-          return window.API.marking.shippedReport(params);
-        case 1:
-          res = _context4.v;
-          shippedRows = res.rows || [];
-          if (shippedRows.length >= REPORT_LIMIT) {
-            UI.notify.warn("\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u043F\u0435\u0440\u0432\u044B\u0435 ".concat(REPORT_LIMIT, " \u2014 \u0441\u0443\u0437\u044C\u0442\u0435 \u043F\u0435\u0440\u0438\u043E\u0434 \u0438\u043B\u0438 \u0432\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043A\u043B\u0438\u0435\u043D\u0442\u0430, \u0432\u043E\u0437\u043C\u043E\u0436\u043D\u043E \u0435\u0441\u0442\u044C \u0435\u0449\u0451 \u0434\u0430\u043D\u043D\u044B\u0435"));
-          }
-          document.getElementById('k-count').textContent = shippedRows.length;
-          document.getElementById('k-sent').textContent = shippedRows.filter(function (r) {
-            return r.wb_submit_status === 'sent';
-          }).length;
-          document.getElementById('k-export').textContent = shippedRows.filter(function (r) {
-            return r.wb_submit_status === 'export_only';
-          }).length;
-          document.getElementById('k-override').textContent = shippedRows.filter(function (r) {
-            return r.wb_submit_status === 'manual_override';
-          }).length;
-          UI.renderTable('#shipped-body', shippedRows, function (r) {
-            return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.used_at), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "<div style=\"font-size:11px;color:var(--muted);\">").concat(UI.escHtml(r.vendor_code || ''), "</div></td>\n            <td>").concat(UI.escHtml(r.size || '—'), "</td>\n            <td>").concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.wb_sticker_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.shipment_code || '—'), "</td>\n            <td><span class=\"pill ").concat(WB_STATUS_PILL[r.wb_submit_status] || 'pill-gray', "\">").concat(WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status || '—'), "</span></td>\n          </tr>\n        ");
-          });
-          _context4.n = 4;
-          break;
-        case 2:
-          _context4.p = 2;
-          _t2 = _context4.v;
-          if (!isModuleDisabled(_t2)) {
-            _context4.n = 3;
-            break;
-          }
-          showModuleDisabled();
-          return _context4.a(2);
-        case 3:
-          UI.notify.err(_t2.message);
-        case 4:
-          return _context4.a(2);
-      }
-    }, _callee4, null, [[0, 2]]);
-  }));
-  return _loadShippedReport.apply(this, arguments);
+// Постраничная загрузка вместо жёсткого среза (аудит "Честного знака",
+// 20.09.2026: при ~6000 шт/сутки одна страница на весь список нечитаема).
+// PAGE_SIZE — сколько строк подгружаем за клик "Показать"/"Показать ещё";
+// пока сервер отдаёт next_cursor — кнопка "Показать ещё" остаётся видимой.
+var PAGE_SIZE = 300;
+async function loadShippedReport(append) {
+  try {
+    var params = { limit: PAGE_SIZE };
+    var clientId = UI.val('#f-client');
+    if (clientId) params.client_id = clientId;
+    var dateFrom = UI.val('#f-date-from');
+    if (dateFrom) params.date_from = dateFrom;
+    var dateTo = UI.val('#f-date-to');
+    if (dateTo) params.date_to = dateTo;
+    var sticker = UI.val('#f-sticker');
+    if (sticker) params.sticker = sticker.trim();
+    if (append && shippedNextCursor) {
+      params.after_used_at = shippedNextCursor.after_used_at;
+      params.after_id = shippedNextCursor.after_id;
+    } else {
+      shippedRows = [];
+    }
+    var res = await window.API.marking.shippedReport(params);
+    shippedRows = shippedRows.concat(res.rows || []);
+    shippedNextCursor = res.next_cursor || null;
+    var moreBtn = document.getElementById('shipped-more-btn');
+    if (moreBtn) moreBtn.style.display = shippedNextCursor ? 'block' : 'none';
+    document.getElementById('k-count').textContent = shippedRows.length;
+    document.getElementById('k-sent').textContent = shippedRows.filter(function (r) {
+      return r.wb_submit_status === 'sent';
+    }).length;
+    document.getElementById('k-export').textContent = shippedRows.filter(function (r) {
+      return r.wb_submit_status === 'export_only';
+    }).length;
+    document.getElementById('k-override').textContent = shippedRows.filter(function (r) {
+      return r.wb_submit_status === 'manual_override';
+    }).length;
+    UI.renderTable('#shipped-body', shippedRows, function (r) {
+      return "\n          <tr>\n            <td>".concat(UI.fmtDateTime(r.used_at), "</td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "<div style=\"font-size:11px;color:var(--muted);\">").concat(UI.escHtml(r.vendor_code || ''), "</div></td>\n            <td>").concat(UI.escHtml(r.size || '—'), "</td>\n            <td>").concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.wb_sticker_code || '—'), "</td>\n            <td>").concat(UI.escHtml(r.shipment_code || '—'), "</td>\n            <td><span class=\"pill ").concat(WB_STATUS_PILL[r.wb_submit_status] || 'pill-gray', "\">").concat(WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status || '—'), "</span></td>\n          </tr>\n        ");
+    });
+  } catch (e) {
+    if (isModuleDisabled(e)) {
+      showModuleDisabled();
+      return;
+    }
+    UI.notify.err(e.message);
+  }
 }
 function exportShippedCsv() {
   if (!shippedRows.length) {
@@ -401,69 +384,53 @@ function exportShippedCsv() {
   a.click();
   URL.revokeObjectURL(url);
 }
-function loadJournal() {
-  return _loadJournal.apply(this, arguments);
-}
-function _loadJournal() {
-  _loadJournal = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
-    var params, clientId, status, barcode, sticker, dateFrom, dateTo, res, _t3;
-    return _regenerator().w(function (_context5) {
-      while (1) switch (_context5.p = _context5.n) {
-        case 0:
-          _context5.p = 0;
-          journalLoaded = true;
-          params = {
-            limit: REPORT_LIMIT
-          };
-          clientId = UI.val('#j-client');
-          if (clientId) params.client_id = clientId;
-          status = UI.val('#j-status');
-          if (status) params.status = status;
-          barcode = UI.val('#j-barcode');
-          if (barcode) params.barcode = barcode.trim();
-          sticker = UI.val('#j-sticker');
-          if (sticker) params.sticker = sticker.trim();
-          dateFrom = UI.val('#j-date-from');
-          if (dateFrom) params.date_from = dateFrom;
-          dateTo = UI.val('#j-date-to');
-          if (dateTo) params.date_to = dateTo;
-          _context5.n = 1;
-          return window.API.marking.codesJournal(params);
-        case 1:
-          res = _context5.v;
-          journalRows = res.rows || [];
-          if (journalRows.length >= REPORT_LIMIT) {
-            UI.notify.warn("\u041F\u043E\u043A\u0430\u0437\u0430\u043D\u044B \u043F\u0435\u0440\u0432\u044B\u0435 ".concat(REPORT_LIMIT, " \u2014 \u0441\u0443\u0437\u044C\u0442\u0435 \u043F\u0435\u0440\u0438\u043E\u0434/\u0444\u0438\u043B\u044C\u0442\u0440\u044B, \u0432\u043E\u0437\u043C\u043E\u0436\u043D\u043E \u0435\u0441\u0442\u044C \u0435\u0449\u0451 \u0434\u0430\u043D\u043D\u044B\u0435"));
-          }
-          document.getElementById('j-count').textContent = journalRows.length;
-          document.getElementById('j-available').textContent = journalRows.filter(function (r) {
-            return r.status === 'available';
-          }).length;
-          document.getElementById('j-used').textContent = journalRows.filter(function (r) {
-            return r.status === 'used';
-          }).length;
-          UI.renderTable('#journal-body', journalRows, function (r) {
-            return "\n          <tr>\n            <td>".concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "<div style=\"font-size:11px;color:var(--muted);\">").concat(UI.escHtml(r.vendor_code || ''), " ").concat(UI.escHtml(r.size || ''), "</div></td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.wb_sticker_code || '—'), "</td>\n            <td><span class=\"pill ").concat(CODE_STATUS_PILL[r.status] || 'pill-gray', "\">").concat(CODE_STATUS_LABELS[r.status] || UI.escHtml(r.status || '—'), "</span></td>\n            <td>").concat(UI.fmtDateTime(r.created_at), "<div style=\"font-size:11px;color:var(--muted);\">").concat(SOURCE_LABELS[r.source] || UI.escHtml(r.source || ''), "</div></td>\n            <td>").concat(r.used_at ? UI.fmtDateTime(r.used_at) : '—').concat(r.used_at ? "<div style=\"font-size:11px;color:var(--muted);\">".concat(WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status || ''), "</div>") : '', "</td>\n            <td>").concat(UI.escHtml(r.shipment_code || '—'), "</td>\n          </tr>\n        ");
-          });
-          _context5.n = 4;
-          break;
-        case 2:
-          _context5.p = 2;
-          _t3 = _context5.v;
-          if (!isModuleDisabled(_t3)) {
-            _context5.n = 3;
-            break;
-          }
-          showModuleDisabled();
-          return _context5.a(2);
-        case 3:
-          UI.notify.err(_t3.message);
-        case 4:
-          return _context5.a(2);
-      }
-    }, _callee5, null, [[0, 2]]);
-  }));
-  return _loadJournal.apply(this, arguments);
+// Постраничная загрузка (см. loadShippedReport выше) — тот же принцип для
+// журнала кодов: сервер отдаёт next_cursor по (created_at, id), пока он
+// не null — показываем кнопку "Показать ещё".
+async function loadJournal(append) {
+  try {
+    journalLoaded = true;
+    var params = { limit: PAGE_SIZE };
+    var clientId = UI.val('#j-client');
+    if (clientId) params.client_id = clientId;
+    var status = UI.val('#j-status');
+    if (status) params.status = status;
+    var barcode = UI.val('#j-barcode');
+    if (barcode) params.barcode = barcode.trim();
+    var sticker = UI.val('#j-sticker');
+    if (sticker) params.sticker = sticker.trim();
+    var dateFrom = UI.val('#j-date-from');
+    if (dateFrom) params.date_from = dateFrom;
+    var dateTo = UI.val('#j-date-to');
+    if (dateTo) params.date_to = dateTo;
+    if (append && journalNextCursor) {
+      params.after_created_at = journalNextCursor.after_created_at;
+      params.after_id = journalNextCursor.after_id;
+    } else {
+      journalRows = [];
+    }
+    var res = await window.API.marking.codesJournal(params);
+    journalRows = journalRows.concat(res.rows || []);
+    journalNextCursor = res.next_cursor || null;
+    var moreBtn = document.getElementById('journal-more-btn');
+    if (moreBtn) moreBtn.style.display = journalNextCursor ? 'block' : 'none';
+    document.getElementById('j-count').textContent = journalRows.length;
+    document.getElementById('j-available').textContent = journalRows.filter(function (r) {
+      return r.status === 'available';
+    }).length;
+    document.getElementById('j-used').textContent = journalRows.filter(function (r) {
+      return r.status === 'used';
+    }).length;
+    UI.renderTable('#journal-body', journalRows, function (r) {
+      return "\n          <tr>\n            <td>".concat(UI.escHtml(r.barcode || '—'), "</td>\n            <td>").concat(UI.escHtml(r.item_name || '—'), "<div style=\"font-size:11px;color:var(--muted);\">").concat(UI.escHtml(r.vendor_code || ''), " ").concat(UI.escHtml(r.size || ''), "</div></td>\n            <td>").concat(UI.escHtml(r.client_name || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.code || '—'), "</td>\n            <td style=\"font-family:monospace;font-size:12px;\">").concat(UI.escHtml(r.wb_sticker_code || '—'), "</td>\n            <td><span class=\"pill ").concat(CODE_STATUS_PILL[r.status] || 'pill-gray', "\">").concat(CODE_STATUS_LABELS[r.status] || UI.escHtml(r.status || '—'), "</span></td>\n            <td>").concat(UI.fmtDateTime(r.created_at), "<div style=\"font-size:11px;color:var(--muted);\">").concat(SOURCE_LABELS[r.source] || UI.escHtml(r.source || ''), "</div></td>\n            <td>").concat(r.used_at ? UI.fmtDateTime(r.used_at) : '—').concat(r.used_at ? "<div style=\"font-size:11px;color:var(--muted);\">".concat(WB_STATUS_LABELS[r.wb_submit_status] || UI.escHtml(r.wb_submit_status || ''), "</div>") : '', "</td>\n            <td>").concat(UI.escHtml(r.shipment_code || '—'), "</td>\n          </tr>\n        ");
+    });
+  } catch (e) {
+    if (isModuleDisabled(e)) {
+      showModuleDisabled();
+      return;
+    }
+    UI.notify.err(e.message);
+  }
 }
 function exportJournalCsv() {
   if (!journalRows.length) {
@@ -518,7 +485,7 @@ function loadWithdrawalPending() {
       var deadlineTs = r.deadline_at ? new Date(r.deadline_at).getTime() : null;
       var overdue = deadlineTs !== null && deadlineTs < now;
       var dueSoon = deadlineTs !== null && !overdue && deadlineTs <= now + 24 * 60 * 60 * 1000;
-      var deadlineCell = !r.deadline_at ? '—' : overdue ? '<span style="color:var(--red);font-weight:700;">' + UI.fmtDateTime(r.deadline_at) + ' (просрочено)</span>' : dueSoon ? '<span style="color:var(--red);">' + UI.fmtDateTime(r.deadline_at) + '</span>' : UI.fmtDateTime(r.deadline_at);
+      var deadlineCell = !r.deadline_at ? '—' : overdue ? '<span style="color:var(--red);font-weight:700;">' + UI.escHtml(UI.fmtDateTime(r.deadline_at)) + ' (просрочено)</span>' : dueSoon ? '<span style="color:var(--red);">' + UI.escHtml(UI.fmtDateTime(r.deadline_at)) + '</span>' : UI.escHtml(UI.fmtDateTime(r.deadline_at));
       return '<tr>' + '<td>' + (r.sold_at ? UI.fmtDateTime(r.sold_at) : '—') + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;cursor:pointer;text-decoration:underline;" onclick="showCodeTimeline(' + r.marking_code_id + ')" title="Показать историю">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '<td>' + deadlineCell + '</td>' + '</tr>';
     });
   }).catch(function (e) {
