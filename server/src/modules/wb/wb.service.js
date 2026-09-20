@@ -1847,6 +1847,19 @@ async function launchDeficitSupply({ tenantId, deficitSupplyId, warehouseId: wms
       );
     }
 
+    // wms.wb_supplies (найдено 21.09.2026, "отсканировал что отгрузил но
+    // отгрузки в доставку не улетели") - launchDeficitSupply НИКОГДА не писал
+    // сюда, только в свою wms.wb_deficit_supplies. А подтверждение отгрузки
+    // (confirmShipment → deliverSupplyToWb/fetchWbSupplyQrAfterCommit в
+    // shipping.service.js) ищет api_token ИМЕННО через JOIN с wms.wb_supplies
+    // по supply_code - без этой строки поиск токена находил 0 строк, вызов
+    // wbClient.deliverSupply() в ВБ вообще не происходил (тихий soft-fail,
+    // "no_wb_account"), локально волна помечалась in_transit, а в реальном
+    // кабинете ВБ поставка так и висела "На сборке" навсегда.
+    await client.query(
+      `INSERT INTO wms.wb_supplies(tenant_id,mp_account_id,supply_code) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [tenantId, ds.mp_account_id, ds.supply_code]
+    );
     await client.query(
       `INSERT INTO wms.shipments(tenant_id,warehouse_id,client_id,external_id,marketplace,status,created_by)
        VALUES($1,$2,$3,$4,'wb','new',$5) ON CONFLICT(tenant_id,external_id) DO UPDATE SET client_id=EXCLUDED.client_id`,
