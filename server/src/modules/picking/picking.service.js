@@ -1931,6 +1931,34 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
       `SELECT id, warehouse_id, client_id FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 LIMIT 1`,
       [tenantId, shipmentCode]
     );
+
+    // Пустая поставка (21.09.2026, "не должна пустая поставка попадать на
+    // упаковку, она блокирует работу") - если ВСЕ задачи волны пропущены (и,
+    // как правило, уехали в "Дефициты" - см. moveOrderToDeficitSupply в
+    // skipTask), собирать в коробе физически нечего: ноль штук, нулевой
+    // вес. Раньше closeWave() всё равно безусловно создавал packing_tasks -
+    // упаковщик получал в очередь пустую отгрузку без единой строки состава
+    // и без возможности её закрыть (нечего сканировать, "Подтвердить
+    // упаковку" рассчитан на реальные короба) - зависшая задача блокировала
+    // весь стол упаковки. Если ни одна задача волны не 'done' - в упаковку
+    // вообще не отправляем, сразу закрываем саму отгрузку как отменённую
+    // (содержимое целиком уехало в "Дефициты", исходная поставка ВБ пуста).
+    const doneCountRes = await client.query(
+      `SELECT COUNT(*)::int AS n FROM wms.picking_tasks WHERE wave_id=$1 AND status='done'`,
+      [wave.id]
+    );
+    const nothingPicked = doneCountRes.rows[0].n === 0;
+    if (nothingPicked && shipRes.rowCount > 0) {
+      await client.query(
+        `UPDATE wms.shipments
+         SET status='cancelled', cancelled_at=NOW(), cancelled_by=$1,
+             cancel_reason=$2, updated_at=NOW()
+         WHERE id=$3`,
+        [pickerId, 'Все позиции пропущены и перенесены в поставку «Дефициты» — упаковывать нечего (авто, при закрытии волны)', shipRes.rows[0].id]
+      );
+      return { ok: true, shipmentCode, status: 'cancelled', emptyShipment: true, printJobCreated: false };
+    }
+
     let printJobCreated = false;
     if (shipRes.rowCount > 0) {
       const shipment = shipRes.rows[0];
