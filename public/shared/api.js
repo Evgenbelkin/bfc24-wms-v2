@@ -998,6 +998,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     deficitSupplies: function deficitSupplies() {
       return _get('/wb/deficit-supplies');
     },
+    deficitSupplyDetail: function deficitSupplyDetail(id) {
+      return _get('/wb/deficit-supplies/' + id);
+    },
     launchDeficitSupply: function launchDeficitSupply(id) {
       return post('/wb/deficit-supplies/' + id + '/launch', {});
     }

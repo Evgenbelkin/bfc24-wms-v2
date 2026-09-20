@@ -736,6 +736,19 @@ router.get('/deficit-supplies', requireRole('tenant_admin','supervisor'), async 
   } catch(e){ next(e); }
 });
 
+/** GET /wb/deficit-supplies/:id — состав "копящейся" поставки Дефициты
+ *  (какие заказы/товары в неё уже попали) — детализация по клику на карточку
+ *  в диспетчерской (21.09.2026). */
+router.get('/deficit-supplies/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await wbService.getDeficitSupplyDetail({
+      tenantId: req.user.tenantId,
+      deficitSupplyId: validatePositiveInt(req.params.id, 'id'),
+    });
+    res.json({ ok:true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /wb/deficit-supplies/:id/launch — "Запустить дефициты": оборачивает
  *  уже существующую в ВБ поставку Дефициты в обычную волну сборки (без
  *  повторных createSupply/addOrdersToSupply — заказы там уже есть) и сразу

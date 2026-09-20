@@ -403,6 +403,14 @@ function _loadShipments() {
             var pickingPct = s.tasks_total ? Math.round((s.tasks_done || 0) / s.tasks_total * 100) : 0;
             var packingPct = qtyPlan ? Math.round(packedQty / qtyPlan * 100) : 0;
             var shippingPct = ['in_transit', 'done'].includes(s.status) ? 100 : 0;
+            // pickingResolved (21.09.2026, "не видно что волну закончили
+            // собирать") - done+skipped===total означает, что по сборке
+            // больше нечего делать (остальное либо собрано, либо пропущено
+            // и уехало в "Дефициты"), даже если pickingPct из-за пропусков
+            // ниже 100%. Отдельный явный признак вместо того, чтобы гадать
+            // по проценту.
+            var tasksSkipped = Number(s.tasks_skipped || 0);
+            var pickingResolved = s.tasks_total > 0 && (Number(s.tasks_done || 0) + tasksSkipped) === s.tasks_total;
             return _objectSpread(_objectSpread({}, s), {}, {
               pickingPct: pickingPct,
               packingPct: packingPct,
@@ -410,7 +418,17 @@ function _loadShipments() {
               qtyPlan: qtyPlan,
               qtyPicked: qtyPicked,
               packedQty: packedQty,
-              stage: stageOf(pickingPct, packingPct, shippingPct, s.tasks_total)
+              tasksSkipped: tasksSkipped,
+              pickingResolved: pickingResolved,
+              // pickingResolved ? 100 : pickingPct (21.09.2026) - stageOf()
+              // раньше получал "сырой" pickingPct и держал отгрузку на
+              // вкладке "Сборка" НАВСЕГДА, если часть задач пропущена/уехала
+              // в "Дефициты" (done+skipped=total, но done/total < 100%) - она
+              // физически готова к упаковке, но упаковщик её вообще не видел
+              // на своей вкладке. pickingPct на самой карточке (бар, %) не
+              // трогаем - там это осмысленная информация "сколько реально
+              // физически собрано", отдельно от "готово к след. этапу".
+              stage: stageOf(pickingResolved ? 100 : pickingPct, packingPct, shippingPct, s.tasks_total)
             });
           });
           return _context3.a(2, shipFilter === 'cancelled' ? undefined : renderShipmentsList());
@@ -519,9 +537,16 @@ function insertPickingNote(rowEl, s) {
   // "готова к отгрузке" всё равно подписаны как "на сборке", что выглядит
   // так, будто они ещё не собраны до конца. Сначала проверяем прогресс, и
   // только потом picker_name.
-  var text;
-  if (s.pickingPct >= 100) {
-    text = s.picker_name ? 'собрано \xB7 сборщик: ' + s.picker_name : 'собрано';
+  // pickingResolved (21.09.2026) - собирать больше нечего (всё либо done,
+  // либо skipped/уехало в "Дефициты"), даже если pickingPct < 100 из-за
+  // пропусков - раньше в этом случае строка молчала о завершении сборки,
+  // и было видно только "33% / на сборке", как будто работа ещё идёт.
+  var text, strong = false;
+  if (s.pickingResolved) {
+    strong = true;
+    text = s.tasksSkipped > 0
+      ? '✓ Сборка завершена (' + s.tasksSkipped + ' пропущено → Дефициты)'
+      : '✓ Сборка завершена' + (s.picker_name ? ' \xB7 сборщик: ' + s.picker_name : '');
   } else if (s.picker_name) {
     text = 'на сборке \xB7 сборщик: ' + s.picker_name;
   } else {
@@ -529,6 +554,7 @@ function insertPickingNote(rowEl, s) {
   }
   var div = document.createElement('div');
   div.className = 'sub';
+  if (strong) div.style.cssText = 'color:#16a34a;font-weight:600;';
   div.innerHTML = '<svg class="i" viewBox="0 0 24 24"><path d="M3 8.5 12 3l9 5.5v7L12 21l-9-5.5v-7z"/><path d="M12 3v9"/><path d="M3 8.5 12 13l9-4.5"/></svg> ' + UI.escHtml(text);
   packingNoteEl.parentNode.insertBefore(div, packingNoteEl);
 }
@@ -1284,7 +1310,7 @@ function renderDeficitSupplies(rows) {
   }
   box.innerHTML = rows.map(function (r) {
     return '' +
-      '<div class="list-row" style="flex-direction:column;align-items:stretch;">' +
+      '<div class="list-row" style="flex-direction:column;align-items:stretch;cursor:pointer;" onclick="openDeficitSupplyDetail(' + r.id + ')">' +
         '<div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
           '<div>' +
             '<div class="title">' + UI.escHtml(r.warehouse_name || ('Склад ' + r.warehouse_id)) + '</div>' +
@@ -1293,10 +1319,63 @@ function renderDeficitSupplies(rows) {
           '<span class="pill ' + (r.orders_count > 0 ? 'pill-red' : 'pill-green') + '">' + r.orders_count + ' зак.</span>' +
         '</div>' +
         '<div style="display:flex;gap:8px;align-self:flex-end;margin-top:8px;">' +
-          '<button class="btn-sm btn-back"' + (r.orders_count > 0 ? '' : ' disabled') + ' onclick="launchDeficitSupplyUi(' + r.id + ')">▶ Запустить в сборку</button>' +
+          '<button class="btn-sm btn-back"' + (r.orders_count > 0 ? '' : ' disabled') + ' onclick="event.stopPropagation();launchDeficitSupplyUi(' + r.id + ')">▶ Запустить в сборку</button>' +
         '</div>' +
       '</div>';
   }).join('');
+}
+// Состав "копящейся" поставки Дефициты по клику на карточку (21.09.2026,
+// "в дефицитах видно волну но нельзя посмотреть состав") — переиспользует
+// тот же модальный overlay, что и детализация обычной волны
+// (closeWaveDetailModal/renderWaveDetailModal выше), под своим id, чтобы не
+// конфликтовать, если вдруг открыты оба сразу.
+function closeDeficitDetailModal() {
+  var overlay = document.getElementById('deficit-detail-overlay');
+  if (overlay) overlay.remove();
+}
+function renderDeficitDetailModal(supply, orders) {
+  closeDeficitDetailModal();
+  var overlay = document.createElement('div');
+  overlay.id = 'deficit-detail-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  var rowsHtml = orders.map(function (o) {
+    var itemName = o.item_name || o.barcode || '—';
+    return '<tr style="border-bottom:1px solid var(--border,#e2e8f0);">' +
+      '<td style="padding:8px 6px;font-family:monospace;">' + UI.escHtml(String(o.wb_order_id)) + '</td>' +
+      '<td style="padding:8px 6px;">' + UI.escHtml(itemName) + (o.size ? ' (' + UI.escHtml(o.size) + ')' : '') + '</td>' +
+      '<td style="padding:8px 6px;text-align:center;white-space:nowrap;">' + (o.qty || 1) + '</td>' +
+      '<td style="padding:8px 6px;font-size:12px;color:var(--muted,#64748b);">' + UI.escHtml(o.original_shipment_code || '—') + '</td>' +
+    '</tr>';
+  }).join('');
+
+  overlay.innerHTML =
+    '<div style="background:var(--card,#fff);border-radius:16px;padding:22px;width:100%;max-width:640px;max-height:85vh;overflow-y:auto;box-sizing:border-box;">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:10px;">' +
+        '<div>' +
+          '<div style="font-size:17px;font-weight:700;">' + UI.escHtml(supply.warehouse_name || ('Склад ' + supply.warehouse_id)) + '</div>' +
+          '<div style="font-size:13px;color:var(--muted,#64748b);margin-top:2px;">' + UI.escHtml(supply.client_name || supply.account_name || '—') + ' \xB7 поставка ' + UI.escHtml(supply.supply_code) + '</div>' +
+        '</div>' +
+        '<button type="button" onclick="closeDeficitDetailModal()" style="background:none;border:none;font-size:22px;cursor:pointer;line-height:1;color:var(--muted,#64748b);">×</button>' +
+      '</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;">' +
+        '<thead><tr style="border-bottom:2px solid var(--border,#e2e8f0);text-align:left;">' +
+          '<th style="padding:6px;">Заказ ВБ</th><th style="padding:6px;">Товар</th><th style="padding:6px;text-align:center;">Кол-во</th><th style="padding:6px;">Из отгрузки</th>' +
+        '</tr></thead>' +
+        '<tbody>' + (rowsHtml || '<tr><td colspan="4" style="padding:14px 6px;color:var(--muted,#64748b);">Нет заказов</td></tr>') + '</tbody>' +
+      '</table>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeDeficitDetailModal();
+  });
+}
+function openDeficitSupplyDetail(id) {
+  window.API.wb.deficitSupplyDetail(id).then(function (res) {
+    renderDeficitDetailModal(res.supply, res.orders || []);
+  }).catch(function (e) {
+    UI.notify.err(e.message);
+  });
 }
 function launchDeficitSupplyUi(id) {
   if (!UI.confirm('Запустить эту поставку Дефициты в сборку отдельной волной?')) return;

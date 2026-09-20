@@ -1772,6 +1772,38 @@ async function listAccumulatingDeficitSupplies(tenantId) {
   return r.rows;
 }
 
+/** Состав "копящейся" поставки Дефициты — для детализации по клику на
+ *  карточку в диспетчерской (21.09.2026, "в дефицитах видно волну но нельзя
+ *  посмотреть состав"). Источник товарных данных — не wms.wb_orders (там
+ *  только barcode, без резолва item_id/названия), а wms.picking_tasks с
+ *  moved_to_deficit_supply_id=этой поставке — их туда стамповал именно
+ *  moveOrderToDeficitSupply() в момент переноса, item_id/item_name уже
+ *  резолвлены (та самая исходная задача сборки, из которой это уехало). */
+async function getDeficitSupplyDetail({ tenantId, deficitSupplyId }) {
+  const dsRes = await query(
+    `SELECT ds.id, ds.mp_account_id, ma.account_name, ma.client_id, cl.client_name AS client_name,
+            ds.warehouse_id, ds.warehouse_name, ds.supply_code, ds.status, ds.created_at
+     FROM wms.wb_deficit_supplies ds
+     JOIN wms.mp_accounts ma ON ma.id = ds.mp_account_id
+     LEFT JOIN wms.clients cl ON cl.id = ma.client_id
+     WHERE ds.id=$1 AND ds.tenant_id=$2`,
+    [deficitSupplyId, tenantId]
+  );
+  if (dsRes.rowCount === 0) throw new NotFoundError('DeficitSupply', deficitSupplyId);
+
+  const ordersRes = await query(
+    `SELECT pt.wb_order_id, pt.barcode, pt.qty, pt.shipment_code AS original_shipment_code,
+            pt.deficit_moved_at, i.item_name, i.vendor_code, i.size
+     FROM wms.picking_tasks pt
+     LEFT JOIN wms.items i ON i.id = pt.item_id
+     WHERE pt.tenant_id=$1 AND pt.moved_to_deficit_supply_id=$2
+     ORDER BY pt.deficit_moved_at DESC NULLS LAST, pt.id DESC`,
+    [tenantId, deficitSupplyId]
+  );
+
+  return { supply: dsRes.rows[0], orders: ordersRes.rows };
+}
+
 /** "Запустить дефициты" — обернуть уже существующую в ВБ "копящуюся"
  *  поставку Дефициты в обычную WMS-волну сборки, БЕЗ повторных вызовов
  *  createSupply/addOrdersToSupply (заказы там уже есть — их туда как раз и
@@ -1899,5 +1931,6 @@ module.exports = {
   moveOrderToDeficitSupply,
   getOrCreateAccumulatingDeficitSupply,
   listAccumulatingDeficitSupplies,
+  getDeficitSupplyDetail,
   launchDeficitSupply,
 };

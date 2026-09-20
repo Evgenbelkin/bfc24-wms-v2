@@ -37,6 +37,12 @@ async function listShipments({
     `SELECT s.*, c.client_name, w.warehouse_name,
        COALESCE(su.full_name, su.username) AS shipper_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
+       -- tasks_skipped (21.09.2026, "не видно что волну закончили собирать,
+       -- просто 33% и всё") - пропущенные (в т.ч. уехавшие в "Дефициты") не
+       -- попадают в tasks_done, поэтому % сборки занижен даже когда реально
+       -- собирать больше нечего - фронт использует done+skipped===total как
+       -- отдельный явный признак "сборка завершена", не полагаясь на pct.
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='skipped') AS tasks_skipped,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
        (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
        (SELECT COALESCE(SUM(t.qty_picked),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_picked,
