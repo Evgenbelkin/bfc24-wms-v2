@@ -61,6 +61,7 @@
   <div class="ship-filters" style="margin-bottom:10px;">
     <button class="ship-filter-btn active" id="main-tab-overview" onclick="setMainTab('overview')">Обзор</button>
     <button class="ship-filter-btn" id="main-tab-skipped" onclick="setMainTab('skipped')">Пропущенные позиции</button>
+    <button class="ship-filter-btn" id="main-tab-deficit" onclick="setMainTab('deficit')">Дефициты</button>
   </div>
 
   <div id="view-overview">
@@ -116,6 +117,21 @@
       </div>
       <div id="skipped-list"></div>
       <div id="cancelled-list" style="display:none;"></div>
+    </div>
+  </div>
+
+  <div id="view-deficit" style="display:none;">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div class="card-title">Поставки «Дефициты»</div>
+        <div class="sub" style="font-size:12px;color:var(--muted);max-width:520px;">
+          Сюда автоматически попадают заказы, для которых сборщик нажал «Пропустить»,
+          а остатка товара не нашлось нигде на складе — они перенесены в отдельную
+          поставку ВБ по складу назначения. «Запустить» превращает такую поставку
+          в обычную волну сборки.
+        </div>
+      </div>
+      <div id="deficit-list"></div>
     </div>
   </div>
 
@@ -1244,14 +1260,65 @@ function loadDispatcherLive() {
     console.warn('[dispatcher-live] failed to load', e);
   });
 }
+// ---------- Поставки "Дефициты" ----------
+// См. wb.service.js::moveOrderToDeficitSupply / launchDeficitSupply и
+// миграцию 071_wb_deficit_supplies.sql — сюда автоматически попадают заказы,
+// для которых при "Пропустить" подтверждено, что остатка товара нет нигде на
+// складе: они перенесены в отдельную "копящуюся" поставку ВБ под свой склад
+// назначения (тем же addOrdersToSupply, что и обычная сборка волны — WB сам
+// открепляет заказ от исходной активной поставки). "Запустить в сборку"
+// оборачивает такую поставку в обычную волну, без повторного обращения к WB
+// за созданием/добавлением — заказы там уже есть.
+function loadDeficitSupplies() {
+  return window.API.wb.deficitSupplies().then(function (res) {
+    renderDeficitSupplies(res.rows || []);
+  }).catch(function (e) {
+    console.warn('[deficit-supplies] failed to load', e);
+  });
+}
+function renderDeficitSupplies(rows) {
+  var box = document.getElementById('deficit-list');
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty-state" style="padding:16px;"><div class="icon"><svg class="i" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 1 1-5.9-9.1"/><path d="M22 4 12 14.01l-3-3"/></svg></div>Нет накопленных дефицитов</div>';
+    return;
+  }
+  box.innerHTML = rows.map(function (r) {
+    return '' +
+      '<div class="list-row" style="flex-direction:column;align-items:stretch;">' +
+        '<div class="main" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+          '<div>' +
+            '<div class="title">' + UI.escHtml(r.warehouse_name || ('Склад ' + r.warehouse_id)) + '</div>' +
+            '<div class="sub">' + UI.escHtml(r.client_name || r.account_name || '—') + ' \xB7 поставка ' + UI.escHtml(r.supply_code) + '</div>' +
+          '</div>' +
+          '<span class="pill ' + (r.orders_count > 0 ? 'pill-red' : 'pill-green') + '">' + r.orders_count + ' зак.</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-self:flex-end;margin-top:8px;">' +
+          '<button class="btn-sm btn-back"' + (r.orders_count > 0 ? '' : ' disabled') + ' onclick="launchDeficitSupplyUi(' + r.id + ')">▶ Запустить в сборку</button>' +
+        '</div>' +
+      '</div>';
+  }).join('');
+}
+function launchDeficitSupplyUi(id) {
+  if (!UI.confirm('Запустить эту поставку Дефициты в сборку отдельной волной?')) return;
+  window.API.wb.launchDeficitSupply(id).then(function (res) {
+    UI.notify.ok('Волна создана: ' + res.ordersCount + ' зак., ' + res.tasksInserted + ' задач на сборку');
+    loadDeficitSupplies();
+    loadAll();
+  }).catch(function (e) {
+    UI.notify.err(e.message);
+  });
+}
 function setMainTab(tab) {
   document.getElementById('main-tab-overview').classList.toggle('active', tab === 'overview');
   document.getElementById('main-tab-skipped').classList.toggle('active', tab === 'skipped');
+  document.getElementById('main-tab-deficit').classList.toggle('active', tab === 'deficit');
   document.getElementById('view-overview').style.display = tab === 'overview' ? '' : 'none';
   document.getElementById('view-skipped').style.display = tab === 'skipped' ? '' : 'none';
+  document.getElementById('view-deficit').style.display = tab === 'deficit' ? '' : 'none';
 }
 function loadAll() {
   loadDispatcherLive();
+  loadDeficitSupplies();
   return _loadAll.apply(this, arguments);
 }
 function _loadAll() {

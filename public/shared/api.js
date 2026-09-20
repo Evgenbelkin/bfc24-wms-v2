@@ -994,6 +994,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     acceptanceCoefficients: function acceptanceCoefficients() {
       return _get('/wb/acceptance-coefficients');
+    },
+    deficitSupplies: function deficitSupplies() {
+      return _get('/wb/deficit-supplies');
+    },
+    launchDeficitSupply: function launchDeficitSupply(id) {
+      return post('/wb/deficit-supplies/' + id + '/launch', {});
     }
   };
 
@@ -1652,4 +1658,4 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     fbsAnalytics: fbsAnalytics,
     deficit: deficit
   };
-})(window);
+})(window);

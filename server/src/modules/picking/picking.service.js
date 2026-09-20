@@ -9,7 +9,7 @@ const { validateBarcode, validateQty, validatePositiveInt, isValidKizCode } = re
 const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
-const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { triggerRedistributionForClient, moveOrderToDeficitSupply } = require('../wb/wb.service');
 const wbClient = require('../wb/wb.client');
 const { locationWalkKey, compareWalkKeys } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
@@ -1437,7 +1437,10 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
     }
 
-    return { ok: true, taskId, inventoryTaskId, quarantined, requeued, clientId: task.client_id, barcode: task.barcode };
+    return {
+      ok: true, taskId, inventoryTaskId, quarantined, requeued,
+      clientId: task.client_id, barcode: task.barcode, wbOrderId: task.wb_order_id,
+    };
   });
 
   // Перенос в карантин меняет qty_available в ячейках отбора (было в обычной
@@ -1447,6 +1450,19 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
   if (result.quarantined && result.barcode) {
     logger.info({ tenantId, barcode: result.barcode }, 'Skip→quarantine triggered WB redistribution');
     triggerRedistributionForClient({ tenantId, clientId: result.clientId, barcodes: [result.barcode] });
+  }
+
+  // Карантин подтвердил, что товара нет НИГДЕ (иначе requeued=true увёл бы
+  // задачу на альтернативную ячейку той же волны, см. блок выше) — переносим
+  // заказ в поставку "Дефициты" его склада, чтобы он не тормозил закрытие
+  // исходной поставки ВБ (см. миграцию 071_wb_deficit_supplies.sql). Best-effort
+  // и намеренно ПОСЛЕ основной транзакции (сетевой вызов к WB) — неудача здесь
+  // не должна откатывать уже состоявшийся skip, сборщик и так увидит задачу в
+  // обычном списке пропущенных (listSkippedTasks) для ручного разбора.
+  if (result.quarantined && !result.requeued && result.wbOrderId) {
+    moveOrderToDeficitSupply({ tenantId, wbOrderId: result.wbOrderId }).catch(e => {
+      logger.warn({ err: e, tenantId, wbOrderId: result.wbOrderId }, 'skipTask: moveOrderToDeficitSupply failed (non-fatal)');
+    });
   }
 
   return { ok: true, taskId: result.taskId, inventoryTaskId: result.inventoryTaskId };
