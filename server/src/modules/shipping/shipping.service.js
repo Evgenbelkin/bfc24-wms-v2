@@ -418,9 +418,23 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     const shipment = shipRes.rows[0];
 
     // Идемпотентность: если уже in_transit — возвращаем успех. Но если ВБ
-    // так и не был уведомлён об этом раньше (wb_delivered_at ещё NULL — баг
-    // до этого фикса, когда deliverSupply вообще не вызывался) — даём
+    // так и не подтвердил приём (нет реального QR поставки) — даём
     // возможность повторной попытки прямо через повторный скан.
+    //
+    // ВАЖНО (найдено 21.09.2026, "повторно не даёт отсканировать" — но в
+    // кабинете ВБ поставка так и висела "На сборке"): раньше условие было
+    // "!wb_delivered_at" — а это поле ставится сразу, как только наш вызов
+    // wbClient.deliverSupply() не выбросил исключение (см.
+    // notifyWbSupplyDelivered ниже), ДО того, как реально проверено, что ВБ
+    // принял поставку. Если WB отвечает 200 без реальной обработки (или наш
+    // клиент не считает такой ответ ошибкой), wb_delivered_at ставился, хотя
+    // поставка так и оставалась "На сборке" - карточка скана пряталась
+    // (alreadyShipped && !needsWbRetry), и повторно попробовать было
+    // невозможно. Настоящее доказательство, что ВБ принял поставку - реальный
+    // QR поставки (WB отдаёт его ТОЛЬКО после успешного deliver, см. комментарий
+    // у notifyWbSupplyDelivered/fetchWbSupplyQrAfterCommit ниже) - поэтому
+    // ретрай теперь доступен, пока QR не получен, а не пока wb_delivered_at
+    // не проставлен.
     if (shipment.status === 'in_transit') {
       shipmentId = shipment.id;
       return {
@@ -428,7 +442,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
         shipmentCode: shipment.external_id,
         status: 'in_transit', alreadyShipped: true,
         qr_base64: shipment.wb_supply_qr_base64 || null,
-        needsWbDeliver: !shipment.wb_delivered_at,
+        needsWbDeliver: !shipment.wb_supply_qr_base64,
       };
     }
 

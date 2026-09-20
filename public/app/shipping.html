@@ -314,10 +314,13 @@ function _openShipmentByCode() {
           document.getElementById('qr-result').style.display = 'none';
           document.getElementById('confirm-status').textContent = '';
           renderWbQrCard();
-          alreadyShipped = ['in_transit', 'done'].includes(currentShipment.status); // Если локально уже "Отгружена", но ВБ так и не был уведомлён (старый баг —
-          // deliverSupply вообще не вызывался) — не прячем карточку, а даём
-          // отгрузчику повторно отсканировать код, чтобы попытаться ещё раз.
-          needsWbRetry = currentShipment.status === 'in_transit' && !currentShipment.wb_delivered_at;
+          alreadyShipped = ['in_transit', 'done'].includes(currentShipment.status); // Если локально уже "Отгружена", но ВБ так и не подтвердил приём (нет
+          // реального QR поставки — единственное надёжное доказательство,
+          // см. комментарий в shipping.service.js::confirmShipment 21.09.2026,
+          // wb_delivered_at ставится и без реального подтверждения ВБ) —
+          // не прячем карточку, а даём отгрузчику повторно отсканировать
+          // код, чтобы попытаться ещё раз, пока QR не получен.
+          needsWbRetry = currentShipment.status === 'in_transit' && !currentShipment.wb_supply_qr_base64;
           document.getElementById('confirm-card').style.display = alreadyShipped && !needsWbRetry ? 'none' : 'block';
           document.getElementById('confirm-hint').textContent = needsWbRetry ? 'Отгружена локально, но ВБ ещё не подтвердил статус. Отсканируйте код поставки ещё раз, чтобы повторить попытку.' : 'Отсканируйте QR/штрихкод поставки (со стикера коробки/акта передачи)';
           setTimeout(function () {
