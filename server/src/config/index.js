@@ -150,6 +150,13 @@ const config = {
     // (не все сразу) - интервал ниже это тик, а не полный круг по всем
     // аккаунтам. 0 = выключено.
     statsRegionSyncIntervalMinutes: intEnv('WB_STATS_REGION_SYNC_INTERVAL_MINUTES', 2),
+    // Синк РЕАЛЬНОГО времени продажи (не создания заказа) через Statistics
+    // API /api/v1/supplier/sales (wb.service.js::syncSalesForAccount,
+    // server/src/jobs/wbSalesSync.js) - точный дедлайн "вывод из оборота"
+    // Честного знака. Тот же жёсткий лимит WB 1 запрос/минуту, что и у
+    // stats-region-sync - один аккаунт за тик, курсор "чей черёд" хранится
+    // в БД (не в памяти - см. комментарий в самой джобе). 0 = выключено.
+    salesSyncIntervalMinutes: intEnv('WB_SALES_SYNC_INTERVAL_MINUTES', 2),
     // Обход ЧУЖИХ поставок WB (wb.service.js::syncForeignSuppliesForAccount,
     // server/src/jobs/wbForeignSupplySync.js) - кэш scanDt складов, которые
     // обрабатывает не наш тенант, для отчёта "Эффективность складов WB".

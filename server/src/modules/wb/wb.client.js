@@ -232,6 +232,27 @@ async function fetchStatisticsOrders(token, dateFrom) {
   return Array.isArray(data) ? data : [];
 }
 
+/** Statistics API: РЕАЛЬНОЕ время продажи/возврата (в отличие от
+ *  fetchStatisticsOrders — там время создания заказа). Нужно для точного
+ *  дедлайна "вывод из оборота" (marking.service.js) — обсуждение с
+ *  пользователем 20.09.2026: дедлайн раньше считался от момента, когда наш
+ *  job УВИДЕЛ статус 'sold' при опросе (~раз в 30 мин), а не от реального
+ *  времени продажи. Идентификатор заказа тут тоже srid (=rid, см.
+ *  fetchStatisticsOrders/053_wb_orders_region_stats.sql). saleID в ответе
+ *  начинается на "S" для продажи и на "R" для возврата — различать должен
+ *  вызывающий код (тут не фильтруем, чтобы функция была прямым отражением
+ *  WB API). Тот же лимит WB — 1 запрос/минуту, тот же принцип курсора
+ *  (dateFrom = lastChangeDate последней строки предыдущего ответа). */
+async function fetchStatisticsSales(token, dateFrom) {
+  const data = await wbRequest({
+    token,
+    baseUrl: WB_STATISTICS_BASE,
+    path: '/api/v1/supplier/sales',
+    params: { dateFrom },
+  });
+  return Array.isArray(data) ? data : [];
+}
+
 /** Получить склады продавца */
 async function fetchSellerWarehouses(token) {
   const data = await wbRequest({ token, path: '/api/v3/warehouses' });
@@ -650,6 +671,7 @@ module.exports = {
   fetchItems, extractCardBarcodes,
   fetchOrders, fetchNewOrders,
   fetchStatisticsOrders,
+  fetchStatisticsSales,
   fetchSellerWarehouses,
   createSupply, addOrdersToSupply, extractRejectedOrderIds,
   fetchOrderStickers, fetchSupplyBarcode,

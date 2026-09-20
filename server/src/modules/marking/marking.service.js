@@ -1039,7 +1039,18 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
     `SELECT mc.id AS marking_code_id, mc.code, mc.wb_order_id,
             i.barcode AS item_barcode, i.item_name, i.vendor_code, i.size,
             s.external_id AS shipment_code, c.client_name,
-            sold.observed_at AS sold_at
+            -- COALESCE: если Statistics API уже подтянул РЕАЛЬНОЕ время
+            -- продажи (wb_orders.actual_sale_at, см. миграцию 070 и
+            -- wb.service.js::syncSalesForAccount) - используем его, оно
+            -- точное. Пока не подтянулось (недавняя продажа, sync ещё не
+            -- дошёл до этого аккаунта, или токен без категории
+            -- "Статистика") - как и раньше, время, когда НАШ job увидел
+            -- статус 'sold' при опросе (~раз в 30 мин) - грубее, но лучше,
+            -- чем ничего. sale_at_confirmed говорит фронту, какой из двух
+            -- источников сейчас используется (обсуждение с пользователем
+            -- 20.09.2026).
+            COALESCE(wo.actual_sale_at, sold.observed_at) AS sold_at,
+            (wo.actual_sale_at IS NOT NULL) AS sale_at_confirmed
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
@@ -1054,7 +1065,7 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
      -- именно в этом отчёте (сроки вывода из оборота), поэтому выбираем
      -- детерминированно одну реальную (не 'external') запись.
      JOIN LATERAL (
-       SELECT wo2.mp_account_id FROM wms.wb_orders wo2
+       SELECT wo2.mp_account_id, wo2.actual_sale_at FROM wms.wb_orders wo2
        WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
        ORDER BY (wo2.status = 'external')
        LIMIT 1
@@ -1065,7 +1076,7 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
        ORDER BY observed_at ASC LIMIT 1
      ) sold ON TRUE
      WHERE ${conds.join(' AND ')}
-     ORDER BY sold.observed_at ASC
+     ORDER BY COALESCE(wo.actual_sale_at, sold.observed_at) ASC
      LIMIT $${idx}
      ${forUpdate ? 'FOR UPDATE OF mc SKIP LOCKED' : ''}`,
     params

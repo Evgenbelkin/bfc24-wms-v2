@@ -327,6 +327,87 @@ async function syncStatsRegionForAccount({ tenantId, accountId, apiToken, settin
   return { fetched: orders.length, matched: upd.rowCount, nextCursor };
 }
 
+/** Синхронизация РЕАЛЬНОГО времени продажи (не создания заказа) через
+ *  Statistics API /api/v1/supplier/sales - нужно для точного дедлайна "вывод
+ *  из оборота" Честного знака (3 рабочих дня С МОМЕНТА ПРОДАЖИ, а не с
+ *  момента, когда наш job увидел статус 'sold' при опросе раз в ~30 минут -
+ *  обсуждение с пользователем 20.09.2026: "проданы они в разное время а не в
+ *  одно"). Матчинг - тот же srid=rid, что и в syncStatsRegionForAccount.
+ *  Курсор - в mp_accounts.settings->sales_sync, ОТДЕЛЬНО от stats_sync
+ *  (region), чтобы два синка не путали друг другу курсор и не зависели друг
+ *  от друга при ошибках.
+ *  saleID начинается на "S" - реальная продажа, на "R" - возврат; возвраты
+ *  игнорируем (тут нужна именно дата продажи, не факт возврата). */
+async function _mergeSalesSyncSettings(accountId, patch) {
+  await query(
+    `UPDATE wms.mp_accounts
+     SET settings = jsonb_set(COALESCE(settings,'{}'::jsonb), '{sales_sync}',
+       COALESCE(settings->'sales_sync','{}'::jsonb) || $2::jsonb, true)
+     WHERE id = $1`,
+    [accountId, JSON.stringify(patch)]
+  );
+}
+
+async function syncSalesForAccount({ tenantId, accountId, apiToken, settings }) {
+  const cursorRaw = settings?.sales_sync?.last_change_date;
+  const dateFrom = cursorRaw
+    || new Date(Date.now() - STATS_SYNC_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
+
+  let rows;
+  try {
+    rows = await wbClient.fetchStatisticsSales(apiToken, dateFrom);
+  } catch (e) {
+    // last_attempt_at пишем и на ошибке тоже - см. wbSalesSync.js: аккаунт с
+    // самым старым last_attempt_at идёт следующим, иначе один сломанный
+    // токен ретраился бы каждый тик и не давал очереди двигаться дальше.
+    await _mergeSalesSyncSettings(accountId, {
+      last_error: e.message || String(e), last_error_at: new Date().toISOString(),
+      last_attempt_at: new Date().toISOString(),
+    });
+    throw e;
+  }
+
+  if (!rows.length) {
+    await _mergeSalesSyncSettings(accountId, {
+      last_success_at: new Date().toISOString(), last_attempt_at: new Date().toISOString(), last_error: null,
+    });
+    return { fetched: 0, matched: 0 };
+  }
+
+  const srids = [], saleDates = [];
+  for (const s of rows) {
+    if (!s.srid || !s.saleID || !String(s.saleID).startsWith('S')) continue; // только продажи, не возвраты
+    srids.push(s.srid);
+    // WB отдаёт наивное время без таймзоны - по документации московское
+    // время (UTC+3, без перехода на летнее/зимнее с 2014 года).
+    saleDates.push(s.date ? `${s.date}+03:00` : null);
+  }
+
+  let matched = 0;
+  if (srids.length) {
+    const upd = await query(
+      `UPDATE wms.wb_orders wo
+       SET actual_sale_at = v.actual_sale_at,
+           sales_synced_at = NOW()
+       FROM (
+         SELECT * FROM UNNEST($1::text[], $2::timestamptz[]) AS t(srid, actual_sale_at)
+       ) v
+       WHERE wo.mp_account_id = $3 AND wo.rid = v.srid`,
+      [srids, saleDates, accountId]
+    );
+    matched = upd.rowCount;
+  }
+
+  const lastRow = rows[rows.length - 1];
+  const nextCursor = lastRow?.lastChangeDate || dateFrom;
+  await _mergeSalesSyncSettings(accountId, {
+    last_change_date: nextCursor, updated_at: new Date().toISOString(),
+    last_success_at: new Date().toISOString(), last_attempt_at: new Date().toISOString(), last_error: null,
+  });
+
+  return { fetched: rows.length, matched, nextCursor };
+}
+
 /** Проверяет через WB API, принял ли WB физически заказы отгрузок, которые у
  *  нас всё ещё висят в status='in_transit' (скан QR поставки отгрузчиком уже
  *  сделан, но подтверждения от самой WB мы никогда не спрашивали — раньше
@@ -1546,6 +1627,7 @@ module.exports = {
   reconcileStockForTenant,
   listAllWbAccountsForStatsSync,
   syncStatsRegionForAccount,
+  syncSalesForAccount,
   listAllWbAccountsForForeignSupplySync,
   syncForeignSuppliesForAccount,
 };
