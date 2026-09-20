@@ -1758,7 +1758,7 @@ async function moveOrderToDeficitSupply({ tenantId, wbOrderId }) {
  *  стороне ВБ — считаем актуальный список надёжнее кэша для отображения). */
 async function listAccumulatingDeficitSupplies(tenantId) {
   const r = await query(
-    `SELECT ds.id, ds.mp_account_id, ma.account_name, ma.client_id, cl.name AS client_name,
+    `SELECT ds.id, ds.mp_account_id, ma.account_name, ma.client_id, cl.client_name AS client_name,
             ds.warehouse_id, ds.warehouse_name, ds.supply_code, ds.status, ds.created_at,
             (SELECT COUNT(*)::int FROM wms.wb_orders wo
               WHERE wo.mp_account_id=ds.mp_account_id AND wo.wb_supply_id=ds.supply_code) AS orders_count
