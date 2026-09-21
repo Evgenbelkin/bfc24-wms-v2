@@ -101,6 +101,7 @@
         <input type="checkbox" id="select-all" onchange="toggleAll(this.checked)"/> Выбрать все
       </label>
       <button class="btn-sm btn-blue" onclick="printStickers()">🖨 Распечатать стикеры выбранных</button>
+      <button class="btn-sm btn-blue" id="xlsx-export-btn" onclick="exportXlsx()">📊 Выгрузить в Excel</button>
     </div>
     <div id="orders-list"></div>
   </div>
@@ -257,6 +258,38 @@
       } catch (e) {
         UI.notify.err(e.message || 'Ошибка печати стикеров');
       }
+    }
+
+    // Владелец, 21.09.2026: "выгрузить в эксель информацию что за баркод что
+    // за товар и какой стикер к нему идет и колонку для киза" - тот же набор
+    // выбранных чекбоксами позиций, что и в printStickers() выше, просто в
+    // Excel вместо HTML для печати.
+    async function exportXlsx() {
+      var idxs = Array.prototype.map.call(document.querySelectorAll('.order-check:checked'), function (el) { return Number(el.dataset.idx); });
+      if (!idxs.length) { UI.notify.err('Выберите хотя бы одну позицию'); return; }
+      var ids = idxs.map(function (i) { return currentOrders[i].id; });
+      var btn = document.getElementById('xlsx-export-btn');
+      btn.disabled = true;
+      btn.textContent = 'Готовим файл…';
+      try {
+        var res = await window.API.fbsAnalytics.unsortedXlsxExport(ids);
+        var binary = atob(res.xlsxBase64);
+        var bytes = new Uint8Array(binary.length);
+        for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+        var blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = res.filename || 'ne-otsortirovano.xlsx';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      } catch (e) {
+        UI.notify.err(e.message || 'Ошибка выгрузки в Excel');
+      }
+      btn.disabled = false;
+      btn.textContent = '📊 Выгрузить в Excel';
     }
 
     async function load() {
