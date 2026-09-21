@@ -754,6 +754,78 @@ async function exportUnsortedStickers({ tenantId, orderRowIds }) {
   return { html, count: rows.length };
 }
 
+/** Excel-выгрузка выбранных "зависших" заказов (21.09.2026, запрос владельца):
+ *  баркод/товар/стикер/киз одной таблицей — чтобы можно было свериться руками
+ *  или переслать клиенту, без захода в само приложение. Тот же набор строк,
+ *  что и в exportUnsortedStickers (order_row_ids = чекбоксы в UI), но без
+ *  дотягивания недостающих стикеров у WB - код стикера тут не для печати,
+ *  чисто для сверки, а обязательное поле для печати (сама картинка) уже
+ *  доступно через кнопку "Распечатать стикеры выбранных" рядом.
+ *
+ *  Киз (Честный знак): wms.marking_codes.wb_order_id проставляется при
+ *  сканировании кода на упаковке (packing.service.js::consumeScannedCodeAtPacking,
+ *  см. 028_marking_scan_mode.sql) - то есть колонка будет пустой для заказов,
+ *  которые ещё не паковали (что и логично для отчёта "не отсортировано").
+ *  Если на один заказ ушло несколько кодов (qty>1), склеиваем через "; ". */
+async function exportUnsortedOrdersXlsx({ tenantId, orderRowIds }) {
+  const ExcelJS = require('exceljs');
+  if (!Array.isArray(orderRowIds) || !orderRowIds.length) {
+    const wb0 = new ExcelJS.Workbook();
+    wb0.addWorksheet('Заказы');
+    return { buffer: await wb0.xlsx.writeBuffer(), count: 0 };
+  }
+
+  const r = await query(
+    `SELECT wo.id, wo.wb_order_id, wo.barcode, wo.article AS vendor_code, wo.wb_status,
+            wo.wb_sticker_code, wo.created_at,
+            i.item_name,
+            mc.codes AS marking_codes
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     LEFT JOIN wms.items i ON i.tenant_id = wo.tenant_id AND i.client_id = ma.client_id AND i.barcode = wo.barcode
+     LEFT JOIN LATERAL (
+       SELECT string_agg(code, '; ' ORDER BY id) AS codes
+       FROM wms.marking_codes
+       WHERE tenant_id = wo.tenant_id AND wb_order_id = wo.wb_order_id AND status = 'used'
+     ) mc ON true
+     WHERE wo.tenant_id=$1 AND wo.id = ANY($2::bigint[])
+     ORDER BY wo.created_at ASC`,
+    [tenantId, orderRowIds]
+  );
+  const rows = r.rows;
+
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet('Заказы');
+  sheet.columns = [
+    { header: '#', key: 'idx', width: 5 },
+    { header: 'Заказ ВБ', key: 'wbOrderId', width: 14 },
+    { header: 'Штрихкод', key: 'barcode', width: 16 },
+    { header: 'Товар', key: 'item', width: 32 },
+    { header: 'Артикул', key: 'vendorCode', width: 16 },
+    { header: 'Код стикера', key: 'stickerCode', width: 16 },
+    { header: 'Киз (Честный знак)', key: 'markingCodes', width: 40 },
+    { header: 'Статус ВБ', key: 'wbStatus', width: 14 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+  rows.forEach((row, idx) => {
+    sheet.addRow({
+      idx: idx + 1,
+      wbOrderId: row.wb_order_id,
+      barcode: row.barcode || '',
+      item: row.item_name || '',
+      vendorCode: row.vendor_code || '',
+      stickerCode: row.wb_sticker_code || '',
+      markingCodes: row.marking_codes || '',
+      wbStatus: row.wb_status || '',
+    });
+  });
+  sheet.autoFilter = { from: 'A1', to: 'H1' };
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  const buffer = await wb.xlsx.writeBuffer();
+  return { buffer, count: rows.length };
+}
+
 // =============================================================================
 // Отчёт "время доставки: склад отгрузки (СЦ WB) -> регион покупателя".
 //
@@ -1345,6 +1417,7 @@ module.exports = {
   getUnsortedSuppliesReport,
   getUnsortedSupplyOrders,
   exportUnsortedStickers,
+  exportUnsortedOrdersXlsx,
   getClientItemsReport,
   getWarehousePerformanceReport,
 };

@@ -193,4 +193,22 @@ router.post('/unsorted-report/stickers-export', requireRole('tenant_admin', 'sup
   } catch (e) { next(e); }
 });
 
+/** POST /fbs-analytics/unsorted-report/xlsx-export { order_row_ids } —
+ *  выгрузка выбранных "зависших" заказов в Excel: баркод/товар/стикер/киз
+ *  (владелец, 21.09.2026). Файл — base64 в JSON, как и другие xlsx-экспорты
+ *  в проекте (см. shipping.router.js::collected-export). */
+router.post('/unsorted-report/xlsx-export', requireRole('tenant_admin', 'supervisor'), async (req, res, next) => {
+  try {
+    const orderRowIds = Array.isArray(req.body.order_row_ids) ? req.body.order_row_ids.map(Number).filter(Boolean) : [];
+    if (!orderRowIds.length) throw new ValidationError('order_row_ids is required and must be a non-empty array');
+    const { buffer, count } = await fbsAnalyticsService.exportUnsortedOrdersXlsx({ tenantId: req.user.tenantId, orderRowIds });
+    res.json({
+      ok: true,
+      count,
+      filename: `ne-otsortirovano-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      xlsxBase64: buffer.toString('base64'),
+    });
+  } catch (e) { next(e); }
+});
+
 module.exports = router;
