@@ -486,6 +486,41 @@ async function consumeScannedCodeAtPacking({
       );
     }
 
+    // Срок годности (задача СНД, 21.09.2026, см. миграцию 072 и task #59) —
+    // тем же вызовом, что и киз, передаём WB заявленный срок годности товара
+    // (wms.items.expiration_date, задаётся массово в справочнике товаров,
+    // см. items.service.js::bulkSetExpiration). Без этого WB возвращает товар
+    // продавцу при возврате вместо повторной продажи. В отличие от киза выше —
+    // НЕ блокируем упаковку при сбое: это дополнительное требование WB, не
+    // критическая часть самой отправки киза (которая уже отработала успешно);
+    // ошибку только логируем для отдельного расследования. Сама проверка
+    // "не менее 30 дней от текущей даты" (правило WB, иначе 400/409) сделана
+    // в SQL, чтобы не слать заведомо отклоняемые запросы.
+    try {
+      const expRes = await client.query(
+        `SELECT TO_CHAR(expiration_date, 'DD.MM.YYYY') AS expiration_fmt,
+                (expiration_date >= CURRENT_DATE + INTERVAL '30 days') AS expiration_ok
+         FROM wms.items WHERE id=$1 AND tenant_id=$2 AND expiration_date IS NOT NULL`,
+        [itemId, tenantId]
+      );
+      if (expRes.rowCount > 0) {
+        const { expiration_fmt: expirationFmt, expiration_ok: expirationOk } = expRes.rows[0];
+        if (expirationOk) {
+          await wbClient.setOrderExpiration(apiToken, wbOrderId, expirationFmt);
+        } else {
+          logger.warn(
+            { tenantId, itemId, wbOrderId, expirationFmt },
+            'consumeScannedCodeAtPacking: срок годности товара короче 30 дней от текущей даты - WB отклонит, не отправляем'
+          );
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        { err, tenantId, itemId, wbOrderId, wbStatus: err.wbStatus, wbBody: err.wbBody },
+        'consumeScannedCodeAtPacking: не удалось передать срок годности в WB (киз при этом принят штатно)'
+      );
+    }
+
     await client.query(
       `UPDATE wms.marking_codes
        SET status='used', used_at=NOW(), used_ref_type=$1, used_ref_id=$2, used_by=$3,
