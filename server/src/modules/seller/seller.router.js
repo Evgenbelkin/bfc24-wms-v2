@@ -785,6 +785,27 @@ router.get('/billing/invoices/:id', requireModule('billing'), async (req,res,nex
   } catch(e){ next(e); }
 });
 
+/** GET /seller/billing/invoices/:id/xlsx-export — детализация счёта в Excel
+ *  (21.09.2026, владелец: "клиент просит детализацию", модалка в кабинете
+ *  тесная на десятках/сотнях строк начислений). Та же проверка
+ *  client_id-скоупа, что и у детального JSON-роута выше. Файл — base64 в
+ *  JSON, как и другие xlsx-экспорты в проекте. */
+router.get('/billing/invoices/:id/xlsx-export', requireModule('billing'), async (req,res,next)=>{
+  try {
+    const clientId = resolveClientScope(req, req.user.clientId);
+    const invoiceId = Number(req.params.id);
+    const check = await billingSvc.getInvoice({ tenantId: req.user.tenantId, invoiceId });
+    if (Number(check.invoice.client_id) !== Number(clientId)) throw new ForbiddenError('Invoice does not belong to this client');
+    const { buffer, invoiceNumber, count } = await billingSvc.exportInvoiceXlsx({ tenantId: req.user.tenantId, invoiceId });
+    res.json({
+      ok: true,
+      count,
+      filename: `schet-${invoiceNumber}.xlsx`,
+      xlsxBase64: buffer.toString('base64'),
+    });
+  } catch(e){ next(e); }
+});
+
 // ─────────────── Табло (сводка обработки для главной кабинета) ───────────────
 
 /** GET /seller/dashboard-summary — живой снимок "где сейчас товары клиента":
