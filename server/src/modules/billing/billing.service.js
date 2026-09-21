@@ -350,6 +350,68 @@ async function getInvoice({ tenantId, invoiceId }) {
   return { invoice, charges: chargesRes.rows };
 }
 
+/** Excel-выгрузка детализации счёта (21.09.2026, запрос владельца: клиент
+ *  просит детализацию, а модалка со списком начислений в кабинете тесная и
+ *  плохо читается на сотнях строк). Тот же набор данных, что и в getInvoice
+ *  выше, просто в .xlsx вместо JSON для модалки — переиспользуем эту функцию,
+ *  а не дублируем SQL. */
+async function exportInvoiceXlsx({ tenantId, invoiceId }) {
+  const { invoice, charges } = await getInvoice({ tenantId, invoiceId });
+
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  const sheet = wb.addWorksheet('Начисления');
+  sheet.columns = [
+    { header: '#', key: 'idx', width: 5 },
+    { header: 'Дата', key: 'date', width: 12 },
+    { header: 'Услуга', key: 'service', width: 20 },
+    { header: 'Описание', key: 'description', width: 30 },
+    { header: 'Кол-во', key: 'qty', width: 10 },
+    { header: 'Цена за ед.', key: 'unitPrice', width: 12 },
+    { header: 'Сумма', key: 'amount', width: 12 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
+  charges.forEach((c, idx) => {
+    sheet.addRow({
+      idx: idx + 1,
+      date: c.period_date,
+      service: SERVICE_TYPE_LABELS[c.service_type] || c.service_type,
+      description: c.description || '',
+      qty: Number(c.quantity),
+      unitPrice: c.unit_price != null ? Number(c.unit_price) : null,
+      amount: Number(c.total_amount),
+    });
+  });
+  sheet.getColumn('date').numFmt = 'dd.mm.yyyy';
+  sheet.autoFilter = { from: 'A1', to: 'G1' };
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+  // Итоговая строка снизу — клиент сможет свериться с суммой счёта не
+  // пересчитывая вручную.
+  const totalRow = sheet.addRow({ description: 'ИТОГО', amount: Number(invoice.total_amount) });
+  totalRow.font = { bold: true };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return { buffer, invoiceNumber: invoice.invoice_number, count: charges.length };
+}
+
+// Те же подписи, что и SERVICE_TYPES на фронте (public/seller/billing.html) -
+// держим маппинг и на бэке, чтобы в Excel были читаемые русские названия, а
+// не сырые service_type-коды.
+const SERVICE_TYPE_LABELS = {
+  receiving: 'Приёмка',
+  storage: 'Хранение',
+  placement: 'Размещение',
+  picking: 'Сборка',
+  packing: 'Упаковка',
+  shipping: 'Отгрузка',
+  processing: 'Обработка',
+  returns: 'Возврат',
+  materials: 'Расходники',
+  subscription: 'Подписка',
+};
+
 async function createInvoice({
   tenantId, clientId, periodFrom, periodTo, notes, currency,
 }) {
@@ -1401,6 +1463,7 @@ module.exports = {
   chargeForOperation,
   listInvoices,
   getInvoice,
+  exportInvoiceXlsx,
   createInvoice,
   updateInvoiceStatus,
   addInvoicePayment,

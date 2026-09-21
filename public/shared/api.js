@@ -1443,6 +1443,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     billingInvoice: function billingInvoice(id) {
       return _get("/seller/billing/invoices/".concat(id));
     },
+    billingInvoiceXlsxExport: function billingInvoiceXlsxExport(id) {
+      return _get("/seller/billing/invoices/".concat(id, "/xlsx-export"));
+    },
     wbWarehouses: {
       list: function list() {
         return _get('/seller/wb-warehouses');
