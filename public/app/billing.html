@@ -13,6 +13,10 @@
     .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:flex-end;justify-content:center;}
     .modal-card{background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;}
     @media (min-width:560px){ .modal-overlay{align-items:center;} .modal-card{border-radius:16px;} }
+    /* Модалка счёта на десктопе была зажата в 520px, как и на телефоне - на
+       счёте с сотнями строк начислений (хранение по дням) это нечитаемо
+       тесно (владелец, 21.09.2026: "все сжато"). Даём больше воздуха. */
+    @media (min-width:900px){ .modal-card{max-width:min(90vw, 900px);} }
     .balance-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
     .balance-cell{background:var(--card2);border-radius:10px;padding:12px;text-align:center;}
     .balance-cell .num{font-size:20px;font-weight:700;}
@@ -247,6 +251,7 @@ var clients = [];
 var priceCache = [],
   chargeCache = [],
   invoiceCache = [];
+var currentInvoiceId = null;
 function currentClientId() {
   return Number(UI.val('#f-client')) || null;
 }
@@ -899,7 +904,8 @@ function _openInvoiceModal() {
           paidAmt = Number((detail.invoice && detail.invoice.paid_amount) || inv.paid_amount || 0);
           remaining = Math.max(0, Number(inv.total_amount) - paidAmt);
           paymentBlock = canEdit && inv.status !== 'cancelled' && remaining > 0.01 ? "\n        <div class=\"card-title\" style=\"font-size:14px;margin-top:10px;\">\u0412\u043D\u0435\u0441\u0442\u0438 \u043E\u043F\u043B\u0430\u0442\u0443 (\u043E\u0441\u0442\u0430\u0442\u043E\u043A ".concat(remaining.toFixed(2), " \u20BD)</div>\n        <div class=\"field\"><label>\u0421\u0443\u043C\u043C\u0430</label><input id=\"pay-amount\" type=\"number\" step=\"0.01\" min=\"0.01\" placeholder=\"").concat(remaining.toFixed(2), "\"/></div>\n        <div class=\"field\"><label>\u0414\u0430\u0442\u0430</label><input id=\"pay-date\" type=\"date\" value=\"").concat(new Date().toISOString().slice(0, 10), "\"/></div>\n        <div class=\"field\"><label>\u041A\u043E\u043C\u043C\u0435\u043D\u0442\u0430\u0440\u0438\u0439 (\u043E\u043F\u0446\u0438\u043E\u043D\u0430\u043B\u044C\u043D\u043E)</label><input id=\"pay-comment\" placeholder=\"\u041D\u0430\u043F\u0440. \u0447\u0430\u0441\u0442\u0438\u0447\u043D\u0430\u044F \u043E\u043F\u043B\u0430\u0442\u0430, \u043E\u0441\u0442\u0430\u0442\u043E\u043A 15 \u0447\u0438\u0441\u043B\u0430\"/></div>\n        <button class=\"btn-big btn-green btn-full\" onclick=\"submitInvoicePayment(").concat(inv.id, ")\">\u0412\u043D\u0435\u0441\u0442\u0438 \u043E\u043F\u043B\u0430\u0442\u0443</button>") : '';
-          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(UI.escHtml(inv.invoice_number), " \u2014 ").concat(Number(inv.total_amount).toFixed(2), " \u20BD").concat(paidAmt > 0 ? ' (\u043E\u043F\u043B\u0430\u0447\u0435\u043D\u043E ' + paidAmt.toFixed(2) + ' \u20BD, \u043E\u0441\u0442\u0430\u0442\u043E\u043A ' + remaining.toFixed(2) + ' \u20BD)' : '', "</div>\n            <div class=\"table-wrap\">\n              <table><thead><tr><th>\u0414\u0430\u0442\u0430</th><th>\u0423\u0441\u043B\u0443\u0433\u0430</th><th>\u041A\u043E\u043B-\u0432\u043E</th><th>\u0421\u0443\u043C\u043C\u0430</th></tr></thead><tbody>").concat(rows, "</tbody></table>\n            </div>\n            ").concat(statusButtons, "\n            ").concat(paymentBlock, "\n            <div id=\"pay-history-wrap\"></div>\n            <button class=\"btn-big btn-yellow btn-full\" style=\"margin-top:10px;\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n          </div>\n        </div>\n      ");
+          currentInvoiceId = inv.id;
+          document.getElementById('modal-root').innerHTML = "\n        <div class=\"modal-overlay\" onclick=\"if(event.target===this) closeModal()\">\n          <div class=\"modal-card\">\n            <div class=\"card-title\">".concat(UI.escHtml(inv.invoice_number), " \u2014 ").concat(Number(inv.total_amount).toFixed(2), " \u20BD").concat(paidAmt > 0 ? ' (\u043E\u043F\u043B\u0430\u0447\u0435\u043D\u043E ' + paidAmt.toFixed(2) + ' \u20BD, \u043E\u0441\u0442\u0430\u0442\u043E\u043A ' + remaining.toFixed(2) + ' \u20BD)' : '', "</div>\n            <div class=\"table-wrap\">\n              <table><thead><tr><th>\u0414\u0430\u0442\u0430</th><th>\u0423\u0441\u043B\u0443\u0433\u0430</th><th>\u041A\u043E\u043B-\u0432\u043E</th><th>\u0421\u0443\u043C\u043C\u0430</th></tr></thead><tbody>").concat(rows, "</tbody></table>\n            </div>\n            <button class=\"btn-big btn-blue btn-full\" style=\"margin-top:10px;\" id=\"inv-xlsx-btn\" onclick=\"downloadInvoiceXlsx()\">\uD83D\uDCCA \u0421\u043A\u0430\u0447\u0430\u0442\u044C Excel</button>\n            ").concat(statusButtons, "\n            ").concat(paymentBlock, "\n            <div id=\"pay-history-wrap\"></div>\n            <button class=\"btn-big btn-yellow btn-full\" style=\"margin-top:10px;\" onclick=\"closeModal()\">\u0417\u0430\u043A\u0440\u044B\u0442\u044C</button>\n          </div>\n        </div>\n      ");
           loadInvoicePaymentHistory(inv.id);
         case 5:
           return _context10.a(2);
@@ -995,6 +1001,35 @@ function _setInvoiceStatus() {
 }
 function closeModal() {
   document.getElementById('modal-root').innerHTML = '';
+  currentInvoiceId = null;
+}
+
+// Владелец, 21.09.2026: "клиент просит детализацию" - та же тесная модалка,
+// проще отдать готовый Excel. Обычная функция на .then() - как и остальные
+// правки в этом файле после частичной оплаты (см. комментарий выше), без
+// привязки к babel-стейт-машине.
+function downloadInvoiceXlsx() {
+  if (!currentInvoiceId) return;
+  var btn = document.getElementById('inv-xlsx-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Готовим файл…'; }
+  window.API.billing.invoices.xlsxExport(currentInvoiceId).then(function (res) {
+    var binary = atob(res.xlsxBase64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
+    var blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = res.filename || 'schet.xlsx';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  }).catch(function (err) {
+    UI.notify.err(err.message || 'Не удалось скачать файл');
+  }).finally(function () {
+    if (btn) { btn.disabled = false; btn.textContent = '📊 Скачать Excel'; }
+  });
 }
 
 // ============ Аналитика по счетам ============
