@@ -1255,6 +1255,9 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
       },
       deletePayment: function deletePayment(id, paymentId) {
         return del("/billing/invoices/".concat(id, "/payments/").concat(paymentId));
+      },
+      xlsxExport: function xlsxExport(id) {
+        return _get("/billing/invoices/".concat(id, "/xlsx-export"));
       }
     }
   };

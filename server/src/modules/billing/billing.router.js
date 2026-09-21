@@ -231,6 +231,22 @@ router.get('/invoices/:id', requireRole('tenant_admin','supervisor','analyst'), 
   } catch (e) { next(e); }
 });
 
+/** GET /billing/invoices/:id/xlsx-export — та же выгрузка детализации счёта
+ *  в Excel, что и в кабинете клиента (seller.router.js), но для сотрудников
+ *  фулфилмента - без привязки к client_id, видно любой счёт тенанта. */
+router.get('/invoices/:id/xlsx-export', requireRole('tenant_admin','supervisor','analyst'), async (req, res, next) => {
+  try {
+    const invoiceId = validatePositiveInt(req.params.id, 'id');
+    const { buffer, invoiceNumber, count } = await svc.exportInvoiceXlsx({ tenantId: req.user.tenantId, invoiceId });
+    res.json({
+      ok: true,
+      count,
+      filename: `schet-${invoiceNumber}.xlsx`,
+      xlsxBase64: buffer.toString('base64'),
+    });
+  } catch (e) { next(e); }
+});
+
 router.post('/invoices', requireRole('tenant_admin','supervisor'), async (req, res, next) => {
   try {
     const { client_id, period_from, period_to, notes, currency } = req.body;
