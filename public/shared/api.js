@@ -583,6 +583,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
     },
     bulkAssignSubWarehouse: function bulkAssignSubWarehouse(d) {
       return patch('/locations/bulk-sub-warehouse', d);
+    },
+    bulkSetPickFlag: function bulkSetPickFlag(ids, isPickLocation) {
+      return patch('/locations/bulk-pick-flag', {
+        ids: ids,
+        is_pick_location: isPickLocation
+      });
     }
   };
 

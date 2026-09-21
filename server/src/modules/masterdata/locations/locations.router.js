@@ -72,6 +72,19 @@ router.patch('/bulk-sub-warehouse', requireRole('tenant_admin','supervisor'), as
   } catch(e){ next(e); }
 });
 
+/** PATCH /locations/bulk-pick-flag { ids, is_pick_location } — массово
+ *  включить/выключить ячейки из подбора (задача 21.09.2026: клиент хочет
+ *  разом вывести пачку ячеек из подбора, не трогая физический остаток в
+ *  них). См. locations.service.js::bulkSetPickFlag. */
+router.patch('/bulk-pick-flag', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkSetPickFlag({
+      tenantId: req.user.tenantId, ids: req.body.ids, isPickLocation: req.body.is_pick_location,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 router.get('/by-code', async (req,res,next)=>{
   try {
     const loc = await svc.getLocationByCode({
