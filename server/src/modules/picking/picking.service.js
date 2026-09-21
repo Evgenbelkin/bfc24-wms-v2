@@ -2080,11 +2080,18 @@ async function createManualWave({ tenantId, warehouseId, clientId, externalId, l
     const availByStockKey = new Map(); // `${stockClientId}:${stockItemId}` -> qty
     for (const [stockClientId, stockItemIdSet] of itemIdsByStockClient) {
       const stockItemIds = [...stockItemIdSet];
+      // Та же правка, что и 21.09.2026 в wb.router.js /generate-wave (репорт
+      // ЭсЭнДи): без join на wms.locations и фильтра is_pick_location=TRUE
+      // сюда попадал и остаток в карантинной ячейке (skipTask физически
+      // переносит туда "фантомный" остаток при пропуске сборщиком) - ручной
+      // заказ точно так же продолжал бы считать пропущенный товар "в наличии".
       const availRes = await client.query(
-        `SELECT item_id, COALESCE(SUM(qty_available),0)::int AS qty
-         FROM wms.stock_balances
-         WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=ANY($4::int[])
-         GROUP BY item_id`,
+        `SELECT sb.item_id, COALESCE(SUM(sb.qty_available),0)::int AS qty
+         FROM wms.stock_balances sb
+         JOIN wms.locations l ON l.id = sb.location_id
+         WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.client_id=$3 AND sb.item_id=ANY($4::int[])
+           AND l.is_pick_location = TRUE
+         GROUP BY sb.item_id`,
         [tenantId, warehouseId, stockClientId, stockItemIds]
       );
       for (const row of availRes.rows) availByStockKey.set(`${stockClientId}:${row.item_id}`, row.qty);

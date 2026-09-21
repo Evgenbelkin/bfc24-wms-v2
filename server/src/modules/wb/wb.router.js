@@ -394,11 +394,25 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     }
     const availByStockKey = new Map(); // `${stockClientId}:${stockItemId}` -> qty
     for (const [stockClientId, stockItemIds] of itemIdsByStockClient) {
+      // ВАЖНО (найдено 21.09.2026, репорт ЭсЭнДи): раньше здесь суммировался
+      // qty_available по ВСЕМ ячейкам склада без исключения, включая
+      // "Карантин" (location_type='quarantine', is_pick_location=FALSE) - ту
+      // самую виртуальную ячейку, куда skipTask() физически переносит
+      // "фантомный" остаток при пропуске сборщиком (см. getOrCreateQuarantineLocation
+      // и комментарий там же). Из-за этого пропущенный товар продолжал
+      // считаться "в наличии" для /generate-wave и попадал в КАЖДУЮ следующую
+      // волну заново - ровно до тех пор, пока кто-то вручную не разбирал
+      // карантинную ячейку. findBestPickLocation (сборка) и стоковый пуш в WB
+      // (wb.service.js, чуть выше по файлу) уже фильтруют is_pick_location=TRUE
+      // именно по этой причине - тут этот фильтр отсутствовал, теперь тоже
+      // джойним на wms.locations и считаем только реальные pick-ячейки.
       const availRes = await query(
-        `SELECT item_id, COALESCE(SUM(qty_available),0)::int AS qty
-         FROM wms.stock_balances
-         WHERE tenant_id=$1 AND warehouse_id=$2 AND client_id=$3 AND item_id=ANY($4::int[])
-         GROUP BY item_id`,
+        `SELECT sb.item_id, COALESCE(SUM(sb.qty_available),0)::int AS qty
+         FROM wms.stock_balances sb
+         JOIN wms.locations l ON l.id = sb.location_id
+         WHERE sb.tenant_id=$1 AND sb.warehouse_id=$2 AND sb.client_id=$3 AND sb.item_id=ANY($4::int[])
+           AND l.is_pick_location = TRUE
+         GROUP BY sb.item_id`,
         [req.user.tenantId, wh.id, stockClientId, [...new Set(stockItemIds)]]
       );
       for (const row of availRes.rows) availByStockKey.set(`${stockClientId}:${row.item_id}`, row.qty);
