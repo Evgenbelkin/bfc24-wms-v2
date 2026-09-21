@@ -439,6 +439,12 @@ function _asyncToGenerator(n) { return function () { var t = this, e = arguments
         item_ids: itemIds
       });
     },
+    bulkSetExpiration: function bulkSetExpiration(itemIds, expirationDate) {
+      return post('/items/bulk-set-expiration', {
+        item_ids: itemIds,
+        expiration_date: expirationDate
+      });
+    },
     printLabel: function printLabel(id) {
       var copies = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 1;
       return post("/items/".concat(id, "/print-label"), {

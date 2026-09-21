@@ -122,6 +122,21 @@ router.post('/bulk-delete', requireRole('tenant_admin','supervisor'), async (req
   } catch(e){ next(e); }
 });
 
+/** POST /items/bulk-set-expiration { item_ids, expiration_date } — массово
+ *  проставить срок годности ("годен до", YYYY-MM-DD) пачке товаров (задача
+ *  СНД, см. миграцию 072) — используется в упаковке при отправке киза в WB
+ *  (см. marking.service.js). expiration_date=null снимает дату. */
+router.post('/bulk-set-expiration', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await svc.bulkSetExpiration({
+      tenantId: req.user.tenantId,
+      itemIds: req.body.item_ids,
+      expirationDate: req.body.expiration_date != null ? req.body.expiration_date : null,
+    });
+    res.json({ ok: true, ...result });
+  } catch(e){ next(e); }
+});
+
 /** POST /items/:id/print-label { copies } — напечатать этикетку товара
  *  (штрихкод + название) через принтер текущего сотрудника (рабочее место,
  *  если оно выбрано, иначе общий маршрут doc_type='item_barcode'). Нужно для

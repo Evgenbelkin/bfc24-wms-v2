@@ -580,6 +580,31 @@ async function setOrderKiz(token, orderId, sgtins) {
 }
 
 /**
+ * Закрепить срок годности товара за сборочным заданием FBS (задача СНД,
+ * 21.09.2026, см. миграцию 072 — без этого WB возвращает товар продавцу
+ * вместо повторной продажи при возврате). Работает только для заданий в
+ * статусе confirm — то же требование, что и у setOrderKiz выше, а вызывается
+ * из той же точки (marking.service.js, скан киза на упаковке), так что к
+ * этому моменту заказ уже гарантированно в поставке.
+ * expirationStr — строка "dd.mm.yyyy", WB требует минимум 30 дней от текущей
+ * даты (иначе 400/409) — эту проверку делает вызывающий код ДО вызова, здесь
+ * только формат. Удалить срок годности после отправки нельзя — только
+ * перезаписать новой датой (см. доку WB).
+ */
+async function setOrderExpiration(token, orderId, expirationStr) {
+  const exp = String(expirationStr || '').trim();
+  if (!/^\d{2}\.\d{2}\.\d{4}$/.test(exp)) {
+    throw new Error(`setOrderExpiration: неверный формат даты "${exp}" — ожидается dd.mm.yyyy`);
+  }
+  await wbRequest({
+    token, method: 'PUT',
+    path: `/api/v3/orders/${encodeURIComponent(orderId)}/meta/expiration`,
+    data: { expiration: exp },
+  });
+  return true;
+}
+
+/**
  * Тарифы приёмки/логистики/хранения по складам WB (Общий раздел API, не
  * привязан к конкретному продавцу - одинаковый ответ для любого валидного
  * токена категории "Тарифы"). date - на какую дату смотреть тарифы, по
@@ -682,6 +707,7 @@ module.exports = {
   fetchFbsStocks, updateFbsStocks,
   fetchReturnClaims,
   setOrderKiz,
+  setOrderExpiration,
   fetchBoxTariffs,
   fetchAcceptanceCoefficients,
   normalizeShipmentCode, extractStickerCode,

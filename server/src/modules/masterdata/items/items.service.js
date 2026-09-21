@@ -426,6 +426,37 @@ async function bulkDeleteItems({ tenantId, itemIds }) {
 }
 
 /**
+ * Массово проставить срок годности ("годен до") пачке товаров — справочник
+ * товаров, задача СНД (21.09.2026, см. миграцию 072 и task #59). Значение
+ * потом само подтягивается и уходит в WB при скане киза на упаковке (см.
+ * marking.service.js::consumeScannedCodeAtPacking). expirationDate=null
+ * явно снимает дату (например, если ошиблись при массовом вводе) — сама
+ * отправка в WB не удаляется (WB это не поддерживает, см. wb.client.js), но
+ * хотя бы перестаём слать в WB заведомо устаревшее значение при следующей
+ * упаковке.
+ */
+async function bulkSetExpiration({ tenantId, itemIds, expirationDate }) {
+  const ids = Array.isArray(itemIds) ? itemIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+  if (!ids.length) throw new ValidationError('item_ids is required');
+  if (ids.length > 1000) throw new ValidationError('Слишком много товаров за один раз (максимум 1000)');
+
+  let expDate = null;
+  if (expirationDate !== null && expirationDate !== undefined && expirationDate !== '') {
+    expDate = String(expirationDate).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expDate)) {
+      throw new ValidationError('expiration_date: ожидается формат YYYY-MM-DD');
+    }
+  }
+
+  const res = await query(
+    `UPDATE wms.items SET expiration_date = $1, updated_at = NOW()
+     WHERE tenant_id = $2 AND id = ANY($3::int[])`,
+    [expDate, tenantId, ids]
+  );
+  return { updated: res.rowCount };
+}
+
+/**
  * Материалы упаковки товара ("во что упаковывать") — список расходников
  * (wms.consumables) с нормой на 1 штуку товара. Используется на экране
  * упаковки, чтобы сборщику/упаковщику не приходилось угадывать/помнить,
@@ -634,7 +665,7 @@ async function resolveStockKey({ tenantId, itemId, clientId, dbClient = null }) 
 
 module.exports = {
   listItems, getItemById, getItemByBarcode, findItemByKizCode,
-  createItem, updateItem, deleteItem, bulkDeleteItems, importItemsFromExcel,
+  createItem, updateItem, deleteItem, bulkDeleteItems, bulkSetExpiration, importItemsFromExcel,
   resolveOrCreateItem, resolveExistingItem, findItemIdByBarcode,
   resolveStockKey,
   getItemPackagingMaterials, setItemPackagingMaterials,
