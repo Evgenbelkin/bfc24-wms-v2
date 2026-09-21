@@ -38,6 +38,7 @@ async function listItems({ tenantId, clientId = null, search = null, isActive = 
        i.cost_price, i.processing_fee, i.needs_packaging,
        i.is_active, i.source, i.wb_nm_id, i.preview_url,
        i.requires_marking, i.marking_trigger, i.marking_mode,
+       i.expiration_date,
        i.created_at, i.kit_of_item_id, i.kit_multiplier,
        base.item_name AS kit_of_item_name, base.barcode AS kit_of_barcode,
        c.client_name
