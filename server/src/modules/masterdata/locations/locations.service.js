@@ -614,10 +614,35 @@ async function bulkAssignSubWarehouse({ tenantId, ids, subWarehouseId }) {
   return { updated: r.rowCount, locations: r.rows };
 }
 
+/** Массово включить/выключить ячейки из подбора (is_pick_location) — задача
+ *  21.09.2026: клиент хочет разом вывести из подбора пачку ячеек, где физически
+ *  лежит товар, чтобы с них ничего не улетало в новые волны сборки, не
+ *  щёлкая по каждой ячейке отдельно. is_pick_location=FALSE — того же флага
+ *  достаточно, чтобы ячейка перестала участвовать и в findBestPickLocation
+ *  (сборка), и в остатке, отдаваемом в WB (wb.service.js) — см. комментарий у
+ *  getOrCreateQuarantineLocation в picking.service.js. В отличие от
+ *  карантина, физический остаток НЕ переносится никуда — ячейка просто
+ *  перестаёт быть источником для подбора, товар в ней остаётся как есть
+ *  (клиент планирует потом его либо распределить по другим ячейкам, либо
+ *  списать сам). is_active не трогаем — ячейка остаётся видна в отчётах/
+ *  остатках, просто исключается из подбора под сборку. */
+async function bulkSetPickFlag({ tenantId, ids, isPickLocation }) {
+  const list = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!list.length) throw new ValidationError('ids must be a non-empty array');
+
+  const r = await query(
+    `UPDATE wms.locations SET is_pick_location=$1, updated_at=NOW()
+     WHERE tenant_id=$2 AND id = ANY($3::int[])
+     RETURNING id, location_code`,
+    [parseBool(isPickLocation, true), tenantId, list]
+  );
+  return { updated: r.rowCount, locations: r.rows };
+}
+
 module.exports = {
   listLocations, getLocationById, getLocationByCode,
   createLocation, updateLocation, deleteLocation, findBestPickLocation,
   bulkCreateLocations, getLocationsByIds,
-  bulkUpdateDimensions, getLocationFillReport,
+  bulkUpdateDimensions, getLocationFillReport, bulkSetPickFlag,
   listSubWarehouses, createSubWarehouse, updateSubWarehouse, bulkAssignSubWarehouse,
 };

@@ -54,6 +54,8 @@
       <button class="btn-sm btn-back" onclick="openBulkSubWarehouseModal()"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Назначить под-склад</button>
       <button class="btn-sm btn-back" onclick="openSubWarehousesModal()"><svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg> Создать/переименовать под-склад</button>
       <button class="btn-sm btn-blue" onclick="printSelectedLabels()"><svg class="i" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1.5"/><path d="M6 14h12v7H6z"/></svg> Печать выбранных</button>
+      <button class="btn-sm btn-yellow" onclick="setSelectedPickFlag(false)"><svg class="i" viewBox="0 0 24 24"><path d="M4.9 4.9l14.2 14.2"/><circle cx="12" cy="12" r="9"/></svg> Выключить из подбора</button>
+      <button class="btn-sm btn-back" onclick="setSelectedPickFlag(true)"><svg class="i" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Включить в подбор</button>
       <button class="btn-sm btn-red" onclick="deleteSelectedLocations()"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg> Удалить выбранные</button>
     </div>
   </div>
@@ -203,6 +205,29 @@ function _printSelectedLabels() {
     }, _callee3, null, [[3, 5]]);
   }));
   return _printSelectedLabels.apply(this, arguments);
+}
+// Массовое вкл/выкл ячеек из подбора (задача 21.09.2026) — обычная функция
+// на .then()/.catch(), без async/regenerator: не завязана на нумерацию шагов
+// babel-стейт-машины выше, безопаснее дописывать сюда же при следующих
+// правках (тот же приём, что и в billing.html/items.html).
+function setSelectedPickFlag(flag) {
+  if (!selectedIds.size) {
+    UI.notify.err('Отметьте хотя бы одну ячейку');
+    return;
+  }
+  var msg = flag
+    ? 'Включить ' + selectedIds.size + ' ячейку(ек) обратно в подбор?'
+    : 'Выключить ' + selectedIds.size + ' ячейку(ек) из подбора? Товар в них останется как есть, но новые волны сборки перестанут брать из них остаток.';
+  if (!UI.confirm(msg)) return;
+  window.API.locations.bulkSetPickFlag(Array.from(selectedIds), flag)
+    .then(function (res) {
+      UI.notify.ok((flag ? 'Включено в подбор: ' : 'Выключено из подбора: ') + res.updated);
+      selectedIds.clear();
+      loadLocations();
+    })
+    .catch(function (err) {
+      UI.notify.err(err.message);
+    });
 }
 function openBulkDimensionsModal() {
   if (!selectedIds.size) {
@@ -531,7 +556,7 @@ function _loadLocations() {
           return _context7.a(2);
         case 3:
           list.innerHTML = locCache.map(function (l, idx) {
-            return "\n          <div class=\"list-row loc-row\" style=\"display:flex;align-items:center;gap:10px;\" onclick=\"openModal(".concat(idx, ")\">\n            ").concat(canEdit ? "<input type=\"checkbox\" class=\"loc-cb\" data-id=\"".concat(l.id, "\" onclick=\"event.stopPropagation(); onLocCheck(").concat(l.id, ", this.checked);\" ").concat(selectedIds.has(l.id) ? 'checked' : '', "/>") : '', "\n            <div class=\"main\" style=\"flex:1;\">\n              <div class=\"title\">").concat(UI.escHtml(l.location_code), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(TYPE_LABELS[l.location_type] || l.location_type), " \xB7 ").concat(UI.escHtml(l.warehouse_name), " ").concat(l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>', "</div>\n            </div>\n            <div class=\"badge\"><span>\u041D\u0430 \u0440\u0443\u043A\u0430\u0445</span><div>").concat(UI.fmtQty(l.qty_on_hand), "</div></div>\n          </div>\n        ");
+            return "\n          <div class=\"list-row loc-row\" style=\"display:flex;align-items:center;gap:10px;\" onclick=\"openModal(".concat(idx, ")\">\n            ").concat(canEdit ? "<input type=\"checkbox\" class=\"loc-cb\" data-id=\"".concat(l.id, "\" onclick=\"event.stopPropagation(); onLocCheck(").concat(l.id, ", this.checked);\" ").concat(selectedIds.has(l.id) ? 'checked' : '', "/>") : '', "\n            <div class=\"main\" style=\"flex:1;\">\n              <div class=\"title\">").concat(UI.escHtml(l.location_code), "</div>\n              <div class=\"sub\">").concat(UI.escHtml(TYPE_LABELS[l.location_type] || l.location_type), " \xB7 ").concat(UI.escHtml(l.warehouse_name), " ").concat(l.is_active ? '' : '· <span style="color:var(--red)">выключена</span>').concat(l.is_pick_location ? '' : ' \xB7 <span style="color:var(--yellow, #d9a441)">не в подборе</span>', "</div>\n            </div>\n            <div class=\"badge\"><span>\u041D\u0430 \u0440\u0443\u043A\u0430\u0445</span><div>").concat(UI.fmtQty(l.qty_on_hand), "</div></div>\n          </div>\n        ");
           }).join('');
           // Под-склад (17.09.2026) — дописываем тег DOM-ом ПОСЛЕ рендера строк,
           // а не встраиваем в плотный конкатенированный шаблон выше (это уже
