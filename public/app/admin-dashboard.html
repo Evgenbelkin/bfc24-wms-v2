@@ -301,6 +301,30 @@ function stageOf(pickingPct, packingPct, shippingPct, tasksTotal) {
   return 'shipped';
 }
 
+/** Плашка статуса на карточке отгрузки в диспетчерской (задача 22.09.2026):
+ *  wms.shipments.status в базе меняется только в нескольких дискретных
+ *  точках (ready_to_ship - когда упаковщик полностью закрывает короб;
+ *  in_transit/done/cancelled - при отгрузке/доставке/отмене) - всё время
+ *  сборки и упаковки статус в базе остаётся буквально 'new', сколько бы уже
+ *  ни было реально сделано (см. wb.router.js/wb.service.js - INSERT INTO
+ *  wms.shipments всегда со status='new'). Раньше плашка показывала этот
+ *  сырой статус как есть - "НОВАЯ" даже когда сборка/упаковка давно идёт,
+ *  что вводило в заблуждение. Здесь для официальных/финальных статусов
+ *  (проставляются явно и однозначно) показываем их как есть, а пока волна
+ *  ещё не дошла ни до одной такой точки - показываем реальный этап по
+ *  проценту (аналогично stageOf() выше, но с отдельным "новая" для
+ *  "вообще ещё не начинали", а не одним общим "на сборке" на всё). */
+function dispatcherStatusOf(s) {
+  var official = { ready_to_ship: 1, shipping: 1, in_transit: 1, done: 1, cancelled: 1, error: 1 };
+  if (official[s.status]) {
+    return { label: SHIP_STATUS_LABELS[s.status] || s.status, pill: SHIP_STATUS_PILL[s.status] || 'pill-gray' };
+  }
+  var pickingPct = s.pickingResolved ? 100 : s.pickingPct;
+  if (!pickingPct) return { label: 'новая', pill: 'pill-gray' };
+  if (pickingPct < 100) return { label: 'сборка', pill: 'pill-blue' };
+  return { label: 'упаковка', pill: 'pill-blue' };
+}
+
 // Диспетчерская (16.09.2026): "сколько уже в работе" для карточки отгрузки —
 // от pick_waves.accepted_at / packing_tasks.started_at до текущего момента.
 function formatElapsed(iso) {
@@ -476,7 +500,8 @@ function renderShipmentsList() {
       var packingElapsed = formatElapsed(s.packing_started_at);
       if (packingElapsed) packingMetaParts.push(packingElapsed);
       var packingMetaHtml = packingMetaParts.length ? '<div class="stage-bar-meta">' + packingMetaParts.join(' \xB7 ') + '</div>' : '';
-      return "\n          <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;cursor:pointer;\" onclick=\"openShipmentDetail('".concat(s.external_id, "')\">\n            <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n              <div>\n                <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0442\u0440\u043E\u043A ").concat(s.tasks_total || 0, "</div>\n                <div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> ").concat(packingNote, "</div>\n              </div>\n              <span class=\"pill ").concat(SHIP_STATUS_PILL[s.status] || 'pill-gray', "\">").concat(SHIP_STATUS_LABELS[s.status] || s.status, "</span>\n            </div>\n            <div class=\"stage-bars\">\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0421\u0431\u043E\u0440\u043A\u0430</span><span>").concat(s.pickingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill picking\" style=\"width:").concat(s.pickingPct, "%\"></div></div>").concat(pickingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430</span><span>").concat(s.packingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill packing\" style=\"width:").concat(s.packingPct, "%\"></div></div>").concat(packingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u041E\u0442\u0433\u0440\u0443\u0437\u043A\u0430</span><span>").concat(s.shippingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill shipping\" style=\"width:").concat(s.shippingPct, "%\"></div></div>\n              </div>\n            </div>\n          </div>\n        ");
+      var disp = dispatcherStatusOf(s);
+      return "\n          <div class=\"list-row\" style=\"flex-direction:column;align-items:stretch;cursor:pointer;\" onclick=\"openShipmentDetail('".concat(s.external_id, "')\">\n            <div class=\"main\" style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:10px;\">\n              <div>\n                <div class=\"title\">").concat(UI.escHtml(s.external_id), "</div>\n                <div class=\"sub\">").concat(UI.escHtml(s.client_name || ''), " \xB7 ").concat(UI.escHtml(s.warehouse_name || ''), " \xB7 \u0441\u0442\u0440\u043E\u043A ").concat(s.tasks_total || 0, "</div>\n                <div class=\"sub\"><svg class=\"i\" viewBox=\"0 0 24 24\"><path d=\"M21 8.5 12 3 3 8.5v7L12 21l9-5.5v-7z\"/><path d=\"M3 8.5 12 13l9-4.5\"/><path d=\"M12 13v8\"/></svg> ").concat(packingNote, "</div>\n              </div>\n              <span class=\"pill ").concat(disp.pill, "\">").concat(disp.label, "</span>\n            </div>\n            <div class=\"stage-bars\">\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0421\u0431\u043E\u0440\u043A\u0430</span><span>").concat(s.pickingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill picking\" style=\"width:").concat(s.pickingPct, "%\"></div></div>").concat(pickingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u0423\u043F\u0430\u043A\u043E\u0432\u043A\u0430</span><span>").concat(s.packingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill packing\" style=\"width:").concat(s.packingPct, "%\"></div></div>").concat(packingMetaHtml, "\n              </div>\n              <div class=\"stage-bar\">\n                <div class=\"stage-bar-label\"><span>\u041E\u0442\u0433\u0440\u0443\u0437\u043A\u0430</span><span>").concat(s.shippingPct, "%</span></div>\n                <div class=\"stage-bar-track\"><div class=\"stage-bar-fill shipping\" style=\"width:").concat(s.shippingPct, "%\"></div></div>\n              </div>\n            </div>\n          </div>\n        ");
     }).join('');
     // Приоритет + назначение сборщика/упаковщика (17.09.2026, "волны падают
     // по порядку, нужно задать приоритет" + вариант с назначением конкретному
