@@ -37,6 +37,12 @@ async function listShipments({
     `SELECT s.*, c.client_name, w.warehouse_name,
        COALESCE(su.full_name, su.username) AS shipper_name,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='done') AS tasks_done,
+       -- tasks_skipped (21.09.2026, "не видно что волну закончили собирать,
+       -- просто 33% и всё") - пропущенные (в т.ч. уехавшие в "Дефициты") не
+       -- попадают в tasks_done, поэтому % сборки занижен даже когда реально
+       -- собирать больше нечего - фронт использует done+skipped===total как
+       -- отдельный явный признак "сборка завершена", не полагаясь на pct.
+       (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id AND t.status='skipped') AS tasks_skipped,
        (SELECT COUNT(*)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS tasks_total,
        (SELECT COALESCE(SUM(t.qty),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_plan,
        (SELECT COALESCE(SUM(t.qty_picked),0)::int FROM wms.picking_tasks t WHERE t.shipment_code=s.external_id) AS qty_picked,
@@ -412,9 +418,23 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
     const shipment = shipRes.rows[0];
 
     // Идемпотентность: если уже in_transit — возвращаем успех. Но если ВБ
-    // так и не был уведомлён об этом раньше (wb_delivered_at ещё NULL — баг
-    // до этого фикса, когда deliverSupply вообще не вызывался) — даём
+    // так и не подтвердил приём (нет реального QR поставки) — даём
     // возможность повторной попытки прямо через повторный скан.
+    //
+    // ВАЖНО (найдено 21.09.2026, "повторно не даёт отсканировать" — но в
+    // кабинете ВБ поставка так и висела "На сборке"): раньше условие было
+    // "!wb_delivered_at" — а это поле ставится сразу, как только наш вызов
+    // wbClient.deliverSupply() не выбросил исключение (см.
+    // notifyWbSupplyDelivered ниже), ДО того, как реально проверено, что ВБ
+    // принял поставку. Если WB отвечает 200 без реальной обработки (или наш
+    // клиент не считает такой ответ ошибкой), wb_delivered_at ставился, хотя
+    // поставка так и оставалась "На сборке" - карточка скана пряталась
+    // (alreadyShipped && !needsWbRetry), и повторно попробовать было
+    // невозможно. Настоящее доказательство, что ВБ принял поставку - реальный
+    // QR поставки (WB отдаёт его ТОЛЬКО после успешного deliver, см. комментарий
+    // у notifyWbSupplyDelivered/fetchWbSupplyQrAfterCommit ниже) - поэтому
+    // ретрай теперь доступен, пока QR не получен, а не пока wb_delivered_at
+    // не проставлен.
     if (shipment.status === 'in_transit') {
       shipmentId = shipment.id;
       return {
@@ -422,7 +442,7 @@ async function confirmShipment({ tenantId, shipmentCode, scannedCode, userId }) 
         shipmentCode: shipment.external_id,
         status: 'in_transit', alreadyShipped: true,
         qr_base64: shipment.wb_supply_qr_base64 || null,
-        needsWbDeliver: !shipment.wb_delivered_at,
+        needsWbDeliver: !shipment.wb_supply_qr_base64,
       };
     }
 

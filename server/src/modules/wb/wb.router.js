@@ -12,6 +12,7 @@ const { tenantMiddleware, resolveClientScope } = require('../../middleware/tenan
 const { requireRole } = require('../../middleware/requireRole');
 const { requireModule } = require('../../middleware/tenant');
 const { ValidationError, NotFoundError } = require('../../utils/errors');
+const { validatePositiveInt } = require('../../utils/validators');
 const { resolveOrCreateItem, findItemIdByBarcode, resolveStockKey } = require('../masterdata/items/items.service');
 const { getDefaultWarehouse } = require('../warehouses/warehouses.service');
 const logger = require('../../utils/logger');
@@ -735,6 +736,47 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
 
     const totalDropped = suppliesResult.reduce((s,r)=>s+(r.dropped_count||0),0);
     res.json({ ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult, dropped_total:totalDropped, stock_shortage: stockShortage });
+  } catch(e){ next(e); }
+});
+
+// ─────────────── Поставки "Дефициты" (см. миграцию 071) ───────────────
+
+/** GET /wb/deficit-supplies — список "копящихся" поставок Дефициты тенанта,
+ *  для отдельной вкладки в диспетчерской. */
+router.get('/deficit-supplies', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const rows = await wbService.listAccumulatingDeficitSupplies(req.user.tenantId);
+    res.json({ ok:true, rows });
+  } catch(e){ next(e); }
+});
+
+/** GET /wb/deficit-supplies/:id — состав "копящейся" поставки Дефициты
+ *  (какие заказы/товары в неё уже попали) — детализация по клику на карточку
+ *  в диспетчерской (21.09.2026). */
+router.get('/deficit-supplies/:id', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const result = await wbService.getDeficitSupplyDetail({
+      tenantId: req.user.tenantId,
+      deficitSupplyId: validatePositiveInt(req.params.id, 'id'),
+    });
+    res.json({ ok:true, ...result });
+  } catch(e){ next(e); }
+});
+
+/** POST /wb/deficit-supplies/:id/launch — "Запустить дефициты": оборачивает
+ *  уже существующую в ВБ поставку Дефициты в обычную волну сборки (без
+ *  повторных createSupply/addOrdersToSupply — заказы там уже есть) и сразу
+ *  заводит новую "копящуюся" поставку под тот же склад. */
+router.post('/deficit-supplies/:id/launch', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
+  try {
+    const wh = await getDefaultWarehouse(req.user.tenantId);
+    const result = await wbService.launchDeficitSupply({
+      tenantId: req.user.tenantId,
+      deficitSupplyId: validatePositiveInt(req.params.id, 'id'),
+      warehouseId: wh.id,
+      actorUserId: req.user.id,
+    });
+    res.json({ ok:true, ...result });
   } catch(e){ next(e); }
 });
 

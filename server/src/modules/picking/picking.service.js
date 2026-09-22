@@ -9,7 +9,7 @@ const { validateBarcode, validateQty, validatePositiveInt, isValidKizCode } = re
 const { generateShipmentLabelSvg } = require('../../utils/qrcode');
 const { resolvePrinter } = require('../printing/printerResolver');
 const { chargeForOperation } = require('../billing/billing.service');
-const { triggerRedistributionForClient } = require('../wb/wb.service');
+const { triggerRedistributionForClient, moveOrderToDeficitSupply } = require('../wb/wb.service');
 const wbClient = require('../wb/wb.client');
 const { locationWalkKey, compareWalkKeys } = require('../../utils/warehouseLayout');
 const logger = require('../../utils/logger');
@@ -1191,7 +1191,12 @@ async function scanItemQty({ tenantId, pickerId, taskId, scannedBarcode, qty, co
 
 /** Пропустить задачу (товар не найден) */
 async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
-  return transaction(async (client) => {
+  // ВАЖНО (найдено 21.09.2026): раньше здесь стояло `return transaction(...)` -
+  // это завершало функцию СРАЗУ на конце транзакции, и весь код ниже (триггер
+  // пересчёта остатка для ВБ при карантине, перенос заказа в "Дефициты") был
+  // мёртвым - физически никогда не выполнялся (недостижимый код после return).
+  // Именно поэтому перенос в "Дефициты" не срабатывал в тесте на staging.
+  const result = await transaction(async (client) => {
     const tRes = await client.query(
       `SELECT * FROM wms.picking_tasks WHERE id=$1 AND tenant_id=$2 FOR UPDATE`, [taskId, tenantId]
     );
@@ -1369,23 +1374,43 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
     }
 
-    // Авто-повтор в конце волны: если по факту пропуска остаток реально ушёл в
-    // карантин (значит на исходной ячейке для этого товара сейчас 0), и по
-    // системе есть тот же товар в ДРУГОЙ ячейке отбора (не карантин, не под
-    // открытой инвентаризацией "не найден" — см. фильтры внутри
-    // findBestPickLocation) — не оставляем задачу висеть 'skipped' до
-    // ручного возврата супервайзером, а сразу переоткрываем её на новую
-    // ячейку. Приоритет намеренно поднимаем выше остальных задач волны, чтобы
-    // сборщик сначала прошёл весь обычный маршрут и только в конце вернулся
-    // за этим товаром, а не прыгал туда-сюда посреди волны.
-    // Если альтернативной ячейки с остатком нет — поведение как раньше:
-    // задача остаётся 'skipped', и уже супервайзер решает (см.
-    // requeueSkippedTask) после того как разберётся с самим карантином
-    // (нашёлся товар — вернуть, не нашёлся — списать по инвентаризации).
+    // Авто-повтор в конце волны: по системе есть тот же товар в ДРУГОЙ ячейке
+    // отбора (не карантин, не под открытой инвентаризацией "не найден" — см.
+    // фильтры внутри findBestPickLocation) — не оставляем задачу висеть
+    // 'skipped' до ручного возврата супервайзером, а сразу переоткрываем её
+    // на новую ячейку. Приоритет намеренно поднимаем выше остальных задач
+    // волны, чтобы сборщик сначала прошёл весь обычный маршрут и только в
+    // конце вернулся за этим товаром, а не прыгал туда-сюда посреди волны.
+    //
+    // ВАЖНО (найдено 21.09.2026 при тесте переноса в "Дефициты"): раньше эта
+    // проверка была под условием quarantined - но quarantined означает только
+    // "в ИСХОДНОЙ ячейке по системе что-то числилось, и мы физически перенесли
+    // это в карантин" - а НЕ "остатка нет нигде". Если по системе на исходной
+    // ячейке и так уже было 0 (самый частый случай - товар реально
+    // закончился, без фантомного остатка) - quarantined оставался false, и
+    // проверка альтернативной ячейки вообще не запускалась: задача просто
+    // зависала 'skipped' без единой попытки найти товар в другом месте склада
+    // и без переноса в "Дефициты". Убрали зависимость от quarantined -
+    // проверяем альтернативу всегда, когда известен item_id.
+    //
+    // Если альтернативной ячейки с остатком нет - задача остаётся 'skipped'
+    // (супервайзер видит её в "Пропущенные позиции"), а wbOrderId уходит в
+    // поставку "Дефициты" (см. вызов moveOrderToDeficitSupply ниже, за
+    // пределами транзакции).
     let requeued = false;
-    if (quarantined && task.item_id) {
+    if (task.item_id) {
+      // dbClient: client (найдено 21.09.2026) - без этого findBestPickLocation
+      // шёл через отдельное соединение из пула и не видел ещё незакоммиченный
+      // перенос остатка исходной ячейки в карантин чуть выше в ЭТОЙ ЖЕ
+      // транзакции - видел старое (пока ещё не обнулённое снаружи) значение
+      // исходной ячейки и ошибочно "находил" её же саму как альтернативу.
+      // Задача requeue'илась туда же, откуда её только что убрали - сборщик
+      // получал следующее задание с ячейкой, которая по факту (после коммита)
+      // тоже 0 - "прочерк" на ТСД, а в "Дефициты" заказ не уходил, хотя должен
+      // был (реальной альтернативы не было).
       const alt = await findBestPickLocation({
         tenantId, warehouseId: task.warehouse_id, itemId: task.item_id, clientId: task.client_id,
+        dbClient: client,
       });
       if (alt) {
         const prioRes = await client.query(
@@ -1437,7 +1462,10 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
       }
     }
 
-    return { ok: true, taskId, inventoryTaskId, quarantined, requeued, clientId: task.client_id, barcode: task.barcode };
+    return {
+      ok: true, taskId, inventoryTaskId, quarantined, requeued,
+      clientId: task.client_id, barcode: task.barcode, wbOrderId: task.wb_order_id,
+    };
   });
 
   // Перенос в карантин меняет qty_available в ячейках отбора (было в обычной
@@ -1447,6 +1475,20 @@ async function skipTask({ tenantId, pickerId, taskId, reason, comment }) {
   if (result.quarantined && result.barcode) {
     logger.info({ tenantId, barcode: result.barcode }, 'Skip→quarantine triggered WB redistribution');
     triggerRedistributionForClient({ tenantId, clientId: result.clientId, barcodes: [result.barcode] });
+  }
+
+  // requeued=false здесь означает, что альтернативной ячейки с остатком для
+  // этого товара НЕ нашлось нигде на складе (см. проверку выше, теперь не
+  // зависящую от quarantined) — переносим заказ в поставку "Дефициты" его
+  // склада, чтобы он не тормозил закрытие исходной поставки ВБ (см. миграцию
+  // 071_wb_deficit_supplies.sql). Best-effort и намеренно ПОСЛЕ основной
+  // транзакции (сетевой вызов к WB) — неудача здесь не должна откатывать уже
+  // состоявшийся skip, сборщик и так увидит задачу в обычном списке
+  // пропущенных (listSkippedTasks) для ручного разбора.
+  if (!result.requeued && result.wbOrderId) {
+    moveOrderToDeficitSupply({ tenantId, wbOrderId: result.wbOrderId }).catch(e => {
+      logger.warn({ err: e, tenantId, wbOrderId: result.wbOrderId }, 'skipTask: moveOrderToDeficitSupply failed (non-fatal)');
+    });
   }
 
   return { ok: true, taskId: result.taskId, inventoryTaskId: result.inventoryTaskId };
@@ -1889,6 +1931,34 @@ async function closeWave({ tenantId, pickerId, shipmentCode, bufferLocationCode 
       `SELECT id, warehouse_id, client_id FROM wms.shipments WHERE tenant_id=$1 AND external_id=$2 LIMIT 1`,
       [tenantId, shipmentCode]
     );
+
+    // Пустая поставка (21.09.2026, "не должна пустая поставка попадать на
+    // упаковку, она блокирует работу") - если ВСЕ задачи волны пропущены (и,
+    // как правило, уехали в "Дефициты" - см. moveOrderToDeficitSupply в
+    // skipTask), собирать в коробе физически нечего: ноль штук, нулевой
+    // вес. Раньше closeWave() всё равно безусловно создавал packing_tasks -
+    // упаковщик получал в очередь пустую отгрузку без единой строки состава
+    // и без возможности её закрыть (нечего сканировать, "Подтвердить
+    // упаковку" рассчитан на реальные короба) - зависшая задача блокировала
+    // весь стол упаковки. Если ни одна задача волны не 'done' - в упаковку
+    // вообще не отправляем, сразу закрываем саму отгрузку как отменённую
+    // (содержимое целиком уехало в "Дефициты", исходная поставка ВБ пуста).
+    const doneCountRes = await client.query(
+      `SELECT COUNT(*)::int AS n FROM wms.picking_tasks WHERE wave_id=$1 AND status='done'`,
+      [wave.id]
+    );
+    const nothingPicked = doneCountRes.rows[0].n === 0;
+    if (nothingPicked && shipRes.rowCount > 0) {
+      await client.query(
+        `UPDATE wms.shipments
+         SET status='cancelled', cancelled_at=NOW(), cancelled_by=$1,
+             cancel_reason=$2, updated_at=NOW()
+         WHERE id=$3`,
+        [pickerId, 'Все позиции пропущены и перенесены в поставку «Дефициты» — упаковывать нечего (авто, при закрытии волны)', shipRes.rows[0].id]
+      );
+      return { ok: true, shipmentCode, status: 'cancelled', emptyShipment: true, printJobCreated: false };
+    }
+
     let printJobCreated = false;
     if (shipRes.rowCount > 0) {
       const shipment = shipRes.rows[0];

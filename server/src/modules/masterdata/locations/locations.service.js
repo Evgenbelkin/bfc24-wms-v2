@@ -442,7 +442,20 @@ async function getLocationFillReport({ tenantId, warehouseId = null, pickOnly = 
  *  почти наверняка содержит старый товар. Сортируем по ней по возрастанию
  *  (сначала самая "нетронутая" = самая старая), остаток - только как
  *  вторичный критерий при равных датах. */
-async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId, afterCode = null }) {
+async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId, afterCode = null, dbClient = null }) {
+  // dbClient (найдено 21.09.2026 при тесте "Дефициты"): по умолчанию этот
+  // запрос идёт через query() - ОТДЕЛЬНОЕ соединение из пула, не видящее
+  // незакоммиченные записи чужой транзакции. skipTask() в picking.service.js
+  // сначала физически переносит остаток исходной ячейки в карантин ВНУТРИ
+  // своей транзакции, а затем в том же вызове ищет "альтернативную ячейку"
+  // для авто-повтора - без dbClient этот поиск видел ещё СТАРОЕ (закоммиченное
+  // до транзакции) состояние исходной ячейки и ошибочно "находил" её же саму
+  // как альтернативу (остаток по факту уже обнулён, но снаружи транзакции
+  // это ещё не видно) - задача requeue'ilась туда же, откуда её только что
+  // убрали, вместо реального поиска в другом месте или переноса в "Дефициты".
+  // Передавайте transaction-client, когда вызов идёт из активной транзакции,
+  // изменившей остаток по этому же товару.
+  const runner = dbClient || { query };
   // Пул остатков (миграция 061) — если товар связан с пулом, физический
   // остаток и ячейка ищутся у пул-клиента, а не у клиента заказа. Для
   // тенантов без пулинга resolveStockKey возвращает itemId/clientId как есть.
@@ -462,7 +475,7 @@ async function findBestPickLocation({ tenantId, warehouseId, itemId, clientId, a
   // ни одной с остатком - откатываемся к глобально самой старой по складу,
   // как раньше (лучше отправить назад, чем вообще не найти, чем нарушить
   // FIFO по всему складу молча).
-  const res = await query(
+  const res = await runner.query(
     `SELECT
        l.id AS location_id, l.location_code, sb.qty_on_hand, sb.qty_available
      FROM wms.stock_balances sb

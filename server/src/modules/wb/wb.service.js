@@ -4,7 +4,7 @@ const { query, transaction } = require('../../config/database');
 const wbClient = require('./wb.client');
 const { NotFoundError, ValidationError } = require('../../utils/errors');
 const logger = require('../../utils/logger');
-const { findItemIdByBarcode } = require('../masterdata/items/items.service');
+const { findItemIdByBarcode, resolveOrCreateItem } = require('../masterdata/items/items.service');
 
 // =============================================================================
 // WB Service — переиспользуемая логика синхронизации, общая для:
@@ -1610,6 +1610,317 @@ async function reconcileStockForTenant(tenantId) {
   return { checked_at: checkedAt, accounts, total_mismatches: totalMismatches };
 }
 
+// =============================================================================
+// Поставки "Дефициты" (20-21.09.2026, обсуждение с владельцем) — см. миграцию
+// 071_wb_deficit_supplies.sql за полным объяснением идеи. Коротко: когда
+// picking.service.js::skipTask() живьём подтверждает, что остатка товара нет
+// нигде на складе, соответствующий заказ переносится тем же методом
+// addOrdersToSupply в отдельную "копящуюся" поставку ВБ под его склад
+// назначения — вместо того чтобы держать задачу 'skipped' и косвенно
+// тормозить закрытие исходной поставки. Про саму поставку ВБ прямо в доке
+// (dev.wildberries.ru/en/openapi/orders-fbs, "Add Assembly Orders to the
+// Supply") сказано: "It can also move the assembly orders between active
+// supplies" — то есть WB сам открепляет заказ от старой поставки, никакого
+// отдельного "удалить" вызывать не нужно. Работает только пока исходная
+// поставка ещё активна (не сдана в доставку) — на момент skip во время
+// сборки это всегда так.
+// =============================================================================
+
+/** Найти "копящуюся" (status='accumulating') поставку Дефициты под нужный
+ *  склад ВБ, либо завести новую в ВБ + локально, если такой ещё нет.
+ *  Гонка при одновременном создании двух штук под один и тот же склад
+ *  разруливается частичным уникальным индексом в БД
+ *  (idx_wb_deficit_supplies_one_accumulating) — проигравший запрос просто
+ *  подхватывает запись, которую успел вставить конкурент (WB-сторонняя
+ *  поставка при этом остаётся пустым сиротой в кабинете ВБ — очень редкий
+ *  случай, не критично, можно вручную удалить в ЛК ВБ при необходимости). */
+async function getOrCreateAccumulatingDeficitSupply({ tenantId, accountId, apiToken, warehouseId, warehouseName }) {
+  const existing = await query(
+    `SELECT * FROM wms.wb_deficit_supplies
+     WHERE tenant_id=$1 AND mp_account_id=$2 AND warehouse_id=$3 AND status='accumulating'
+     LIMIT 1`,
+    [tenantId, accountId, warehouseId]
+  );
+  if (existing.rowCount > 0) return existing.rows[0];
+
+  const supplyName = `WMS2-DEFICIT-${accountId}-${warehouseName || 'WH'}-${Date.now()}`;
+  let supplyBody;
+  try {
+    supplyBody = await wbClient.createSupply(apiToken, supplyName);
+  } catch (e) {
+    logger.error({ err: e, tenantId, accountId, warehouseId, warehouseName }, 'getOrCreateAccumulatingDeficitSupply: WB createSupply failed');
+    return null;
+  }
+  const rawSupplyId = String(supplyBody?.id || supplyBody?.supplyId || '').trim();
+  if (!rawSupplyId) {
+    logger.error({ tenantId, accountId, warehouseId, supplyBody }, 'getOrCreateAccumulatingDeficitSupply: WB returned no supply id');
+    return null;
+  }
+
+  const ins = await query(
+    `INSERT INTO wms.wb_deficit_supplies(tenant_id,mp_account_id,warehouse_id,warehouse_name,supply_code,status)
+     VALUES($1,$2,$3,$4,$5,'accumulating')
+     ON CONFLICT (mp_account_id, warehouse_id) WHERE status='accumulating' DO NOTHING
+     RETURNING *`,
+    [tenantId, accountId, warehouseId, warehouseName, rawSupplyId]
+  );
+  if (ins.rowCount > 0) return ins.rows[0];
+
+  // Проиграли гонку — конкурент уже вставил свою запись первым, подхватываем её.
+  const winner = await query(
+    `SELECT * FROM wms.wb_deficit_supplies
+     WHERE tenant_id=$1 AND mp_account_id=$2 AND warehouse_id=$3 AND status='accumulating' LIMIT 1`,
+    [tenantId, accountId, warehouseId]
+  );
+  return winner.rows[0] || null;
+}
+
+/** Перенести ОДИН заказ (уже подтверждённый picking.service.js::skipTask как
+ *  "остатка нет нигде") в поставку Дефициты его склада назначения.
+ *  Вызывается ПОСЛЕ коммита транзакции skipTask (сам делает сетевой вызов к
+ *  WB — держать его внутри транзакции сборки не нужно, по аналогии с тем,
+ *  как generate-wave делает WB-вызовы вне транзакции локальной бухгалтерии).
+ *  Best-effort: любая неудача здесь не должна ломать сам skip (который уже
+ *  прошёл) — вызывающий код (picking.service.js) оборачивает в try/catch. */
+async function moveOrderToDeficitSupply({ tenantId, wbOrderId }) {
+  const orderRes = await query(
+    `SELECT wo.wb_order_id, wo.mp_account_id, wo.warehouse_id, wo.warehouse_name, wo.wb_supply_id AS current_supply_id,
+            ma.api_token
+     FROM wms.wb_orders wo
+     JOIN wms.mp_accounts ma ON ma.id = wo.mp_account_id
+     WHERE wo.tenant_id=$1 AND wo.wb_order_id=$2
+     LIMIT 1`,
+    [tenantId, wbOrderId]
+  );
+  if (orderRes.rowCount === 0) {
+    logger.warn({ tenantId, wbOrderId }, 'moveOrderToDeficitSupply: wb_orders row not found');
+    return { ok: false, reason: 'order_not_found' };
+  }
+  const order = orderRes.rows[0];
+  if (!order.api_token) {
+    logger.warn({ tenantId, wbOrderId, accountId: order.mp_account_id }, 'moveOrderToDeficitSupply: account has no api_token');
+    return { ok: false, reason: 'no_token' };
+  }
+  if (!order.warehouse_id) {
+    logger.warn({ tenantId, wbOrderId }, 'moveOrderToDeficitSupply: order has no warehouse_id, cannot bucket by warehouse');
+    return { ok: false, reason: 'no_warehouse' };
+  }
+
+  const deficitSupply = await getOrCreateAccumulatingDeficitSupply({
+    tenantId, accountId: order.mp_account_id, apiToken: order.api_token,
+    warehouseId: order.warehouse_id, warehouseName: order.warehouse_name,
+  });
+  if (!deficitSupply) return { ok: false, reason: 'supply_create_failed' };
+
+  // Уже там (например, повторный вызов) — не дёргаем WB заново.
+  if (order.current_supply_id && String(order.current_supply_id) === String(deficitSupply.supply_code)) {
+    return { ok: true, deficitSupplyId: deficitSupply.id, supplyCode: deficitSupply.supply_code, already: true };
+  }
+
+  let addResult;
+  try {
+    addResult = await wbClient.addOrdersToSupply(order.api_token, deficitSupply.supply_code, [Number(wbOrderId)]);
+  } catch (e) {
+    logger.error({ err: e, tenantId, wbOrderId, deficitSupplyId: deficitSupply.id }, 'moveOrderToDeficitSupply: WB addOrdersToSupply failed');
+    return { ok: false, reason: 'wb_error', error: e.message };
+  }
+  if (addResult.droppedOrderIds?.length) {
+    // Скорее всего несовпадение cargoType с уже зафиксированным у этой
+    // "копящейся" поставки — первая версия это не разруливает автоматически
+    // (см. комментарий в миграции 071), заказ остаётся там, где был, и
+    // всплывает в listSkippedTasks как обычно для ручного разбора.
+    logger.warn({ tenantId, wbOrderId, deficitSupplyId: deficitSupply.id }, 'moveOrderToDeficitSupply: WB rejected the move (cargoType mismatch?)');
+    return { ok: false, reason: 'wb_rejected' };
+  }
+
+  await query(
+    `UPDATE wms.wb_orders SET wb_supply_id=$1, status='confirm', fetched_at=NOW()
+     WHERE tenant_id=$2 AND mp_account_id=$3 AND wb_order_id=$4`,
+    [deficitSupply.supply_code, tenantId, order.mp_account_id, wbOrderId]
+  );
+  await query(
+    `UPDATE wms.picking_tasks SET moved_to_deficit_supply_id=$1, deficit_moved_at=NOW()
+     WHERE tenant_id=$2 AND wb_order_id=$3 AND status='skipped'`,
+    [deficitSupply.id, tenantId, wbOrderId]
+  );
+  await query(
+    `UPDATE wms.wb_deficit_supplies SET orders_count=orders_count+1, updated_at=NOW() WHERE id=$1`,
+    [deficitSupply.id]
+  );
+
+  logger.info({ tenantId, wbOrderId, deficitSupplyId: deficitSupply.id, supplyCode: deficitSupply.supply_code }, 'Order moved to deficit supply');
+  return { ok: true, deficitSupplyId: deficitSupply.id, supplyCode: deficitSupply.supply_code };
+}
+
+/** Список "копящихся" поставок Дефициты тенанта (для вкладки в диспетчерской) —
+ *  реальное количество заказов пересчитываем прямо из wms.wb_orders (кэш
+ *  orders_count может немного разойтись, если заказ параллельно отменили на
+ *  стороне ВБ — считаем актуальный список надёжнее кэша для отображения). */
+async function listAccumulatingDeficitSupplies(tenantId) {
+  const r = await query(
+    `SELECT ds.id, ds.mp_account_id, ma.account_name, ma.client_id, cl.client_name AS client_name,
+            ds.warehouse_id, ds.warehouse_name, ds.supply_code, ds.status, ds.created_at,
+            (SELECT COUNT(*)::int FROM wms.wb_orders wo
+              WHERE wo.mp_account_id=ds.mp_account_id AND wo.wb_supply_id=ds.supply_code) AS orders_count
+     FROM wms.wb_deficit_supplies ds
+     JOIN wms.mp_accounts ma ON ma.id = ds.mp_account_id
+     LEFT JOIN wms.clients cl ON cl.id = ma.client_id
+     WHERE ds.tenant_id=$1 AND ds.status='accumulating'
+     ORDER BY ds.warehouse_name NULLS LAST, ds.created_at`,
+    [tenantId]
+  );
+  return r.rows;
+}
+
+/** Состав "копящейся" поставки Дефициты — для детализации по клику на
+ *  карточку в диспетчерской (21.09.2026, "в дефицитах видно волну но нельзя
+ *  посмотреть состав"). Источник товарных данных — не wms.wb_orders (там
+ *  только barcode, без резолва item_id/названия), а wms.picking_tasks с
+ *  moved_to_deficit_supply_id=этой поставке — их туда стамповал именно
+ *  moveOrderToDeficitSupply() в момент переноса, item_id/item_name уже
+ *  резолвлены (та самая исходная задача сборки, из которой это уехало). */
+async function getDeficitSupplyDetail({ tenantId, deficitSupplyId }) {
+  const dsRes = await query(
+    `SELECT ds.id, ds.mp_account_id, ma.account_name, ma.client_id, cl.client_name AS client_name,
+            ds.warehouse_id, ds.warehouse_name, ds.supply_code, ds.status, ds.created_at
+     FROM wms.wb_deficit_supplies ds
+     JOIN wms.mp_accounts ma ON ma.id = ds.mp_account_id
+     LEFT JOIN wms.clients cl ON cl.id = ma.client_id
+     WHERE ds.id=$1 AND ds.tenant_id=$2`,
+    [deficitSupplyId, tenantId]
+  );
+  if (dsRes.rowCount === 0) throw new NotFoundError('DeficitSupply', deficitSupplyId);
+
+  const ordersRes = await query(
+    `SELECT pt.wb_order_id, pt.barcode, pt.qty, pt.shipment_code AS original_shipment_code,
+            pt.deficit_moved_at, i.item_name, i.vendor_code, i.size
+     FROM wms.picking_tasks pt
+     LEFT JOIN wms.items i ON i.id = pt.item_id
+     WHERE pt.tenant_id=$1 AND pt.moved_to_deficit_supply_id=$2
+     ORDER BY pt.deficit_moved_at DESC NULLS LAST, pt.id DESC`,
+    [tenantId, deficitSupplyId]
+  );
+
+  return { supply: dsRes.rows[0], orders: ordersRes.rows };
+}
+
+/** "Запустить дефициты" — обернуть уже существующую в ВБ "копящуюся"
+ *  поставку Дефициты в обычную WMS-волну сборки, БЕЗ повторных вызовов
+ *  createSupply/addOrdersToSupply (заказы там уже есть — их туда как раз и
+ *  переносил moveOrderToDeficitSupply). По сути повторяет "хвостовую" часть
+ *  generate-wave (wms.shipments/pick_waves/picking_tasks), только источник
+ *  заказов — не свежая выборка "заказы без поставки", а wms.wb_orders этой
+ *  конкретной поставки Дефициты.
+ *  Сразу же заводит новую "копящуюся" поставку под тот же склад, чтобы
+ *  дальнейшим skip'ам было куда попадать, пока эта волна собирается. */
+async function launchDeficitSupply({ tenantId, deficitSupplyId, warehouseId: wmsWarehouseId, actorUserId }) {
+  const dsRes = await query(
+    `SELECT ds.*, ma.client_id, ma.api_token
+     FROM wms.wb_deficit_supplies ds
+     JOIN wms.mp_accounts ma ON ma.id = ds.mp_account_id
+     WHERE ds.id=$1 AND ds.tenant_id=$2 AND ds.status='accumulating'
+     FOR UPDATE`,
+    [deficitSupplyId, tenantId]
+  );
+  if (dsRes.rowCount === 0) throw new NotFoundError('DeficitSupply', deficitSupplyId);
+  const ds = dsRes.rows[0];
+
+  const ordersRes = await query(
+    `SELECT wb_order_id, barcode FROM wms.wb_orders
+     WHERE tenant_id=$1 AND mp_account_id=$2 AND wb_supply_id=$3`,
+    [tenantId, ds.mp_account_id, ds.supply_code]
+  );
+  if (ordersRes.rowCount === 0) throw new ValidationError('В этой поставке Дефициты сейчас нет заказов');
+
+  const shipmentCode = wbClient.normalizeShipmentCode(ds.supply_code);
+  const stickers = await wbClient.fetchOrderStickers(ds.api_token, ordersRes.rows.map(r => Number(r.wb_order_id))).catch(() => []);
+
+  let insertedTasks = 0;
+  await transaction(async (client) => {
+    for (const st of stickers) {
+      if (!st?.orderId || !st?.file) continue;
+      const code = wbClient.extractStickerCode(st.file);
+      await client.query(
+        `UPDATE wms.wb_orders SET wb_sticker=$1, wb_sticker_code=$2
+         WHERE tenant_id=$3 AND mp_account_id=$4 AND wb_order_id=$5`,
+        [st.file, code, tenantId, ds.mp_account_id, Number(st.orderId)]
+      );
+    }
+
+    // wms.wb_supplies (найдено 21.09.2026, "отсканировал что отгрузил но
+    // отгрузки в доставку не улетели") - launchDeficitSupply НИКОГДА не писал
+    // сюда, только в свою wms.wb_deficit_supplies. А подтверждение отгрузки
+    // (confirmShipment → deliverSupplyToWb/fetchWbSupplyQrAfterCommit в
+    // shipping.service.js) ищет api_token ИМЕННО через JOIN с wms.wb_supplies
+    // по supply_code - без этой строки поиск токена находил 0 строк, вызов
+    // wbClient.deliverSupply() в ВБ вообще не происходил (тихий soft-fail,
+    // "no_wb_account"), локально волна помечалась in_transit, а в реальном
+    // кабинете ВБ поставка так и висела "На сборке" навсегда.
+    await client.query(
+      `INSERT INTO wms.wb_supplies(tenant_id,mp_account_id,supply_code) VALUES($1,$2,$3) ON CONFLICT DO NOTHING`,
+      [tenantId, ds.mp_account_id, ds.supply_code]
+    );
+    await client.query(
+      `INSERT INTO wms.shipments(tenant_id,warehouse_id,client_id,external_id,marketplace,status,created_by)
+       VALUES($1,$2,$3,$4,'wb','new',$5) ON CONFLICT(tenant_id,external_id) DO UPDATE SET client_id=EXCLUDED.client_id`,
+      [tenantId, wmsWarehouseId, ds.client_id, shipmentCode, actorUserId]
+    );
+    await client.query(
+      `INSERT INTO wms.pick_waves(tenant_id,warehouse_id,client_id,shipment_code,status,total_tasks,created_by)
+       VALUES($1,$2,$3,$4,'open',0,$5) ON CONFLICT(tenant_id,shipment_code) DO NOTHING`,
+      [tenantId, wmsWarehouseId, ds.client_id, shipmentCode, actorUserId]
+    );
+    const waveRes = await client.query(
+      `SELECT id FROM wms.pick_waves WHERE tenant_id=$1 AND shipment_code=$2 LIMIT 1`,
+      [tenantId, shipmentCode]
+    );
+    const waveId = waveRes.rows[0]?.id;
+
+    for (const row of ordersRes.rows) {
+      const b = String(row.barcode || '').trim();
+      if (!b) continue;
+      const itemId = await resolveOrCreateItem({ tenantId, clientId: ds.client_id, barcode: b, dbClient: client });
+      const dup = await client.query(
+        `SELECT id FROM wms.picking_tasks WHERE tenant_id=$1 AND wb_order_id=$2 AND shipment_code=$3 LIMIT 1`,
+        [tenantId, Number(row.wb_order_id), shipmentCode]
+      );
+      if (dup.rowCount === 0) {
+        await client.query(
+          `INSERT INTO wms.picking_tasks
+             (tenant_id,warehouse_id,client_id,wave_id,item_id,barcode,qty,status,priority,
+              wb_order_id,shipment_code,created_by,updated_by)
+           VALUES($1,$2,$3,$4,$5,$6,1,'new',3,$7,$8,$9,$9)`,
+          [tenantId, wmsWarehouseId, ds.client_id, waveId, itemId, b, Number(row.wb_order_id), shipmentCode, actorUserId]
+        );
+        insertedTasks++;
+      }
+    }
+
+    await client.query(
+      `UPDATE wms.pick_waves SET total_tasks=(SELECT COUNT(*)::int FROM wms.picking_tasks WHERE wave_id=pick_waves.id)
+       WHERE tenant_id=$1 AND shipment_code=$2`,
+      [tenantId, shipmentCode]
+    );
+
+    await client.query(
+      `UPDATE wms.wb_deficit_supplies SET status='in_wave', shipment_code=$1, launched_at=NOW(), launched_by=$2, updated_at=NOW()
+       WHERE id=$3`,
+      [shipmentCode, actorUserId, deficitSupplyId]
+    );
+  });
+
+  // Новая "копящаяся" поставка под тот же склад — не блокируем ответ
+  // пользователю, если WB тут ненадолго недоступен: волна уже создана и
+  // рабочая, а новую "копилку" при следующем skip просто заведёт
+  // getOrCreateAccumulatingDeficitSupply сама.
+  getOrCreateAccumulatingDeficitSupply({
+    tenantId, accountId: ds.mp_account_id, apiToken: ds.api_token,
+    warehouseId: ds.warehouse_id, warehouseName: ds.warehouse_name,
+  }).catch(e => logger.warn({ err: e, tenantId, warehouseId: ds.warehouse_id }, 'launchDeficitSupply: pre-creating next accumulating supply failed'));
+
+  return { ok: true, shipmentCode, ordersCount: ordersRes.rowCount, tasksInserted: insertedTasks };
+}
+
 module.exports = {
   getMpAccount,
   listActiveAccounts,
@@ -1630,4 +1941,9 @@ module.exports = {
   syncSalesForAccount,
   listAllWbAccountsForForeignSupplySync,
   syncForeignSuppliesForAccount,
+  moveOrderToDeficitSupply,
+  getOrCreateAccumulatingDeficitSupply,
+  listAccumulatingDeficitSupplies,
+  getDeficitSupplyDetail,
+  launchDeficitSupply,
 };

@@ -821,7 +821,11 @@ function _confirmCloseWave() {
           res = _context0.v;
           closeWaveBusy = false;
           closeWaveModalClose();
-          UI.notify.ok(res.printJobCreated ? 'Волна закрыта! Наклейка отправлена на печать.' : 'Волна закрыта! (Печать наклейки не настроена — маршрут pick_list_label не задан в панели принтеров)');
+          if (res.emptyShipment) {
+            UI.notify.ok('Волна закрыта. Все позиции пропущены и уехали в «Дефициты» — упаковывать нечего, отгрузка отменена автоматически.');
+          } else {
+            UI.notify.ok(res.printJobCreated ? 'Волна закрыта! Наклейка отправлена на печать.' : 'Волна закрыта! (Печать наклейки не настроена — маршрут pick_list_label не задан в панели принтеров)');
+          }
           currentTask = null;
           waveStatus = null;
           _context0.n = 3;
