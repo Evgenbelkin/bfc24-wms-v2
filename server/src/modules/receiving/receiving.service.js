@@ -172,8 +172,17 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
     if (order.rowCount === 0) throw new NotFoundError(`Inbound order with barcode '${inboundB}'`);
     const ord = order.rows[0];
 
-    // Проверяем статус
-    if (!['confirmed','scheduled','in_progress'].includes(ord.status)) {
+    // Проверяем статус. ФИКС 23.09.2026 (вторая часть - см. комментарий про
+    // 'excess' ниже): 'completed' тоже разрешён. Раньше, как только ВСЕ
+    // строки заявки набирали qty_received === qty_expected, шапка заявки сама
+    // переключалась в 'completed' - и эта проверка после того намертво
+    // блокировала любую дальнейшую приёмку, включая попытку зафиксировать
+    // реальный излишек по уже "закрытой" строке (ровно случай владельца: все
+    // 456 из 456 уже приняты, заявка 'completed', а по факту приехало ещё).
+    // orderStatus ниже пересчитывается заново из статусов строк после этой
+    // приёмки (excess тоже считается "завершено"), так что заявка корректно
+    // останется 'completed', просто с одной строкой excess внутри.
+    if (!['confirmed','scheduled','in_progress','completed'].includes(ord.status)) {
       throw new ValidationError(`Inbound order is in status '${ord.status}', cannot receive`);
     }
     // Проверяем доступ к клиенту
