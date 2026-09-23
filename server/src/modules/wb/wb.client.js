@@ -347,13 +347,34 @@ function extractRejectedOrderIds(wbBody) {
  *  наверх, чтобы это осталось видимой ошибкой, а не тихим "все заказы
  *  пачки отклонены".
  *
- *  Возвращает { addedCount, droppedOrderIds } — НЕ бросает исключение
- *  при частичном отказе (только при системном, см. выше).
+ *  Возвращает { addedCount, droppedOrderIds, unconfirmedDroppedOrderIds } —
+ *  НЕ бросает исключение при частичном отказе (только при системном, см.
+ *  выше). ФИКС 23.09.2026 (ИП Китай: "Создано поставок: 5 — заказов: 0" по
+ *  всем пяти подряд, хотя в кабинете WB все заказы висели живыми "Новыми"):
+ *  раньше ЛЮБОЙ "неразбираемый" отказ пачки (WB вернул 409
+ *  FailedToAddSupplyOrder с полем data, в котором перечислен ПОЧТИ ВЕСЬ
+ *  пакет целиком, а не 1-2 конкретных проблемных заказа) считался тем же
+ *  самым, что и настоящий точечный отказ по конкретным заказам - вся пачка
+ *  (обычно ~100 заказов) улетала в droppedOrderIds, а вызывающий код
+ *  (wb.router.js) помечал их ВСЕХ status='external', будто их забрали в
+ *  обход нас. На деле, когда WB отклоняет ПОЧТИ ВЕСЬ пакет разом - это
+ *  почти наверняка проблема самой поставки/аккаунта целиком (например,
+ *  токену не хватает прав категории "Маркетплейс" на запись, или другое
+ *  системное несоответствие), а не то, что сотня заказов синхронно исчезла
+ *  из "Новых". Различаем: если retry сузил список до СТРОГО МЕНЬШЕГО
+ *  подмножества (WB реально назвал конкретных виновников, и остальные
+ *  прошли) - это droppedOrderIds (точечный, доверенный отказ, можно
+ *  помечать 'external'). Если распознать точечных виновников не удалось
+ *  (WB вернул отказ по всей/почти всей пачке, или повторная попытка тоже
+ *  упала целиком) - это unconfirmedDroppedOrderIds: заказ просто не попал
+ *  в эту поставку СЕЙЧАС, но его статус трогать нельзя - следующая попытка
+ *  формирования волны должна увидеть его снова как обычный кандидат.
  */
 async function addOrdersToSupply(token, supplyId, orderIds) {
   const fullId = normalizeShipmentCode(supplyId);
   const chunks = chunk(orderIds.map(Number), WB_BATCH_SIZE);
   const droppedOrderIds = [];
+  const unconfirmedDroppedOrderIds = [];
   let addedCount = 0;
 
   for (let batch of chunks) {
@@ -380,16 +401,18 @@ async function addOrdersToSupply(token, supplyId, orderIds) {
             continue; // повторяем эту же (урезанную) пачку
           }
         }
-        // Не удалось распознать, кого убрать (или вторая попытка тоже
-        // упала) — вся пачка отваливается, идём к следующей.
-        logger.warn({ err: e, supplyId: fullId, batch, wbBody: e.wbBody }, 'WB addOrdersToSupply: batch rejected, dropping');
-        droppedOrderIds.push(...batch);
+        // Не удалось распознать точечных виновников (WB отклонил всю/почти
+        // всю пачку, или повторная попытка после сужения тоже упала целиком)
+        // — идём к следующей пачке, но НЕ считаем это доверенным точечным
+        // отказом (см. комментарий к функции выше).
+        logger.warn({ err: e, supplyId: fullId, batch, wbBody: e.wbBody }, 'WB addOrdersToSupply: batch rejected wholesale (unconfirmed), not blacklisting orders');
+        unconfirmedDroppedOrderIds.push(...batch);
         batch = [];
       }
     }
   }
 
-  return { addedCount, droppedOrderIds };
+  return { addedCount, droppedOrderIds, unconfirmedDroppedOrderIds };
 }
 
 /** Получить стикеры для заказов. Тот же батч-лимит WB (100 за запрос, см.

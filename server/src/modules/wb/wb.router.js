@@ -599,11 +599,13 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
       // просто читаем результат, без собственного retry-цикла.
       let addedCount = 0;
       let droppedOrderIds = [];
+      let unconfirmedDroppedOrderIds = [];
       let hardError = null;
       try {
         const addResult = await wbClient.addOrdersToSupply(acc.api_token, rawSupplyId, orderIds);
         addedCount = addResult.addedCount;
         droppedOrderIds = addResult.droppedOrderIds;
+        unconfirmedDroppedOrderIds = addResult.unconfirmedDroppedOrderIds;
       } catch (e) {
         // Системная ошибка (не заказ-специфичная) — раньше пробрасывалась
         // наверх необработанной уже ПОСЛЕ того, как WB.createSupply() выше
@@ -613,10 +615,26 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
         // явным статусом 'error' (миграция 062), а не теряем молча.
         hardError = e;
         logger.warn({ err: e, accountId, rawSupplyId, orderIds, wbBody: e.wbBody }, 'WB addOrdersToSupply hard-failed');
-        droppedOrderIds = orderIds.slice();
+        // ФИКС 23.09.2026: системная ошибка здесь тоже НЕ заказ-специфичная -
+        // это сбой самого вызова (токен/сеть/5xx), а не то, что WB назвал
+        // именно ЭТИ заказы проблемными. Раньше это тоже уходило в
+        // droppedOrderIds и все заказы группы помечались 'external' - см.
+        // тот же баг, что и с wholesale-отказом ниже.
+        unconfirmedDroppedOrderIds = orderIds.slice();
       }
-      const finalOrderIds = orderIds.filter(id => !droppedOrderIds.includes(id));
+      const finalOrderIds = orderIds.filter(id => !droppedOrderIds.includes(id) && !unconfirmedDroppedOrderIds.includes(id));
 
+      // ФИКС 23.09.2026 (ИП Китай, "Создано поставок: 5 — заказов: 0" по
+      // всем подряд, хотя в кабинете WB заказы висели живыми "Новыми"):
+      // status='external' ставим ТОЛЬКО для droppedOrderIds - заказов,
+      // которых WB явно и точечно назвал проблемными (см. комментарий в
+      // wb.client.js::addOrdersToSupply). unconfirmedDroppedOrderIds - когда
+      // WB отклонил всю/почти всю пачку разом и точечного виновника выделить
+      // не удалось - НЕ трогаем статус вообще: заказ остаётся 'new' и
+      // естественным образом попадёт в следующую попытку формирования волны.
+      // Раньше оба случая считались одним и тем же, и один "оптовый" отказ
+      // WB по целой поставке мгновенно и массово хоронил десятки реально
+      // живых заказов в 'external'.
       if (droppedOrderIds.length) {
         await query(
           `UPDATE wms.wb_orders SET status='external', fetched_at=NOW()
@@ -652,12 +670,14 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
           stickers_saved: 0,
           dropped_count:  droppedOrderIds.length,
           dropped_orders: droppedOrderIds,
+          unconfirmed_dropped_count: unconfirmedDroppedOrderIds.length,
+          unconfirmed_dropped_orders: unconfirmedDroppedOrderIds,
           error: hardError ? hardError.message : 'WB отклонил все заказы группы',
         });
         continue;
       }
 
-      const keptRows = droppedOrderIds.length
+      const keptRows = (droppedOrderIds.length || unconfirmedDroppedOrderIds.length)
         ? group.orders.filter(o => finalOrderIds.includes(Number(o.wb_order_id)))
         : group.orders;
 
@@ -749,12 +769,27 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
           stickers_saved: stickers.length,
           dropped_count:  droppedOrderIds.length,
           dropped_orders: droppedOrderIds,
+          unconfirmed_dropped_count: unconfirmedDroppedOrderIds.length,
+          unconfirmed_dropped_orders: unconfirmedDroppedOrderIds,
         });
       });
     }
 
+    // ФИКС 23.09.2026: разделяем в ответе два РАЗНЫХ по смыслу счётчика -
+    // dropped_total (WB точечно назвал этот заказ проблемным, мы пометили
+    // 'external' - действительно "забрано в ЛК WB" или похожая причина) и
+    // unconfirmed_dropped_total (WB отклонил пачку целиком, виновника не
+    // нашли, статус заказа НЕ трогали - он остался 'new' и попадёт в
+    // следующую попытку). Раньше это было одно и то же число с одной и той
+    // же надписью "Забрано в ЛК WB" - вводило в заблуждение, когда реальная
+    // причина была не в заказах, а в самой поставке/токене.
     const totalDropped = suppliesResult.reduce((s,r)=>s+(r.dropped_count||0),0);
-    res.json({ ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult, dropped_total:totalDropped, stock_shortage: stockShortage });
+    const totalUnconfirmedDropped = suppliesResult.reduce((s,r)=>s+(r.unconfirmed_dropped_count||0),0);
+    res.json({
+      ok:true, created_supplies:suppliesResult.length, supplies:suppliesResult,
+      dropped_total:totalDropped, unconfirmed_dropped_total:totalUnconfirmedDropped,
+      stock_shortage: stockShortage,
+    });
   } catch(e){ next(e); }
 });
 
