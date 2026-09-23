@@ -121,6 +121,21 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
       // стало происходить на порядок чаще - отсюда и жалоба. status на
       // конфликте теперь не трогаем вообще - "новым" он проставляется только
       // при первой вставке заказа, которого мы раньше не видели.
+      // ПРАВКА 23.09.2026 (жалоба "мой магазин, заказ 5829781341 завис - не
+      // формируется и не виден в списке заказов"): реконсилиация ниже
+      // (marked_external) метит заказ 'external', если он на ОДНОМ конкретном
+      // тике синка не пришёл в свежем ответе WB /orders/new (транзиентный
+      // сбой/пагинация WB, не обязательно "реально забрали в поставку в обход
+      // нас"). Раньше status на конфликте не трогался вообще (см. комментарий
+      // выше про откат confirm->new) - из-за этого заказ, ошибочно помеченный
+      // 'external', НИКОГДА не мог вернуться в 'new', даже если WB продолжал
+      // честно отдавать его как новый при каждой следующей синхронизации
+      // (подтверждено на живых данных: fetched_at обновлялся при каждом
+      // синке, status намертво оставался 'external', wb_supply_id так и не
+      // проставился - то есть в реальную поставку его никто не забирал).
+      // Возвращаем status='new' ТОЛЬКО в этом узком случае (был 'external' И
+      // wb_supply_id пуст) - остальные статусы (в т.ч. 'external' уже С
+      // wb_supply_id, если такое когда-то возникнет) по-прежнему не трогаем.
       `INSERT INTO wms.wb_orders
          (tenant_id,mp_account_id,wb_order_id,nm_id,chrt_id,article,barcode,
           warehouse_id,warehouse_name,region_name,price,converted_price,currency_code,
@@ -128,7 +143,11 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
        VALUES ${valuesSql}
        ON CONFLICT(mp_account_id,wb_order_id) DO UPDATE SET
          fetched_at=NOW(), raw=EXCLUDED.raw,
-         rid=COALESCE(wms.wb_orders.rid, EXCLUDED.rid)`,
+         rid=COALESCE(wms.wb_orders.rid, EXCLUDED.rid),
+         status=CASE
+           WHEN wms.wb_orders.status='external' AND wms.wb_orders.wb_supply_id IS NULL
+           THEN 'new' ELSE wms.wb_orders.status
+         END`,
       params
     );
     saved += chunk.length;
