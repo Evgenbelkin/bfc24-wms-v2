@@ -71,7 +71,7 @@ async function listActiveAccounts(tenantId) {
 // Postgres (65535) и укладывается в разумный размер одного запроса.
 const ORDERS_INSERT_BATCH = 200;
 
-async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
+async function fetchAndUpsertOrders({ tenantId, accountId, apiToken, reconcile = true }) {
   const orders = await wbClient.fetchNewOrders(apiToken);
 
   let saved = 0;
@@ -156,38 +156,53 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
     saved += chunk.length;
   }
 
-  // ФИКС 23.09.2026 (владелец, "ИП Китай" сразу после обновления токена:
-  // "Волна сформирована - 41 заказ(ов) исключено", хотя в кабинете WB все 41
-  // висели как Новые): раньше заказ метился 'external' сразу по ОДНОМУ
-  // пропуску в ответе /orders/new - единственный неполный/сбойный ответ WB
-  // (например прямо на разминке только что обновлённого токена) мгновенно и
-  // без права на ошибку валил в 'external' всё, чего не оказалось в этом
-  // одном ответе. Теперь - два шага в два разных тика синка:
-  //  1) если заказ отсутствует и ещё не отмечен как пропущенный -
-  //     проставляем missing_since=NOW(), но статус пока НЕ трогаем;
-  //  2) если заказ отсутствует и уже был отмечен пропущенным НА ПРЕДЫДУЩЕМ
-  //     вызове (missing_since стоит из прошлого) - только теперь переводим в
-  //     'external'. Порядок важен: сначала "добиваем" тех, кто пропущен уже
-  //     второй раз подряд, и только потом отмечаем свежие пропуски - иначе
-  //     один и тот же вызов мог бы и проставить missing_since, и тут же его
-  //     использовать для финализации.
-  const reconciled = await query(
-    `UPDATE wms.wb_orders SET status='external', fetched_at=NOW()
-     WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND wb_supply_id IS NULL
-       AND missing_since IS NOT NULL
-       AND NOT (wb_order_id = ANY($3::bigint[]))
-     RETURNING wb_order_id`,
-    [tenantId, accountId, freshIds]
-  );
-  await query(
-    `UPDATE wms.wb_orders SET missing_since=NOW()
-     WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND wb_supply_id IS NULL
-       AND missing_since IS NULL
-       AND NOT (wb_order_id = ANY($3::bigint[]))`,
-    [tenantId, accountId, freshIds]
-  );
+  // ФИКС 23.09.2026, часть 1 (владелец, "ИП Китай" сразу после обновления
+  // токена: "Волна сформирована - 41 заказ(ов) исключено", хотя в кабинете
+  // WB все 41 висели как Новые): раньше заказ метился 'external' сразу по
+  // ОДНОМУ пропуску в ответе /orders/new - единственный неполный/сбойный
+  // ответ WB мгновенно и без права на ошибку валил в 'external' всё, чего не
+  // оказалось в этом одном ответе. Теперь - два шага в два разных тика
+  // синка: 1) первый пропуск просто ставит missing_since=NOW(), статус не
+  // трогаем; 2) только если заказ пропущен ВТОРОЙ раз подряд (missing_since
+  // стоит из прошлого вызова) - переводим в 'external'.
+  //
+  // ФИКС 23.09.2026, часть 2 (тот же владелец, тот же случай, воспроизвёлся
+  // ПОВТОРНО даже после части 1): оказалось, у этого конкретно аккаунта WB
+  // отдаёт /orders/new НЕполным ответом не один раз, а НЕСКОЛЬКО раз подряд -
+  // видимо, сам WB нестабилен именно на этом большом кабинете. Два тика
+  // подряд не спасают, если оба тика реально приходятся на сбойные ответы -
+  // а "Сформировать волну" (wb.router.js) как раз делает СВОЙ синк перед
+  // каждым кликом, то есть ИМЕННО в моменты давления на кнопку. Поэтому
+  // право помечать 'external' (реально отправлять заказ в игнор) теперь
+  // остаётся ТОЛЬКО за фоновой синхронизацией (wbAutoSync.js, опрашивает
+  // многократно и терпеливо) - reconcile=true по умолчанию. Presync перед
+  // волной (generate-wave) зовёт этот же fetchAndUpsertOrders с
+  // reconcile=false: он по-прежнему подтягивает новые заказы и САМОИСЦЕЛЯЕТ
+  // уже ошибочно помеченные 'external' (см. CASE в UPSERT выше - это
+  // безусловно, reconcile тут ни при чём), просто сам никого новым в
+  // 'external' не отправляет - это не его ответственность в момент, когда
+  // от него ждут заказы, а не подозрения.
+  let reconciledCount = 0;
+  if (reconcile) {
+    const reconciled = await query(
+      `UPDATE wms.wb_orders SET status='external', fetched_at=NOW()
+       WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND wb_supply_id IS NULL
+         AND missing_since IS NOT NULL
+         AND NOT (wb_order_id = ANY($3::bigint[]))
+       RETURNING wb_order_id`,
+      [tenantId, accountId, freshIds]
+    );
+    reconciledCount = reconciled.rowCount;
+    await query(
+      `UPDATE wms.wb_orders SET missing_since=NOW()
+       WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND wb_supply_id IS NULL
+         AND missing_since IS NULL
+         AND NOT (wb_order_id = ANY($3::bigint[]))`,
+      [tenantId, accountId, freshIds]
+    );
+  }
 
-  return { fetched: orders.length, saved, marked_external: reconciled.rowCount, touchedBarcodes };
+  return { fetched: orders.length, saved, marked_external: reconciledCount, touchedBarcodes };
 }
 
 /** Синхронизация новых заказов по одному аккаунту (acc уже должен содержать api_token).
@@ -203,9 +218,9 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
  *  15 минут) мы сверяем, какие из наших "new"-заказов пропали из свежего ответа WB,
  *  и помечаем их status='external' — это выводит их из очереди на волну и делает
  *  видимыми в фильтре как "Занято в кабинете WB", вместо того чтобы бесконечно висеть. */
-async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = null }) {
+async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = null, reconcile = true }) {
   const { fetched, saved, marked_external, touchedBarcodes } =
-    await fetchAndUpsertOrders({ tenantId, accountId, apiToken });
+    await fetchAndUpsertOrders({ tenantId, accountId, apiToken, reconcile });
 
   // ПРАВКА 29.08.2026 (возврат реактивного пуша после разбора "Сверки
   // остатков" - расхождения +1/+2 "риск оверселла" по многим SKU клиента
@@ -239,13 +254,19 @@ async function syncOrdersForAccount({ tenantId, accountId, apiToken, clientId = 
   return { fetched, saved, marked_external };
 }
 
-/** Синхронизировать заказы по ВСЕМ активным WB-аккаунтам тенанта (кнопка "Синхронизировать все") */
-async function syncAllAccountsForTenant(tenantId) {
+/** Синхронизировать заказы по ВСЕМ активным WB-аккаунтам тенанта.
+ *  Используется и фоновой job'ой (wbAutoSync.js, reconcile оставляем true по
+ *  умолчанию - там уместно терпеливо помечать 'external' по накоплении
+ *  пропусков), и ручной кнопкой "Синхронизировать все" (wb.router.js
+ *  передаёт reconcile:false явно - тот же принцип, что и в /sync-orders и
+ *  /generate-wave: ручной клик под давлением "хочу увидеть заказы прямо
+ *  сейчас" не должен решать судьбу заказа по одному шаткому ответу WB). */
+async function syncAllAccountsForTenant(tenantId, { reconcile = true } = {}) {
   const accounts = await listActiveAccounts(tenantId);
   const results = [];
   for (const acc of accounts) {
     try {
-      const r = await syncOrdersForAccount({ tenantId, accountId: acc.id, apiToken: acc.api_token, clientId: acc.client_id });
+      const r = await syncOrdersForAccount({ tenantId, accountId: acc.id, apiToken: acc.api_token, clientId: acc.client_id, reconcile });
       results.push({ account_id: acc.id, account_name: acc.account_name, ok: true, ...r });
     } catch (e) {
       logger.error({ err: e, tenantId, accountId: acc.id }, 'WB sync-all: account sync failed');

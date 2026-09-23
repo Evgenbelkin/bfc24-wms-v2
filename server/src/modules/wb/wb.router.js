@@ -203,7 +203,11 @@ router.post('/sync-orders', requireRole('tenant_admin','supervisor'), async (req
     // дёргался /api/v3/orders (весь архив, включая отменённые за всё время) и
     // в status писался deliveryType ('fbs' для всех подряд), из-за чего
     // фильтр "заказы без поставки" на генерации волны не отсеивал ничего.
-    const result = await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id });
+    // reconcile:false — та же причина, что и в /generate-wave (см. комментарий
+    // там же): это ручной клик под давлением "хочу увидеть заказы прямо
+    // сейчас", а не терпеливый фоновый опрос — не тот контекст, где стоит
+    // рисковать ошибочно отправить заказ в 'external' по одному шаткому ответу WB.
+    const result = await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id, reconcile: false });
     res.json({ ok: true, ...result });
   } catch(e){ next(e); }
 });
@@ -211,7 +215,9 @@ router.post('/sync-orders', requireRole('tenant_admin','supervisor'), async (req
 // Синхронизировать заказы по ВСЕМ активным WB-аккаунтам клиентов этого тенанта за один клик
 router.post('/sync-orders-all', requireRole('tenant_admin','supervisor'), async (req,res,next)=>{
   try {
-    const results = await wbService.syncAllAccountsForTenant(req.user.tenantId);
+    // reconcile:false — см. комментарий в syncAllAccountsForTenant/wb.service.js:
+    // это ручной клик, не терпеливый фоновый опрос.
+    const results = await wbService.syncAllAccountsForTenant(req.user.tenantId, { reconcile: false });
     const totalSaved = results.reduce((s,r)=>s+(r.saved||0),0);
     const totalFetched = results.reduce((s,r)=>s+(r.fetched||0),0);
     res.json({ ok: true, accounts: results, total_fetched: totalFetched, total_saved: totalSaved });
@@ -303,7 +309,20 @@ router.post('/generate-wave', requireRole('tenant_admin','supervisor'), async (r
     // известными в БД заказами (заказы и так подтягиваются в фоне отдельной
     // джобой, см. подсказку в wb.html).
     try {
-      await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id });
+      // ФИКС 23.09.2026 (ИП Китай: "41 заказ(ов) исключено - Забрано в ЛК
+      // WB", хотя в кабинете WB все 41 висели как Новые - воспроизвелось
+      // повторно даже после защиты "два пропуска подряд" в
+      // fetchAndUpsertOrders, см. комментарий там же): presync перед волной
+      // происходит ИМЕННО в момент давления пользователя на кнопку - если
+      // именно сейчас WB отдал неполный ответ (а у этого аккаунта, похоже,
+      // бывает нестабильно), нельзя тут же наказывать заказ статусом
+      // 'external' - слишком высокая цена одной неудачной попытки. Решение
+      // "заказ реально забрали в обход нас" теперь принимает ТОЛЬКО фоновая
+      // синхронизация (wbAutoSync.js, опрашивает многократно) - reconcile:false
+      // здесь всё равно подтягивает новые заказы и самоисцеляет уже ошибочно
+      // помеченные 'external' (это безусловно, см. CASE в UPSERT), просто
+      // сам никого новым в 'external' не отправляет.
+      await wbService.syncOrdersForAccount({ tenantId: req.user.tenantId, accountId, apiToken: acc.api_token, clientId: acc.client_id, reconcile: false });
     } catch (e) {
       const looksLikeAuthError = e.wbStatus === 401 || /unauthorized|token/i.test(e.message || '');
       if (looksLikeAuthError) {
