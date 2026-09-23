@@ -144,6 +144,9 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
        ON CONFLICT(mp_account_id,wb_order_id) DO UPDATE SET
          fetched_at=NOW(), raw=EXCLUDED.raw,
          rid=COALESCE(wms.wb_orders.rid, EXCLUDED.rid),
+         -- ФИКС 23.09.2026: заказ реально присутствует в этом ответе WB -
+         -- значит он точно не "пропущен", сбрасываем счётчик пропусков ниже.
+         missing_since=NULL,
          status=CASE
            WHEN wms.wb_orders.status='external' AND wms.wb_orders.wb_supply_id IS NULL
            THEN 'new' ELSE wms.wb_orders.status
@@ -153,13 +156,34 @@ async function fetchAndUpsertOrders({ tenantId, accountId, apiToken }) {
     saved += chunk.length;
   }
 
-  // Реконсилиация: наши "new"-заказы без поставки, которых больше нет в свежем
-  // ответе WB — значит их забрали в поставку/отменили не через нас.
+  // ФИКС 23.09.2026 (владелец, "ИП Китай" сразу после обновления токена:
+  // "Волна сформирована - 41 заказ(ов) исключено", хотя в кабинете WB все 41
+  // висели как Новые): раньше заказ метился 'external' сразу по ОДНОМУ
+  // пропуску в ответе /orders/new - единственный неполный/сбойный ответ WB
+  // (например прямо на разминке только что обновлённого токена) мгновенно и
+  // без права на ошибку валил в 'external' всё, чего не оказалось в этом
+  // одном ответе. Теперь - два шага в два разных тика синка:
+  //  1) если заказ отсутствует и ещё не отмечен как пропущенный -
+  //     проставляем missing_since=NOW(), но статус пока НЕ трогаем;
+  //  2) если заказ отсутствует и уже был отмечен пропущенным НА ПРЕДЫДУЩЕМ
+  //     вызове (missing_since стоит из прошлого) - только теперь переводим в
+  //     'external'. Порядок важен: сначала "добиваем" тех, кто пропущен уже
+  //     второй раз подряд, и только потом отмечаем свежие пропуски - иначе
+  //     один и тот же вызов мог бы и проставить missing_since, и тут же его
+  //     использовать для финализации.
   const reconciled = await query(
     `UPDATE wms.wb_orders SET status='external', fetched_at=NOW()
      WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND wb_supply_id IS NULL
+       AND missing_since IS NOT NULL
        AND NOT (wb_order_id = ANY($3::bigint[]))
      RETURNING wb_order_id`,
+    [tenantId, accountId, freshIds]
+  );
+  await query(
+    `UPDATE wms.wb_orders SET missing_since=NOW()
+     WHERE tenant_id=$1 AND mp_account_id=$2 AND status='new' AND wb_supply_id IS NULL
+       AND missing_since IS NULL
+       AND NOT (wb_order_id = ANY($3::bigint[]))`,
     [tenantId, accountId, freshIds]
   );
 
