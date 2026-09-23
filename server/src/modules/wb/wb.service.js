@@ -1538,6 +1538,33 @@ async function reconcileStockForTenant(tenantId) {
       }
     }
 
+    // ПРАВКА 23.09.2026 (жалоба "бот шлёт 92 расхождения по ИП Китай, а
+    // оказалось просто битый токен"): если ВСЕ склады аккаунта упали с
+    // ошибкой, wbTotals остаётся пустой картой - и цикл ниже честно посчитает
+    // "WB итого: 0" по КАЖДОМУ штрихкоду, выдав десятки "не ушло в WB", хотя
+    // на деле мы просто ни разу не смогли достучаться до WB - это не
+    // расхождение остатков, а сбой самого запроса. Раньше это было неотличимо
+    // от настоящей проблемы ни в интерфейсе, ни в телеграм-алерте (ошибки
+    // токена тонут внизу списка из полусотни строк). Различаем: если ошибка
+    // похожа на протухший/невалидный токен (401 или текст WB про "invalid
+    // API access token"/"malformed") - помечаем tokenError и НЕ считаем
+    // mismatches вообще (эти цифры гарантированно недостоверны). Прочие сбои
+    // (сеть, 5xx) по-прежнему считаем как раньше - там часть складов обычно
+    // всё же отвечает, и частичная сверка лучше, чем никакой.
+    const allWarehousesFailed = whRes.rows.length > 0 && errors.length >= whRes.rows.length * skuChunks.length;
+    const looksLikeTokenError = errors.some(e => /401|unauthorized|invalid api access token|malformed/i.test(e));
+    if (allWarehousesFailed && looksLikeTokenError) {
+      accounts.push({
+        account_id: acc.id,
+        account_name: acc.account_name,
+        client_name: acc.client_name,
+        mismatches: [],
+        errors,
+        tokenError: true,
+      });
+      continue;
+    }
+
     // ВАЖНО (правка 28.08.2026, по итогам разбора конкретных "расхождений"):
     // сравнивать WB нужно не с сырым qty_available, а с тем, сколько реально
     // ДОЛЖНО быть отправлено - той же формулой, что и сам пуш

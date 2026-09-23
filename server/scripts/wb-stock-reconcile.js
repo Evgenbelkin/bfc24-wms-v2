@@ -49,6 +49,12 @@ async function main() {
       if (a.skipped === 'no_warehouses') { console.log('  Нет складов WB для этого аккаунта, пропуск.'); continue; }
       if (a.skipped === 'no_barcodes')   { console.log('  Нет зарегистрированных штрихкодов WB, пропуск.'); continue; }
 
+      if (a.tokenError) {
+        console.error('  🔑 ПРОБЛЕМА С ТОКЕНОМ - все склады упали с ошибкой авторизации, сверка не считалась (цифры были бы фейковые):');
+        for (const e of a.errors) console.error(`     ! ${e}`);
+        continue;
+      }
+
       if (a.errors && a.errors.length) {
         for (const e of a.errors) console.error(`  ! ошибка запроса: ${e}`);
       }

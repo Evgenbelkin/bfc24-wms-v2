@@ -31,10 +31,53 @@ function escapeHtml(s) {
 
 async function buildAndSendAlert(tenantResults) {
   const withMismatches = tenantResults.filter(t => t.total_mismatches > 0);
-  if (withMismatches.length === 0) return;
+
+  // ФИКС 23.09.2026 (жалоба "бот шлёт 92 расхождения по ИП Китай, а на деле
+  // просто протух токен - хотелось бы отдельное уведомление про токен, а не
+  // тонущую в шуме ошибку синхронизации"): аккаунты, у которых
+  // reconcileStockForTenant не смог посчитать mismatches вовсе (все склады
+  // упали с 401/malformed-токеном - см. wb.service.js), помечены
+  // acc.tokenError=true и mismatches=[] - раньше они просто молча пропадали
+  // из алерта (0 расхождений = "всё ок", хотя на деле мы вообще ничего не
+  // проверили). Теперь собираем их отдельно и показываем ПЕРВЫМ, заметным
+  // блоком - это и есть ответ на "если б сразу было понятно, что проблема в
+  // токене, а не в остатках".
+  const tokenErrorRows = [];
+  for (const t of tenantResults) {
+    for (const acc of t.result.accounts) {
+      if (acc.tokenError) {
+        tokenErrorRows.push({
+          tenantName: t.tenantName,
+          clientName: acc.client_name,
+          accountName: acc.account_name,
+          errors: acc.errors || [],
+        });
+      }
+    }
+  }
+
+  if (withMismatches.length === 0 && tokenErrorRows.length === 0) return;
+
+  const lines = [];
+
+  if (tokenErrorRows.length > 0) {
+    lines.push(`🔑 <b>Проблема с токеном WB — сверка невозможна (${tokenErrorRows.length})</b>`);
+    tokenErrorRows.forEach((r) => {
+      const detail = r.errors[0] ? escapeHtml(r.errors[0]) : 'токен не принимается WB API';
+      lines.push(
+        `• ${escapeHtml(r.clientName)}${r.accountName ? ` (${escapeHtml(r.accountName)})` : ''}: ${detail}`
+      );
+    });
+    lines.push('Обнови токен в кабинете: МР Аккаунты → нужный аккаунт. Пока токен битый, расхождения по этому аккаунту не проверяются (ниже их не будет).');
+    lines.push('');
+  }
+
+  if (withMismatches.length === 0) {
+    await sendTelegramMessage(lines.join('\n'));
+    return;
+  }
 
   const totalAcrossAll = withMismatches.reduce((s, t) => s + t.total_mismatches, 0);
-  const lines = [];
   lines.push(`⚠️ <b>Сверка остатков WB: найдено расхождений — ${totalAcrossAll}</b>`);
   lines.push('');
 
