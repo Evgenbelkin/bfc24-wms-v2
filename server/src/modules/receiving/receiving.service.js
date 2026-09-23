@@ -190,14 +190,18 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
     }
     const line = lineRes.rows[0];
 
-    // Проверяем не превышено ли ожидаемое количество (допускаем +10% или строго)
-    const maxAllowed = line.qty_expected; // строгий режим — без превышения
-    if (line.qty_received + q > maxAllowed) {
-      throw new ValidationError(
-        `Excess receiving: expected=${maxAllowed}, already_received=${line.qty_received}, adding=${q}, ` +
-        `would_be=${line.qty_received + q}`
-      );
-    }
+    // ФИКС 23.09.2026 (владелец: "у клиента товара больше приехало чем
+    // заявлено, но программа не даёт принять"): раньше здесь стоял жёсткий
+    // блок - любая попытка принять сверх qty_expected кидала ValidationError,
+    // и кладовщик физически не мог оприходовать реальный излишек по этой же
+    // заявке. При этом статус 'excess' ("принято больше ожидаемого") уже был
+    // заведён в схеме (см. 005_inbound_orders.sql) и даже подписан во фронте
+    // (inbound-orders.html: LINE_STATUS_LABELS.excess = 'больше плана') - то
+    // есть фича была наполовину сделана и не докручена. Теперь излишек
+    // принимается нормально и просто помечает строку статусом 'excess', чтобы
+    // это было явно видно в карточке заявки и в акте - как расхождение "приехало
+    // больше", а не терялось в отдельной несвязанной свободной приёмке.
+    // Ниже больше нет throw - строка просто попадёт в ветку newLineStatus.
 
     // 3. Резолвим товар и ячейку
     const itemId = await resolveOrCreateItem({ tenantId, clientId, barcode: itemB, dbClient: client });
@@ -213,7 +217,8 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
 
     // 5. Обновляем строку заявки
     const newQtyReceived = line.qty_received + q;
-    const newLineStatus = newQtyReceived >= line.qty_expected ? 'received' : 'partial';
+    const newLineStatus = newQtyReceived > line.qty_expected ? 'excess'
+      : newQtyReceived === line.qty_expected ? 'received' : 'partial';
     await client.query(
       `UPDATE wms.inbound_order_lines
        SET qty_received=$1, status=$2, updated_at=NOW() WHERE id=$3`,
@@ -232,8 +237,11 @@ async function acceptByInbound({ tenantId, warehouseId, clientId, inboundOrderBa
       `SELECT status FROM wms.inbound_order_lines WHERE inbound_order_id=$1`,
       [ord.id]
     );
-    const allDone = allLinesRes.rows.every(r => r.status === 'received');
-    const anyProgress = allLinesRes.rows.some(r => ['received','partial'].includes(r.status));
+    // 'excess' - тоже завершённая строка (принято не меньше плана, просто
+    // больше) - см. фикс 23.09.2026 выше, без неё заявка с излишком по одной
+    // строке никогда не закрывалась бы сама (status навсегда 'in_progress').
+    const allDone = allLinesRes.rows.every(r => ['received','excess'].includes(r.status));
+    const anyProgress = allLinesRes.rows.some(r => ['received','partial','excess'].includes(r.status));
     const orderStatus = allDone ? 'completed' : anyProgress ? 'in_progress' : ord.status;
 
     // ВАЖНО: раньше completed_at вычислялся SQL-выражением
