@@ -227,6 +227,24 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
       minute: '2-digit'
     });
   }
+  // ФИКС 23.09.2026 (marking.html, "Вывод из оборота" - владелец подумал,
+  // что несколько кизов "продались в одну минуту" одновременно с точностью
+  // синка, хотя на деле actual_sale_at у WB отличался на секунды - просто
+  // обычный fmtDateTime выше режет до минут, как и везде в приложении). Не
+  // трогаем fmtDateTime глобально (им пользуются десятки экранов, где секунды
+  // были бы лишним шумом) - отдельная функция с секундами для тех немногих
+  // мест, где точность до секунды реально имеет смысл показать пользователю.
+  function fmtDateTimeSec(dateStr) {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  }
   function fmtMoney(num) {
     var currency = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 'RUB';
     return new Intl.NumberFormat('ru-RU', {
@@ -934,6 +952,7 @@ function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length)
     requireRole: requireRole,
     fmtDate: fmtDate,
     fmtDateTime: fmtDateTime,
+    fmtDateTimeSec: fmtDateTimeSec,
     fmtMoney: fmtMoney,
     fmtQty: fmtQty,
     onScan: onScan,
