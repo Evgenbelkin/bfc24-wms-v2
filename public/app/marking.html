@@ -486,7 +486,14 @@ function loadWithdrawalPending() {
       var overdue = deadlineTs !== null && deadlineTs < now;
       var dueSoon = deadlineTs !== null && !overdue && deadlineTs <= now + 24 * 60 * 60 * 1000;
       var deadlineCell = !r.deadline_at ? '—' : overdue ? '<span style="color:var(--red);font-weight:700;">' + UI.escHtml(UI.fmtDateTime(r.deadline_at)) + ' (просрочено)</span>' : dueSoon ? '<span style="color:var(--red);">' + UI.escHtml(UI.fmtDateTime(r.deadline_at)) + '</span>' : UI.escHtml(UI.fmtDateTime(r.deadline_at));
-      var soldCell = !r.sold_at ? '—' : UI.escHtml(UI.fmtDateTime(r.sold_at)) + (r.sale_at_confirmed ? '' : ' <span style="font-size:10px;color:var(--muted);" title="Точное время продажи ещё не подтянулось от WB — показано время обработки статуса, дедлайн может уточниться">≈</span>');
+      // ФИКС 23.09.2026: когда WB уже подтвердил точное время продажи
+      // (sale_at_confirmed=true, см. wb.service.js::syncSalesForAccount) -
+      // показываем с секундами (UI.fmtDateTimeSec), иначе несколько кизов,
+      // реально проданных в разные секунды одной минуты, выглядят как
+      // "продано одновременно". Пока не подтверждено - точности до секунды
+      // всё равно нет (это грубое время опроса раз в ~30 мин), секунды
+      // показывать не имеет смысла - оставляем обычный fmtDateTime.
+      var soldCell = !r.sold_at ? '—' : (r.sale_at_confirmed ? UI.escHtml(UI.fmtDateTimeSec(r.sold_at)) : UI.escHtml(UI.fmtDateTime(r.sold_at)) + ' <span style="font-size:10px;color:var(--muted);" title="Точное время продажи ещё не подтянулось от WB — показано время обработки статуса, дедлайн может уточниться">≈</span>');
       return '<tr>' + '<td>' + soldCell + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;cursor:pointer;text-decoration:underline;" onclick="showCodeTimeline(' + r.marking_code_id + ')" title="Показать историю">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '<td>' + deadlineCell + '</td>' + '</tr>';
     });
   }).catch(function (e) {
@@ -581,7 +588,7 @@ function downloadWithdrawalExport(id) {
     };
     var lines = [headers.map(escCsv).join(';')];
     items.forEach(function (r) {
-      lines.push([r.code || '', r.item_barcode || '', r.item_name || '', r.vendor_code || '', r.size || '', r.sold_at ? UI.fmtDateTime(r.sold_at) : '', r.wb_order_id || '', r.shipment_code || '', r.client_name || ''].map(escCsv).join(';'));
+      lines.push([r.code || '', r.item_barcode || '', r.item_name || '', r.vendor_code || '', r.size || '', r.sold_at ? UI.fmtDateTimeSec(r.sold_at) : '', r.wb_order_id || '', r.shipment_code || '', r.client_name || ''].map(escCsv).join(';'));
     });
     var blob = new Blob(['﻿' + lines.join('\r\n')], {
       type: 'text/csv;charset=utf-8;'
