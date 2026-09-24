@@ -1085,7 +1085,14 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
             -- источников сейчас используется (обсуждение с пользователем
             -- 20.09.2026).
             COALESCE(wo.actual_sale_at, sold.observed_at) AS sold_at,
-            (wo.actual_sale_at IS NOT NULL) AS sale_at_confirmed
+            (wo.actual_sale_at IS NOT NULL) AS sale_at_confirmed,
+            -- Цена продажи для отчёта "вывод из оборота" - Честный знак для
+            -- FBS требует именно ту цену, по которой оформлен заказ в
+            -- кабинете маркетплейса (с учётом скидок) - см. обсуждение
+            -- 24.09.2026. wb_orders.converted_price - это она и есть, но WB
+            -- присылает её в копейках (проверено на проде: 75400.00 в БД =
+            -- 754 ₽) - переводим в рубли здесь же, чтобы фронту не думать.
+            ROUND(wo.converted_price / 100.0, 2) AS sale_price
      FROM wms.marking_codes mc
      JOIN wms.items i ON i.id = mc.item_id
      LEFT JOIN wms.shipments s ON mc.used_ref_type='packing' AND mc.used_ref_id = s.id
@@ -1100,7 +1107,7 @@ async function getPendingWithdrawal({ tenantId, clientId = null, limit = 20000, 
      -- именно в этом отчёте (сроки вывода из оборота), поэтому выбираем
      -- детерминированно одну реальную (не 'external') запись.
      JOIN LATERAL (
-       SELECT wo2.mp_account_id, wo2.actual_sale_at FROM wms.wb_orders wo2
+       SELECT wo2.mp_account_id, wo2.actual_sale_at, wo2.converted_price FROM wms.wb_orders wo2
        WHERE wo2.tenant_id = mc.tenant_id AND wo2.wb_order_id = mc.wb_order_id
        ORDER BY (wo2.status = 'external')
        LIMIT 1
@@ -1149,10 +1156,10 @@ async function createWithdrawalExport({ tenantId, clientId = null, userId = null
     // некоторых клиентов до ~20 000 заказов/сутки).
     await dbClient.query(
       `INSERT INTO wms.marking_withdrawal_export_items
-         (export_id, tenant_id, marking_code_id, code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name)
-       SELECT $1, $2, x.marking_code_id, x.code, x.item_barcode, x.item_name, x.vendor_code, x.size, x.sold_at, x.wb_order_id, x.shipment_code, x.client_name
-       FROM unnest($3::bigint[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::timestamptz[], $10::bigint[], $11::text[], $12::text[])
-         AS x(marking_code_id, code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name)`,
+         (export_id, tenant_id, marking_code_id, code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name, sale_price)
+       SELECT $1, $2, x.marking_code_id, x.code, x.item_barcode, x.item_name, x.vendor_code, x.size, x.sold_at, x.wb_order_id, x.shipment_code, x.client_name, x.sale_price
+       FROM unnest($3::bigint[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::timestamptz[], $10::bigint[], $11::text[], $12::text[], $13::numeric[])
+         AS x(marking_code_id, code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name, sale_price)`,
       [
         exportRow.id, tenantId,
         rows.map(r => r.marking_code_id),
@@ -1165,6 +1172,7 @@ async function createWithdrawalExport({ tenantId, clientId = null, userId = null
         rows.map(r => r.wb_order_id),
         rows.map(r => r.shipment_code),
         rows.map(r => r.client_name),
+        rows.map(r => r.sale_price),
       ]
     );
 
@@ -1202,7 +1210,7 @@ async function getWithdrawalExportItems({ tenantId, exportId }) {
   );
   if (expRes.rowCount === 0) return null;
   const itemsRes = await query(
-    `SELECT code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name
+    `SELECT code, item_barcode, item_name, vendor_code, size, sold_at, wb_order_id, shipment_code, client_name, sale_price
      FROM wms.marking_withdrawal_export_items
      WHERE export_id=$1 AND tenant_id=$2
      ORDER BY id`,
