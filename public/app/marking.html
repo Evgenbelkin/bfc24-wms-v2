@@ -152,7 +152,7 @@
         <div class="card-title">Ждут выгрузки (предпросмотр)</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Дата продажи</th><th>Товар</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Заказ WB</th><th>Клиент</th><th>Вывести до</th></tr></thead>
+            <thead><tr><th>Дата продажи</th><th>Товар</th><th>Штрихкод</th><th>Код "Честный знак"</th><th>Заказ WB</th><th>Цена продажи</th><th>Клиент</th><th>Вывести до</th></tr></thead>
             <tbody id="withdrawal-pending-body"></tbody>
           </table>
         </div>
@@ -494,7 +494,8 @@ function loadWithdrawalPending() {
       // всё равно нет (это грубое время опроса раз в ~30 мин), секунды
       // показывать не имеет смысла - оставляем обычный fmtDateTime.
       var soldCell = !r.sold_at ? '—' : (r.sale_at_confirmed ? UI.escHtml(UI.fmtDateTimeSec(r.sold_at)) : UI.escHtml(UI.fmtDateTime(r.sold_at)) + ' <span style="font-size:10px;color:var(--muted);" title="Точное время продажи ещё не подтянулось от WB — показано время обработки статуса, дедлайн может уточниться">≈</span>');
-      return '<tr>' + '<td>' + soldCell + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;cursor:pointer;text-decoration:underline;" onclick="showCodeTimeline(' + r.marking_code_id + ')" title="Показать историю">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '<td>' + deadlineCell + '</td>' + '</tr>';
+      var priceCell = r.sale_price != null ? UI.escHtml(Number(r.sale_price).toFixed(2)) + ' ₽' : '—';
+      return '<tr>' + '<td>' + soldCell + '</td>' + '<td>' + UI.escHtml(r.item_name || '—') + '<div style="font-size:11px;color:var(--muted);">' + UI.escHtml(r.vendor_code || '') + ' ' + UI.escHtml(r.size || '') + '</div></td>' + '<td>' + UI.escHtml(r.item_barcode || '—') + '</td>' + '<td style="font-family:monospace;font-size:12px;cursor:pointer;text-decoration:underline;" onclick="showCodeTimeline(' + r.marking_code_id + ')" title="Показать историю">' + UI.escHtml(r.code || '—') + '</td>' + '<td>' + UI.escHtml(r.wb_order_id != null ? String(r.wb_order_id) : '—') + '</td>' + '<td>' + priceCell + '</td>' + '<td>' + UI.escHtml(r.client_name || '—') + '</td>' + '<td>' + deadlineCell + '</td>' + '</tr>';
     });
   }).catch(function (e) {
     if (isModuleDisabled(e)) {
@@ -582,13 +583,13 @@ function downloadWithdrawalExport(id) {
       UI.notify.warn('Выгрузка пуста');
       return;
     }
-    var headers = ['Код Честный знак', 'Штрихкод', 'Товар', 'Артикул', 'Размер', 'Дата продажи', 'Заказ WB', 'Поставка', 'Клиент'];
+    var headers = ['Код Честный знак', 'Штрихкод', 'Товар', 'Артикул', 'Размер', 'Дата продажи', 'Заказ WB', 'Цена продажи', 'Поставка', 'Клиент'];
     var escCsv = function escCsv(v) {
       return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
     };
     var lines = [headers.map(escCsv).join(';')];
     items.forEach(function (r) {
-      lines.push([r.code || '', r.item_barcode || '', r.item_name || '', r.vendor_code || '', r.size || '', r.sold_at ? UI.fmtDateTimeSec(r.sold_at) : '', r.wb_order_id || '', r.shipment_code || '', r.client_name || ''].map(escCsv).join(';'));
+      lines.push([r.code || '', r.item_barcode || '', r.item_name || '', r.vendor_code || '', r.size || '', r.sold_at ? UI.fmtDateTimeSec(r.sold_at) : '', r.wb_order_id || '', r.sale_price != null ? Number(r.sale_price).toFixed(2) : '', r.shipment_code || '', r.client_name || ''].map(escCsv).join(';'));
     });
     var blob = new Blob(['﻿' + lines.join('\r\n')], {
       type: 'text/csv;charset=utf-8;'
