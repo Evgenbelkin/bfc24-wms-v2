@@ -585,6 +585,41 @@ async function fetchReturnClaims(token, { isArchive = false } = {}) {
 }
 
 /**
+ * FailedToUpdateMeta 24-25.09.2026 (клиент СНД): при отправке кизов/срока
+ * годности сразу после создания волны WB иногда отвечает 409
+ * {"code":"FailedToUpdateMeta","message":"...is in the Processing status"} —
+ * НЕ потому что заказ/код неверный, а потому что наша БД помечает заказ
+ * confirm сразу в транзакции создания волны (см. wb.router.js), а WB у себя
+ * переводит заказ в Processing чуть позже (асинхронно). Упаковщики стартуют
+ * сканирование почти сразу после волны, поэтому попадают в это окно гонки.
+ * Раньше это летело упаковщику сразу первой же попыткой. Дальше — короткий
+ * retry именно на этот код ошибки (и только на него — другие 409, например
+ * FailedToAddSupplyOrder при создании поставки, это реальные бизнес-отказы,
+ * ретраить их бессмысленно и не нужно).
+ */
+const META_RETRY_ATTEMPTS = 3;
+const META_RETRY_DELAY_MS = 2500;
+
+function isFailedToUpdateMeta(err) {
+  return err && err.wbStatus === 409 && err.wbBody && err.wbBody.code === 'FailedToUpdateMeta';
+}
+
+async function callMetaWithRetry(fn) {
+  let lastErr;
+  for (let attempt = 0; attempt <= META_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isFailedToUpdateMeta(err) || attempt === META_RETRY_ATTEMPTS) throw err;
+      logger.warn({ attempt, waitMs: META_RETRY_DELAY_MS }, 'WB FailedToUpdateMeta (409), order ещё не в Processing на стороне WB — retry');
+      await sleep(META_RETRY_DELAY_MS);
+    }
+  }
+  throw lastErr;
+}
+
+/**
  * Закрепить коды маркировки "Честный знак" (DataMatrix/КИЗ) за сборочным
  * заданием FBS — замена ручного ввода кода в кабинете WB на этапе сборки.
  * Работает только для заданий в статусе confirm (см. доку WB); до 100 кодов
@@ -594,11 +629,11 @@ async function setOrderKiz(token, orderId, sgtins) {
   const codes = (Array.isArray(sgtins) ? sgtins : [sgtins]).map(String).filter(Boolean);
   if (!codes.length) throw new Error('setOrderKiz: не передано ни одного кода');
   if (codes.length > 100) throw new Error('setOrderKiz: WB принимает не более 100 кодов за один вызов');
-  await wbRequest({
+  await callMetaWithRetry(() => wbRequest({
     token, method: 'PUT',
     path: `/api/v3/orders/${encodeURIComponent(orderId)}/meta/sgtin`,
     data: { sgtins: codes },
-  });
+  }));
   return true;
 }
 
@@ -619,11 +654,11 @@ async function setOrderExpiration(token, orderId, expirationStr) {
   if (!/^\d{2}\.\d{2}\.\d{4}$/.test(exp)) {
     throw new Error(`setOrderExpiration: неверный формат даты "${exp}" — ожидается dd.mm.yyyy`);
   }
-  await wbRequest({
+  await callMetaWithRetry(() => wbRequest({
     token, method: 'PUT',
     path: `/api/v3/orders/${encodeURIComponent(orderId)}/meta/expiration`,
     data: { expiration: exp },
-  });
+  }));
   return true;
 }
 
